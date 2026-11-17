@@ -30,15 +30,15 @@ namespace moppe::nhal {
       rock_caster.program = &shaders::boulders_shadow::program;
       rock_caster.vertex = m_shaders.boulders_shadow[0];
       rock_caster.label = "boulder shadow";
-      m_boulders_shadow = m_device->create_render_pipeline (rock_caster);
+      m_boulders.shadow = m_device->create_render_pipeline (rock_caster);
       RenderPipelineDesc rock = scene;
       rock.program = &shaders::boulders::program;
       rock.vertex = m_shaders.boulders[0];
       rock.fragment = m_shaders.boulders[1];
       rock.cull = Cull::none;
       rock.label = "boulders";
-      m_boulders = m_device->create_render_pipeline (rock);
-      m_boulder_cull =
+      m_boulders.draw = m_device->create_render_pipeline (rock);
+      m_boulders.cull =
         m_device->create_compute_pipeline ({ &shaders::boulder_cull::program,
                                              m_shaders.boulder_cull,
                                              "boulder culling" });
@@ -47,11 +47,11 @@ namespace moppe::nhal {
     void NhalRenderer::set_boulders (
       const render::BoulderSetup& setup,
       std::span<const render::BoulderInstance> instances) {
-      for (Buffer* b : { &m_rocks,
-                         &m_rock_candidates,
-                         &m_rock_arguments,
-                         &m_rock_shadow_candidates,
-                         &m_rock_shadow_arguments })
+      for (Buffer* b : { &m_boulders.records,
+                         &m_boulders.candidates,
+                         &m_boulders.arguments,
+                         &m_boulders.shadow_candidates,
+                         &m_boulders.shadow_arguments })
         if (*b)
           m_device->destroy (*b), *b = {};
       std::vector<std::array<float, 4>> rows;
@@ -69,15 +69,15 @@ namespace moppe::nhal {
                           rock.moisture.numerical_value_in (mp_units::one) });
         rows.push_back ({ std::bit_cast<float> (rock.seed), 0, 0, 0 });
       }
-      m_rock_count = std::uint32_t (rows.size () / 3);
-      if (!m_rock_count)
+      m_boulders.count = std::uint32_t (rows.size () / 3);
+      if (!m_boulders.count)
         return;
-      m_rocks = m_device->create_buffer (
+      m_boulders.records = m_device->create_buffer (
         { .size = rows.size () * 16, .label = "boulder records" },
         std::as_bytes (std::span (rows)));
       auto candidates = [&] (std::uint32_t classes, const char* label) {
         return m_device->create_buffer (
-          { .size = std::uint64_t (classes) * m_rock_count * 8,
+          { .size = std::uint64_t (classes) * m_boulders.count * 8,
             .usage = buffer_storage_write,
             .label = label });
       };
@@ -87,22 +87,23 @@ namespace moppe::nhal {
             .usage = buffer_storage_write | buffer_indirect,
             .label = label });
       };
-      m_rock_candidates = candidates (2, "boulder candidates");
-      m_rock_arguments = arguments ("boulder draws");
-      m_rock_shadow_candidates = candidates (1, "shadow boulder candidates");
-      m_rock_shadow_arguments = arguments ("shadow boulder draws");
+      m_boulders.candidates = candidates (2, "boulder candidates");
+      m_boulders.arguments = arguments ("boulder draws");
+      m_boulders.shadow_candidates =
+        candidates (1, "shadow boulder candidates");
+      m_boulders.shadow_arguments = arguments ("shadow boulder draws");
       const Vec3 period = extent_value (setup.period);
-      m_rock_period[0] = period[0];
-      m_rock_period[1] = period[2];
+      m_boulders.period[0] = period[0];
+      m_boulders.period[1] = period[2];
 
-      if (!m_rock_indices) {
+      if (!m_boulders.indices) {
         std::vector<std::array<float, 4>> corners;
         for (const auto& c : icosahedron)
           corners.push_back ({ c[0], c[1], c[2], 0 });
-        m_rock_corners = m_device->create_buffer (
+        m_boulders.corners = m_device->create_buffer (
           { .size = corners.size () * 16, .label = "icosahedron" },
           std::as_bytes (std::span (corners)));
-        m_rock_faces = m_device->create_buffer (
+        m_boulders.faces = m_device->create_buffer (
           { .size = sizeof icosahedron_faces, .label = "icosahedron faces" },
           std::as_bytes (std::span (icosahedron_faces)));
         // Coarse: the faces themselves. Fine: four triangles a face, over
@@ -114,7 +115,7 @@ namespace moppe::nhal {
         for (std::uint16_t face = 0; face < 20; ++face)
           for (std::uint16_t slot : quarters)
             indices.push_back (std::uint16_t (face * 6 + slot));
-        m_rock_indices = m_device->create_buffer (
+        m_boulders.indices = m_device->create_buffer (
           { .size = indices.size () * 2, .label = "boulder topology" },
           std::as_bytes (std::span (indices)));
       }
@@ -124,7 +125,7 @@ namespace moppe::nhal {
                                    const Vec3& eye,
                                    float height,
                                    bool shadow) {
-      if (!m_rock_count)
+      if (!m_boulders.count)
         return;
       auto row = [&] (int r) {
         return std::sqrt (view.element (r) * view.element (r) +
@@ -134,54 +135,54 @@ namespace moppe::nhal {
       shaders::boulder_cull::Forest block {};
       block.view = matrix (view);
       block.eye = lanes (eye);
-      block.world = { m_rock_period[0],
-                      m_rock_period[1],
-                      float (m_rock_count),
-                      float (m_rock_count) };
+      block.world = { m_boulders.period[0],
+                      m_boulders.period[1],
+                      float (m_boulders.count),
+                      float (m_boulders.count) };
       block.cull = { row (0), row (1), row (3), height };
       block.mode = { shadow ? 1.0f : 0.0f, 0, 0, 0 };
-      Transient& uniforms = shadow ? m_rock_shadow_block : m_rock_block;
+      Transient& uniforms = shadow ? m_boulders.shadow_block : m_boulders.block;
       uniforms = m_device->allocate (sizeof block);
       std::memcpy (uniforms.data, &block, sizeof block);
       const DrawIndexedIndirectArgs reset[2] = { { 60, 0, 0, 0, 0 },
                                                  { 240, 0, 60, 0, 0 } };
       const Buffer arguments =
-        shadow ? m_rock_shadow_arguments : m_rock_arguments;
+        shadow ? m_boulders.shadow_arguments : m_boulders.arguments;
       m_device->copy_to_buffer (
         arguments,
         0,
         m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)));
       m_device->begin_compute_pass (shadow ? "shadow boulder culling"
                                            : "boulder culling");
-      m_device->set_pipeline (m_boulder_cull);
+      m_device->set_pipeline (m_boulders.cull);
       m_device->set_buffer (1, uniforms);
-      m_device->set_buffer (2, m_rocks);
+      m_device->set_buffer (2, m_boulders.records);
       m_device->set_buffer (
-        3, shadow ? m_rock_shadow_candidates : m_rock_candidates);
+        3, shadow ? m_boulders.shadow_candidates : m_boulders.candidates);
       m_device->set_buffer (4, arguments);
-      m_device->dispatch ((m_rock_count + 63) / 64);
+      m_device->dispatch ((m_boulders.count + 63) / 64);
       m_device->end_compute_pass ();
     }
 
     void NhalRenderer::draw_boulders () {
-      if (!m_rock_count)
+      if (!m_boulders.count)
         return;
       open_scene ();
-      m_device->set_pipeline (m_boulders);
+      m_device->set_pipeline (m_boulders.draw);
       m_device->set_buffer (0, m_frame_block);
-      m_device->set_buffer (1, m_rock_block);
-      m_device->set_buffer (3, m_rocks);
-      m_device->set_buffer (4, m_rock_candidates);
-      m_device->set_buffer (5, m_rock_corners);
-      m_device->set_buffer (6, m_rock_faces);
-      m_device->set_texture (8, m_shadow_map);
+      m_device->set_buffer (1, m_boulders.block);
+      m_device->set_buffer (3, m_boulders.records);
+      m_device->set_buffer (4, m_boulders.candidates);
+      m_device->set_buffer (5, m_boulders.corners);
+      m_device->set_buffer (6, m_boulders.faces);
+      m_device->set_texture (8, m_sun_shadow.map);
       for (std::uint32_t fine = 0; fine < 2; ++fine) {
         shaders::boulders::Draw draw {};
-        draw.class_ = { float (fine * m_rock_count), float (fine), 0, 0 };
+        draw.class_ = { float (fine * m_boulders.count), float (fine), 0, 0 };
         m_device->set_uniforms (2, draw);
-        m_device->draw_indexed_indirect (m_rock_indices,
+        m_device->draw_indexed_indirect (m_boulders.indices,
                                          IndexType::uint16,
-                                         m_rock_arguments,
+                                         m_boulders.arguments,
                                          fine *
                                            sizeof (DrawIndexedIndirectArgs));
       }

@@ -17,7 +17,7 @@ namespace moppe::nhal {
       water.depth_write = false;
       water.cull = Cull::none;
       water.label = "water";
-      m_water = m_device->create_render_pipeline (water);
+      m_water.draw = m_device->create_render_pipeline (water);
 
       RenderPipelineDesc waterfall = scene;
       waterfall.program = &shaders::waterfall::program;
@@ -27,7 +27,7 @@ namespace moppe::nhal {
       waterfall.depth_write = false;
       waterfall.cull = Cull::none;
       waterfall.label = "waterfalls";
-      m_waterfall = m_device->create_render_pipeline (waterfall);
+      m_water.waterfall = m_device->create_render_pipeline (waterfall);
 
       RenderPipelineDesc copy;
       copy.program = &shaders::scene_copy::program;
@@ -36,18 +36,18 @@ namespace moppe::nhal {
       copy.color_count = 2;
       copy.color_formats[0] = Format::rgba16_float;
       copy.color_formats[1] = Format::r32_float;
-      m_scene_copy = m_device->create_render_pipeline (copy);
+      m_water.scene_copy = m_device->create_render_pipeline (copy);
     }
 
     void NhalRenderer::set_ocean (const render::OceanSetup& setup,
                                   const render::TexturePixels& levels) {
-      if (m_water_levels)
-        m_device->destroy (m_water_levels);
-      m_water_levels = {};
-      m_wet_patches = setup.wet_patches;
+      if (m_water.levels)
+        m_device->destroy (m_water.levels);
+      m_water.levels = {};
+      m_water.wet_patches = setup.wet_patches;
       if (levels.empty () || levels.format () != render::PixelFormat::rg32f)
         return;
-      m_water_levels =
+      m_water.levels =
         m_device->create_texture ({ std::uint32_t (levels.width ()),
                                     std::uint32_t (levels.height ()),
                                     Format::rg32_float,
@@ -56,16 +56,16 @@ namespace moppe::nhal {
                                     "water levels" });
       std::vector<std::byte> bytes (levels.byte_size ());
       levels.write_into (bytes.data ());
-      m_device->write_texture (m_water_levels, bytes);
+      m_device->write_texture (m_water.levels, bytes);
     }
 
     void NhalRenderer::set_water_flow (const render::TexturePixels& flow) {
-      if (m_water_flow)
-        m_device->destroy (m_water_flow);
-      m_water_flow = {};
+      if (m_water.flow)
+        m_device->destroy (m_water.flow);
+      m_water.flow = {};
       if (flow.empty () || flow.format () != render::PixelFormat::rgba16f)
         return;
-      m_water_flow = m_device->create_texture ({ std::uint32_t (flow.width ()),
+      m_water.flow = m_device->create_texture ({ std::uint32_t (flow.width ()),
                                                  std::uint32_t (flow.height ()),
                                                  Format::rgba16_float,
                                                  usage_sampled,
@@ -73,26 +73,27 @@ namespace moppe::nhal {
                                                  "water flow" });
       std::vector<std::byte> bytes (flow.byte_size ());
       flow.write_into (bytes.data ());
-      m_device->write_texture (m_water_flow, bytes);
+      m_device->write_texture (m_water.flow, bytes);
     }
 
     void NhalRenderer::set_shore_surf (const render::TexturePixels& surf) {
-      if (m_shore_surf)
-        m_device->destroy (m_shore_surf);
-      m_shore_surf = {};
-      m_shore_size = {};
+      if (m_water.shore_surf)
+        m_device->destroy (m_water.shore_surf);
+      m_water.shore_surf = {};
+      m_water.shore_size = {};
       if (surf.empty () || surf.format () != render::PixelFormat::rgba16f)
         return;
-      m_shore_size = { float (surf.width ()), float (surf.height ()) };
-      m_shore_surf = m_device->create_texture ({ std::uint32_t (surf.width ()),
-                                                 std::uint32_t (surf.height ()),
-                                                 Format::rgba16_float,
-                                                 usage_sampled,
-                                                 1,
-                                                 "coastal surf" });
+      m_water.shore_size = { float (surf.width ()), float (surf.height ()) };
+      m_water.shore_surf =
+        m_device->create_texture ({ std::uint32_t (surf.width ()),
+                                    std::uint32_t (surf.height ()),
+                                    Format::rgba16_float,
+                                    usage_sampled,
+                                    1,
+                                    "coastal surf" });
       std::vector<std::byte> bytes (surf.byte_size ());
       surf.write_into (bytes.data ());
-      m_device->write_texture (m_shore_surf, bytes);
+      m_device->write_texture (m_water.shore_surf, bytes);
     }
 
     shaders::water::Sea NhalRenderer::sea_block (double time) {
@@ -131,10 +132,10 @@ namespace moppe::nhal {
       RenderPassDesc pass;
       pass.label = "scene beneath water";
       pass.color_count = 2;
-      pass.colors[0] = { m_beneath, Load::discard, Store::store };
-      pass.colors[1] = { m_beneath_depth, Load::discard, Store::store };
+      pass.colors[0] = { m_water.beneath, Load::discard, Store::store };
+      pass.colors[1] = { m_water.beneath_depth, Load::discard, Store::store };
       m_device->begin_render_pass (pass);
-      m_device->set_pipeline (m_scene_copy);
+      m_device->set_pipeline (m_water.scene_copy);
       m_device->set_texture (0, m_scene_color);
       m_device->set_texture (1, m_scene_depth);
       m_device->draw (3);
@@ -143,24 +144,25 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::draw_ocean (const render::OceanParams& params) {
-      if (!m_have_terrain || !m_water_levels || m_scene_closed)
+      if (!m_terrain.have || !m_water.levels || m_scene_closed)
         return;
       // A view of dry land needs neither the copy nor the pass's break.
       if (std::ranges::none_of (
-            m_chunks, [this] (const ChunkDraw& c) { return wet (c); }))
+            m_terrain.chunks, [this] (const ChunkDraw& c) { return wet (c); }))
         return;
       copy_beneath_water ();
-      m_device->set_pipeline (m_water);
+      m_device->set_pipeline (m_water.draw);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, terrain_block ());
       m_device->set_uniforms (3, sea_block (params.time));
-      m_device->set_texture (0, m_heights);
-      m_device->set_texture (8, m_shadow_map);
-      m_device->set_texture (11, m_water_levels);
-      m_device->set_texture (12, m_water_flow ? m_water_flow : m_still_water);
-      m_device->set_texture (13, m_beneath);
-      m_device->set_texture (14, m_beneath_depth);
-      m_device->set_texture (15, m_shore_surf ? m_shore_surf : m_still_water);
+      m_device->set_texture (0, m_terrain.heights);
+      m_device->set_texture (8, m_sun_shadow.map);
+      m_device->set_texture (11, m_water.levels);
+      m_device->set_texture (12, m_water.flow ? m_water.flow : m_water.still);
+      m_device->set_texture (13, m_water.beneath);
+      m_device->set_texture (14, m_water.beneath_depth);
+      m_device->set_texture (
+        15, m_water.shore_surf ? m_water.shore_surf : m_water.still);
       draw_chunks (true);
     }
 
@@ -170,7 +172,7 @@ namespace moppe::nhal {
       if (!m.vertices || m_scene_closed)
         return;
       open_scene ();
-      draw_runs ({}, m.vertices, m.runs, model, model, m_waterfall);
+      draw_runs ({}, m.vertices, m.runs, model, model, m_water.waterfall);
     }
   }
 }

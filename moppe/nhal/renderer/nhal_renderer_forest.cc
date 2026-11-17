@@ -106,8 +106,8 @@ namespace moppe::nhal {
       forest.fragment = m_shaders.forest[1];
       forest.cull = Cull::none;
       forest.label = "forest";
-      m_forest = m_device->create_render_pipeline (forest);
-      m_forest_cull =
+      m_forest.draw = m_device->create_render_pipeline (forest);
+      m_forest.cull =
         m_device->create_compute_pipeline ({ &shaders::forest_cull::program,
                                              m_shaders.forest_cull,
                                              "forest culling" });
@@ -116,13 +116,13 @@ namespace moppe::nhal {
       tree_caster.program = &shaders::forest_shadow::program;
       tree_caster.vertex = m_shaders.forest_shadow[0];
       tree_caster.label = "forest shadow";
-      m_forest_shadow = m_device->create_render_pipeline (tree_caster);
+      m_forest.shadow = m_device->create_render_pipeline (tree_caster);
       RenderPipelineDesc far_tree_caster = caster;
       far_tree_caster.program = &shaders::forest_far_shadow::program;
       far_tree_caster.vertex = m_shaders.forest_far_shadow[0];
       far_tree_caster.cull = Cull::none;
       far_tree_caster.label = "far forest shadow";
-      m_forest_far_shadow = m_device->create_render_pipeline (far_tree_caster);
+      m_forest.far_shadow = m_device->create_render_pipeline (far_tree_caster);
       {
         // The far casters' double cone: six faces up to the top (vertex
         // 0) and six down to the base (1) from the ring (2 to 7).
@@ -132,7 +132,7 @@ namespace moppe::nhal {
           const std::array<std::uint16_t, 6> faces { 0, a, b, 1, b, a };
           std::copy (faces.begin (), faces.end (), cone.begin () + 6 * side);
         }
-        m_far_tree_indices = m_device->create_buffer (
+        m_forest.far_indices = m_device->create_buffer (
           { .size = sizeof cone, .label = "far tree shadow cone" },
           std::as_bytes (std::span (cone)));
       }
@@ -142,22 +142,22 @@ namespace moppe::nhal {
       leaves.fragment = m_shaders.leaves[1];
       leaves.cull = Cull::none;
       leaves.label = "falling leaves";
-      m_leaves = m_device->create_render_pipeline (leaves);
+      m_forest.leaves = m_device->create_render_pipeline (leaves);
     }
 
     void NhalRenderer::set_forest (
       const render::ForestSetup& setup,
       std::span<const render::ForestInstance> instances) {
-      for (Buffer* b : { &m_trees,
-                         &m_tree_candidates,
-                         &m_tree_arguments,
-                         &m_shadow_candidates[0],
-                         &m_shadow_arguments[0],
-                         &m_shadow_candidates[1],
-                         &m_shadow_arguments[1] })
+      for (Buffer* b : { &m_forest.records,
+                         &m_forest.candidates,
+                         &m_forest.arguments,
+                         &m_forest.shadow_candidates[0],
+                         &m_forest.shadow_arguments[0],
+                         &m_forest.shadow_candidates[1],
+                         &m_forest.shadow_arguments[1] })
         if (*b)
           m_device->destroy (*b), *b = {};
-      m_tree_count = std::uint32_t (instances.size ());
+      m_forest.count = std::uint32_t (instances.size ());
       if (instances.empty ())
         return;
       const Vec3 forest_period = extent_value (setup.period);
@@ -186,41 +186,41 @@ namespace moppe::nhal {
                           bits (std::uint32_t (tree.age)),
                           0 });
       }
-      m_trees = m_device->create_buffer (
+      m_forest.records = m_device->create_buffer (
         { .size = rows.size () * 16, .label = "forest records" },
         std::as_bytes (std::span (rows)));
       // Every class can hold every tree, so the cull never overflows.
-      m_tree_candidates = m_device->create_buffer (
-        { .size = std::uint64_t (forest_classes) * m_tree_count * 8,
+      m_forest.candidates = m_device->create_buffer (
+        { .size = std::uint64_t (forest_classes) * m_forest.count * 8,
           .usage = buffer_storage_write,
           .label = "forest candidates" });
-      m_tree_arguments = m_device->create_buffer (
+      m_forest.arguments = m_device->create_buffer (
         { .size = forest_classes * sizeof (DrawIndexedIndirectArgs),
           .usage = buffer_storage_write | buffer_indirect,
           .label = "forest draws" });
       for (std::size_t cascade = 0; cascade < 2; ++cascade) {
-        m_shadow_candidates[cascade] = m_device->create_buffer (
-          { .size = std::uint64_t (forest_species) * m_tree_count * 8,
+        m_forest.shadow_candidates[cascade] = m_device->create_buffer (
+          { .size = std::uint64_t (forest_species) * m_forest.count * 8,
             .usage = buffer_storage_write,
             .label = "shadow tree candidates" });
-        m_shadow_arguments[cascade] = m_device->create_buffer (
+        m_forest.shadow_arguments[cascade] = m_device->create_buffer (
           { .size = forest_species * sizeof (DrawIndexedIndirectArgs),
             .usage = buffer_storage_write | buffer_indirect,
             .label = "shadow tree draws" });
       }
       const Vec3 period = extent_value (setup.period);
-      m_tree_period[0] = period[0];
-      m_tree_period[1] = period[2];
+      m_forest.period[0] = period[0];
+      m_forest.period[1] = period[2];
 
-      if (!m_tree_indices) {
+      if (!m_forest.indices) {
         std::vector<std::uint16_t> indices;
         for (std::uint32_t c = 0; c < forest_classes; ++c) {
-          m_tree_class_first[c] = std::uint32_t (indices.size ());
+          m_forest.class_first[c] = std::uint32_t (indices.size ());
           TreeTopology (c / forest_tiers, c % forest_tiers).triangles (indices);
-          m_tree_class_count[c] =
-            std::uint32_t (indices.size ()) - m_tree_class_first[c];
+          m_forest.class_count[c] =
+            std::uint32_t (indices.size ()) - m_forest.class_first[c];
         }
-        m_tree_indices = m_device->create_buffer (
+        m_forest.indices = m_device->create_buffer (
           { .size = indices.size () * 2, .label = "forest topology" },
           std::as_bytes (std::span (indices)));
       }
@@ -230,10 +230,10 @@ namespace moppe::nhal {
       const render::ForestSetup& setup,
       std::span<const render::ForestInstance> instances,
       const Vec3& period) {
-      for (Texture* t : { &m_closure, &m_litter })
+      for (Texture* t : { &m_forest.closure, &m_forest.litter })
         if (*t)
           m_device->destroy (*t), *t = {};
-      m_stand_inverse_period = { 0, 0 };
+      m_forest.stand_inverse_period = { 0, 0 };
       if (period[0] <= 0.0f || period[2] <= 0.0f)
         return {};
       const std::uint32_t size = std::uint32_t (std::clamp (
@@ -313,31 +313,32 @@ namespace moppe::nhal {
       for (std::size_t i = 0; i < blurred.size (); ++i)
         bytes[i] = std::uint8_t (
           std::lround (255.0f * std::clamp (blurred[i], 0.0f, 1.0f)));
-      m_closure = m_device->create_texture (
+      m_forest.closure = m_device->create_texture (
         { size, size, Format::r8_unorm, usage_sampled, 1, "canopy closure" });
-      m_device->write_texture (m_closure, std::as_bytes (std::span (bytes)));
+      m_device->write_texture (m_forest.closure,
+                               std::as_bytes (std::span (bytes)));
       if (setup.litter_size && !setup.litter.empty ()) {
-        m_litter = m_device->create_texture ({ setup.litter_size,
-                                               setup.litter_size,
-                                               Format::r8_unorm,
-                                               usage_sampled,
-                                               1,
-                                               "fallen leaves" });
-        m_device->write_texture (m_litter, std::as_bytes (setup.litter));
+        m_forest.litter = m_device->create_texture ({ setup.litter_size,
+                                                      setup.litter_size,
+                                                      Format::r8_unorm,
+                                                      usage_sampled,
+                                                      1,
+                                                      "fallen leaves" });
+        m_device->write_texture (m_forest.litter, std::as_bytes (setup.litter));
       }
-      m_stand_inverse_period = { 1.0f / period[0], 1.0f / period[2] };
+      m_forest.stand_inverse_period = { 1.0f / period[0], 1.0f / period[2] };
       return stands;
     }
 
     void NhalRenderer::bind_stand () {
-      m_device->set_texture (9, m_closure ? m_closure : m_white);
-      m_device->set_texture (10, m_litter ? m_litter : m_black);
+      m_device->set_texture (9, m_forest.closure ? m_forest.closure : m_white);
+      m_device->set_texture (10, m_forest.litter ? m_forest.litter : m_black);
     }
 
     std::array<float, 4> NhalRenderer::stand_field () const {
-      return { m_closure ? 1.0f : 0.0f,
-               m_stand_inverse_period[0],
-               m_stand_inverse_period[1],
+      return { m_forest.closure ? 1.0f : 0.0f,
+               m_forest.stand_inverse_period[0],
+               m_forest.stand_inverse_period[1],
                0 };
     }
 
@@ -346,7 +347,7 @@ namespace moppe::nhal {
                                    float height,
                                    bool shadow,
                                    std::size_t cascade) {
-      if (!m_tree_count)
+      if (!m_forest.count)
         return;
       auto row = [&] (int r) {
         return std::sqrt (view.element (r) * view.element (r) +
@@ -356,14 +357,14 @@ namespace moppe::nhal {
       shaders::forest_cull::Forest forest {};
       forest.view = matrix (view);
       forest.eye = lanes (eye);
-      forest.world = { m_tree_period[0],
-                       m_tree_period[1],
-                       float (m_tree_count),
-                       float (m_tree_count) };
+      forest.world = { m_forest.period[0],
+                       m_forest.period[1],
+                       float (m_forest.count),
+                       float (m_forest.count) };
       forest.cull = { row (0), row (1), row (3), height };
       forest.mode = { shadow ? 1.0f + float (cascade) : 0.0f, 0, 0, 0 };
       Transient& block =
-        shadow ? m_shadow_forest_block[cascade] : m_forest_block;
+        shadow ? m_forest.shadow_block[cascade] : m_forest.block;
       block = m_device->allocate (sizeof forest);
       std::memcpy (block.data, &forest, sizeof forest);
 
@@ -374,12 +375,14 @@ namespace moppe::nhal {
         if (shadow && cascade == render::LocalShadowParams::far)
           reset[c] = { far_tree_indices, 0, 0, 0, 0 };
         else if (topology < forest_classes)
-          reset[c] = {
-            m_tree_class_count[topology], 0, m_tree_class_first[topology], 0, 0
-          };
+          reset[c] = { m_forest.class_count[topology],
+                       0,
+                       m_forest.class_first[topology],
+                       0,
+                       0 };
       }
       const Buffer arguments =
-        shadow ? m_shadow_arguments[cascade] : m_tree_arguments;
+        shadow ? m_forest.shadow_arguments[cascade] : m_forest.arguments;
       m_device->copy_to_buffer (
         arguments,
         0,
@@ -387,45 +390,45 @@ namespace moppe::nhal {
           reset.data (), shadow ? forest_species : forest_classes)));
       m_device->begin_compute_pass (shadow ? "shadow tree culling"
                                            : "forest culling");
-      m_device->set_pipeline (m_forest_cull);
+      m_device->set_pipeline (m_forest.cull);
       m_device->set_buffer (1, block);
-      m_device->set_buffer (2, m_trees);
+      m_device->set_buffer (2, m_forest.records);
       m_device->set_buffer (
-        3, shadow ? m_shadow_candidates[cascade] : m_tree_candidates);
+        3, shadow ? m_forest.shadow_candidates[cascade] : m_forest.candidates);
       m_device->set_buffer (4, arguments);
-      m_device->dispatch ((m_tree_count + 63) / 64);
+      m_device->dispatch ((m_forest.count + 63) / 64);
       m_device->end_compute_pass ();
     }
 
     void NhalRenderer::draw_forest () {
-      if (!m_tree_count)
+      if (!m_forest.count)
         return;
       open_scene ();
-      m_device->set_pipeline (m_forest);
+      m_device->set_pipeline (m_forest.draw);
       m_device->set_buffer (0, m_frame_block);
-      m_device->set_buffer (1, m_forest_block);
-      m_device->set_buffer (3, m_trees);
-      m_device->set_buffer (4, m_tree_candidates);
-      m_device->set_texture (8, m_shadow_map);
+      m_device->set_buffer (1, m_forest.block);
+      m_device->set_buffer (3, m_forest.records);
+      m_device->set_buffer (4, m_forest.candidates);
+      m_device->set_texture (8, m_sun_shadow.map);
       for (std::uint32_t c = 0; c < forest_classes; ++c) {
         shaders::forest::Draw draw {};
-        draw.class_ = { float (c * m_tree_count), 0, 0, 0 };
+        draw.class_ = { float (c * m_forest.count), 0, 0, 0 };
         m_device->set_uniforms (2, draw);
-        m_device->draw_indexed_indirect (m_tree_indices,
+        m_device->draw_indexed_indirect (m_forest.indices,
                                          IndexType::uint16,
-                                         m_tree_arguments,
+                                         m_forest.arguments,
                                          c * sizeof (DrawIndexedIndirectArgs));
       }
     }
 
     void NhalRenderer::draw_falling_leaves () {
-      if (!m_have_terrain || !m_litter || m_scene_closed)
+      if (!m_terrain.have || !m_forest.litter || m_scene_closed)
         return;
       open_scene ();
       constexpr float cell_metres = 1.2f;
       constexpr int side = 64;
       const Vec3 camera = m_params.camera_pos;
-      const auto& t = m_terrain_params;
+      const auto& t = m_terrain.params;
       shaders::leaves::Leaves leaves {};
       leaves.window = { std::floor (camera[0] / cell_metres) - side / 2,
                         std::floor (camera[2] / cell_metres) - side / 2,
@@ -435,14 +438,14 @@ namespace moppe::nhal {
         1.0f / t.scale[0], 1.0f / t.scale[2], t.scale[1], float (t.width)
       };
       leaves.stand_field = { 1.0f,
-                             m_stand_inverse_period[0],
-                             m_stand_inverse_period[1],
+                             m_forest.stand_inverse_period[0],
+                             m_forest.stand_inverse_period[1],
                              0.5f * side * cell_metres };
-      m_device->set_pipeline (m_leaves);
+      m_device->set_pipeline (m_forest.leaves);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, leaves);
-      m_device->set_texture (0, m_heights);
-      m_device->set_texture (8, m_shadow_map);
+      m_device->set_texture (0, m_terrain.heights);
+      m_device->set_texture (8, m_sun_shadow.map);
       bind_stand ();
       m_device->draw (6, side * side);
     }

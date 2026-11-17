@@ -70,7 +70,7 @@ namespace moppe::nhal {
       if (m_scene_width != scene_width || m_scene_height != scene_height)
         make_scene_targets (scene_width, scene_height);
       m_params = params;
-      m_chunks.clear ();
+      m_terrain.chunks.clear ();
       m_scene_open = m_scene_begun = m_scene_closed = m_resolved = m_presented =
         false;
       const Mat4 view_proj = params.proj * params.view;
@@ -89,8 +89,8 @@ namespace moppe::nhal {
       frame.sun_specular = linear (params.sun_specular);
       frame.ambient = linear (params.ambient);
       frame.fog_color = linear (params.clear_color, params.fog_scale);
-      frame.relief = { m_terrain_params.sea_level,
-                       m_terrain_params.land_relief,
+      frame.relief = { m_terrain.params.sea_level,
+                       m_terrain.params.land_relief,
                        m_previous_time,
                        std::clamp (params.mist, 0.0f, 1.0f) };
       frame.view_right = lanes (params.cam_right * tan_x);
@@ -347,8 +347,11 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::make_drawable_targets () {
-      for (Texture t :
-           { m_history[0], m_history[1], m_blurred, m_bloom[0], m_bloom[1] })
+      for (Texture t : { m_history[0],
+                         m_history[1],
+                         m_post.blurred,
+                         m_post.bloom[0],
+                         m_post.bloom[1] })
         if (t)
           m_device->destroy (t);
       const render::Viewport view = viewport_pixels ();
@@ -362,12 +365,12 @@ namespace moppe::nhal {
                                         1,
                                         "temporal history" });
       // Made when a frame first blurs.
-      m_blurred = {};
-      m_bloom_width = std::max (1u, m_width / 4);
-      m_bloom_height = std::max (1u, m_height / 4);
-      for (Texture& t : m_bloom)
-        t = m_device->create_texture ({ m_bloom_width,
-                                        m_bloom_height,
+      m_post.blurred = {};
+      m_post.bloom_width = std::max (1u, m_width / 4);
+      m_post.bloom_height = std::max (1u, m_height / 4);
+      for (Texture& t : m_post.bloom)
+        t = m_device->create_texture ({ m_post.bloom_width,
+                                        m_post.bloom_height,
                                         Format::rgba16_float,
                                         usage_render_target | usage_sampled,
                                         1,
@@ -380,16 +383,16 @@ namespace moppe::nhal {
       for (Texture t : { m_scene_color,
                          m_scene_motion,
                          m_scene_depth,
-                         m_beneath,
-                         m_beneath_depth,
+                         m_water.beneath,
+                         m_water.beneath_depth,
                          m_bounds[0],
                          m_bounds[1],
-                         m_ao[0],
-                         m_ao[1],
-                         m_submerged })
+                         m_post.ao[0],
+                         m_post.ao[1],
+                         m_post.submerged })
         if (t)
           m_device->destroy (t);
-      m_submerged = {};
+      m_post.submerged = {};
       // The scene at its share of the drawable, upscaled temporally.
       m_scene_width = scene_width;
       m_scene_height = scene_height;
@@ -413,14 +416,14 @@ namespace moppe::nhal {
                                                   usage_depth | usage_sampled,
                                                   1,
                                                   "scene depth" });
-      m_beneath =
+      m_water.beneath =
         m_device->create_texture ({ m_scene_width,
                                     m_scene_height,
                                     Format::rgba16_float,
                                     usage_render_target | usage_sampled,
                                     1,
                                     "scene beneath water" });
-      m_beneath_depth =
+      m_water.beneath_depth =
         m_device->create_texture ({ m_scene_width,
                                     m_scene_height,
                                     Format::r32_float,
@@ -434,7 +437,7 @@ namespace moppe::nhal {
                                         usage_render_target | usage_sampled,
                                         1,
                                         "temporal neighbourhood" });
-      for (Texture& t : m_ao)
+      for (Texture& t : m_post.ao)
         t = m_device->create_texture ({ m_scene_width,
                                         m_scene_height,
                                         Format::r16_float,
@@ -494,7 +497,7 @@ namespace moppe::nhal {
       m_device->set_uniforms (0, present);
       m_device->set_buffer (1, m_exposure_value);
       m_device->set_texture (0, m_image);
-      m_device->set_texture (1, m_bloom[0]);
+      m_device->set_texture (1, m_post.bloom[0]);
       m_device->draw (3);
       m_presented = true;
     }

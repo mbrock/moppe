@@ -13,35 +13,36 @@ namespace moppe::nhal {
       mesh_caster.vertex = m_shaders.mesh_shadow[0];
       mesh_caster.cull = Cull::none;
       mesh_caster.label = "mesh shadow";
-      m_mesh_shadow = m_device->create_render_pipeline (mesh_caster);
+      m_sun_shadow.mesh = m_device->create_render_pipeline (mesh_caster);
       // The sun's two cascades side by side: near on the left, far on
       // the right.
-      m_shadow_map = m_device->create_texture ({ 2 * shadow_size,
-                                                 shadow_size,
-                                                 Format::d32_float,
-                                                 usage_depth | usage_sampled,
-                                                 1,
-                                                 "sun shadow" });
+      m_sun_shadow.map =
+        m_device->create_texture ({ 2 * shadow_size,
+                                    shadow_size,
+                                    Format::d32_float,
+                                    usage_depth | usage_sampled,
+                                    1,
+                                    "sun shadow" });
     }
 
     void NhalRenderer::begin_shadow_casters () {
-      m_casting = true;
-      m_casters.clear ();
+      m_sun_shadow.casting = true;
+      m_sun_shadow.casters.clear ();
     }
 
     void NhalRenderer::end_shadow_casters () {
-      m_casting = false;
+      m_sun_shadow.casting = false;
     }
 
     void NhalRenderer::render_local_shadow (
       const render::LocalShadowParams& params) {
-      if (!m_have_terrain || m_scene_open || m_scene_closed) {
-        m_casters.clear ();
+      if (!m_terrain.have || m_scene_open || m_scene_closed) {
+        m_sun_shadow.casters.clear ();
         return;
       }
       using Shadow = render::LocalShadowParams;
-      const bool trees = m_tree_count;
-      const bool rocks = m_rock_count;
+      const bool trees = m_forest.count;
+      const bool rocks = m_boulders.count;
       constexpr std::size_t cascades = 2;
       for (std::size_t c = 0; c < cascades; ++c) {
         const render::ShadowCascade& cascade = params.cascades[c];
@@ -59,7 +60,7 @@ namespace moppe::nhal {
 
       RenderPassDesc pass;
       pass.label = "sun shadow";
-      pass.depth = { m_shadow_map, Load::clear, Store::store, 1.0f };
+      pass.depth = { m_sun_shadow.map, Load::clear, Store::store, 1.0f };
       m_device->begin_render_pass (pass);
       for (std::size_t c = 0; c < cascades; ++c) {
         m_device->set_viewport (
@@ -68,7 +69,7 @@ namespace moppe::nhal {
           params.cascades[c], c, trees, rocks && c == Shadow::near);
       }
       m_device->end_render_pass ();
-      m_casters.clear ();
+      m_sun_shadow.casters.clear ();
 
       // Normalised light depth per metre, for biases given in metres:
       // a cascade's box runs from a quarter to eight times its reach.
@@ -78,7 +79,7 @@ namespace moppe::nhal {
       m_frame_values.sun_view = matrix (near.light_view_proj);
       m_frame_values.sun_view_far =
         matrix (params.cascades[Shadow::far].light_view_proj);
-      m_frame_values.shadow = { m_terrain_params.shadow_strength,
+      m_frame_values.shadow = { m_terrain.params.shadow_strength,
                                 1.0f / shadow_size,
                                 per_metre (near),
                                 per_metre (params.cascades[Shadow::far]) };
@@ -98,11 +99,11 @@ namespace moppe::nhal {
       const Transient caster_block = m_device->allocate (sizeof caster);
       std::memcpy (caster_block.data, &caster, sizeof caster);
 
-      m_device->set_pipeline (m_terrain_shadow);
+      m_device->set_pipeline (m_sun_shadow.terrain);
       m_device->set_buffer (0, caster_block);
       m_device->set_uniforms (1, terrain_block ());
-      m_device->set_texture (0, m_heights);
-      const auto& t = m_terrain_params;
+      m_device->set_texture (0, m_terrain.heights);
+      const auto& t = m_terrain.params;
       const int chunks_x = t.width / chunk_cells;
       const int chunks_z = t.height / chunk_cells;
       const float chunk_width = chunk_cells * t.scale[0];
@@ -138,47 +139,49 @@ namespace moppe::nhal {
                            wrap_z * chunks_z * chunk_depth,
                            0 };
           m_device->set_uniforms (2, chunk);
-          m_device->draw_indexed (
-            m_chunk_indices[lod], IndexType::uint32, m_chunk_index_count[lod]);
+          m_device->draw_indexed (m_terrain.chunk_indices[lod],
+                                  IndexType::uint32,
+                                  m_terrain.chunk_index_count[lod]);
         }
 
       if (trees) {
         const bool far = index == render::LocalShadowParams::far;
-        m_device->set_pipeline (far ? m_forest_far_shadow : m_forest_shadow);
+        m_device->set_pipeline (far ? m_forest.far_shadow : m_forest.shadow);
         m_device->set_buffer (0, caster_block);
-        m_device->set_buffer (1, m_shadow_forest_block[index]);
-        m_device->set_buffer (3, m_trees);
-        m_device->set_buffer (4, m_shadow_candidates[index]);
+        m_device->set_buffer (1, m_forest.shadow_block[index]);
+        m_device->set_buffer (3, m_forest.records);
+        m_device->set_buffer (4, m_forest.shadow_candidates[index]);
         for (std::uint32_t species = 0; species < forest_species; ++species) {
           shaders::forest_shadow::Draw draw {};
-          draw.class_ = { float (species * m_tree_count), 0, 0, 0 };
+          draw.class_ = { float (species * m_forest.count), 0, 0, 0 };
           m_device->set_uniforms (2, draw);
           m_device->draw_indexed_indirect (
-            far ? m_far_tree_indices : m_tree_indices,
+            far ? m_forest.far_indices : m_forest.indices,
             IndexType::uint16,
-            m_shadow_arguments[index],
+            m_forest.shadow_arguments[index],
             species * sizeof (DrawIndexedIndirectArgs));
         }
       }
-      if (index == render::LocalShadowParams::near && !m_casters.empty ())
+      if (index == render::LocalShadowParams::near &&
+          !m_sun_shadow.casters.empty ())
         draw_mesh_casters (caster_block);
       if (rocks) {
-        m_device->set_pipeline (m_boulders_shadow);
+        m_device->set_pipeline (m_boulders.shadow);
         m_device->set_buffer (0, caster_block);
-        m_device->set_buffer (1, m_rock_shadow_block);
-        m_device->set_buffer (3, m_rocks);
-        m_device->set_buffer (4, m_rock_shadow_candidates);
-        m_device->set_buffer (5, m_rock_corners);
+        m_device->set_buffer (1, m_boulders.shadow_block);
+        m_device->set_buffer (3, m_boulders.records);
+        m_device->set_buffer (4, m_boulders.shadow_candidates);
+        m_device->set_buffer (5, m_boulders.corners);
         shaders::boulders_shadow::Draw draw {};
         m_device->set_uniforms (2, draw);
         m_device->draw_indexed_indirect (
-          m_rock_indices, IndexType::uint16, m_rock_shadow_arguments);
+          m_boulders.indices, IndexType::uint16, m_boulders.shadow_arguments);
       }
     }
 
     void NhalRenderer::draw_mesh_casters (const Transient& caster_block) {
-      m_device->set_pipeline (m_mesh_shadow);
-      for (const Caster& c : m_casters) {
+      m_device->set_pipeline (m_sun_shadow.mesh);
+      for (const SunShadowState::Caster& c : m_sun_shadow.casters) {
         shaders::mesh_shadow::Draw draw {};
         draw.model = matrix (c.model);
         draw.previous_model = draw.model;

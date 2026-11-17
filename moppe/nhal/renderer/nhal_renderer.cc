@@ -50,19 +50,19 @@ namespace moppe::nhal {
         { 1, 1, Format::rgba8_unorm, usage_sampled, 1, "clear" });
       m_device->write_texture (m_clear, std::as_bytes (std::span (clear)));
       const render::GroundDetail detail = render::make_ground_detail ();
-      m_ground_detail = m_device->create_texture ({ render::GroundDetail::size,
-                                                    render::GroundDetail::size,
-                                                    Format::rgba8_unorm,
-                                                    usage_sampled,
-                                                    1,
-                                                    "ground detail" });
-      m_device->write_texture (m_ground_detail,
+      m_terrain.detail = m_device->create_texture ({ render::GroundDetail::size,
+                                                     render::GroundDetail::size,
+                                                     Format::rgba8_unorm,
+                                                     usage_sampled,
+                                                     1,
+                                                     "ground detail" });
+      m_device->write_texture (m_terrain.detail,
                                std::as_bytes (std::span (detail.pixels)));
       // No current at all, for water drawn before (or without) a flow.
       const std::uint16_t still[4] = { 0, 0, 0, 0 };
-      m_still_water = m_device->create_texture (
+      m_water.still = m_device->create_texture (
         { 1, 1, Format::rgba16_float, usage_sampled, 1, "still water" });
-      m_device->write_texture (m_still_water,
+      m_device->write_texture (m_water.still,
                                std::as_bytes (std::span (still)));
       std::cerr << "moppe: NHAL renderer on " << m_device->info ().backend
                 << " (" << m_device->info ().adapter << ")" << std::endl;

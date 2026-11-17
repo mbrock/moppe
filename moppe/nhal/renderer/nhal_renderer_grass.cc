@@ -13,7 +13,7 @@ namespace moppe::nhal {
       grass.fragment = m_shaders.grass[1];
       grass.cull = Cull::none;
       grass.label = "grass";
-      m_grass_pipeline = m_device->create_render_pipeline (grass);
+      m_grass.blades = m_device->create_render_pipeline (grass);
       RenderPipelineDesc sward = grass;
       sward.program = &shaders::sward::program;
       sward.vertex = m_shaders.sward[0];
@@ -21,39 +21,40 @@ namespace moppe::nhal {
       sward.blend[0] = Blend::alpha;
       sward.depth_write = false;
       sward.label = "sward canopy";
-      m_sward_pipeline = m_device->create_render_pipeline (sward);
-      m_sward_patches_pipeline =
+      m_grass.sward = m_device->create_render_pipeline (sward);
+      m_grass.sward_patches_pipeline =
         m_device->create_compute_pipeline ({ &shaders::sward_patches::program,
                                              m_shaders.sward_patches,
                                              "sward patches" });
-      m_grass_tiles_pipeline =
+      m_grass.tiles_pipeline =
         m_device->create_compute_pipeline ({ &shaders::grass_tiles::program,
                                              m_shaders.grass_tiles,
                                              "grass tiles" });
     }
 
     void NhalRenderer::set_sward_texture (render::TexturePtr grain) {
-      m_grass = grain;
+      m_grass.grain = grain;
     }
 
     void NhalRenderer::cull_grass (const Mat4& view_proj,
                                    const FrameParams& params) {
-      m_grass_culled = false;
-      if (!m_grass_wanted || !m_have_terrain || !m_landscape || !m_ground)
+      m_grass.culled = false;
+      if (!m_grass.wanted || !m_terrain.have || !m_terrain.landscape ||
+          !m_terrain.ground)
         return;
       constexpr float tile = 0.60f;
       constexpr std::uint32_t shoots = 32, indices_per_shoot = 18;
-      const float reach = std::max (m_grass_params.reach, 1.0f) * 1.7f;
+      const float reach = std::max (m_grass.params.reach, 1.0f) * 1.7f;
       const std::uint32_t side = std::min (
         std::uint32_t (std::ceil (2.0f * reach / tile)), grass_window_side);
-      if (!m_grass_tiles) {
+      if (!m_grass.tiles) {
         // A word a tile, and room in every class for the whole window.
-        m_grass_tiles = m_device->create_buffer (
+        m_grass.tiles = m_device->create_buffer (
           { .size = std::uint64_t (grass_classes) * grass_window_side *
                     grass_window_side * 4,
             .usage = buffer_storage_write,
             .label = "grass tiles" });
-        m_grass_arguments = m_device->create_buffer (
+        m_grass.arguments = m_device->create_buffer (
           { .size = grass_classes * sizeof (DrawIndexedIndirectArgs),
             .usage = buffer_storage_write | buffer_indirect,
             .label = "grass draw" });
@@ -69,15 +70,15 @@ namespace moppe::nhal {
                               std::uint16_t (c + 3),
                               std::uint16_t (c + 2) });
           }
-        m_grass_indices = m_device->create_buffer (
+        m_grass.indices = m_device->create_buffer (
           { .size = indices.size () * 2, .label = "grass blades" },
           std::as_bytes (std::span (indices)));
 
-        m_sward_patches = m_device->create_buffer (
+        m_grass.sward_patches = m_device->create_buffer (
           { .size = std::uint64_t (sward_window_side) * sward_window_side * 8,
             .usage = buffer_storage_write,
             .label = "sward patches" });
-        m_sward_arguments = m_device->create_buffer (
+        m_grass.sward_arguments = m_device->create_buffer (
           { .size = sizeof (DrawIndexedIndirectArgs),
             .usage = buffer_storage_write | buffer_indirect,
             .label = "sward draw" });
@@ -90,11 +91,11 @@ namespace moppe::nhal {
             const std::uint16_t d = std::uint16_t (c + 1);
             grid.insert (grid.end (), { a, c, b, b, c, d });
           }
-        m_sward_indices = m_device->create_buffer (
+        m_grass.sward_indices = m_device->create_buffer (
           { .size = grid.size () * 2, .label = "sward patch" },
           std::as_bytes (std::span (grid)));
       }
-      const auto& t = m_terrain_params;
+      const auto& t = m_terrain.params;
       shaders::grass::Grass grass {};
       grass.window = { std::floor ((params.camera_pos[0] - reach) / tile),
                        std::floor ((params.camera_pos[2] - reach) / tile),
@@ -105,24 +106,24 @@ namespace moppe::nhal {
       };
       const float focal =
         0.5f * float (m_scene_height) * std::abs (params.proj.at (1, 1));
-      grass.habitat = { reach, m_grass_params.density, t.tex_scale, focal };
+      grass.habitat = { reach, m_grass.params.density, t.tex_scale, focal };
       grass.stand_field = stand_field ();
-      grass.bare = { m_grass_params.bare_centre[0],
-                     m_grass_params.bare_centre[2],
-                     m_grass_params.bare_along[0],
-                     m_grass_params.bare_along[2] };
+      grass.bare = { m_grass.params.bare_centre[0],
+                     m_grass.params.bare_centre[2],
+                     m_grass.params.bare_along[0],
+                     m_grass.params.bare_along[2] };
       grass.bare_size = {
-        m_grass_params.bare_half_x, m_grass_params.bare_half_z, 0.0f, 0.0f
+        m_grass.params.bare_half_x, m_grass.params.bare_half_z, 0.0f, 0.0f
       };
-      grass.yard = { m_grass_params.yard_centre[0],
-                     m_grass_params.yard_centre[2],
-                     m_grass_params.yard_along[0],
-                     m_grass_params.yard_along[2] };
-      grass.yard_size = { m_grass_params.yard_half_x,
-                          m_grass_params.yard_half_z,
-                          m_grass_params.yard_margin,
+      grass.yard = { m_grass.params.yard_centre[0],
+                     m_grass.params.yard_centre[2],
+                     m_grass.params.yard_along[0],
+                     m_grass.params.yard_along[2] };
+      grass.yard_size = { m_grass.params.yard_half_x,
+                          m_grass.params.yard_half_z,
+                          m_grass.params.yard_margin,
                           0.0f };
-      m_grass_block = grass;
+      m_grass.block = grass;
 
       // The canopy's reach follows the projected height of the whole
       // sward, so looking down from the glider asks the same image-space
@@ -148,60 +149,62 @@ namespace moppe::nhal {
       };
       sward.habitat[0] = canopy_reach;
       sward.interaction = { row (0), row (1), 0, 0 };
-      m_sward_block = sward;
+      m_grass.sward_block = sward;
 
       std::array<DrawIndexedIndirectArgs, grass_classes> reset {};
       for (std::uint32_t c = 0; c < grass_classes; ++c)
         reset[c] = { (1u << c) * indices_per_shoot, 0, 0, 0, 0 };
       m_device->copy_to_buffer (
-        m_grass_arguments,
+        m_grass.arguments,
         0,
         m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)));
       m_device->begin_compute_pass ("grass tiles");
-      m_device->set_pipeline (m_grass_tiles_pipeline);
+      m_device->set_pipeline (m_grass.tiles_pipeline);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, grass);
-      m_device->set_buffer (2, m_grass_tiles);
-      m_device->set_buffer (3, m_grass_arguments);
+      m_device->set_buffer (2, m_grass.tiles);
+      m_device->set_buffer (3, m_grass.arguments);
       m_device->set_uniforms (4, terrain_block ());
       bind_roads (5);
-      m_device->set_texture (0, m_heights);
-      m_device->set_texture (1, m_normals);
-      m_device->set_texture (6, m_landscape);
-      m_device->set_texture (7, m_ground);
-      m_device->set_texture (5, m_plants ? m_plants : m_clear);
-      m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
-      m_device->set_texture (11, m_scars ? m_scars : m_clear);
-      m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
+      m_device->set_texture (0, m_terrain.heights);
+      m_device->set_texture (1, m_terrain.normals);
+      m_device->set_texture (6, m_terrain.landscape);
+      m_device->set_texture (7, m_terrain.ground);
+      m_device->set_texture (5, m_terrain.plants ? m_terrain.plants : m_clear);
+      m_device->set_texture (
+        4, m_terrain.more_plants ? m_terrain.more_plants : m_clear);
+      m_device->set_texture (11, m_terrain.scars ? m_terrain.scars : m_clear);
+      m_device->set_texture (12,
+                             m_terrain.bedrock ? m_terrain.bedrock : m_clear);
       bind_stand ();
       m_device->dispatch ((side * side + 63) / 64);
       m_device->end_compute_pass ();
 
       const DrawIndexedIndirectArgs sward_reset { 96, 0, 0, 0, 0 };
       m_device->copy_to_buffer (
-        m_sward_arguments,
+        m_grass.sward_arguments,
         0,
         m_device->upload (
           std::span<const DrawIndexedIndirectArgs> (&sward_reset, 1)));
       m_device->begin_compute_pass ("sward patches");
-      m_device->set_pipeline (m_sward_patches_pipeline);
+      m_device->set_pipeline (m_grass.sward_patches_pipeline);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, sward);
-      m_device->set_buffer (2, m_sward_patches);
-      m_device->set_buffer (3, m_sward_arguments);
-      m_device->set_texture (0, m_heights);
+      m_device->set_buffer (2, m_grass.sward_patches);
+      m_device->set_buffer (3, m_grass.sward_arguments);
+      m_device->set_texture (0, m_terrain.heights);
       m_device->dispatch ((patches * patches + 63) / 64);
       m_device->end_compute_pass ();
-      m_grass_culled = true;
+      m_grass.culled = true;
     }
 
     void
     NhalRenderer::draw_undergrowth (const render::UndergrowthParams& params) {
       // This frame draws the tiles begin_frame chose with the last
       // parameters; the next frame's cull takes these.
-      m_grass_params = params;
-      m_grass_wanted = true;
-      if (!m_grass_culled)
+      m_grass.params = params;
+      m_grass.wanted = true;
+      if (!m_grass.culled)
         return;
       open_scene ();
       // The canopy first: translucent, it blends over the ground it sits
@@ -211,55 +214,35 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::draw_sward () {
-      m_device->set_pipeline (m_sward_pipeline);
+      m_device->set_pipeline (m_grass.sward);
       m_device->set_buffer (0, m_frame_block);
-      m_device->set_uniforms (1, m_sward_block);
-      m_device->set_buffer (2, m_sward_patches);
+      m_device->set_uniforms (1, m_grass.sward_block);
+      m_device->set_buffer (2, m_grass.sward_patches);
       m_device->set_uniforms (4, terrain_block ());
       bind_roads (5);
-      m_device->set_texture (0, m_heights);
-      m_device->set_texture (1, m_normals);
-      m_device->set_texture (2, texture_or_white (m_grass));
-      m_device->set_texture (3, m_ground_detail);
-      m_device->set_texture (6, m_landscape);
-      m_device->set_texture (7, m_ground);
-      m_device->set_texture (5, m_plants ? m_plants : m_clear);
-      m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
-      m_device->set_texture (11, m_scars ? m_scars : m_clear);
-      m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
-      m_device->set_texture (8, m_shadow_map);
-      bind_stand ();
+      m_device->set_texture (2, texture_or_white (m_grass.grain));
+      bind_ground_textures ();
       m_device->draw_indexed_indirect (
-        m_sward_indices, IndexType::uint16, m_sward_arguments);
+        m_grass.sward_indices, IndexType::uint16, m_grass.sward_arguments);
     }
 
     void NhalRenderer::draw_blades (const render::UndergrowthParams& params) {
-      shaders::grass::Grass grass = m_grass_block;
+      shaders::grass::Grass grass = m_grass.block;
       grass.interaction =
         lanes (params.interaction_position, params.interaction_radius);
-      m_device->set_pipeline (m_grass_pipeline);
+      m_device->set_pipeline (m_grass.blades);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, grass);
-      m_device->set_buffer (2, m_grass_tiles);
-      m_device->set_texture (0, m_heights);
-      m_device->set_texture (1, m_normals);
-      m_device->set_texture (3, m_ground_detail);
-      m_device->set_texture (6, m_landscape);
-      m_device->set_texture (7, m_ground);
-      m_device->set_texture (5, m_plants ? m_plants : m_clear);
-      m_device->set_texture (4, m_more_plants ? m_more_plants : m_clear);
-      m_device->set_texture (11, m_scars ? m_scars : m_clear);
-      m_device->set_texture (12, m_bedrock ? m_bedrock : m_clear);
-      m_device->set_texture (8, m_shadow_map);
-      bind_stand ();
+      m_device->set_buffer (2, m_grass.tiles);
+      bind_ground_textures ();
       const float tiles = grass.window[2] * grass.window[2];
       for (std::uint32_t c = 0; c < grass_classes; ++c) {
         shaders::grass::Draw draw {};
         draw.class_ = { float (c) * tiles, 0, 0, 0 };
         m_device->set_uniforms (3, draw);
-        m_device->draw_indexed_indirect (m_grass_indices,
+        m_device->draw_indexed_indirect (m_grass.indices,
                                          IndexType::uint16,
-                                         m_grass_arguments,
+                                         m_grass.arguments,
                                          c * sizeof (DrawIndexedIndirectArgs));
       }
     }

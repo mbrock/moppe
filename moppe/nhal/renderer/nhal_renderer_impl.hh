@@ -196,6 +196,112 @@ namespace moppe::nhal {
       }
     };
 
+    // -- each feature's state, its file's to manage -----------------------
+
+    // The terrain (nhal_renderer_terrain.cc): its height and normal
+    // textures, its material sheets, the chunks' strip templates per level
+    // and the chunks the game last placed, and the roads' segments, which
+    // the ground reads and the road ribbon lays again near the camera.
+    struct TerrainState {
+      Pipeline draw, ribbon;
+      render::TerrainParams params {};
+      bool have = false;
+      Texture heights, normals, detail;
+      Texture landscape, ground, plants, more_plants, scars, bedrock;
+      Buffer chunk_indices[lod_count], patch_indices[lod_count];
+      std::uint32_t chunk_index_count[lod_count] {};
+      std::uint32_t patch_index_count[lod_count] {};
+      std::vector<ChunkDraw> chunks;
+      render::Renderer::RoadSetup road_setup {};
+      Buffer road_rows, road_index, no_roads;
+      // The segments' rows on the CPU too, to choose those near the
+      // camera that the road ribbon lays again; and the ribbon's strips.
+      std::vector<std::array<float, 4>> road_segments;
+      Buffer ribbon_indices;
+      std::uint32_t ribbon_index_count = 0;
+    };
+
+    // The forest (nhal_renderer_forest.cc): the trees' records, the cull's
+    // candidates and indirect draws for the camera and for each of the
+    // sun's cascades, the classes' topology, and the stand's rasters.
+    struct ForestState {
+      Pipeline draw, cull, shadow, far_shadow, leaves;
+      Buffer far_indices;
+      Buffer records, candidates, arguments, indices;
+      std::uint32_t count = 0;
+      float period[2] {};
+      std::uint32_t class_first[forest_classes] {};
+      std::uint32_t class_count[forest_classes] {};
+      Transient block;
+      // Per cascade of the sun's map, culled before its pass begins.
+      std::array<Buffer, 2> shadow_candidates, shadow_arguments;
+      std::array<Transient, 2> shadow_block;
+      Texture closure, litter;
+      std::array<float, 2> stand_inverse_period {};
+    };
+
+    // The boulders (nhal_renderer_boulders.cc): their records, the cull's
+    // candidates and draws for the camera and the sun, and the icosahedron.
+    struct BoulderState {
+      Pipeline draw, shadow, cull;
+      Buffer records, candidates, arguments, shadow_candidates,
+        shadow_arguments, corners, faces, indices;
+      std::uint32_t count = 0;
+      float period[2] {};
+      Transient block, shadow_block;
+    };
+
+    // The undergrowth (nhal_renderer_grass.cc): the sward canopy's patches
+    // and the grass tiles the cull chose, and what the game last asked for.
+    struct GrassState {
+      Pipeline blades, tiles_pipeline, sward, sward_patches_pipeline;
+      render::TexturePtr grain;
+      Buffer sward_patches, sward_arguments, sward_indices;
+      shaders::grass::Grass sward_block {};
+      Buffer tiles, arguments, indices;
+      render::UndergrowthParams params {};
+      shaders::grass::Grass block {};
+      bool wanted = false, culled = false;
+    };
+
+    // The water (nhal_renderer_water.cc): its fields on the terrain grid,
+    // which patches hold any, and the opaque scene copied out beneath it.
+    struct WaterState {
+      Pipeline draw, waterfall, scene_copy;
+      Texture levels, flow, still, shore_surf;
+      std::array<float, 2> shore_size {};
+      std::vector<std::uint8_t> wet_patches;
+      Texture beneath, beneath_depth;
+    };
+
+    // The sun's shadow (nhal_renderer_shadow.cc): its two-cascade atlas,
+    // and the meshes lent to the next one (begin_shadow_casters).
+    struct SunShadowState {
+      struct Caster {
+        const NhalMesh* mesh;
+        Mat4 model;
+      };
+      Pipeline terrain, mesh;
+      Texture map;
+      std::vector<Caster> casters;
+      bool casting = false;
+    };
+
+    // The post effects (nhal_renderer_post.cc): their pipelines, the
+    // occlusion's and the bloom's targets, the smeared image, and what lies
+    // under the water's surface.
+    struct PostState {
+      Pipeline gtao, gtao_blur, gtao_apply, shafts;
+      Pipeline bloom_bright, bloom_blur, motion_blur, underwater;
+      shaders::gtao::Post block {};
+      Texture ao[2];
+      Texture bloom[2];
+      std::uint32_t bloom_width = 1, bloom_height = 1;
+      // The resolved image, smeared (apply_motion_blur).
+      Texture blurred;
+      Texture submerged;
+    };
+
     class NhalRenderer final : public render::Renderer {
     public:
       NhalRenderer (std::unique_ptr<Device> device,
@@ -308,6 +414,11 @@ namespace moppe::nhal {
 
       // What the terrain's programs, and the road ribbon's, read.
       void bind_ground ();
+
+      // The ground's textures as every program over it reads them: the
+      // heights and normals, the material sheets, the sun's shadow, and
+      // the stand.
+      void bind_ground_textures ();
 
       // The built roads' segments near the camera laid again as fine
       // strips over the terrain (road-ribbon in world.lisp), inside the
@@ -530,7 +641,7 @@ namespace moppe::nhal {
       std::array<float, 4> sun_glare () const;
 
       // The exposed scene's bright parts at a quarter of the drawable's
-      // size, blurred across and then down, ending in m_bloom[0].
+      // size, blurred across and then down, ending in m_post.bloom[0].
       void bloom (const shaders::present::Present& present);
 
       void open_present ();
@@ -541,46 +652,23 @@ namespace moppe::nhal {
       float m_aspect_limit = 0;
       // DeviceInfo::indices_count_from_first.
       bool m_first_vertex_counts;
-      Pipeline m_terrain, m_sky, m_resolve, m_neighbourhood, m_present, m_hud,
-        m_slug_text;
-      Pipeline m_forest, m_forest_cull, m_exposure;
-      Pipeline m_terrain_shadow, m_forest_shadow, m_forest_far_shadow;
-      Buffer m_far_tree_indices;
-      Texture m_shadow_map;
-      // Per cascade of the sun's map, culled before its pass begins.
-      std::array<Buffer, 2> m_shadow_candidates, m_shadow_arguments;
-      std::array<Transient, 2> m_shadow_forest_block;
+
+      TerrainState m_terrain;
+      ForestState m_forest;
+      BoulderState m_boulders;
+      GrassState m_grass;
+      WaterState m_water;
+      SunShadowState m_sun_shadow;
+      PostState m_post;
+
+      Pipeline m_sky, m_resolve, m_neighbourhood, m_present, m_hud, m_slug_text,
+        m_exposure, m_rain, m_world_text, m_world_labels_behind;
+      std::unordered_map<int, Pipeline> m_uber;
       FrameBlock m_frame_values {};
       Buffer m_exposure_value;
-      Buffer m_trees, m_tree_candidates, m_tree_arguments, m_tree_indices;
-      std::uint32_t m_tree_count = 0;
-      float m_tree_period[2] {};
-      std::uint32_t m_tree_class_first[forest_classes] {};
-      std::uint32_t m_tree_class_count[forest_classes] {};
-      Transient m_forest_block;
       render::TextList m_hud_text;
-      std::unordered_map<int, Pipeline> m_uber;
       // m_clear is zero in every lane: no plant of the field layer anywhere.
-      Texture m_white, m_black, m_clear, m_ground_detail;
-      Texture m_closure, m_litter;
-      std::array<float, 2> m_stand_inverse_period {};
-
-      render::TerrainParams m_terrain_params {};
-      bool m_have_terrain = false;
-      RoadSetup m_road_setup {};
-      Buffer m_road_rows, m_road_index, m_no_roads;
-      // The segments' rows on the CPU too, to choose those near the camera
-      // that the road ribbon lays again; and the ribbon's strips.
-      std::vector<std::array<float, 4>> m_road_segments;
-      Pipeline m_road_ribbon;
-      Buffer m_ribbon_indices;
-      std::uint32_t m_ribbon_index_count = 0;
-      Texture m_heights, m_normals, m_landscape, m_ground, m_plants,
-        m_more_plants, m_scars, m_bedrock;
-      render::TexturePtr m_grass;
-      Buffer m_chunk_indices[lod_count], m_patch_indices[lod_count];
-      std::uint32_t m_chunk_index_count[lod_count] {};
-      std::uint32_t m_patch_index_count[lod_count] {};
+      Texture m_white, m_black, m_clear;
 
       std::uint32_t m_width = 0, m_height = 0;
       std::uint32_t m_scene_width = 0, m_scene_height = 0;
@@ -589,49 +677,6 @@ namespace moppe::nhal {
       // The scene's neighbourhoods for the resolve: low and high bounds,
       // with the motion to follow in their fourth lanes.
       Texture m_bounds[2];
-      // The opaque scene copied out before the water: its colour and depth.
-      Texture m_beneath, m_beneath_depth;
-      Texture m_bloom[2];
-      Texture m_ao[2];
-      Pipeline m_water, m_leaves, m_waterfall, m_scene_copy;
-      Texture m_water_levels, m_water_flow, m_still_water, m_shore_surf;
-      std::array<float, 2> m_shore_size {};
-      Pipeline m_underwater;
-      Texture m_submerged;
-      std::vector<std::uint8_t> m_wet_patches;
-      std::vector<ChunkDraw> m_chunks;
-      Pipeline m_rain;
-      Pipeline m_mesh_shadow;
-      // The meshes lent to the next sun shadow (begin_shadow_casters).
-      struct Caster {
-        const NhalMesh* mesh;
-        Mat4 model;
-      };
-      std::vector<Caster> m_casters;
-      bool m_casting = false;
-      Pipeline m_boulders, m_boulders_shadow, m_boulder_cull;
-      Buffer m_rocks, m_rock_candidates, m_rock_arguments,
-        m_rock_shadow_candidates, m_rock_shadow_arguments, m_rock_corners,
-        m_rock_faces, m_rock_indices;
-      std::uint32_t m_rock_count = 0;
-      float m_rock_period[2] {};
-      Transient m_rock_block, m_rock_shadow_block;
-      Pipeline m_gtao, m_gtao_blur, m_gtao_apply, m_shafts_pipeline;
-      shaders::gtao::Post m_post_block {};
-      Pipeline m_grass_pipeline, m_grass_tiles_pipeline;
-      Pipeline m_sward_pipeline, m_sward_patches_pipeline;
-      Buffer m_sward_patches, m_sward_arguments, m_sward_indices;
-      shaders::grass::Grass m_sward_block {};
-      Buffer m_grass_tiles, m_grass_arguments, m_grass_indices;
-      render::UndergrowthParams m_grass_params {};
-      shaders::grass::Grass m_grass_block {};
-      bool m_grass_wanted = false, m_grass_culled = false;
-      std::uint32_t m_bloom_width = 1, m_bloom_height = 1;
-      Pipeline m_bloom_bright, m_bloom_blur;
-      Pipeline m_motion_blur;
-      Pipeline m_world_text, m_world_labels_behind;
-      // The resolved image, smeared (apply_motion_blur).
-      Texture m_blurred;
       Texture m_image;
 
       FrameParams m_params {};
