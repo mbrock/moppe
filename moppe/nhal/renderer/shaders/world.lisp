@@ -4456,43 +4456,84 @@
   (* (- 1.0 (blade-resolved pixels))
      (smoothstep 0.28 1.15 (feature-pixels 0.42 focal distance))))
 
-(define-shader sward-patches-compute
+;;; The patches in view, in the window's own order.  An atomic append
+;;; would order them as the GPU's threads happened to run, and the canopy
+;;; blends, so its overlaps would round differently from run to run.
+;;; SWARD-CELLS marks each cell in view and counts each group of 64;
+;;; SWARD-PATCHES then puts a marked cell after every marked cell before
+;;; it: the groups' counts before its own, then its own group's marks.
+(define-shader sward-cells-compute
     (:stage :compute
      :workgroup-size (64 1 1)
-     :inputs ((invocation :uvec3 :built-in :global-invocation-id))
+     :inputs ((invocation :uvec3 :built-in :global-invocation-id)
+              (local :uint :built-in :local-invocation-index))
+     :shared ((seen :uint 64))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (grass :uniform-block :binding 1 :members #.*grass*)
-                 (tiles :storage-buffer :binding 2 :element :uint
+                 (marks :storage-buffer :binding 2 :element :uint
                         :access :read-write)
                  (arguments :storage-buffer :binding 3 :element :uint
                             :access :read-write)
                  (heights :texture-2d :binding 0)))
   (let* ((index (swizzle invocation :x))
-         (side (uint (swizzle window :z))))
-    (when (< index (* side side))
-      (let* ((patch (swizzle window :w))
+         (side (uint (swizzle window :z)))
+         (cells (* side side))
+         (patch (swizzle window :w))
+         (cell (+ (swizzle window :xy)
+                  (vec2 (float (mod index side)) (float (/ index side)))))
+         (centre (* (+ cell (vec2 0.5 0.5)) patch))
+         (radius (+ (* 0.72 patch) 0.6))
+         (across (- centre (swizzle camera-position :xz)))
+         (height (sample-ground heights centre lattice))
+         (clip (* view-proj (vec4 (swizzle centre :x) (+ height 0.3)
+                                  (swizzle centre :y) 1.0)))
+         (w (swizzle clip :w))
+         (visible (and (< index cells)
+                       (< (sqrt (dot across across))
+                          (+ (swizzle habitat :x) radius))
+                       (> w (* -1.0 radius))
+                       (< (abs (swizzle clip :x))
+                          (+ w (* radius (swizzle interaction :x))))
+                       (< (abs (swizzle clip :y))
+                          (+ w (* radius (swizzle interaction :y))))))
+         (mark (if visible (uint 1) (uint 0))))
+    (set-shared-element seen local mark)
+    (workgroup-barrier)
+    (when (< index cells)
+      (set-buffer-element marks index mark))
+    (when (= local (uint 0))
+      (let* ((count (counted-fold (i (uint 64) total (uint 0))
+                      (+ total (shared-element seen i)))))
+        (set-buffer-element marks (+ cells (/ index (uint 64))) count)
+        (atomic-add arguments (uint 1) count)))))
+
+(define-shader-program sward-cells
+  :compute sward-cells-compute)
+
+(define-shader sward-patches-compute
+    (:stage :compute
+     :workgroup-size (64 1 1)
+     :inputs ((invocation :uvec3 :built-in :global-invocation-id))
+     :resources ((grass :uniform-block :binding 1 :members #.*grass*)
+                 (marks :storage-buffer :binding 2 :element :uint)
+                 (tiles :storage-buffer :binding 3 :element :uint
+                        :access :read-write)))
+  (let* ((index (swizzle invocation :x))
+         (side (uint (swizzle window :z)))
+         (cells (* side side)))
+    (when (and (< index cells) (> (buffer-element marks index) (uint 0)))
+      (let* ((group-index (/ index (uint 64)))
+             (group-start (* group-index (uint 64)))
+             (before (counted-fold (g group-index total (uint 0))
+                       (+ total (buffer-element marks (+ cells g)))))
+             (slot (counted-fold (j (- index group-start) total before)
+                     (+ total (buffer-element marks (+ group-start j)))))
              (cell (+ (swizzle window :xy)
                       (vec2 (float (mod index side)) (float (/ index side)))))
-             (centre (* (+ cell (vec2 0.5 0.5)) patch))
-             (radius (+ (* 0.72 patch) 0.6))
-             (across (- centre (swizzle camera-position :xz)))
-             (height (sample-ground heights centre lattice))
-             (clip (* view-proj (vec4 (swizzle centre :x) (+ height 0.3)
-                                      (swizzle centre :y) 1.0)))
-             (w (swizzle clip :w))
-             (visible (and (< (sqrt (dot across across))
-                              (+ (swizzle habitat :x) radius))
-                           (> w (* -1.0 radius))
-                           (< (abs (swizzle clip :x))
-                              (+ w (* radius (swizzle interaction :x))))
-                           (< (abs (swizzle clip :y))
-                              (+ w (* radius (swizzle interaction :y)))))))
-        (when visible
-          (let* ((slot (atomic-add arguments (uint 1) (uint 1)))
-                 (at (* slot (uint 2))))
-            (set-buffer-element tiles at (bit-cast :uint (swizzle cell :x)))
-            (set-buffer-element tiles (+ at (uint 1))
-                                (bit-cast :uint (swizzle cell :y)))))))))
+             (at (* slot (uint 2))))
+        (set-buffer-element tiles at (bit-cast :uint (swizzle cell :x)))
+        (set-buffer-element tiles (+ at (uint 1))
+                            (bit-cast :uint (swizzle cell :y)))))))
 
 (define-shader-program sward-patches
   :compute sward-patches-compute)

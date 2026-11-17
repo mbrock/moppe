@@ -51,7 +51,9 @@ where the list has as many, as meshes carry last frame's model matrix. A
 pixel that has moved less than a quarter of an output pixel takes half
 the new sample a moving one does (a twentieth), since at a still edge
 the share given to each frame's jittered sample is how far the picture
-steps.
+steps. A cut (`reset_temporal_state`, and the first frame of play after
+the loading screen) restarts the jitter's Halton sequence with the
+history, so a pinned capture does not hang on how many frames came first.
 
 So far it draws the terrain (vertex-pulled chunk strips morphing onto their
 parent levels, surfaced as below), a provisional sky, the game's draw lists and meshes through one "uber" program
@@ -186,12 +188,15 @@ buttercup, harebell, campion) claims shoots in open, damp sward, whose last
 two sections become a petal head that widens and washes toward its drift's
 colour as it retires.
 
-The mesoscale sward canopy is undergrowth.metal's middle rung: `sward-patches`
-keeps the 16-metre patches in view out to 180-1200 metres (the reach follows
-the sward's projected height), each an instance of a 4x4 grid lifted to the
-sward's height, drawn translucent before the blades. Its fragments march
-four samples down through the canopy column and integrate the leaf-normal
-distribution's radiance front to back, with the ground texture's grain, so
+The mesoscale sward canopy is undergrowth.metal's middle rung: `sward-cells`
+and `sward-patches` keep the 16-metre patches in view out to 180-1200 metres
+(the reach follows the sward's projected height), in the window's order
+rather than an atomic append's, since the canopy blends and its overlaps
+would otherwise round differently from run to run. Each is an instance of a
+4x4 grid lifted to the sward's height, drawn translucent before the blades.
+Its fragments march four samples down through the canopy column and
+integrate the leaf-normal distribution's radiance front to back, with the
+ground texture's grain, so
 fields read as grass to the horizon after single blades have retired.
 Ferns are not ported yet. The ground under the grass is the terrain's turf
 palette, as in Metal.

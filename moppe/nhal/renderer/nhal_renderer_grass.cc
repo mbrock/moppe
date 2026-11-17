@@ -22,6 +22,10 @@ namespace moppe::nhal {
       sward.depth_write = false;
       sward.label = "sward canopy";
       m_grass.sward = m_device->create_render_pipeline (sward);
+      m_grass.sward_cells_pipeline =
+        m_device->create_compute_pipeline ({ &shaders::sward_cells::program,
+                                             m_shaders.sward_cells,
+                                             "sward cells" });
       m_grass.sward_patches_pipeline =
         m_device->create_compute_pipeline ({ &shaders::sward_patches::program,
                                              m_shaders.sward_patches,
@@ -75,6 +79,12 @@ namespace moppe::nhal {
           { .size = indices.size () * 2, .label = "grass blades" },
           std::as_bytes (std::span (indices)));
 
+        constexpr std::uint32_t sward_cells =
+          sward_window_side * sward_window_side;
+        m_grass.sward_marks = m_device->create_buffer (
+          { .size = std::uint64_t (sward_cells + (sward_cells + 63) / 64) * 4,
+            .usage = buffer_storage_write,
+            .label = "sward cells" });
         m_grass.sward_patches = m_device->create_buffer (
           { .size = std::uint64_t (sward_window_side) * sward_window_side * 8,
             .usage = buffer_storage_write,
@@ -192,13 +202,20 @@ namespace moppe::nhal {
         0,
         m_device->upload (
           std::span<const DrawIndexedIndirectArgs> (&sward_reset, 1)));
-      m_device->begin_compute_pass ("sward patches");
-      m_device->set_pipeline (m_grass.sward_patches_pipeline);
+      m_device->begin_compute_pass ("sward cells");
+      m_device->set_pipeline (m_grass.sward_cells_pipeline);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, sward);
-      m_device->set_buffer (2, m_grass.sward_patches);
+      m_device->set_buffer (2, m_grass.sward_marks);
       m_device->set_buffer (3, m_grass.sward_arguments);
       m_device->set_texture (0, m_terrain.heights);
+      m_device->dispatch ((patches * patches + 63) / 64);
+      m_device->end_compute_pass ();
+      m_device->begin_compute_pass ("sward patches");
+      m_device->set_pipeline (m_grass.sward_patches_pipeline);
+      m_device->set_uniforms (1, sward);
+      m_device->set_buffer (2, m_grass.sward_marks);
+      m_device->set_buffer (3, m_grass.sward_patches);
       m_device->dispatch ((patches * patches + 63) / 64);
       m_device->end_compute_pass ();
       m_grass.culled = true;

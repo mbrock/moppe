@@ -254,9 +254,12 @@ namespace moppe::nhal {
     // The undergrowth (nhal_renderer_grass.cc): the sward canopy's patches
     // and the grass tiles the cull chose, and what the game last asked for.
     struct GrassState {
-      Pipeline blades, tiles_pipeline, sward, sward_patches_pipeline;
+      Pipeline blades, tiles_pipeline, sward, sward_cells_pipeline,
+        sward_patches_pipeline;
       render::TexturePtr grain;
-      Buffer sward_patches, sward_arguments, sward_indices;
+      // The cells in view and each 64's count, which put the patches in
+      // the window's order (world.lisp's SWARD-CELLS).
+      Buffer sward_marks, sward_patches, sward_arguments, sward_indices;
       shaders::grass::Grass sward_block {};
       Buffer tiles, arguments, indices;
       render::UndergrowthParams params {};
