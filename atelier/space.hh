@@ -44,7 +44,7 @@ namespace atelier {
   // Velocity is deliberately expressed from displacement and duration, so
   // integration and differentiation preserve these specifications naturally.
   inline constexpr struct normal_displacement
-      : quantity_spec<isq::length, mp_units::is_kind> {
+      : quantity_spec<isq::length, mp_units::subkind> {
   } normal_displacement;
   inline constexpr auto normal_velocity = normal_displacement / isq::duration;
   inline constexpr auto normal_acceleration = normal_velocity / isq::duration;

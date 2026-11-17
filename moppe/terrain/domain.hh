@@ -162,7 +162,7 @@ namespace moppe::terrain {
   }
 
   inline float surface_elevation_value (SurfaceElevation value) {
-    return value.quantity_from_zero ().numerical_value_in (u::m);
+    return value.delta_from_zero ().numerical_value_in (u::m);
   }
 
   // The metre numbers behind a run of elevation points, viewed in place.

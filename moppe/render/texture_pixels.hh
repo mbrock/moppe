@@ -169,7 +169,7 @@ namespace moppe::render {
     template <typename Value>
     float stored_scalar (const Value& value) {
       if constexpr (mp_units::QuantityPoint<Value>)
-        return value.quantity_from_zero ().numerical_value_in (Value::unit);
+        return value.delta_from_zero ().numerical_value_in (Value::unit);
       else
         return value.numerical_value_in (Value::unit);
     }

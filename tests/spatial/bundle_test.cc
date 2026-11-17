@@ -54,7 +54,7 @@ namespace {
     friend bool operator== (const SizedRing&, const SizedRing&) = default;
   };
 
-  QUANTITY_SPEC (test_displacement, mp_units::isq::length, mp_units::is_kind);
+  QUANTITY_SPEC (test_displacement, mp_units::isq::length, mp_units::subkind);
   inline constexpr auto test_velocity =
     test_displacement / mp_units::isq::duration;
   QUANTITY_SPEC (test_density, mp_units::dimensionless);

@@ -30,12 +30,12 @@ namespace lavoir {
   } number_of_units;
 
   inline constexpr struct number_of_grid_units
-      : quantity_spec<number_of_units, is_kind> {
+      : quantity_spec<number_of_units, subkind> {
   } number_of_grid_units;
 
   inline constexpr struct grid_offset
       : quantity_spec<number_of_grid_units,
-                      is_kind,
+                      subkind,
                       quantity_tensor_order::vector> {
   } grid_offset;
 

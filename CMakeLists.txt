@@ -119,9 +119,9 @@ set(MP_UNITS_API_CONTRACTS NONE CACHE STRING
 FetchContent_Declare(mp-units
 #Pinned to master(post - v2.5.0, pre - v2.6.0) for cartesian_vector / tensor
 #and the reworked representation - concepts machinery.
-  URL https://github.com/mpusz/mp-units/archive/bb86582ec2561419bc461a5ce7df01328ba08ea1.tar.gz
+  URL https://github.com/mpusz/mp-units/archive/f9016a280dcd62a040fa96df762241d6c8d9f633.tar.gz
   URL_HASH
-    SHA256=eb78dbc19c65d5954d31b78149936ca46f2eafb5e5f9c2b1e58f583fcf6705ea
+    SHA256=84127fb457846c4e8391fb485084326b8b91671bab9b2ce377c52c3bb2dafc71
   SOURCE_SUBDIR src
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(mp-units)

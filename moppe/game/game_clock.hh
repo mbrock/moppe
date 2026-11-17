@@ -43,11 +43,11 @@ namespace moppe::game {
   // The same as plain numbers, for what reads time as one: the shaders'
   // time, a sway's phase, the almanac and the weather.
   constexpr double seconds_into_play (play_time_t t) {
-    return t.quantity_from (play_began)
+    return t.delta_from (play_began)
       .numerical_value_in (mp_units::si::second);
   }
   constexpr double hours_since_midnight (clock_time_t t) {
-    return t.quantity_from (first_midnight)
+    return t.delta_from (first_midnight)
       .numerical_value_in (mp_units::si::hour);
   }
 

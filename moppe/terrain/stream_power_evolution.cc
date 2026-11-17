@@ -118,7 +118,7 @@ namespace moppe::terrain {
       check_stream_power_evolution_parameters (parameters);
 
       for (const auto& elevation : elevations)
-        if (!isfinite (elevation.quantity_from_zero ()))
+        if (!isfinite (elevation.delta_from_zero ()))
           throw std::invalid_argument ("elevation must be finite");
 
       for (const auto& uplift : uplift_rate)

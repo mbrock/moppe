@@ -31,7 +31,7 @@ namespace {
     !std::convertible_to<moppe::map::TreeHabitat, moppe::map::ForestCover>);
 
   float elevation_value (const moppe::map::SurfaceElevation& elevation) {
-    return elevation.quantity_from_zero ().numerical_value_in (moppe::u::m);
+    return elevation.delta_from_zero ().numerical_value_in (moppe::u::m);
   }
 
   moppe::Vec3 normal_value (const moppe::map::SurfaceNormal& normal) {

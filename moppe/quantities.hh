@@ -76,7 +76,7 @@ namespace moppe {
   QUANTITY_SPEC (rate_of_climb_speed,
                  mp_units::isq::speed,
                  mp_units::isq::height / mp_units::isq::duration);
-  QUANTITY_SPEC (airspeed, mp_units::isq::speed, mp_units::is_kind);
+  QUANTITY_SPEC (airspeed, mp_units::isq::speed, mp_units::subkind);
   QUANTITY_SPEC (glide_ratio,
                  mp_units::dimensionless,
                  airspeed / rate_of_climb_speed,
@@ -96,22 +96,22 @@ namespace moppe::terrain {
   // Numbers of entities are quantities of dimension one.  Distinct kinds
   // preserve their algebra while preventing unrelated counts from mixing.
 
-  QUANTITY_SPEC (cell_count, mp_units::dimensionless, mp_units::is_kind);
-  QUANTITY_SPEC (reach_count, mp_units::dimensionless, mp_units::is_kind);
-  QUANTITY_SPEC (iteration_count, mp_units::dimensionless, mp_units::is_kind);
+  QUANTITY_SPEC (cell_count, mp_units::dimensionless, mp_units::subkind);
+  QUANTITY_SPEC (reach_count, mp_units::dimensionless, mp_units::subkind);
+  QUANTITY_SPEC (iteration_count, mp_units::dimensionless, mp_units::subkind);
   QUANTITY_SPEC (separation_cell_count,
                  mp_units::dimensionless,
-                 mp_units::is_kind);
+                 mp_units::subkind);
 
   // ---- Ground ----
 
   // A point in the world's vertical reference frame. Terrain storage uses
   // metres directly; differences between elevations are ordinary lengths.
-  QUANTITY_SPEC (surface_elevation, mp_units::isq::height, mp_units::is_kind);
+  QUANTITY_SPEC (surface_elevation, mp_units::isq::height, mp_units::subkind);
   QUANTITY_SPEC (terrain_normal,
                  mp_units::dimensionless,
                  mp_units::quantity_tensor_order::vector,
-                 mp_units::is_kind);
+                 mp_units::subkind);
   QUANTITY_SPEC (terrain_slope,
                  mp_units::dimensionless,
                  mp_units::non_negative);
@@ -125,7 +125,7 @@ namespace moppe::terrain {
   // water and be nothing alike to stand on, which surface_moisture cannot
   // say and a plant cares about more than anything else.
   QUANTITY_SPEC (soil_wetness, proportion);
-  QUANTITY_SPEC (waterline_distance, mp_units::isq::length, mp_units::is_kind);
+  QUANTITY_SPEC (waterline_distance, mp_units::isq::length, mp_units::subkind);
   QUANTITY_SPEC (standing_water_depth,
                  mp_units::isq::length,
                  mp_units::non_negative);
@@ -133,7 +133,7 @@ namespace moppe::terrain {
   QUANTITY_SPEC (water_velocity,
                  mp_units::isq::speed,
                  mp_units::quantity_tensor_order::vector,
-                 mp_units::is_kind);
+                 mp_units::subkind);
 
   // ---- Drainage ----
 
@@ -148,7 +148,7 @@ namespace moppe::terrain {
                  mp_units::non_negative);
   QUANTITY_SPEC (drainage_direction,
                  mp_units::angular::angle,
-                 mp_units::is_kind);
+                 mp_units::subkind);
   QUANTITY_SPEC (fractional_contributing_area,
                  mp_units::isq::area,
                  mp_units::non_negative);
@@ -159,7 +159,7 @@ namespace moppe::terrain {
   QUANTITY_SPEC (channel_tangent,
                  mp_units::dimensionless,
                  mp_units::quantity_tensor_order::vector,
-                 mp_units::is_kind);
+                 mp_units::subkind);
 
   // Contributing area carried in the channel-tangent direction. The arcs in
   // FractionalFlowDomain are the edge-like transport object; this cell-aligned
@@ -167,11 +167,11 @@ namespace moppe::terrain {
   QUANTITY_SPEC (channel_area_flux,
                  mp_units::isq::area,
                  mp_units::quantity_tensor_order::vector,
-                 mp_units::is_kind);
+                 mp_units::subkind);
   QUANTITY_SPEC (channel_persistence,
                  mp_units::dimensionless,
                  mp_units::non_negative,
-                 mp_units::is_kind);
+                 mp_units::subkind);
 
   // ---- Geology ----
 
@@ -191,7 +191,7 @@ namespace moppe::terrain {
   QUANTITY_SPEC (sediment_concentration,
                  mp_units::dimensionless,
                  mp_units::non_negative,
-                 mp_units::is_kind);
+                 mp_units::subkind);
 
   // ---- Human use ----
 
@@ -287,7 +287,7 @@ namespace moppe::game {
   QUANTITY_SPEC (tree_size_factor,
                  mp_units::dimensionless,
                  mp_units::non_negative,
-                 mp_units::is_kind);
+                 mp_units::subkind);
 }
 
 #endif

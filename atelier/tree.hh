@@ -150,10 +150,10 @@ namespace atelier {
   inline constexpr struct bud_vigor : quantity_spec<mp_units::dimensionless> {
   } bud_vigor;
   inline constexpr struct branch_rest_length
-      : quantity_spec<isq::length, mp_units::is_kind> {
+      : quantity_spec<isq::length, mp_units::subkind> {
   } branch_rest_length;
   inline constexpr struct branch_radius
-      : quantity_spec<isq::length, mp_units::is_kind> {
+      : quantity_spec<isq::length, mp_units::subkind> {
   } branch_radius;
   inline constexpr struct branch_flexibility
       : quantity_spec<mp_units::dimensionless> {

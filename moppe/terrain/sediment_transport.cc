@@ -135,7 +135,7 @@ namespace moppe::terrain {
         throw std::invalid_argument (
           "hillslope transport parameters are outside their physical range");
       for (std::size_t cell = 0; cell < domain.size (); ++cell) {
-        if (!mp_units::isfinite (elevations[cell].quantity_from_zero ()))
+        if (!mp_units::isfinite (elevations[cell].delta_from_zero ()))
           throw std::invalid_argument ("hillslope elevations must be finite");
         if (!mp_units::isfinite (sediment[cell]) ||
             sediment[cell] < SedimentThickness::zero ())
@@ -516,7 +516,7 @@ namespace moppe::terrain {
     std::vector<double> distributed_m3 (count);
     std::vector<double> working_height_m (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
-      if (!mp_units::isfinite (elevations[cell].quantity_from_zero ()) ||
+      if (!mp_units::isfinite (elevations[cell].delta_from_zero ()) ||
           !mp_units::isfinite (contributing_areas[cell]) ||
           contributing_areas[cell] < FractionalContributingArea::zero () ||
           !mp_units::isfinite (channel_tangents[cell].magnitude ()))

@@ -957,7 +957,7 @@ namespace moppe::map {
       const auto ground = geometry[site];
       const auto ground_normal = get<terrain::terrain_normal> (ground);
       const auto ground_level =
-        get<terrain::surface_elevation> (ground).quantity_from_zero ();
+        get<terrain::surface_elevation> (ground).delta_from_zero ();
 
       const auto ground_horizontality = dot (ground_normal, world_up);
 

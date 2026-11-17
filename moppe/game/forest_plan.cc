@@ -180,7 +180,7 @@ namespace moppe::game {
                                 meters_t z) {
       return position (
         Vec3 (x.numerical_value_in (u::m),
-              elevation.quantity_from_zero ().numerical_value_in (u::m),
+              elevation.delta_from_zero ().numerical_value_in (u::m),
               z.numerical_value_in (u::m)));
     }
 

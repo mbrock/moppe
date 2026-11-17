@@ -34,7 +34,7 @@ namespace {
     friend bool operator== (const StoredRing&, const StoredRing&) = default;
   };
 
-  QUANTITY_SPEC (stored_displacement, mp_units::isq::length, mp_units::is_kind);
+  QUANTITY_SPEC (stored_displacement, mp_units::isq::length, mp_units::subkind);
   QUANTITY_SPEC (stored_density, mp_units::dimensionless);
 
   using StoredDisplacement = quantity<stored_displacement[u::m], float>;
@@ -46,11 +46,11 @@ namespace {
   QUANTITY_SPEC (stored_direction,
                  mp_units::dimensionless,
                  mp_units::quantity_tensor_order::vector,
-                 mp_units::is_kind);
+                 mp_units::subkind);
   using StoredDirection = quantity<stored_direction[one], Vec3>;
   using StoredVectorBundle = spatial::Bundle<StoredRing, StoredDirection>;
 
-  QUANTITY_SPEC (stored_duration, mp_units::isq::duration, mp_units::is_kind);
+  QUANTITY_SPEC (stored_duration, mp_units::isq::duration, mp_units::subkind);
   using StoredDuration = quantity<stored_duration[u::s], float>;
   using StoredWrongUnitsBundle =
     spatial::Bundle<StoredRing, StoredDuration, StoredDensity>;

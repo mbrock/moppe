@@ -347,7 +347,7 @@ namespace moppe {
         spatial::sample<terrain::surface_elevation> (
           surface (),
           position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
-          .quantity_from_zero ()
+          .delta_from_zero ()
           .numerical_value_in (u::m);
       session ().bike ().reset (
         Vec3 (m_spawn_position[0], ground + 1.2f, m_spawn_position[2]));
