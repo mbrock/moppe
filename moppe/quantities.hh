@@ -399,6 +399,19 @@ namespace moppe::game {
   // vegetation proportions until the renderer narrows it to a GPU lane.
   QUANTITY_SPEC (cloud_cover, proportion);
 
+  // ---- The rider ----
+
+  // How much harm the rider can still take, counted in points: a hundred
+  // when whole, none when a life is lost. A crash may take it below
+  // nothing for a moment, so it is not a proportion of anything.
+  QUANTITY_SPEC (health, mp_units::dimensionless, mp_units::subkind);
+
+  // ---- Fishing ----
+
+  // How far a fish on the line twists to one side (positive) or the
+  // other, as a share of its fullest bend: signed, so not a proportion.
+  QUANTITY_SPEC (wriggle, mp_units::dimensionless, mp_units::subkind);
+
   // ---- Organisms ----
 
   // A tree's size relative to the species' mature representative. Unlike a
