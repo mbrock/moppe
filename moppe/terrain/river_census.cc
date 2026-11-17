@@ -77,10 +77,9 @@ int main (int argc, char** argv) {
       map::evolve_terrain (surface, uplift, recipe.evolution ());
       game::save_land (surface, evolved.string ());
     }
-    std::vector<float> change;
+    std::vector<ElevationChange> change;
     if (variant == "beds")
-      change =
-        map::form_river_channels (surface, recipe.water_datum ()).change_m;
+      change = map::form_river_channels (surface, recipe.water_datum ()).change;
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
     game::quantize_land (surface);
     map::rebuild_geometry (surface);
@@ -502,7 +501,8 @@ int main (int argc, char** argv) {
     if (!change.empty ()) {
       std::vector<std::uint8_t> moved (change.size () * 3);
       for (std::size_t cell = 0; cell < change.size (); ++cell) {
-        const float c = std::clamp (change[cell], -1.0f, 1.0f);
+        const float c =
+          std::clamp (change[cell].numerical_value_in (u::m), -1.0f, 1.0f);
         moved[cell * 3] = std::uint8_t (255.0f * (1.0f - std::max (c, 0.0f)));
         moved[cell * 3 + 1] = std::uint8_t (255.0f * (1.0f - std::abs (c)));
         moved[cell * 3 + 2] =

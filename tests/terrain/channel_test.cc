@@ -126,7 +126,7 @@ MOPPE_TEST (a_lake_keeps_its_sill_and_a_pool_loses_it) {
 
   // Called a pool, the same water loses its sill to the river.
   ChannelFormation parameters;
-  parameters.lake_widths = 1e6f;
+  parameters.lake_widths = 1e6f * moppe::scale_factor[mp_units::one];
   const Formed cut = form (rows, heights, parameters);
   MOPPE_CHECK (cut.after[at (18)] < cut.before[at (18)] - 0.2f);
 }

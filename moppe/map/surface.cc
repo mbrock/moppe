@@ -269,7 +269,7 @@ namespace moppe::map {
     const terrain::TerrainDomain& domain = surface.domain ();
     for (const terrain::TerrainIndex site : spatial::sites (surface)) {
       const std::size_t offset = domain.offset (site);
-      const float change = result.change_m[offset];
+      const float change = result.change[offset].numerical_value_in (u::m);
       if (change == 0.0f)
         continue;
       const auto row = surface[site];
