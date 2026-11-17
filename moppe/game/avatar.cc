@@ -163,7 +163,7 @@ namespace moppe::game {
     // and turns against the body as it turns; a swinging foot arcs
     // forward and lands toe-up on its heel. A runner's foot kicks up
     // behind, comes through under a high knee, and reaches out to land.
-    float pitch[2];
+    radians_t pitch[2];
     Vec3 sole_way[2];
     // How much each foot hangs from its shin rather than keeping to the
     // ground: a runner's through the swing.
@@ -171,15 +171,17 @@ namespace moppe::game {
     for (int i = 0; i < 2; ++i) {
       const float side = i == 0 ? -1.0f : 1.0f;
       const float t = std::fmod (phase + (i == 0 ? 0.0f : 0.5f), 1.0f);
-      float along, yaw, raise = 0.0f, toe_up, heel_up;
+      float along, yaw, raise = 0.0f;
+      radians_t toe_up, heel_up;
       hang[i] = 0.0f;
       if (t < duty) {
         const float u = t / duty;
         along = stance * (0.5f - u) - back;
         yaw = stance_turn * (0.5f - u);
-        toe_up =
-          gait * mix (0.30f, 0.05f, running) * (1.0f - ease (0.0f, 0.2f, u));
-        heel_up = gait * mix (0.45f, 0.8f, running) * ease (0.55f, 1.0f, u);
+        toe_up = gait * mix (0.30f, 0.05f, running) *
+                 (1.0f - ease (0.0f, 0.2f, u)) * u::rad;
+        heel_up =
+          gait * mix (0.45f, 0.8f, running) * ease (0.55f, 1.0f, u) * u::rad;
       } else {
         const float u = (t - duty) / (1.0f - duty);
         const float swung = ease (0.0f, 1.0f, u);
@@ -190,16 +192,16 @@ namespace moppe::game {
           run_swing (u, -0.5f * stance - back, 0.5f * stance - back);
         along = mix (stance * (swung - 0.5f) - back, stride.along, running);
         raise = mix (lift * std::sin (PI * u), stride.raise * moving, running);
-        toe_up = gait * 0.30f * ease (0.65f, 1.0f, u);
+        toe_up = gait * 0.30f * ease (0.65f, 1.0f, u) * u::rad;
         heel_up = gait * mix (0.75f, 1.2f, running) *
-                  (1.0f - ease (0.0f, mix (0.45f, 0.6f, running), u));
+                  (1.0f - ease (0.0f, mix (0.45f, 0.6f, running), u)) * u::rad;
       }
       Vec3 base =
         feet + yawed (travel * along + r * (side * track), yaw * u::rad);
       base[1] = ground (base);
       k.ankle[i] = position (base + up * (meters_value (size::ankle_height) +
-                                          raise + 0.14f * std::sin (heel_up) +
-                                          0.05f * std::sin (toe_up)));
+                                          raise + 0.14f * libm::sin (heel_up) +
+                                          0.05f * libm::sin (toe_up)));
       pitch[i] = toe_up - heel_up;
       sole_way[i] = yawed (f, yaw * u::rad);
     }
@@ -207,16 +209,16 @@ namespace moppe::game {
     // The pelvis turns forward on the side of the swinging leg, drops a
     // little on that side at a walk, and leans with the trunk. Into a
     // turn the whole body banks, as anything going round must.
-    const float hip_turn =
-      moving * mix (0.10f, 0.08f, running) * std::cos (PI2 * phase);
+    const radians_t hip_turn =
+      moving * mix (0.10f, 0.08f, running) * std::cos (PI2 * phase) * u::rad;
     const float hip_drop = -moving * mix (0.06f, 0.03f, running) *
                            std::cos (PI2 * (phase - duty * 0.5f));
     const float hip_tilt = 0.03f + 0.10f * running * moving;
     const float bank =
       std::clamp (0.55f * std::atan (speed * turn / 9.81f), -0.3f, 0.3f) *
       (walker.grounded ? 1.0f : 0.5f);
-    const Vec3 hip_ahead = yawed (f, hip_turn * u::rad);
-    const Vec3 hip_side = yawed (r, hip_turn * u::rad);
+    const Vec3 hip_ahead = yawed (f, hip_turn);
+    const Vec3 hip_side = yawed (r, hip_turn);
     const Vec3 body_up =
       normalized (up + hip_ahead * hip_tilt + hip_side * (bank - hip_drop));
     const Vec3 body_right = normalized (cross (body_up, hip_ahead));
@@ -273,21 +275,24 @@ namespace moppe::game {
           position_value (k.hip[i]) + f * mix (lead, lead * 0.3f, falling) -
           up * mix (drop, 0.84f, falling) + r * (side * 0.03f);
         k.ankle[i] = position (mix (position_value (k.ankle[i]), tucked, air));
-        pitch[i] = mix (pitch[i], -0.45f + 0.3f * falling, air);
+        pitch[i] =
+          pitch[i] + ((-0.45f + 0.3f * falling) * u::rad - pitch[i]) * air;
       }
       const Vec3 pole = sole_way[i] + r * (side * 0.15f);
       k.knee[i] = bend (k.hip[i], k.ankle[i], size::thigh, size::shin, pole);
 
       const Vec3& way = sole_way[i];
-      Vec3 sole = way * std::cos (pitch[i]) + up * std::sin (pitch[i]);
-      Vec3 instep = up * std::cos (pitch[i]) - way * std::sin (pitch[i]);
+      Vec3 sole = way * libm::cos (pitch[i]) + up * libm::sin (pitch[i]);
+      Vec3 instep = up * libm::cos (pitch[i]) - way * libm::sin (pitch[i]);
       if (hang[i] > 0.0f) {
         // Square to the shin, toes pointed a little.
         const Vec3 shin =
           normalized ((k.ankle[i] - k.knee[i]).numerical_value_in (si::metre));
         const Vec3 square = normalized (cross (shin, body_right));
-        sole = normalized (mix (
-          sole, square * std::cos (0.45f) + shin * std::sin (0.45f), hang[i]));
+        sole = normalized (mix (sole,
+                                square * libm::cos (0.45f * u::rad) +
+                                  shin * libm::sin (0.45f * u::rad),
+                                hang[i]));
         instep = normalized (cross (sole, body_right));
       }
       const Vec3& ankle = position_value (k.ankle[i]);
@@ -299,18 +304,20 @@ namespace moppe::game {
     // against the hips and keep level over the dropping hip, and the
     // chest rises with each breath. A look aside turns the head first
     // and then the chest, each as far as it goes.
-    const float lean = mix (0.07f, 0.30f, running) * moving + 0.10f * air -
-                       0.03f * air * falling;
+    const radians_t lean = (mix (0.07f, 0.30f, running) * moving + 0.10f * air -
+                            0.03f * air * falling) *
+                           u::rad;
     const float aside = radians_value (walker.look_aside);
     const float head_aside = 1.0f * std::tanh (aside / 1.0f);
     const float chest_aside = 0.5f * std::tanh ((aside - head_aside) / 0.5f);
-    const float twist =
-      -moving * mix (0.12f, 0.20f, running) * std::cos (PI2 * phase) +
-      chest_aside;
-    const Vec3 turned = yawed (f, twist * u::rad);
+    const radians_t twist =
+      (-moving * mix (0.12f, 0.20f, running) * std::cos (PI2 * phase) +
+       chest_aside) *
+      u::rad;
+    const Vec3 turned = yawed (f, twist);
     const Vec3 chest_up =
-      normalized (up + turned * std::tan (lean) +
-                  yawed (r, twist * u::rad) * (bank + 0.3f * hip_drop));
+      normalized (up + turned * libm::tan (lean) +
+                  yawed (r, twist) * (bank + 0.3f * hip_drop));
     const Vec3 chest_right = normalized (cross (chest_up, turned));
     const Vec3 chest_forward = cross (chest_right, chest_up);
     const Vec3 waist = pelvis + body_up * 0.10f;
@@ -323,13 +330,14 @@ namespace moppe::game {
 
     // The head keeps its eyes on the horizon through the lean and the
     // stride and follows the walker's gaze.
-    const float nod =
+    const radians_t nod =
       std::clamp (
-        walker.look_pitch.numerical_value_in (u::rad) * 0.6f, -0.5f, 0.45f) -
+        walker.look_pitch.numerical_value_in (u::rad) * 0.6f, -0.5f, 0.45f) *
+        u::rad -
       lean * 0.6f;
     const Vec3 gaze = yawed (f, (head_aside + chest_aside) * u::rad);
-    const Vec3 head_forward = gaze * std::cos (nod) + up * std::sin (nod);
-    const Vec3 head_up = up * std::cos (nod) - gaze * std::sin (nod);
+    const Vec3 head_forward = gaze * libm::cos (nod) + up * libm::sin (nod);
+    const Vec3 head_up = up * libm::cos (nod) - gaze * libm::sin (nod);
     k.head_forward = unit_direction (head_forward);
     k.head_up = unit_direction (head_up);
     k.head = position (neck + head_up * 0.15f + head_forward * 0.015f);
@@ -344,27 +352,31 @@ namespace moppe::game {
         neck - chest_up * 0.07f +
         chest_right * (side * meters_value (size::shoulder_width));
       k.shoulder[i] = position (shoulder);
-      const float swing =
-        moving * mix (0.42f, 0.75f, running) * side *
-          std::cos (PI2 * (phase - mix (0.04f, 0.0f, running))) +
-        moving * running * 0.15f + air * mix (0.55f, 0.25f, falling);
-      const float spread = 0.12f - 0.04f * running * moving +
-                           0.012f * breath * (1.0f - moving) +
-                           air * mix (0.35f, 0.7f, falling);
+      const radians_t swing =
+        (moving * mix (0.42f, 0.75f, running) * side *
+           std::cos (PI2 * (phase - mix (0.04f, 0.0f, running))) +
+         moving * running * 0.15f + air * mix (0.55f, 0.25f, falling)) *
+        u::rad;
+      const radians_t spread =
+        (0.12f - 0.04f * running * moving + 0.012f * breath * (1.0f - moving) +
+         air * mix (0.35f, 0.7f, falling)) *
+        u::rad;
       const Vec3 down = -chest_up;
-      Vec3 arm = down * std::cos (swing) + chest_forward * std::sin (swing);
-      arm = arm * std::cos (spread) + chest_right * (side * std::sin (spread));
+      Vec3 arm = down * libm::cos (swing) + chest_forward * libm::sin (swing);
+      arm =
+        arm * libm::cos (spread) + chest_right * (side * libm::sin (spread));
       const Vec3 elbow = shoulder + arm * meters_value (size::upper_arm);
       k.elbow[i] = position (elbow);
 
-      const float fold = 0.25f + moving * mix (0.2f, 1.4f, running) +
-                         std::max (0.0f, swing) * mix (0.5f, 0.35f, running) +
-                         air * 0.5f;
+      const radians_t fold =
+        0.25f * u::rad + moving * mix (0.2f, 1.4f, running) * u::rad +
+        std::max (0.0f * u::rad, swing) * mix (0.5f, 0.35f, running) +
+        air * 0.5f * u::rad;
       const Vec3 across =
         chest_forward - chest_right * (side * 0.35f * running * moving);
       Vec3 ahead = across - arm * dot (across, arm);
       ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : chest_forward;
-      const Vec3 forearm = arm * std::cos (fold) + ahead * std::sin (fold);
+      const Vec3 forearm = arm * libm::cos (fold) + ahead * libm::sin (fold);
       k.wrist[i] = position (elbow + forearm * meters_value (size::forearm));
     }
 
@@ -410,10 +422,10 @@ namespace moppe::game {
     Trunk hold_trunk (const HoldPose& h) {
       const Vec3& up = direction_value (h.up);
       const Vec3& facing = direction_value (h.facing);
-      const float lean = radians_value (h.lean);
-      const Vec3 chest_up = up * std::cos (lean) + facing * std::sin (lean);
+      const Vec3 chest_up =
+        up * libm::cos (h.lean) + facing * libm::sin (h.lean);
       const Vec3 chest_forward =
-        facing * std::cos (lean) - up * std::sin (lean);
+        facing * libm::cos (h.lean) - up * libm::sin (h.lean);
       const position_t waist =
         avatar_pose::moved (h.pelvis, h.up, 0.10f * u::m);
       return {

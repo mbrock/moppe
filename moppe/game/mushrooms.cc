@@ -95,14 +95,11 @@ namespace moppe::game {
     }
 
     MushroomFrame mushroom_frame (const MushroomSite& site) {
-      const float lean = radians_value (site.lean);
-      const float lean_toward = radians_value (site.lean_toward);
-      const float yaw = radians_value (site.yaw);
-      const Vec3 tilt (std::cos (lean_toward) * std::sin (lean),
-                       std::cos (lean),
-                       std::sin (lean_toward) * std::sin (lean));
+      const Vec3 tilt (libm::cos (site.lean_toward) * libm::sin (site.lean),
+                       libm::cos (site.lean),
+                       libm::sin (site.lean_toward) * libm::sin (site.lean));
       const Vec3 up = normalized (tilt);
-      const Vec3 across (std::cos (yaw), 0.0f, std::sin (yaw));
+      const Vec3 across (libm::cos (site.yaw), 0.0f, libm::sin (site.yaw));
       const Vec3 north = normalized (cross (across, up));
       const Vec3 east = cross (up, north);
       return { .base = site.base,
@@ -117,10 +114,12 @@ namespace moppe::game {
     // The outward normal of a profile segment, in (radius, height).
     std::array<float, 2> segment_normal (const ProfilePoint& a,
                                          const ProfilePoint& b) {
-      const float dr = (b.radius - a.radius).numerical_value_in (one);
-      const float dh = (b.height - a.height).numerical_value_in (one);
-      const float l = std::max (std::hypot (dr, dh), 1e-6f);
-      return { dh / l, -dr / l };
+      const scale_factor_t dr = b.radius - a.radius;
+      const scale_factor_t dh = b.height - a.height;
+      const scale_factor_t l =
+        std::max (libm::hypot (dr, dh), 1e-6f * scale_factor[one]);
+      return { (dh / l).numerical_value_in (one),
+               (-dr / l).numerical_value_in (one) };
     }
 
     // Sweeps `profile` around the frame's axis. `wobble` gives each
@@ -156,8 +155,7 @@ namespace moppe::game {
       const auto point = [&] (std::size_t i, int side) {
         const radians_t angle =
           mushroom_tau * static_cast<float> (side) / static_cast<float> (sides);
-        const float a = radians_value (angle);
-        const Vec3 way = east * std::cos (a) + north * std::sin (a);
+        const Vec3 way = east * libm::cos (angle) + north * libm::sin (angle);
         const float r =
           (profile[i].radius * wobble (i, angle)).numerical_value_in (one);
         return base + way * (r * height) +
@@ -166,8 +164,7 @@ namespace moppe::game {
       const auto normal = [&] (std::size_t i, int side) {
         const radians_t angle =
           mushroom_tau * static_cast<float> (side) / static_cast<float> (sides);
-        const float a = radians_value (angle);
-        const Vec3 way = east * std::cos (a) + north * std::sin (a);
+        const Vec3 way = east * libm::cos (angle) + north * libm::sin (angle);
         const Vec3 n = way * normals[i][0] + up * normals[i][1];
         return length2 (n) > 1e-8f ? normalized (n) : up;
       };
@@ -209,8 +206,7 @@ namespace moppe::game {
       // Waves round the rim.
       const float lobes = 4.0f + std::floor (3.0f * hash_lane (seed, 12));
       revolve (list, frame, profile, 14, [&] (std::size_t i, radians_t angle) {
-        return (i >= 3 ? 1.0f + 0.13f * std::sin (
-                                          radians_value (lobes * angle + phase))
+        return (i >= 3 ? 1.0f + 0.13f * libm::sin (lobes * angle + phase)
                        : 1.0f) *
                scale_factor[one];
       });
@@ -232,8 +228,7 @@ namespace moppe::game {
       };
       const radians_t phase = mushroom_tau * hash_lane (seed, 11);
       revolve (list, frame, profile, 10, [&] (std::size_t i, radians_t angle) {
-        return (i >= 3 ? 1.0f + 0.16f * std::sin (
-                                          radians_value (3.0f * angle + phase))
+        return (i >= 3 ? 1.0f + 0.16f * libm::sin (3.0f * angle + phase)
                        : 1.0f) *
                scale_factor[one];
       });
@@ -289,13 +284,13 @@ namespace moppe::game {
       const float height = meters_value (frame.height);
       for (int k = 0; k < warts; ++k) {
         const std::uint32_t wart = lattice_hash (seed, 0x77a7u, k);
-        const float angle = radians_value (mushroom_tau * hash_lane (wart, 0));
+        const radians_t angle = mushroom_tau * hash_lane (wart, 0);
         // Along the cap from crown to rim, sampled between its profile
         // points.
         const float along = std::sqrt (hash_lane (wart, 1));
         const float r = 0.40f * along;
         const float h = 1.03f - 0.17f * along * along;
-        const Vec3 way = east * std::cos (angle) + north * std::sin (angle);
+        const Vec3 way = east * libm::cos (angle) + north * libm::sin (angle);
         const Vec3 normal =
           normalized (up * (1.0f - 0.6f * along) + way * (0.9f * along));
         const Vec3 centre = base + way * (r * height) + up * (h * height) +
@@ -307,13 +302,13 @@ namespace moppe::game {
         list.normal (normal);
         constexpr int corners = 5;
         for (int c = 0; c < corners; ++c) {
-          const float a0 = radians_value (mushroom_tau * c / corners);
-          const float a1 = radians_value (mushroom_tau * (c + 1) / corners);
+          const radians_t a0 = mushroom_tau * c / corners;
+          const radians_t a1 = mushroom_tau * (c + 1) / corners;
           list.vertex (centre + normal * (0.3f * size));
-          list.vertex (centre + tangent * (size * std::cos (a0)) +
-                       bitangent * (size * std::sin (a0)));
-          list.vertex (centre + tangent * (size * std::cos (a1)) +
-                       bitangent * (size * std::sin (a1)));
+          list.vertex (centre + tangent * (size * libm::cos (a0)) +
+                       bitangent * (size * libm::sin (a0)));
+          list.vertex (centre + tangent * (size * libm::cos (a1)) +
+                       bitangent * (size * libm::sin (a1)));
         }
       }
     }
@@ -418,7 +413,6 @@ namespace moppe::game {
     const auto clear_of_trunks = [&] (const plan_position_t& spot) {
       const meters_t x = x_of (spot);
       const meters_t z = z_of (spot);
-      const Vec2& p = plan_value (spot);
       for (int dz = -1; dz <= 1; ++dz)
         for (int dx = -1; dx <= 1; ++dx) {
           const auto found = trunks.find (
@@ -426,8 +420,7 @@ namespace moppe::game {
           if (found == trunks.end ())
             continue;
           for (const plan_position_t& trunk : found->second) {
-            const Vec2& t = plan_value (trunk);
-            if (std::hypot (t.x () - p.x (), t.z () - p.z ()) * u::m <
+            if (libm::hypot (x_of (trunk) - x, z_of (trunk) - z) <
                 trunk_clearance)
               return false;
           }
@@ -443,8 +436,7 @@ namespace moppe::game {
       const std::uint32_t identity = lattice_hash (tree.seed, 0x6d75u, seed);
       const plan_position_t at = moppe::plan (tree.position);
       const plan_displacement_t off = at - moppe::plan (trailhead);
-      const meters_t from_trailhead =
-        std::hypot (plan_value (off).x (), plan_value (off).z ()) * u::m;
+      const meters_t from_trailhead = libm::hypot (x_of (off), z_of (off));
       const proportion_t far_from_trailhead =
         1.0f * proportion[one] -
         band (0.4f * trailhead_reach, trailhead_reach, from_trailhead);
@@ -473,14 +465,14 @@ namespace moppe::game {
         // From one end of the arc, -0.5, to the other, 0.5.
         const float place =
           members > 1 ? static_cast<float> (k) / (members - 1) - 0.5f : 0.0f;
-        const float angle =
-          radians_value (middle + spread * place +
-                         0.25f * (hash_lane (one_seed, 0) - 0.5f) * u::rad);
+        const radians_t angle =
+          middle + spread * place +
+          0.25f * (hash_lane (one_seed, 0) - 0.5f) * u::rad;
         const meters_t reach =
           distance + 0.7f * (hash_lane (one_seed, 1) - 0.5f) * u::m;
         const plan_position_t spot =
-          terrain::wrap (at + plan_displacement (reach * std::cos (angle),
-                                                 reach * std::sin (angle)),
+          terrain::wrap (at + plan_displacement (reach * libm::cos (angle),
+                                                 reach * libm::sin (angle)),
                          period);
         if (!clear_of_trunks (spot))
           continue;
@@ -604,7 +596,8 @@ namespace moppe::game {
             position_value (base_near (index, feet)) - position_value (feet);
           if (std::abs (offset[1]) > 1.5f)
             continue;
-          const meters_t distance = std::hypot (offset[0], offset[2]) * u::m;
+          const meters_t distance =
+            libm::hypot (offset[0] * u::m, offset[2] * u::m);
           if (distance > pick_reach)
             continue;
           // The cosine between the facing and the way to it.
@@ -649,8 +642,7 @@ namespace moppe::game {
               std::find (skip.begin (), skip.end (), index) != skip.end ())
             continue;
           const plan_displacement_t off = plan (base_near (index, at)) - from;
-          const meters_t distance =
-            std::hypot (plan_value (off).x (), plan_value (off).z ()) * u::m;
+          const meters_t distance = libm::hypot (x_of (off), z_of (off));
           if (distance < best_distance) {
             best_distance = distance;
             best = index;
@@ -678,9 +670,7 @@ namespace moppe::game {
         for (const std::uint32_t index : tile->second) {
           const plan_displacement_t off = plan (base_near (index, at)) - from;
           if (!m_picked[index] &&
-              std::hypot (plan_value (off).x (), plan_value (off).z ()) *
-                  u::m <=
-                within)
+              libm::hypot (x_of (off), z_of (off)) <= within)
             found.push_back (index);
         }
       }
@@ -738,11 +728,9 @@ namespace moppe::game {
     const auto tile_distance = [&] (int x, int z) {
       const meters_t cx = (static_cast<float> (x) + 0.5f) * m_tile_x;
       const meters_t cz = (static_cast<float> (z) + 0.5f) * m_tile_z;
-      return std::hypot (meters_value (terrain::minimum_image_delta (
-                           cx - x_of (eye), period_x)),
-                         meters_value (terrain::minimum_image_delta (
-                           cz - z_of (eye), period_z))) *
-               u::m -
+      return libm::hypot (
+               terrain::minimum_image_delta (cx - x_of (eye), period_x),
+               terrain::minimum_image_delta (cz - z_of (eye), period_z)) -
              0.7072f * std::max (m_tile_x, m_tile_z);
     };
 

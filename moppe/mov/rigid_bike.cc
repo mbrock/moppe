@@ -89,7 +89,7 @@ namespace moppe {
         const Vec3 b = to - axis * dot (to, axis);
         if (length2 (a) < 1e-10f || length2 (b) < 1e-10f)
           return radians_t {};
-        return std::atan2 (dot (cross (a, b), axis), dot (a, b)) * u::rad;
+        return libm::atan2 (dot (cross (a, b), axis), dot (a, b));
       }
 
       // The ground's normal, over a road's tread (a bridge's deck) the
@@ -634,25 +634,23 @@ namespace moppe {
           const Vec3 centripetal = cross (
             Vec3 (0.0f, wanted_yaw.numerical_value_in (u::rad / u::s), 0.0f),
             v);
-          goal = std::atan2 (
+          goal = libm::atan2 (
                    dot (centripetal, right),
                    standard_gravity.numerical_value_in (u::m / pow<2> (u::s))) *
-                 u::rad * (1.0f - 0.6f * slide.numerical_value_in (one));
+                 (1.0f - 0.6f * slide.numerical_value_in (one));
         } else if (hanging) {
           // The harness banks the bike with the wing.
           const Vec3& hang_up = direction_value (controls.hang_up);
-          goal =
-            std::atan2 (dot (hang_up, right), dot (hang_up, level)) * u::rad;
+          goal = libm::atan2 (dot (hang_up, right), dot (hang_up, level));
         } else if (landing) {
-          goal = std::atan2 (dot (landing_normal, right),
-                             dot (landing_normal, level)) *
-                 u::rad;
+          goal = libm::atan2 (dot (landing_normal, right),
+                              dot (landing_normal, level));
         }
         const radians_t held = std::clamp (goal, -rig.max_lean, rig.max_lean);
         approach (
           lean, held, settle (grounded ? 8.0f / u::s : 3.0f / u::s, dt));
-        const Vec3 target_up = level * std::cos (radians_value (lean)) +
-                               right * std::sin (radians_value (lean));
+        const Vec3 target_up =
+          level * libm::cos (lean) + right * libm::sin (lean);
         // On the ground the bike leans over its tire contacts, or over the
         // rear one alone in a wheelie.
         const Vec3 under =
@@ -1032,10 +1030,10 @@ namespace moppe {
                                       const Vec3& velocity) const {
       const Vec3 pivot = reference_of (state);
       const Vec3 forward = forward_of (state);
-      const radians_t turn = std::atan2 (forward[0], forward[2]) * u::rad;
+      const radians_t turn = libm::atan2 (forward[0], forward[2]);
       const radians_t wanted =
         length2 (Vec3 (heading[0], 0.0f, heading[2])) > 1e-8f
-          ? std::atan2 (heading[0], heading[2]) * u::rad
+          ? libm::atan2 (heading[0], heading[2])
           : turn;
       const b3Quat spin = b3MakeQuatFromAxisAngle (
         { 0.0f, 1.0f, 0.0f }, radians_value (wanted - turn));

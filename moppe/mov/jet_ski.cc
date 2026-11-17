@@ -374,9 +374,8 @@ namespace moppe::mov {
     // The way the jet pushes the hull, in the hull's frame: ahead,
     // swung by the nozzle.
     direction_t push_local () const {
-      return unit_direction (Vec3 (std::sin (radians_value (kept.steer)),
-                                   0.0f,
-                                   std::cos (radians_value (kept.steer))));
+      return unit_direction (
+        Vec3 (libm::sin (kept.steer), 0.0f, libm::cos (kept.steer)));
     }
 
     void place (const position_t& at, const Vec3& heading, meters_t level) {
@@ -499,10 +498,8 @@ namespace moppe::mov {
       // The rider holds it upright with their body, and leans it into a
       // turn as it gathers way.
       if (!kept.parked) {
-        const radians_t roll =
-          std::asin (std::clamp (
-            direction_value (facing (local_left))[1], -1.0f, 1.0f)) *
-          u::rad;
+        const radians_t roll = libm::asin (
+          std::clamp (direction_value (facing (local_left))[1], -1.0f, 1.0f));
         const direction_t forward = facing (local_forward);
         const radians_per_second_t rolling =
           quantity_cast<isq::angular_velocity> (

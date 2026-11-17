@@ -159,9 +159,7 @@ namespace moppe::mov {
           const radians_t angle =
             static_cast<float> (k - 1) * (PI2 / 6.0f) * u::rad;
           const direction_t way =
-            unit_direction (Vec3 (std::cos (radians_value (angle)),
-                                  0.0f,
-                                  std::sin (radians_value (angle))));
+            unit_direction (Vec3 (libm::cos (angle), 0.0f, libm::sin (angle)));
           at += quantity_cast<isq::position_vector> (along (way, radius));
         }
         const direction_t normal = terrain_slope_normal (surface, plan (at));

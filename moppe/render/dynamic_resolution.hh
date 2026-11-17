@@ -58,9 +58,10 @@ namespace moppe::render {
       m_sum = seconds (0.0f);
       m_count = 0;
 
-      const seconds_t budget = period * headroom;
-      const scale_factor_t toward = seconds_value (budget * rest) /
-                                    seconds_value (mean) * scale_factor[one];
+      const seconds_t budget = quantity_cast<isq::duration> (period * headroom);
+      const scale_factor_t toward =
+        seconds_value (quantity_cast<isq::duration> (budget * rest)) /
+        seconds_value (mean) * scale_factor[one];
       if (mean > budget)
         m_pixels *= std::max (toward, fall).numerical_value_in (one);
       else if (mean < budget * quiet)

@@ -153,10 +153,10 @@ namespace moppe {
       m_fogged = on;
     }
     void DrawList::wind (proportion_t w) {
-      m_wind = PackedRgba8::quantize (scalar_value (w));
+      m_wind = PackedRgba8::quantize (w.numerical_value_in (one));
     }
     void DrawList::flutter (proportion_t w) {
-      m_flutter = PackedRgba8::quantize (scalar_value (w));
+      m_flutter = PackedRgba8::quantize (w.numerical_value_in (one));
     }
     void DrawList::material (float metallic,
                              float roughness,
@@ -496,23 +496,23 @@ namespace moppe {
       SolidMesh make_sphere (int slices, int stacks) {
         SolidMesh m;
         for (int i = 0; i < stacks; ++i) {
-          const float a0 = PI * (float)i / stacks - PI / 2;
-          const float a1 = PI * (float)(i + 1) / stacks - PI / 2;
+          const radians_t a0 = (PI * (float)i / stacks - PI / 2) * u::rad;
+          const radians_t a1 = (PI * (float)(i + 1) / stacks - PI / 2) * u::rad;
           for (int j = 0; j < slices; ++j) {
-            const float b0 = PI2 * (float)j / slices;
-            const float b1 = PI2 * (float)(j + 1) / slices;
-            const Vec3 p00 (std::cos (a0) * std::cos (b0),
-                            std::sin (a0),
-                            std::cos (a0) * std::sin (b0));
-            const Vec3 p10 (std::cos (a0) * std::cos (b1),
-                            std::sin (a0),
-                            std::cos (a0) * std::sin (b1));
-            const Vec3 p01 (std::cos (a1) * std::cos (b0),
-                            std::sin (a1),
-                            std::cos (a1) * std::sin (b0));
-            const Vec3 p11 (std::cos (a1) * std::cos (b1),
-                            std::sin (a1),
-                            std::cos (a1) * std::sin (b1));
+            const radians_t b0 = (PI2 * (float)j / slices) * u::rad;
+            const radians_t b1 = (PI2 * (float)(j + 1) / slices) * u::rad;
+            const Vec3 p00 (libm::cos (a0) * libm::cos (b0),
+                            libm::sin (a0),
+                            libm::cos (a0) * libm::sin (b0));
+            const Vec3 p10 (libm::cos (a0) * libm::cos (b1),
+                            libm::sin (a0),
+                            libm::cos (a0) * libm::sin (b1));
+            const Vec3 p01 (libm::cos (a1) * libm::cos (b0),
+                            libm::sin (a1),
+                            libm::cos (a1) * libm::sin (b0));
+            const Vec3 p11 (libm::cos (a1) * libm::cos (b1),
+                            libm::sin (a1),
+                            libm::cos (a1) * libm::sin (b1));
             SolidVert v00 = { p00, p00 }, v10 = { p10, p10 };
             SolidVert v01 = { p01, p01 }, v11 = { p11, p11 };
             tri (m, v00, v11, v10);
@@ -533,18 +533,22 @@ namespace moppe {
           const float z1 = (float)(i + 1) / stacks;
           const float r0 = 1.0f - z0, r1 = 1.0f - z1;
           for (int j = 0; j < slices; ++j) {
-            const float b0 = PI2 * (float)j / slices;
-            const float b1 = PI2 * (float)(j + 1) / slices;
-            const Vec3 n0 (std::cos (b0) * nz, std::sin (b0) * nz, nz);
-            const Vec3 n1 (std::cos (b1) * nz, std::sin (b1) * nz, nz);
-            SolidVert v00 = { Vec3 (r0 * std::cos (b0), r0 * std::sin (b0), z0),
-                              n0 };
-            SolidVert v10 = { Vec3 (r0 * std::cos (b1), r0 * std::sin (b1), z0),
-                              n1 };
-            SolidVert v01 = { Vec3 (r1 * std::cos (b0), r1 * std::sin (b0), z1),
-                              n0 };
-            SolidVert v11 = { Vec3 (r1 * std::cos (b1), r1 * std::sin (b1), z1),
-                              n1 };
+            const radians_t b0 = (PI2 * (float)j / slices) * u::rad;
+            const radians_t b1 = (PI2 * (float)(j + 1) / slices) * u::rad;
+            const Vec3 n0 (libm::cos (b0) * nz, libm::sin (b0) * nz, nz);
+            const Vec3 n1 (libm::cos (b1) * nz, libm::sin (b1) * nz, nz);
+            SolidVert v00 = {
+              Vec3 (r0 * libm::cos (b0), r0 * libm::sin (b0), z0), n0
+            };
+            SolidVert v10 = {
+              Vec3 (r0 * libm::cos (b1), r0 * libm::sin (b1), z0), n1
+            };
+            SolidVert v01 = {
+              Vec3 (r1 * libm::cos (b0), r1 * libm::sin (b0), z1), n0
+            };
+            SolidVert v11 = {
+              Vec3 (r1 * libm::cos (b1), r1 * libm::sin (b1), z1), n1
+            };
             tri (m, v00, v10, v11);
             tri (m, v00, v11, v01);
           }
@@ -552,11 +556,11 @@ namespace moppe {
         // Base cap at z=0, normal -z.
         const Vec3 bn (0, 0, -1);
         for (int j = 0; j < slices; ++j) {
-          const float b0 = PI2 * (float)j / slices;
-          const float b1 = PI2 * (float)(j + 1) / slices;
+          const radians_t b0 = (PI2 * (float)j / slices) * u::rad;
+          const radians_t b1 = (PI2 * (float)(j + 1) / slices) * u::rad;
           SolidVert c = { Vec3 (0, 0, 0), bn };
-          SolidVert e0 = { Vec3 (std::cos (b0), std::sin (b0), 0), bn };
-          SolidVert e1 = { Vec3 (std::cos (b1), std::sin (b1), 0), bn };
+          SolidVert e0 = { Vec3 (libm::cos (b0), libm::sin (b0), 0), bn };
+          SolidVert e1 = { Vec3 (libm::cos (b1), libm::sin (b1), 0), bn };
           tri (m, c, e0, e1);
         }
         return m;
@@ -568,17 +572,18 @@ namespace moppe {
         // the two radii shape the mesh, so bake them in.
         SolidMesh m;
         for (int i = 0; i < rings; ++i) {
-          const float a0 = PI2 * (float)i / rings;
-          const float a1 = PI2 * (float)(i + 1) / rings;
+          const radians_t a0 = (PI2 * (float)i / rings) * u::rad;
+          const radians_t a1 = (PI2 * (float)(i + 1) / rings) * u::rad;
           for (int j = 0; j < sides; ++j) {
-            const float b0 = PI2 * (float)j / sides;
-            const float b1 = PI2 * (float)(j + 1) / sides;
+            const radians_t b0 = (PI2 * (float)j / sides) * u::rad;
+            const radians_t b1 = (PI2 * (float)(j + 1) / sides) * u::rad;
 
             struct Gen {
-              static SolidVert at (float a, float b, float inr, float outr) {
-                const Vec3 spine (std::cos (a), std::sin (a), 0);
+              static SolidVert
+              at (radians_t a, radians_t b, float inr, float outr) {
+                const Vec3 spine (libm::cos (a), libm::sin (a), 0);
                 const Vec3 n =
-                  spine * std::cos (b) + Vec3 (0, 0, 1) * std::sin (b);
+                  spine * libm::cos (b) + Vec3 (0, 0, 1) * libm::sin (b);
                 SolidVert v = { spine * outr + n * inr, n };
                 return v;
               }
