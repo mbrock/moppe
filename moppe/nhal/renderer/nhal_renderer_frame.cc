@@ -1,13 +1,60 @@
-// The frame around the scene: beginning it, the shadow cascades and local
-// shadows, the scene's and the drawable's targets, the temporal resolve and
-// the post effects (ambient occlusion, light shafts, underwater, motion
-// blur, bloom), the tonemap and the HUD, and the end of the frame with its
-// screenshots, captured frames, and timings.
+// The frame around the scene: beginning it, the scene's and the drawable's
+// targets, the scene pass opened and closed, the temporal resolve, the
+// tonemap and the HUD, and the end of the frame with its timings.
 
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
 
 namespace moppe::nhal {
   namespace detail {
+    void NhalRenderer::make_frame_pipelines () {
+      const RenderPipelineDesc scene = scene_target ();
+      m_exposure = m_device->create_compute_pipeline (
+        { &shaders::exposure::program, m_shaders.exposure, "exposure" });
+      RenderPipelineDesc rain = scene;
+      rain.program = &shaders::rain::program;
+      rain.vertex = m_shaders.rain[0];
+      rain.fragment = m_shaders.rain[1];
+      rain.blend[0] = Blend::alpha;
+      rain.depth_write = false;
+      rain.cull = Cull::none;
+      rain.label = "drizzle";
+      m_rain = m_device->create_render_pipeline (rain);
+
+      RenderPipelineDesc resolve;
+      resolve.program = &shaders::resolve::program;
+      resolve.vertex = m_shaders.resolve[0];
+      resolve.fragment = m_shaders.resolve[1];
+      resolve.color_formats[0] = Format::rgba16_float;
+      m_resolve = m_device->create_render_pipeline (resolve);
+      RenderPipelineDesc neighbourhood = resolve;
+      neighbourhood.program = &shaders::neighbourhood::program;
+      neighbourhood.vertex = m_shaders.neighbourhood[0];
+      neighbourhood.fragment = m_shaders.neighbourhood[1];
+      neighbourhood.color_count = 2;
+      neighbourhood.color_formats[1] = Format::rgba16_float;
+      m_neighbourhood = m_device->create_render_pipeline (neighbourhood);
+
+      RenderPipelineDesc present;
+      present.program = &shaders::present::program;
+      present.vertex = m_shaders.present[0];
+      present.fragment = m_shaders.present[1];
+      present.color_formats[0] = m_device->surface_format ();
+      m_present = m_device->create_render_pipeline (present);
+
+      RenderPipelineDesc hud = present;
+      hud.program = &shaders::hud::program;
+      hud.vertex = m_shaders.hud[0];
+      hud.fragment = m_shaders.hud[1];
+      hud.blend[0] = Blend::alpha;
+      m_hud = m_device->create_render_pipeline (hud);
+
+      RenderPipelineDesc text = hud;
+      text.program = &shaders::slug_text::program;
+      text.vertex = m_shaders.slug_text[0];
+      text.fragment = m_shaders.slug_text[1];
+      m_slug_text = m_device->create_render_pipeline (text);
+    }
+
     bool NhalRenderer::begin_frame (const FrameParams& params) {
       if (!m_device->begin_frame ())
         return false;
@@ -76,180 +123,6 @@ namespace moppe::nhal {
       m_previous_time = params.time;
       m_restart = false;
       return true;
-    }
-
-    void NhalRenderer::begin_shadow_casters () {
-      m_casting = true;
-      m_casters.clear ();
-    }
-
-    void NhalRenderer::end_shadow_casters () {
-      m_casting = false;
-    }
-
-    void NhalRenderer::render_local_shadow (
-      const render::LocalShadowParams& params) {
-      if (!m_have_terrain || m_scene_open || m_scene_closed) {
-        m_casters.clear ();
-        return;
-      }
-      using Shadow = render::LocalShadowParams;
-      const bool trees = m_tree_count;
-      const bool rocks = m_rock_count;
-      constexpr std::size_t cascades = 2;
-      for (std::size_t c = 0; c < cascades; ++c) {
-        const render::ShadowCascade& cascade = params.cascades[c];
-        if (trees)
-          cull_trees (cascade.light_view_proj,
-                      position_value (cascade.focus),
-                      1.0f,
-                      true,
-                      c);
-      }
-      const render::ShadowCascade& near = params.cascades[Shadow::near];
-      if (rocks)
-        cull_rocks (
-          near.light_view_proj, position_value (near.focus), 1.0f, true);
-
-      RenderPassDesc pass;
-      pass.label = "sun shadow";
-      pass.depth = { m_shadow_map, Load::clear, Store::store, 1.0f };
-      m_device->begin_render_pass (pass);
-      for (std::size_t c = 0; c < cascades; ++c) {
-        m_device->set_viewport (
-          float (c * shadow_size), 0, float (shadow_size), float (shadow_size));
-        draw_shadow_cascade (
-          params.cascades[c], c, trees, rocks && c == Shadow::near);
-      }
-      m_device->end_render_pass ();
-      m_casters.clear ();
-
-      // Normalised light depth per metre, for biases given in metres:
-      // a cascade's box runs from a quarter to eight times its reach.
-      const auto per_metre = [] (const render::ShadowCascade& cascade) {
-        return 1.0f / (7.75f * cascade.radius.numerical_value_in (u::m));
-      };
-      m_frame_values.sun_view = matrix (near.light_view_proj);
-      m_frame_values.sun_view_far =
-        matrix (params.cascades[Shadow::far].light_view_proj);
-      m_frame_values.shadow = { m_terrain_params.shadow_strength,
-                                1.0f / shadow_size,
-                                per_metre (near),
-                                per_metre (params.cascades[Shadow::far]) };
-      upload_frame ();
-    }
-
-    void
-    NhalRenderer::draw_shadow_cascade (const render::ShadowCascade& cascade,
-                                       std::size_t index,
-                                       bool trees,
-                                       bool rocks) {
-      const Vec3 focus = position_value (cascade.focus);
-      const Mat4& light = cascade.light_view_proj;
-      shaders::terrain_shadow::Caster caster {};
-      caster.light_view = matrix (light);
-      caster.focus = lanes (focus, m_params.time);
-      const Transient caster_block = m_device->allocate (sizeof caster);
-      std::memcpy (caster_block.data, &caster, sizeof caster);
-
-      m_device->set_pipeline (m_terrain_shadow);
-      m_device->set_buffer (0, caster_block);
-      m_device->set_uniforms (1, terrain_block ());
-      m_device->set_texture (0, m_heights);
-      const auto& t = m_terrain_params;
-      const int chunks_x = t.width / chunk_cells;
-      const int chunks_z = t.height / chunk_cells;
-      const float chunk_width = chunk_cells * t.scale[0];
-      const float chunk_depth = chunk_cells * t.scale[2];
-      const float reach = cascade.radius.numerical_value_in (u::m);
-      const float draw_reach =
-        reach + 0.5f * std::hypot (chunk_width, chunk_depth);
-      const int centre_x = int (std::floor (focus[0] / chunk_width));
-      const int centre_z = int (std::floor (focus[2] / chunk_depth));
-      const int reach_x = int (std::ceil (reach / chunk_width)) + 1;
-      const int reach_z = int (std::ceil (reach / chunk_depth)) + 1;
-      auto floor_div = [] (int v, int d) {
-        return v / d - (v % d < 0 ? 1 : 0);
-      };
-      const int lod = int (index == render::LocalShadowParams::near
-                             ? render::TerrainLod::Native
-                             : render::TerrainLod::Stride2);
-      for (int z = centre_z - reach_z; z <= centre_z + reach_z; ++z)
-        for (int x = centre_x - reach_x; x <= centre_x + reach_x; ++x) {
-          const float dx = (x + 0.5f) * chunk_width - focus[0];
-          const float dz = (z + 0.5f) * chunk_depth - focus[2];
-          if (dx * dx + dz * dz > draw_reach * draw_reach)
-            continue;
-          const int wrap_x = floor_div (x, chunks_x);
-          const int wrap_z = floor_div (z, chunks_z);
-          shaders::terrain_shadow::Chunk chunk {};
-          chunk.placement = { float ((x - wrap_x * chunks_x) * chunk_cells),
-                              float ((z - wrap_z * chunks_z) * chunk_cells),
-                              lod_step[lod],
-                              float (lod_verts[lod]) };
-          chunk.offset = { wrap_x * chunks_x * chunk_width,
-                           0,
-                           wrap_z * chunks_z * chunk_depth,
-                           0 };
-          m_device->set_uniforms (2, chunk);
-          m_device->draw_indexed (
-            m_chunk_indices[lod], IndexType::uint32, m_chunk_index_count[lod]);
-        }
-
-      if (trees) {
-        const bool far = index == render::LocalShadowParams::far;
-        m_device->set_pipeline (far ? m_forest_far_shadow : m_forest_shadow);
-        m_device->set_buffer (0, caster_block);
-        m_device->set_buffer (1, m_shadow_forest_block[index]);
-        m_device->set_buffer (3, m_trees);
-        m_device->set_buffer (4, m_shadow_candidates[index]);
-        for (std::uint32_t species = 0; species < forest_species; ++species) {
-          shaders::forest_shadow::Draw draw {};
-          draw.class_ = { float (species * m_tree_count), 0, 0, 0 };
-          m_device->set_uniforms (2, draw);
-          m_device->draw_indexed_indirect (
-            far ? m_far_tree_indices : m_tree_indices,
-            IndexType::uint16,
-            m_shadow_arguments[index],
-            species * sizeof (DrawIndexedIndirectArgs));
-        }
-      }
-      if (index == render::LocalShadowParams::near && !m_casters.empty ())
-        draw_mesh_casters (caster_block);
-      if (rocks) {
-        m_device->set_pipeline (m_boulders_shadow);
-        m_device->set_buffer (0, caster_block);
-        m_device->set_buffer (1, m_rock_shadow_block);
-        m_device->set_buffer (3, m_rocks);
-        m_device->set_buffer (4, m_rock_shadow_candidates);
-        m_device->set_buffer (5, m_rock_corners);
-        shaders::boulders_shadow::Draw draw {};
-        m_device->set_uniforms (2, draw);
-        m_device->draw_indexed_indirect (
-          m_rock_indices, IndexType::uint16, m_rock_shadow_arguments);
-      }
-    }
-
-    void NhalRenderer::draw_mesh_casters (const Transient& caster_block) {
-      m_device->set_pipeline (m_mesh_shadow);
-      for (const Caster& c : m_casters) {
-        shaders::mesh_shadow::Draw draw {};
-        draw.model = matrix (c.model);
-        draw.previous_model = draw.model;
-        const Transient block = m_device->allocate (sizeof draw);
-        std::memcpy (block.data, &draw, sizeof draw);
-        for (const DrawList::Run& run : c.mesh->runs) {
-          if (!run.count || run.state.blend || run.state.additive)
-            continue;
-          const std::uint32_t first = m_first_vertex_counts ? run.first : 0;
-          const std::uint64_t offset =
-            std::uint64_t (run.first - first) * sizeof (render::Vertex);
-          m_device->set_buffer (0, caster_block);
-          m_device->set_buffer (1, c.mesh->vertices, offset);
-          m_device->set_buffer (2, block);
-          m_device->draw (run.count, 1, first);
-        }
-      }
     }
 
     void NhalRenderer::close_scene () {
@@ -324,154 +197,6 @@ namespace moppe::nhal {
       }
     }
 
-    void NhalRenderer::apply_gtao (const render::GtaoParams& params) {
-      if (m_resolved)
-        return;
-      close_scene ();
-      shaders::gtao::Post post = post_block (
-        params.camera_pos, params.forward, params.right_span, params.up_span);
-      post.occlusion = { params.radius.numerical_value_in (u::m),
-                         params.strength.numerical_value_in (mp_units::one),
-                         params.near_plane.numerical_value_in (u::m),
-                         params.far_plane.numerical_value_in (u::m) };
-      m_post_block = post;
-      auto pass = [&] (Texture target, const char* label) {
-        RenderPassDesc desc;
-        desc.label = label;
-        desc.color_count = 1;
-        desc.colors[0] = { target,
-                           target == m_scene_color ? Load::load : Load::discard,
-                           Store::store };
-        m_device->begin_render_pass (desc);
-      };
-      pass (m_ao[0], "occlusion");
-      m_device->set_pipeline (m_gtao);
-      m_device->set_uniforms (0, post);
-      m_device->set_texture (0, m_scene_depth);
-      m_device->draw (3);
-      m_device->end_render_pass ();
-      const std::array<float, 2> steps[2] = {
-        { 1.0f / float (m_scene_width), 0.0f },
-        { 0.0f, 1.0f / float (m_scene_height) },
-      };
-      // Across into the other target, then down into the scene.
-      for (int i = 0; i < 2; ++i) {
-        pass (i ? m_scene_color : m_ao[1], "occlusion blur");
-        m_device->set_pipeline (i ? m_gtao_apply : m_gtao_blur);
-        shaders::gtao::Post blurred = post;
-        blurred.blur = { steps[i][0], steps[i][1], float (i), 0 };
-        m_device->set_uniforms (0, blurred);
-        m_device->set_texture (0, m_ao[i]);
-        m_device->set_texture (1, m_scene_depth);
-        m_device->draw (3);
-        m_device->end_render_pass ();
-      }
-    }
-
-    void
-    NhalRenderer::apply_light_shafts (const render::LightShaftParams& params) {
-      if (m_frame_values.shadow[0] <= 0.0f || m_resolved)
-        return;
-      close_scene ();
-      shaders::gtao::Post post = post_block (
-        params.camera_pos, params.forward, params.right_span, params.up_span);
-      post.shafts = {
-        params.max_distance.numerical_value_in (u::m), 0.011f, 24.0f, 0
-      };
-      post.shaft_color = linear (
-        params.sun_color, params.strength.numerical_value_in (mp_units::one));
-      const float strength = post.shaft_color[3];
-      for (int c = 0; c < 3; ++c)
-        post.shaft_color[c] *= strength;
-      RenderPassDesc desc;
-      desc.label = "sun shafts";
-      desc.color_count = 1;
-      desc.colors[0] = { m_scene_color, Load::load, Store::store };
-      m_device->begin_render_pass (desc);
-      m_device->set_pipeline (m_shafts_pipeline);
-      m_device->set_buffer (0, m_frame_block);
-      m_device->set_uniforms (1, post);
-      m_device->set_texture (0, m_scene_depth);
-      m_device->set_texture (8, m_shadow_map);
-      m_device->draw (3);
-      m_device->end_render_pass ();
-    }
-
-    void
-    NhalRenderer::apply_underwater (const render::UnderwaterParams& params) {
-      if (m_resolved || !m_water_levels || !m_have_terrain)
-        return;
-      close_scene ();
-      if (!m_submerged)
-        m_submerged =
-          m_device->create_texture ({ m_scene_width,
-                                      m_scene_height,
-                                      Format::rgba16_float,
-                                      usage_render_target | usage_sampled,
-                                      1,
-                                      "submerged scene" });
-      shaders::underwater::Submersion below {};
-      below.surface = { params.water_level.numerical_value_in (u::m),
-                        params.near_plane.numerical_value_in (u::m),
-                        params.far_plane.numerical_value_in (u::m),
-                        0 };
-      RenderPassDesc pass;
-      pass.label = "underwater";
-      pass.color_count = 1;
-      pass.colors[0] = { m_submerged, Load::discard, Store::store };
-      m_device->begin_render_pass (pass);
-      m_device->set_pipeline (m_underwater);
-      m_device->set_buffer (0, m_frame_block);
-      m_device->set_uniforms (1, terrain_block ());
-      m_device->set_uniforms (2, below);
-      m_device->set_uniforms (3, sea_block (m_params.time));
-      m_device->set_texture (0, m_scene_color);
-      m_device->set_texture (1, m_scene_depth);
-      m_device->set_texture (2, m_heights);
-      m_device->set_texture (11, m_water_levels);
-      m_device->set_texture (12, m_water_flow ? m_water_flow : m_still_water);
-      m_device->draw (3);
-      m_device->end_render_pass ();
-      std::swap (m_scene_color, m_submerged);
-    }
-
-    void NhalRenderer::apply_motion_blur (float strength) {
-      if (strength <= 0.0f)
-        return;
-      reconstruct_scene ();
-      if (!m_blurred)
-        m_blurred =
-          m_device->create_texture ({ m_width,
-                                      m_height,
-                                      Format::rgba16_float,
-                                      usage_render_target | usage_sampled,
-                                      1,
-                                      "motion blurred" });
-      shaders::motion_blur::Smear smear {};
-      // At most some three and a half hundredths of the frame's height,
-      // in taps three output pixels apart.
-      constexpr float most_taps = 12.0f;
-      const float longest = 0.035f * float (m_height);
-      smear.streak = { std::min (strength, 1.0f),
-                       longest,
-                       most_taps,
-                       std::max (longest / most_taps, 1.0f) };
-      RenderPassDesc desc;
-      desc.label = "motion blur";
-      desc.color_count = 1;
-      desc.colors[0] = { m_blurred, Load::discard, Store::store };
-      m_device->begin_render_pass (desc);
-      m_device->set_pipeline (m_motion_blur);
-      m_device->set_buffer (0, m_frame_block);
-      m_device->set_uniforms (1, smear);
-      m_device->set_texture (0, m_image);
-      m_device->set_texture (1, m_scene_motion);
-      m_device->set_texture (2, m_scene_depth);
-      m_device->draw (3);
-      m_device->end_render_pass ();
-      m_image = m_blurred;
-    }
-
     void NhalRenderer::draw_hud_text (const render::TextList& text) {
       m_hud_text = text;
     }
@@ -524,84 +249,10 @@ namespace moppe::nhal {
       }
     }
 
-    void NhalRenderer::request_screenshot (const std::string& path) {
-      m_screenshot = path;
-    }
-
-    void NhalRenderer::request_frame (
-      std::function<void (const render::FramePixels&)> sink) {
-      m_frame_sink = std::move (sink);
-    }
-
-    const std::array<std::uint8_t, 65536>& NhalRenderer::display_bytes () {
-      static const std::unique_ptr<std::array<std::uint8_t, 65536>> table = [] {
-        auto bytes = std::make_unique<std::array<std::uint8_t, 65536>> ();
-        for (std::uint32_t h = 0; h < 65536; ++h) {
-          const float v = std::clamp (
-            half_to_float (static_cast<std::uint16_t> (h)), 0.0f, 1.0f);
-          (*bytes)[h] = std::uint8_t (std::pow (v, 1 / 2.2f) * 255 + 0.5f);
-        }
-        return bytes;
-      }();
-      return *table;
-    }
-
-    std::vector<std::uint8_t>
-    NhalRenderer::capture_rgb (const Capture& capture) {
-      const Format format = capture.format;
-      const std::size_t pixel_bytes = bytes_per_pixel (format);
-      std::vector<std::uint8_t> rgb (std::size_t (capture.width) *
-                                     capture.height * 3);
-      const std::array<std::uint8_t, 65536>& shown = display_bytes ();
-      const bool bgra = format == Format::bgra8_unorm;
-      parallel_for (
-        capture.height, 64, [&] (std::size_t begin, std::size_t end) {
-          for (std::size_t y = begin; y < end; ++y) {
-            const std::byte* p = capture.pixels.data () + y * capture.row_bytes;
-            std::uint8_t* out = &rgb[y * capture.width * 3];
-            for (std::uint32_t x = 0; x < capture.width;
-                 ++x, p += pixel_bytes, out += 3) {
-              if (format == Format::rgba16_float) {
-                std::uint16_t h[3];
-                std::memcpy (h, p, sizeof (h));
-                out[0] = shown[h[0]];
-                out[1] = shown[h[1]];
-                out[2] = shown[h[2]];
-              } else {
-                out[0] = std::uint8_t (p[bgra ? 2 : 0]);
-                out[1] = std::uint8_t (p[1]);
-                out[2] = std::uint8_t (p[bgra ? 0 : 2]);
-              }
-            }
-          }
-        });
-      return rgb;
-    }
-
     void NhalRenderer::end_frame () {
       open_present ();
       m_device->end_render_pass ();
-      if (!m_screenshot.empty () || m_frame_sink) {
-        m_device->capture_frame (
-          [path = std::move (m_screenshot),
-           sink = std::move (m_frame_sink)] (const Capture& capture) {
-            const std::vector<std::uint8_t> rgb = capture_rgb (capture);
-            if (sink)
-              sink ({ int (capture.width), int (capture.height), rgb });
-            if (!path.empty ()) {
-              write_png (path, capture.width, capture.height, rgb);
-              std::cerr << "moppe: wrote " << path << std::endl;
-            }
-          });
-        m_screenshot.clear ();
-        m_frame_sink = nullptr;
-        // Hosts may quit straight after the frame they asked to capture,
-        // so the readback completes here rather than next frame.
-        m_device->end_frame ();
-        m_device->wait_idle ();
-      } else {
-        m_device->end_frame ();
-      }
+      end_device_frame ();
       m_previous_models.swap (m_current_models);
       m_current_models.clear ();
       m_previous_vertices.swap (m_current_vertices);
@@ -657,19 +308,6 @@ namespace moppe::nhal {
 
     float NhalRenderer::scale_factor () const {
       return m_scale;
-    }
-
-    shaders::gtao::Post NhalRenderer::post_block (const position_t& eye,
-                                                  const Vec3& forward,
-                                                  const Vec3& right,
-                                                  const Vec3& up) const {
-      shaders::gtao::Post post {};
-      post.eye = lanes (position_value (eye));
-      post.ray_forward = lanes (forward);
-      post.ray_right = lanes (right);
-      post.ray_up = lanes (up);
-      post.occlusion = m_post_block.occlusion;
-      return post;
     }
 
     void NhalRenderer::upload_frame () {
@@ -824,79 +462,6 @@ namespace moppe::nhal {
       pass.depth = { m_scene_depth, load, Store::store, 0.0f };
       m_device->begin_render_pass (pass);
       m_scene_open = m_scene_begun = true;
-    }
-
-    void NhalRenderer::copy_beneath_water () {
-      open_scene ();
-      m_device->end_render_pass ();
-      m_scene_open = false;
-      RenderPassDesc pass;
-      pass.label = "scene beneath water";
-      pass.color_count = 2;
-      pass.colors[0] = { m_beneath, Load::discard, Store::store };
-      pass.colors[1] = { m_beneath_depth, Load::discard, Store::store };
-      m_device->begin_render_pass (pass);
-      m_device->set_pipeline (m_scene_copy);
-      m_device->set_texture (0, m_scene_color);
-      m_device->set_texture (1, m_scene_depth);
-      m_device->draw (3);
-      m_device->end_render_pass ();
-      open_scene ();
-    }
-
-    std::array<float, 4> NhalRenderer::sun_glare () const {
-      const Mat4 view_proj = m_params.proj * m_params.view;
-      const Vec3 sun = m_params.sun_dir;
-      auto row = [&] (int r) {
-        return view_proj.element (r) * sun[0] +
-               view_proj.element (4 + r) * sun[1] +
-               view_proj.element (8 + r) * sun[2];
-      };
-      const float w = row (3);
-      if (w <= 0.0f || m_params.sun_visibility <= 0.0f)
-        return { 0, 0, 0, 1 };
-      const float nx = row (0) / w, ny = row (1) / w;
-      const float edge =
-        1.0f -
-        std::max (0.0f,
-                  (std::max (std::abs (nx), std::abs (ny)) - 0.85f) / 0.45f);
-      if (edge <= 0.0f)
-        return { 0, 0, 0, 1 };
-      return { nx * 0.5f + 0.5f,
-               1.0f - (ny * 0.5f + 0.5f),
-               m_params.sun_visibility * std::min (edge, 1.0f),
-               float (m_width) / float (std::max (m_height, 1u)) };
-    }
-
-    void NhalRenderer::bloom (const shaders::present::Present& present) {
-      auto pass = [&] (Texture target, const char* label) {
-        RenderPassDesc desc;
-        desc.label = label;
-        desc.color_count = 1;
-        desc.colors[0] = { target, Load::discard, Store::store };
-        m_device->begin_render_pass (desc);
-      };
-      pass (m_bloom[0], "bloom bright pass");
-      m_device->set_pipeline (m_bloom_bright);
-      m_device->set_uniforms (0, present);
-      m_device->set_buffer (1, m_exposure_value);
-      m_device->set_texture (0, m_image);
-      m_device->draw (3);
-      m_device->end_render_pass ();
-      const std::array<float, 2> steps[2] = {
-        { 1.0f / float (m_bloom_width), 0.0f },
-        { 0.0f, 1.0f / float (m_bloom_height) },
-      };
-      for (int i = 0; i < 2; ++i) {
-        pass (m_bloom[1 - i], "bloom blur");
-        m_device->set_pipeline (m_bloom_blur);
-        shaders::bloom_blur::Blur blur {};
-        blur.direction = { steps[i][0], steps[i][1], 0, 0 };
-        m_device->set_uniforms (0, blur);
-        m_device->set_texture (0, m_bloom[i]);
-        m_device->draw (3);
-        m_device->end_render_pass ();
-      }
     }
 
     void NhalRenderer::open_present () {

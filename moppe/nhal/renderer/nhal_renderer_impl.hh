@@ -2,13 +2,15 @@
 // scene (terrain, sky, draw lists and meshes) into a jittered RGBA16F
 // colour, RG16F motion, and reversed-Z depth at the scene's scale; the
 // temporal resolve into a history at the drawable's size; then the tonemap
-// and the HUD into the drawable. Water, the forest, undergrowth, shadows,
-// and the post effects are all part of that frame.
+// and the HUD into the drawable.
 //
 // This header is private to the renderer's own files: everyone else
 // reaches it through create_renderer (nhal_renderer.hh). NhalRenderer's
 // member functions are defined across nhal_renderer.cc and the
-// nhal_renderer_*.cc files beside it, by topic.
+// nhal_renderer_*.cc files beside it, a file to each feature (terrain,
+// forest, boulders, grass, water, shadow, post, capture) with its
+// resources, pipelines, culling, and drawing; the frame around them and
+// the scene's generic drawing are in _frame.cc and _scene.cc.
 #ifndef MOPPE_NHAL_RENDERER_IMPL_HH
 #define MOPPE_NHAL_RENDERER_IMPL_HH
 
@@ -93,103 +95,29 @@ namespace moppe::nhal {
     constexpr std::uint32_t forest_species = 3;
     constexpr std::uint32_t forest_classes = forest_species * forest_tiers;
 
-    // A step function of the tier from one of world.lisp's *tree-steps*
-    // rows: its value at the coarsest tier, then each tier it changes at
-    // and the value from there on.
-    template <std::size_t N>
-    constexpr std::uint32_t tree_step (const unsigned (&row)[N],
-                                       std::uint32_t tier) {
-      std::uint32_t value = row[0];
-      for (std::size_t i = 1; i + 1 < N; i += 2)
-        if (tier >= row[i])
-          value = row[i + 1];
-      return value;
+    // The scene pass's targets: RGBA16F colour, RG16F motion, and
+    // reversed-Z depth, culling back faces; what every scene program
+    // starts from.
+    inline RenderPipelineDesc scene_target () {
+      RenderPipelineDesc scene;
+      scene.color_formats[0] = Format::rgba16_float;
+      scene.color_formats[1] = Format::rg16_float;
+      scene.color_count = 2;
+      scene.depth_format = Format::d32_float;
+      scene.cull = Cull::back;
+      return scene;
     }
 
-    struct TreeTopology {
-      std::uint32_t sides, crown_sides, masses;
-      bool conifer, branches, fell;
-
-      // SPECIES as the cull numbers classes: 0 birch, 1 spruce, 2 fell
-      // birch, whose clumps go in pairs on stems of their own at any tier,
-      // each branch bent at a knee through a third ring.
-      TreeTopology (std::uint32_t species, std::uint32_t tier)
-          : sides (tree_step (tree_steps::sides, tier)),
-            crown_sides (sides == 10 ? 9u : sides),
-            masses (tree_step (species == 1   ? tree_steps::masses_spruce
-                               : species == 2 ? tree_steps::masses_fell
-                                              : tree_steps::masses_birch,
-                               tier)),
-            conifer (species == 1),
-            branches (species == 2 ||
-                      (species == 0 && tier >= tree_steps::branches)),
-            fell (species == 2) {}
-
-      std::uint32_t mass_vertices () const {
-        return conifer ? crown_sides + 2 : 8 + (fell ? 9 : branches ? 6 : 0);
-      }
-      std::uint32_t mass_primitives () const {
-        return conifer ? 2 * crown_sides : 12 + (fell ? 12 : branches ? 6 : 0);
-      }
-
-      void triangles (std::vector<std::uint16_t>& out) const {
-        auto add = [&] (std::uint32_t a, std::uint32_t b, std::uint32_t c) {
-          out.insert (
-            out.end (),
-            { std::uint16_t (a), std::uint16_t (b), std::uint16_t (c) });
-        };
-        // Three bands of quads between the trunk's four rings.
-        for (std::uint32_t p = 0; p < sides * 6; ++p) {
-          const std::uint32_t band = p / (2 * sides);
-          const std::uint32_t quad = (p / 2) % sides;
-          const std::uint32_t next = (quad + 1) % sides;
-          const std::uint32_t a = band * sides + quad, b = band * sides + next;
-          const std::uint32_t c = a + sides, d = b + sides;
-          add ((p & 1) ? b : a, (p & 1) ? d : b, c);
-        }
-        for (std::uint32_t mass = 0; mass < masses; ++mass) {
-          const std::uint32_t first = sides * 4 + mass * mass_vertices ();
-          const std::uint32_t n = crown_sides;
-          for (std::uint32_t p = 0; p < mass_primitives (); ++p) {
-            if (conifer) {
-              // A cone: its ring to the apex, then to the closing centre.
-              const std::uint32_t side = p % n;
-              add (first + side,
-                   first + (side + 1) % n,
-                   first + (p < n ? n : n + 1));
-            } else if (p < 12) {
-              // A clump: six faces about its top tip, six about its bottom.
-              const std::uint32_t k = p % 6;
-              const std::uint32_t e0 = first + 2 + k;
-              const std::uint32_t e1 = first + 2 + (k + 1) % 6;
-              add (p < 6 ? first : first + 1, p < 6 ? e0 : e1, p < 6 ? e1 : e0);
-            } else {
-              // Its branch, a three-sided prism in one or two bands.
-              const std::uint32_t q = p - 12, band = q / 6, k = q % 6 / 2;
-              const std::uint32_t a = first + 8 + band * 3 + k;
-              const std::uint32_t b = first + 8 + band * 3 + (k + 1) % 3;
-              add ((q & 1) ? b : a, (q & 1) ? b + 3 : b, a + 3);
-            }
-          }
-        }
-      }
-    };
-
-    // The icosahedron every boulder is shaped from, and its twenty faces as
-    // corner triples (shader_types.h's MOPPE_BOULDER_FACE_CORNERS).
-    constexpr float icosahedron[12][3] = {
-      { -0.525731f, 0.850651f, 0.0f },  { 0.525731f, 0.850651f, 0.0f },
-      { -0.525731f, -0.850651f, 0.0f }, { 0.525731f, -0.850651f, 0.0f },
-      { 0.0f, -0.525731f, 0.850651f },  { 0.0f, 0.525731f, 0.850651f },
-      { 0.0f, -0.525731f, -0.850651f }, { 0.0f, 0.525731f, -0.850651f },
-      { 0.850651f, 0.0f, -0.525731f },  { 0.850651f, 0.0f, 0.525731f },
-      { -0.850651f, 0.0f, -0.525731f }, { -0.850651f, 0.0f, 0.525731f },
-    };
-    constexpr std::uint32_t icosahedron_faces[60] = {
-      0, 11, 5,  0, 5,  1, 0, 1, 7, 0, 7,  10, 0, 10, 11, 1, 5, 9, 5, 11,
-      4, 11, 10, 2, 10, 7, 6, 7, 1, 8, 3,  9,  4, 3,  4,  2, 3, 2, 6, 3,
-      6, 8,  3,  8, 9,  4, 9, 5, 2, 4, 11, 6,  2, 10, 8,  6, 7, 9, 8, 1,
-    };
+    // The sun's shadow atlas: depth alone, biased against acne.
+    inline RenderPipelineDesc shadow_caster () {
+      RenderPipelineDesc caster;
+      caster.color_count = 0;
+      caster.depth_format = Format::d32_float;
+      caster.depth_compare = CompareOp::less_equal;
+      caster.depth_bias = 2.0f;
+      caster.slope_scaled_depth_bias = 2.0f;
+      return caster;
+    }
 
     inline int patch_verts (int lod) {
       return (lod_verts[lod] - 1) * render::terrain_patch_cells / chunk_cells +
@@ -220,92 +148,6 @@ namespace moppe::nhal {
         index /= base;
       }
       return result;
-    }
-
-    // -- screenshots: a small, uncompressed PNG ---------------------------
-
-    inline std::uint32_t crc (const std::uint8_t* data,
-                              std::size_t size,
-                              std::uint32_t c = 0xffffffffu) {
-      static std::uint32_t table[256];
-      if (!table[1])
-        for (std::uint32_t n = 0; n < 256; ++n) {
-          std::uint32_t v = n;
-          for (int k = 0; k < 8; ++k)
-            v = v & 1 ? 0xedb88320u ^ (v >> 1) : v >> 1;
-          table[n] = v;
-        }
-      for (std::size_t i = 0; i < size; ++i)
-        c = table[(c ^ data[i]) & 255] ^ (c >> 8);
-      return c;
-    }
-
-    inline void write_png (const std::string& path,
-                           std::uint32_t width,
-                           std::uint32_t height,
-                           const std::vector<std::uint8_t>& rgb) {
-      std::vector<std::uint8_t> raw;
-      raw.reserve ((width * 3 + 1) * height);
-      for (std::uint32_t y = 0; y < height; ++y) {
-        raw.push_back (0);
-        raw.insert (raw.end (),
-                    rgb.begin () + std::size_t (y) * width * 3,
-                    rgb.begin () + std::size_t (y + 1) * width * 3);
-      }
-      // zlib with stored deflate blocks.
-      std::vector<std::uint8_t> z { 0x78, 0x01 };
-      std::uint32_t a = 1, b = 0;
-      for (std::size_t at = 0; at < raw.size ();) {
-        const std::size_t n = std::min<std::size_t> (65535, raw.size () - at);
-        z.push_back (at + n == raw.size () ? 1 : 0);
-        z.push_back (n & 255);
-        z.push_back (n >> 8);
-        z.push_back (~n & 255);
-        z.push_back ((~n >> 8) & 255);
-        z.insert (z.end (), raw.begin () + at, raw.begin () + at + n);
-        for (std::size_t i = at; i < at + n; ++i) {
-          a = (a + raw[i]) % 65521;
-          b = (b + a) % 65521;
-        }
-        at += n;
-      }
-      const std::uint32_t adler = (b << 16) | a;
-      for (int s = 24; s >= 0; s -= 8)
-        z.push_back ((adler >> s) & 255);
-
-      FILE* file = std::fopen (path.c_str (), "wb");
-      if (!file)
-        return;
-      auto u32 = [] (std::vector<std::uint8_t>& v, std::uint32_t x) {
-        for (int s = 24; s >= 0; s -= 8)
-          v.push_back ((x >> s) & 255);
-      };
-      auto chunk = [&] (const char* type, const std::vector<std::uint8_t>& d) {
-        std::vector<std::uint8_t> out;
-        u32 (out, std::uint32_t (d.size ()));
-        out.insert (out.end (), type, type + 4);
-        out.insert (out.end (), d.begin (), d.end ());
-        u32 (out, ~crc (out.data () + 4, out.size () - 4));
-        std::fwrite (out.data (), 1, out.size (), file);
-      };
-      const std::uint8_t signature[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
-      std::fwrite (signature, 1, 8, file);
-      std::vector<std::uint8_t> header;
-      u32 (header, width);
-      u32 (header, height);
-      header.insert (header.end (), { 8, 2, 0, 0, 0 });
-      chunk ("IHDR", header);
-      chunk ("IDAT", z);
-      chunk ("IEND", {});
-      std::fclose (file);
-    }
-
-    inline float half_to_float (std::uint16_t h) {
-      const std::uint32_t e = (h >> 10) & 31, m = h & 1023;
-      const float v = e == 0    ? std::ldexp (float (m), -24)
-                      : e == 31 ? 65504.0f
-                                : std::ldexp (float (m | 1024), int (e) - 25);
-      return (h >> 15) ? -v : v;
     }
 
     // -- resources the game holds -----------------------------------------
@@ -583,7 +425,21 @@ namespace moppe::nhal {
       float scale_factor () const override;
 
     private:
+      // The pipelines, each feature's made in its own file.
       void make_pipelines ();
+      void make_terrain_pipelines ();
+      void make_scene_pipelines ();
+      void make_forest_pipelines ();
+      void make_boulders_pipelines ();
+      void make_shadow_pipelines ();
+      void make_water_pipelines ();
+      void make_grass_pipelines ();
+      void make_frame_pipelines ();
+      void make_post_pipelines ();
+
+      // Ends the device's frame, first handing any screenshot or frame
+      // asked for to its file or sink.
+      void end_device_frame ();
 
       // The ground tiles around the camera that carry blades, counted into
       // the sward's indirect draw: a window of 0.6-metre cells anchored to
