@@ -357,7 +357,7 @@ namespace moppe::mov {
           (quantity_cast<isq::velocity> (ahead * target) - across) *
           speed_gain);
         const metres_per_second_squared_t most =
-          standard_gravity * std::tan (radians_value (max_tilt));
+          standard_gravity * libm::tan (max_tilt);
         if (magnitude_of (push) > most)
           push = quantity_cast<isq::acceleration> (way_of (push) * most);
         // The rotor gives its own weight and the climb asked for, and
@@ -368,8 +368,7 @@ namespace moppe::mov {
         force_t level =
           quantity_cast<isq::force> (push * heli_rig::mass) - pull;
         level.numerical_value_ref_in (u::N)[1] = 0.0f;
-        const newtons_t reach =
-          std::tan (radians_value (max_tilt) * 1.3f) * hold;
+        const newtons_t reach = libm::tan (max_tilt * 1.3f) * hold;
         if (magnitude_of (level) > reach)
           level = quantity_cast<isq::force> (way_of (level) * reach);
         const newtons_t thrust =

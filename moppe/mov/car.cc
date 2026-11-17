@@ -390,7 +390,7 @@ namespace moppe::mov {
           level = level * (1.0f / speed_value (carried));
           nose = normalized (nose);
           const radians_t off =
-            std::atan2 (cross (nose, level)[1], dot (nose, level)) * u::rad;
+            libm::atan2 (cross (nose, level)[1], dot (nose, level));
           wanted[1] += (off * rig.slung_vane *
                         std::min (1.0f * one, carried / (10.0f * u::m / u::s)))
                          .numerical_value_in (u::rad / pow<2> (u::s));

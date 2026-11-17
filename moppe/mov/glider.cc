@@ -240,7 +240,7 @@ namespace moppe::mov {
     // path out level and holds it there, pushing further out as the speed
     // bleeds away, until the wing has no more to give and settles.
     const radians_t climb =
-      std::asin (std::clamp<float> (path[1], -1.0f, 1.0f)) * u::rad;
+      libm::asin (std::clamp<float> (path[1], -1.0f, 1.0f));
     scale_factor_t wanted;
     if (m_flare) {
       const scale_factor_t level = quantity_cast<scale_factor> (
@@ -263,10 +263,9 @@ namespace moppe::mov {
                std::clamp (
                  scalar_value (1.0f - path_hold * (climb - glide)), 0.4f, 1.8f);
     }
-    wanted =
-      std::clamp (wanted / std::max (0.6f, std::cos (radians_value (m_bank))),
-                  least_loading,
-                  stall_loading);
+    wanted = std::clamp (wanted / std::max (0.6f, libm::cos (m_bank)),
+                         least_loading,
+                         stall_loading);
     const damping_t bar = m_flare ? 5.0f / u::s : 4.0f / u::s;
     m_loading +=
       (wanted - m_loading) * smoothing_alpha (bar, dt).numerical_value_in (one);

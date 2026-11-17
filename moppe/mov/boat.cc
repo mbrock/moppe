@@ -26,7 +26,7 @@ namespace moppe::mov {
       // The chine's breadth to the sheer's.
       constexpr proportion_t flare = 0.82f * proportion[one];
       constexpr meters_t stem_half = 0.12f * u::m; // half the blunt bow's width
-      const meters_t rake = std::tan (10.0f * PI / 180.0f) * depth;
+      const meters_t rake = libm::tan (10.0f * PI / 180.0f * u::rad) * depth;
 
       // The skiff, some 45 kg of 9 mm birch plywood, glass, epoxy, paint,
       // and two plastic seats; its long-tail, some 23 kg of engine, frame,
@@ -269,11 +269,11 @@ namespace moppe::mov {
       template <class Q>
       Q swing_tilt (const Q& q, radians_t swing, radians_t tilt) {
         const Vec3& v = q.numerical_value_ref_in (Q::unit);
-        const float ct = std::cos (radians_value (tilt));
-        const float st = std::sin (radians_value (tilt));
+        const float ct = libm::cos (tilt);
+        const float st = libm::sin (tilt);
         const Vec3 t (v[0], v[1] * ct - v[2] * st, v[1] * st + v[2] * ct);
-        const float cs = std::cos (radians_value (swing));
-        const float ss = std::sin (radians_value (swing));
+        const float cs = libm::cos (swing);
+        const float ss = libm::sin (swing);
         return Vec3 (t[0] * cs + t[2] * ss, t[1], -t[0] * ss + t[2] * cs) *
                Q::reference;
       }
