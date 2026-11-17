@@ -11,11 +11,11 @@ namespace moppe::game::pig_model {
     using model_mesh::Vertex;
 
     constexpr Paint paints[] = {
-      {.colour = {0.74f, 0.5f, 0.48f}, .unlit = false, .metallic = 0.0f, .roughness = 0.45f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // snout
-      {.colour = {0.8f, 0.63f, 0.58f}, .unlit = false, .metallic = 0.0f, .roughness = 0.7f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.5f, .emission = 0.0f}, // skin
-      {.colour = {0.13f, 0.11f, 0.11f}, .unlit = false, .metallic = 0.0f, .roughness = 0.7f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.4f, .emission = 0.0f}, // patch
-      {.colour = {0.22f, 0.19f, 0.17f}, .unlit = false, .metallic = 0.0f, .roughness = 0.5f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // hoof
-      {.colour = {0.04f, 0.03f, 0.03f}, .unlit = false, .metallic = 0.0f, .roughness = 0.1f, .coat = 1.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // eye
+      {.colour = {0.74f, 0.5f, 0.48f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.45f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // snout
+      {.colour = {0.8f, 0.63f, 0.58f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.7f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.5f * proportion[one], .emission = 0.0f * scale_factor[one]}, // skin
+      {.colour = {0.13f, 0.11f, 0.11f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.7f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.4f * proportion[one], .emission = 0.0f * scale_factor[one]}, // patch
+      {.colour = {0.22f, 0.19f, 0.17f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.5f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // hoof
+      {.colour = {0.04f, 0.03f, 0.03f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.1f * proportion[one], .coat = 1.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // eye
     };
 
     constexpr Vertex body_vertices[] = {

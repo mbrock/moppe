@@ -11,12 +11,12 @@ namespace moppe::game::reindeer_model {
     using model_mesh::Vertex;
 
     constexpr Paint paints[] = {
-      {.colour = {0.82f, 0.79f, 0.72f}, .unlit = false, .metallic = 0.0f, .roughness = 0.9f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.5f, .emission = 0.0f}, // pale
-      {.colour = {0.42f, 0.36f, 0.29f}, .unlit = false, .metallic = 0.0f, .roughness = 0.85f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.4f, .emission = 0.0f}, // coat
-      {.colour = {0.2f, 0.16f, 0.12f}, .unlit = false, .metallic = 0.0f, .roughness = 0.8f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.3f, .emission = 0.0f}, // dark
-      {.colour = {0.13f, 0.12f, 0.11f}, .unlit = false, .metallic = 0.0f, .roughness = 0.5f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // hoof
-      {.colour = {0.58f, 0.5f, 0.4f}, .unlit = false, .metallic = 0.0f, .roughness = 0.55f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // antler
-      {.colour = {0.03f, 0.025f, 0.02f}, .unlit = false, .metallic = 0.0f, .roughness = 0.1f, .coat = 1.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // eye
+      {.colour = {0.82f, 0.79f, 0.72f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.9f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.5f * proportion[one], .emission = 0.0f * scale_factor[one]}, // pale
+      {.colour = {0.42f, 0.36f, 0.29f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.85f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.4f * proportion[one], .emission = 0.0f * scale_factor[one]}, // coat
+      {.colour = {0.2f, 0.16f, 0.12f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.8f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.3f * proportion[one], .emission = 0.0f * scale_factor[one]}, // dark
+      {.colour = {0.13f, 0.12f, 0.11f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.5f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // hoof
+      {.colour = {0.58f, 0.5f, 0.4f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.55f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // antler
+      {.colour = {0.03f, 0.025f, 0.02f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.1f * proportion[one], .coat = 1.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // eye
     };
 
     constexpr Vertex body_vertices[] = {

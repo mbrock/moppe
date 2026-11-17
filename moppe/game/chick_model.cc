@@ -11,11 +11,11 @@ namespace moppe::game::chick_model {
     using model_mesh::Vertex;
 
     constexpr Paint paints[] = {
-      {.colour = {0.86f, 0.74f, 0.42f}, .unlit = false, .metallic = 0.0f, .roughness = 1.0f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.8f, .emission = 0.0f}, // down
-      {.colour = {0.42f, 0.28f, 0.15f}, .unlit = false, .metallic = 0.0f, .roughness = 1.0f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.8f, .emission = 0.0f}, // stripe
-      {.colour = {0.8f, 0.7f, 0.4f}, .unlit = false, .metallic = 0.0f, .roughness = 0.4f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // horn
-      {.colour = {0.55f, 0.3f, 0.05f}, .unlit = false, .metallic = 0.0f, .roughness = 0.1f, .coat = 1.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // eye
-      {.colour = {0.8f, 0.66f, 0.26f}, .unlit = false, .metallic = 0.0f, .roughness = 0.5f, .coat = 0.0f, .coat_roughness = 0.04f, .transmission = 0.0f, .ior = 1.5f, .sheen = 0.0f, .emission = 0.0f}, // leg
+      {.colour = {0.86f, 0.74f, 0.42f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 1.0f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.8f * proportion[one], .emission = 0.0f * scale_factor[one]}, // down
+      {.colour = {0.42f, 0.28f, 0.15f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 1.0f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.8f * proportion[one], .emission = 0.0f * scale_factor[one]}, // stripe
+      {.colour = {0.8f, 0.7f, 0.4f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.4f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // horn
+      {.colour = {0.55f, 0.3f, 0.05f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.1f * proportion[one], .coat = 1.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // eye
+      {.colour = {0.8f, 0.66f, 0.26f}, .unlit = false, .metallic = 0.0f * proportion[one], .roughness = 0.5f * proportion[one], .coat = 0.0f * proportion[one], .coat_roughness = 0.04f * proportion[one], .transmission = 0.0f * proportion[one], .ior = 1.5f * isq::refractive_index[one], .sheen = 0.0f * proportion[one], .emission = 0.0f * scale_factor[one]}, // leg
     };
 
     constexpr Vertex body_vertices[] = {

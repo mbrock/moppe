@@ -37,9 +37,8 @@ namespace moppe::game::model_mesh {
     // shade by as it learns to: how metallic and how rough, a clear coat
     // over it (car paint) and its roughness, how much light passes
     // through (glass, lenses) and its index of refraction, the sheen of
-    // cloth, and how strongly it glows in its own colour.
-    // The exported tables give each as a bare number, which a proportion
-    // and the refractive index take as they are.
+    // cloth, and how strongly it glows in its own colour. The exported
+    // tables give each in its own kind's unit.
     proportion_t metallic = 0.0f * proportion[one];
     proportion_t roughness = 0.8f * proportion[one];
     proportion_t coat = 0.0f * proportion[one];
@@ -48,9 +47,8 @@ namespace moppe::game::model_mesh {
     quantity<isq::refractive_index[one], float> ior =
       1.5f * isq::refractive_index[one];
     proportion_t sheen = 0.0f * proportion[one];
-    // A strength that may pass one (a lamp's 4): a scale_factor_t, once
-    // the exporter writes it as one, since that kind takes no bare float.
-    float emission = 0.0f;
+    // A strength that may pass one (a lamp's 4).
+    scale_factor_t emission = 0.0f * scale_factor[one];
   };
 
   struct Mesh {

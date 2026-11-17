@@ -49,15 +49,16 @@ def triple(v):
 
 # Principled BSDF inputs written beside each paint's colour, by the
 # model_mesh::Paint field each fills, with the value when the material has
-# no Principled BSDF.
-SURFACE = (("metallic", "Metallic", 0.0),
-           ("roughness", "Roughness", 0.8),
-           ("coat", "Coat Weight", 0.0),
-           ("coat_roughness", "Coat Roughness", 0.03),
-           ("transmission", "Transmission Weight", 0.0),
-           ("ior", "IOR", 1.5),
-           ("sheen", "Sheen Weight", 0.0),
-           ("emission", "Emission Strength", 0.0))
+# no Principled BSDF and the unit that gives the field its kind.
+PROPORTION = "proportion[one]"
+SURFACE = (("metallic", "Metallic", 0.0, PROPORTION),
+           ("roughness", "Roughness", 0.8, PROPORTION),
+           ("coat", "Coat Weight", 0.0, PROPORTION),
+           ("coat_roughness", "Coat Roughness", 0.03, PROPORTION),
+           ("transmission", "Transmission Weight", 0.0, PROPORTION),
+           ("ior", "IOR", 1.5, "isq::refractive_index[one]"),
+           ("sheen", "Sheen Weight", 0.0, PROPORTION),
+           ("emission", "Emission Strength", 0.0, "scale_factor[one]"))
 
 
 def surface(mat):
@@ -65,7 +66,7 @@ def surface(mat):
     bsdf = next((n for n in tree.nodes if n.type == "BSDF_PRINCIPLED"),
                 None) if tree else None
     values = []
-    for _, socket, default in SURFACE:
+    for _, socket, default, _ in SURFACE:
         value = default
         if bsdf is not None and socket in bsdf.inputs:
             value = bsdf.inputs[socket].default_value
@@ -75,6 +76,14 @@ def surface(mat):
             value = mat.roughness
         values.append(round(float(value), 4))
     return tuple(values)
+
+
+def paint_row(name, colour, unlit, props):
+    fields = "".join(f", .{field} = {f(v)} * {unit}"
+                     for (field, _, _, unit), v in zip(SURFACE, props))
+    return (f"      {{.colour = {{{', '.join(f(x) for x in colour)}}}, "
+            f".unlit = {'true' if unlit else 'false'}{fields}}}, "
+            f"// {name}")
 
 
 def export_mesh(empty, graph, palette):
@@ -170,12 +179,7 @@ def main():
         "",
         "    constexpr Paint paints[] = {",
     ]
-    for name, colour, unlit, props in palette:
-        fields = "".join(f", .{field} = {f(v)}"
-                         for (field, _, _), v in zip(SURFACE, props))
-        cc.append(f"      {{.colour = {{{', '.join(f(x) for x in colour)}}}, "
-                  f".unlit = {'true' if unlit else 'false'}{fields}}}, "
-                  f"// {name}")
+    cc += [paint_row(*paint) for paint in palette]
     cc.append("    };")
     for name, vertices, triangles in meshes:
         cc += ["", f"    constexpr Vertex {name}_vertices[] = {{"]
@@ -205,4 +209,5 @@ def main():
     print(f"wrote {out_cc}: triangles {counts}; {len(points)} points")
 
 
-main()
+if __name__ == "__main__":
+    main()
