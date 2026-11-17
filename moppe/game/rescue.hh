@@ -54,7 +54,7 @@ namespace moppe::game {
   struct MachineShape {
     // "the tractor", for the prompts.
     const char* name = "";
-    // How high over it its waymark stands (game_hud.cc).
+    // How high over it its waymark stands (heads_up.cc).
     meters_t mark_height {};
     std::span<const Bumper> bumpers;
     // Where its weight is centred.

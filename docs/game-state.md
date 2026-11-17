@@ -49,7 +49,7 @@ and reports the small set of application-side effects it cannot realize
 itself.
 `MoppeGame::tick_simulation` selects live, recorded, scripted, or autopilot
 input, continues the global clock and weather, takes the other player's
-seat when riding along (`ride_along`, from their snapshots), brings the
+seat when riding along (`Companionship::ride_along`, from their snapshots), brings the
 mushrooms on the ground in line with the basket, then delegates ordinary
 play through that operation. After it, the resting view and the capture
 cameras (side, ride capture, animal) may place the camera for their shots;

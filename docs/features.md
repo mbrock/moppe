@@ -143,7 +143,7 @@ build, test, and change the code; read this when working on a feature.
   player (in their jacket's colour), and the bike, the jeep, the
   tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in
   view, at the frame's edge pointing the way when it is not
-  (`HudState::Waymark`, placed by `add_waymarks` in game_hud.cc).
+  (`HudState::Waymark`, placed by `add_waymarks` in heads_up.cc).
   Marks
   whose markers would meet on the screen share one, which lists the
   names and the machines' silhouettes with their nearest-to-furthest
@@ -160,7 +160,7 @@ build, test, and change the code; read this when working on a feature.
   companion, and the trailhead as dots (pinned to the rim when off it).
   It shows some 220 m round a walker, widening with speed and from the
   air, and dims with the light (`Hud::draw_chart`, filled by
-  `add_chart` in game_hud.cc). The sheet is painted while the world
+  `add_chart` in heads_up.cc). The sheet is painted while the world
   loads.
 - The map: `M` unfolds a sheet of the whole world over the view, `M`
   again looks closer at the 1.8 km round the walker, and a third (or
