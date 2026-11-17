@@ -46,6 +46,9 @@ namespace moppe::game {
     // Nothing else may stand this near the line between them.
     constexpr meters_t clear_way = 0.55f * u::m;
 
+    const direction_t east = unit_direction (Vec3 (1, 0, 0));
+    const direction_t north = unit_direction (Vec3 (0, 0, 1));
+
     displacement_t flat (displacement_t v) {
       v.numerical_value_ref_in (u::m)[1] = 0.0f;
       return v;
@@ -53,7 +56,69 @@ namespace moppe::game {
 
     template <typename Q>
     Q mix (Q a, Q b, proportion_t t) {
-      return a + (b - a) * t;
+      return a + (b - a) * t.numerical_value_in (one);
+    }
+
+    // A length, a share, or an offset scaled by shares, which leave it
+    // what it was (docs/typed-quantities.md).
+    template <Quantity Q>
+    meters_t as_length (const Q& q) {
+      return quantity_cast<isq::length> (q);
+    }
+    template <Quantity Q>
+    proportion_t as_share (const Q& q) {
+      return quantity_cast<proportion> (q);
+    }
+    template <Quantity Q>
+    displacement_t as_offset (const Q& q) {
+      return quantity_cast<isq::displacement> (q);
+    }
+    // What moves a place by an offset, or by a way times a length.
+    template <Quantity Q>
+    auto shift (const Q& d) {
+      return quantity_cast<isq::position_vector> (d);
+    }
+
+    // The dot product of two offsets, as an area.
+    square_meters_t dot_m2 (const displacement_t& a, const displacement_t& b) {
+      return dot (displacement_value (a), displacement_value (b)) * u::m2;
+    }
+
+    // How far a straight offset reaches.
+    meters_t length_of (const displacement_t& d) {
+      return length (displacement_value (d)) * u::m;
+    }
+
+    // A place's east-west lane, and its height.
+    meters_t east_of (const position_t& p) {
+      return position_value (p)[0] * u::m;
+    }
+    meters_t height_of (const position_t& p) {
+      return position_value (p)[1] * u::m;
+    }
+
+    // Halfway between two places.
+    position_t halfway (const position_t& a, const position_t& b) {
+      return position ((position_value (a) + position_value (b)) * 0.5f);
+    }
+
+    // The way `v` points; it must have some length.
+    template <Quantity Q>
+    direction_t unit_of (const Q& v) {
+      return unit_direction (normalized (v.numerical_value_ref_in (Q::unit)));
+    }
+
+    // `v` with its part along `way` taken out.
+    template <Quantity Q>
+    Q square_off (const Q& v, const direction_t& way) {
+      const Vec3& raw = v.numerical_value_ref_in (Q::unit);
+      return Q (raw - direction_value (way) * dot (raw, direction_value (way)),
+                Q::reference);
+    }
+
+    // The level way round the up axis `a` turns from east toward south.
+    direction_t compass (radians_t a) {
+      return unit_direction (Vec3 (libm::cos (a), 0.0f, libm::sin (a)));
     }
 
     // The hung hammock's geometry: a parabola between the two points where
@@ -70,24 +135,16 @@ namespace moppe::game {
       // A point on the sagging centre line, 0 at the foot's tree to 1 at
       // the head's, and the line's direction there, headward.
       position_t centre (proportion_t t) const {
-        return position (position_value (hang[0]) +
-                         displacement_value (run) * t.numerical_value_in (one) +
-                         direction_value (down) *
-                           meters_value (4.0f * sag * t * (whole - t)));
+        return hang[0] + shift (run * t.numerical_value_in (one)) +
+               shift (down * as_length (4.0f * sag * t * (whole - t)));
       }
       direction_t tangent (proportion_t t) const {
-        return unit_direction (
-          normalized (displacement_value (run) +
-                      direction_value (down) *
-                        meters_value (4.0f * sag * (whole - 2.0f * t))));
+        return unit_of (
+          run + as_offset (down * as_length (4.0f * sag * (whole - 2.0f * t))));
       }
       // The way a body lying at `t` faces: square to the line, upward.
       direction_t normal (proportion_t t) const {
-        const direction_t along = tangent (t);
-        return unit_direction (
-          normalized (direction_value (up) -
-                      direction_value (along) *
-                        dot (direction_value (up), direction_value (along))));
+        return unit_of (square_off (up, tangent (t)));
       }
       // The cloth: `lengthwise` along it from foot to head, `across` from
       // -1 to 1 across its half width. Its edges run
@@ -96,17 +153,17 @@ namespace moppe::game {
                         span_coordinate_t across_at) const {
         const float across = across_at.numerical_value_in (one);
         const proportion_t t =
-          cloth_from + (cloth_to - cloth_from) * lengthwise;
+          cloth_from + as_share ((cloth_to - cloth_from) * lengthwise);
         const proportion_t bell =
-          std::sin (radians_value (pi * lengthwise)) * proportion[one];
-        return position (
-          position_value (centre (t)) +
-          direction_value (side) *
-            meters_value (
-              half_width *
-              std::pow (std::max (bell.numerical_value_in (one), 0.0f), 0.55f) *
-              across) +
-          direction_value (up) * meters_value (lift * bell * across * across));
+          libm::sin (pi * lengthwise.numerical_value_in (one)) *
+          proportion[one];
+        return centre (t) +
+               shift (side *
+                      (half_width *
+                       std::pow (std::max (bell.numerical_value_in (one), 0.0f),
+                                 0.55f) *
+                       across)) +
+               shift (up * as_length (lift * bell * across * across));
       }
     };
 
@@ -114,30 +171,17 @@ namespace moppe::game {
     shape_of (const HammockSite& site, proportion_t load, radians_t swing) {
       Shape s;
       const direction_t along = hammock_along (site);
-      s.hang[0] =
-        position (position_value (site.strap[0]) +
-                  direction_value (along) * meters_value (site.girth[0]));
-      s.hang[1] =
-        position (position_value (site.strap[1]) -
-                  direction_value (along) * meters_value (site.girth[1]));
-      s.run =
-        displacement (position_value (s.hang[1]) - position_value (s.hang[0]));
+      s.hang[0] = site.strap[0] + shift (along * site.girth[0]);
+      s.hang[1] = site.strap[1] - shift (along * site.girth[1]);
+      s.run = s.hang[1] - s.hang[0];
       const direction_t axis = direction_of (s.run);
-      const direction_t up = unit_direction (
-        normalized (direction_value (world_up) -
-                    direction_value (axis) * dot (direction_value (world_up),
-                                                  direction_value (axis))));
-      const direction_t side =
-        unit_direction (cross (direction_value (axis), direction_value (up)));
-      s.down = unit_direction (
-        direction_value (side) * std::sin (radians_value (swing)) -
-        direction_value (up) * std::cos (radians_value (swing)));
-      s.up = unit_direction (-direction_value (s.down));
-      s.side = unit_direction (
-        direction_value (side) * std::cos (radians_value (swing)) +
-        direction_value (up) * std::sin (radians_value (swing)));
-      const meters_t span = length (displacement_value (s.run)) * u::m;
-      s.sag = span * mix (empty_sag, loaded_sag, load);
+      const direction_t up = unit_of (square_off (world_up, axis));
+      const direction_t side = quantity_cast<direction> (cross (axis, up));
+      s.down = side * libm::sin (swing) - up * libm::cos (swing);
+      s.up = -s.down;
+      s.side = side * libm::cos (swing) + up * libm::sin (swing);
+      const meters_t span = length_of (s.run);
+      s.sag = as_length (span * mix (empty_sag, loaded_sag, load));
       s.half_width = mix (0.34f * u::m, 0.54f * u::m, load);
       s.lift = mix (0.08f * u::m, 0.30f * u::m, load);
       return s;
@@ -167,31 +211,23 @@ namespace moppe::game {
                HammockSite& site) {
       if (!carries (a) || !carries (b))
         return false;
-      const displacement_t between =
-        flat (displacement (position_value (b.root) - position_value (a.root)));
-      const meters_t apart = length (displacement_value (between)) * u::m;
+      const displacement_t between = flat (b.root - a.root);
+      const meters_t apart = length_of (between);
       const meters_t span = apart - a.radius - b.radius;
       if (span < hammock_least_span || span > hammock_most_span)
         return false;
-      if (std::fabs (position_value (a.root)[1] - position_value (b.root)[1]) *
-            u::m >
-          most_step)
+      if (abs (height_of (a.root) - height_of (b.root)) > most_step)
         return false;
-      const meters_t top =
-        std::max (position_value (a.root)[1], position_value (b.root)[1]) *
-        u::m;
-      const meters_t strap = top + seat_height + loaded_sag * span;
-      if (strap -
-            std::min (position_value (a.root)[1], position_value (b.root)[1]) *
-              u::m >
+      const meters_t top = std::max (height_of (a.root), height_of (b.root));
+      const meters_t strap = top + seat_height + as_length (loaded_sag * span);
+      if (strap - std::min (height_of (a.root), height_of (b.root)) >
           highest_strap)
         return false;
       const direction_t along = unit_direction (displacement_value (between) *
                                                 (1.0f / meters_value (apart)));
       // The ground must not rise into the cloth.
       for (int i = 1; i < 6; ++i) {
-        const position_t at = position (
-          position_value (a.root) + displacement_value (between) * (i / 6.0f));
+        const position_t at = a.root + shift (between * (i / 6.0f));
         if (ground (plan (at)) >
             terrain::surface_elevation_point (top + 0.2f * u::m))
           return false;
@@ -200,35 +236,30 @@ namespace moppe::game {
         if (same_tree (other, a) || same_tree (other, b) ||
             other.height < 0.8f * u::m)
           continue;
-        const displacement_t to = flat (
-          displacement (position_value (other.root) - position_value (a.root)));
-        const meters_t reach =
-          dot (displacement_value (to), direction_value (along)) * u::m;
+        const displacement_t to = flat (other.root - a.root);
+        const meters_t reach = as_length (dot (to, along));
         if (reach < 0.0f * u::m || reach > apart)
           continue;
-        const meters_t off =
-          length (displacement_value (to) -
-                  direction_value (along) * meters_value (reach)) *
-          u::m;
+        const meters_t off = length_of (to - as_offset (along * reach));
         if (off < clear_way + other.radius)
           return false;
       }
       // The head lies toward the higher root, looking out over the feet.
-      const bool swap = position_value (a.root)[1] > position_value (b.root)[1];
+      const bool swap = height_of (a.root) > height_of (b.root);
       const mov::Trunk& foot = swap ? b : a;
       const mov::Trunk& head = swap ? a : b;
       // Each strap goes round its trunk where the trunk, leaning as it
       // does, passes the strap's height; a trunk is a little slimmer there
       // than at its foot.
       const auto up_trunk = [strap] (const mov::Trunk& trunk) {
-        return position_value (trunk.root) +
-               direction_value (trunk.axis) *
-                 meters_value (
-                   (strap - position_value (trunk.root)[1] * u::m) /
-                   std::max (0.5f, float (direction_value (trunk.axis)[1])));
+        return trunk.root +
+               shift (
+                 trunk.axis *
+                 ((strap - height_of (trunk.root)) /
+                  std::max (0.5f, float (direction_value (trunk.axis)[1]))));
       };
-      site.strap[0] = position (up_trunk (foot));
-      site.strap[1] = position (up_trunk (head));
+      site.strap[0] = up_trunk (foot);
+      site.strap[1] = up_trunk (head);
       site.girth[0] = 0.9f * foot.radius;
       site.girth[1] = 0.9f * head.radius;
       return true;
@@ -240,29 +271,21 @@ namespace moppe::game {
                const position_t& b,
                meters_t radius,
                int sides) {
-      const direction_t axis =
-        direction_of (displacement (position_value (b) - position_value (a)));
-      const Vec3& axis_v = direction_value (axis);
-      const direction_t rim_x = unit_direction (
-        normalized (length2 (cross (axis_v, direction_value (world_up))) < 1e-6f
-                      ? cross (axis_v, Vec3 (1, 0, 0))
-                      : cross (axis_v, direction_value (world_up))));
-      const direction_t rim_y =
-        unit_direction (cross (axis_v, direction_value (rim_x)));
+      const direction_t axis = direction_of (displacement_t (b - a));
+      const auto level = cross (axis, world_up);
+      const direction_t rim_x = length2 (level.numerical_value_in (one)) < 1e-6f
+                                  ? unit_of (cross (axis, east))
+                                  : unit_of (level);
+      const direction_t rim_y = quantity_cast<direction> (cross (axis, rim_x));
       const auto put = [&] (const position_t& p, const direction_t& n) {
-        dl.normal (direction_value (n));
-        dl.vertex (position_value (p) +
-                   direction_value (n) * meters_value (radius));
+        dl.normal (n);
+        dl.vertex (p + shift (n * radius));
       };
       for (int i = 0; i < sides; ++i) {
         const radians_t t0 = tau * i / sides;
         const radians_t t1 = tau * (i + 1) / sides;
-        const direction_t n0 = unit_direction (
-          direction_value (rim_x) * std::cos (radians_value (t0)) +
-          direction_value (rim_y) * std::sin (radians_value (t0)));
-        const direction_t n1 = unit_direction (
-          direction_value (rim_x) * std::cos (radians_value (t1)) +
-          direction_value (rim_y) * std::sin (radians_value (t1)));
+        const direction_t n0 = rim_x * libm::cos (t0) + rim_y * libm::sin (t0);
+        const direction_t n1 = rim_x * libm::cos (t1) + rim_y * libm::sin (t1);
         put (a, n0);
         put (b, n0);
         put (b, n1);
@@ -270,18 +293,14 @@ namespace moppe::game {
         put (b, n1);
         put (a, n1);
         // The ends, closed.
-        dl.normal (-axis_v);
-        dl.vertex (position_value (a));
-        dl.vertex (position_value (a) +
-                   direction_value (n1) * meters_value (radius));
-        dl.vertex (position_value (a) +
-                   direction_value (n0) * meters_value (radius));
-        dl.normal (axis_v);
-        dl.vertex (position_value (b));
-        dl.vertex (position_value (b) +
-                   direction_value (n0) * meters_value (radius));
-        dl.vertex (position_value (b) +
-                   direction_value (n1) * meters_value (radius));
+        dl.normal (-axis);
+        dl.vertex (a);
+        dl.vertex (a + shift (n1 * radius));
+        dl.vertex (a + shift (n0 * radius));
+        dl.normal (axis);
+        dl.vertex (b);
+        dl.vertex (b + shift (n0 * radius));
+        dl.vertex (b + shift (n1 * radius));
       }
     }
 
@@ -295,76 +314,56 @@ namespace moppe::game {
                        meters_t half_width,
                        DisplayColor colour,
                        proportion_t alpha) {
-      const direction_t view = direction_of (
-        displacement (position_value (camera) - position_value (centre)));
-      const Vec3& axis_v = direction_value (axis);
-      const Vec3& view_v = direction_value (view);
-      const direction_t side =
-        unit_direction (normalized (length2 (cross (axis_v, view_v)) < 1e-8f
-                                      ? cross (Vec3 (1, 0, 0), view_v)
-                                      : cross (axis_v, view_v)));
-      const direction_t up =
-        unit_direction (cross (view_v, direction_value (side)));
+      const direction_t view = direction_of (displacement_t (camera - centre));
+      const auto level = cross (axis, view);
+      const direction_t side = length2 (level.numerical_value_in (one)) < 1e-8f
+                                 ? unit_of (cross (east, view))
+                                 : unit_of (level);
+      const direction_t up = quantity_cast<direction> (cross (view, side));
       const proportion_t end_on =
-        std::fabs (dot (axis_v, view_v)) * proportion[one];
+        std::fabs (dot (axis, view).numerical_value_in (one)) * proportion[one];
       const meters_t along =
-        half_length + (half_width - half_length) * end_on * end_on;
-      const displacement_t lengthwise =
-        displacement (direction_value (up) * meters_value (along));
-      const displacement_t breadthwise =
-        displacement (direction_value (side) * meters_value (half_width));
-      const Vec3& at = position_value (centre);
-      const Vec3& l = displacement_value (lengthwise);
-      const Vec3& b = displacement_value (breadthwise);
-      dl.color (colour, alpha.numerical_value_in (one));
+        half_length + as_length ((half_width - half_length) * end_on * end_on);
+      const auto l = shift (up * along);
+      const auto b = shift (side * half_width);
+      dl.color (colour, alpha);
       dl.uv (0, 0);
-      dl.vertex (at - l - b);
+      dl.vertex (centre - l - b);
       dl.uv (1, 0);
-      dl.vertex (at - l + b);
+      dl.vertex (centre - l + b);
       dl.uv (1, 1);
-      dl.vertex (at + l + b);
+      dl.vertex (centre + l + b);
       dl.uv (0, 1);
-      dl.vertex (at + l - b);
+      dl.vertex (centre + l - b);
     }
   }
 
   position_t hammock_middle (const HammockSite& site) {
     using namespace camp_parts;
-    return position (
-      (position_value (site.strap[0]) + position_value (site.strap[1])) * 0.5f);
+    return halfway (site.strap[0], site.strap[1]);
   }
 
   direction_t hammock_along (const HammockSite& site) {
     using namespace camp_parts;
-    const displacement_t between = flat (displacement (
-      position_value (site.strap[1]) - position_value (site.strap[0])));
-    return unit_direction (length2 (displacement_value (between)) > 1e-6f
-                             ? normalized (displacement_value (between))
-                             : Vec3 (0, 0, 1));
+    const displacement_t between = flat (site.strap[1] - site.strap[0]);
+    return dot_m2 (between, between) > 1e-6f * u::m2 ? unit_of (between)
+                                                     : north;
   }
 
   direction_t hammock_across (const HammockSite& site) {
     using namespace camp_parts;
-    return unit_direction (cross (direction_value (hammock_along (site)),
-                                  direction_value (world_up)));
+    return quantity_cast<direction> (cross (hammock_along (site), world_up));
   }
 
   meters_t hammock_distance (const HammockSite& site, const position_t& feet) {
     using namespace camp_parts;
-    const displacement_t between = flat (displacement (
-      position_value (site.strap[1]) - position_value (site.strap[0])));
+    const displacement_t between = flat (site.strap[1] - site.strap[0]);
     const square_meters_t apart2 =
-      std::max (length2 (displacement_value (between)), 1e-6f) * u::m2;
-    const displacement_t to = flat (
-      displacement (position_value (feet) - position_value (site.strap[0])));
+      std::max (dot_m2 (between, between), 1e-6f * u::m2);
+    const displacement_t to = flat (feet - site.strap[0]);
     const proportion_t t = std::clamp<proportion_t> (
-      dot (displacement_value (to), displacement_value (between)) * u::m2 /
-        apart2,
-      0.0f * proportion[one],
-      whole);
-    return length (displacement_value (to) -
-                   displacement_value (between) * t.numerical_value_in (one)) *
-           u::m;
+      dot_m2 (to, between) / apart2, 0.0f * proportion[one], whole);
+    return length_of (to - as_offset (between * t));
   }
 
   proportion_t hammock_load (const Camp& camp, play_time_t now) {
@@ -372,9 +371,7 @@ namespace moppe::game {
     // Getting in or out takes this long.
     constexpr seconds_t settling = 0.8f * u::s;
     const seconds_t since = seconds_between (now, camp.rest_time);
-    const proportion_t eased =
-      smoothstep (0.0f, seconds_value (settling), seconds_value (since)) *
-      proportion[one];
+    const proportion_t eased = band (0.0f * u::s, settling, since);
     return camp.resting ? eased : whole - eased;
   }
 
@@ -389,24 +386,16 @@ namespace moppe::game {
       for (std::size_t j = i + 1; j < trunks.size (); ++j) {
         const mov::Trunk& a = trunks[i];
         const mov::Trunk& b = trunks[j];
-        const displacement_t between = flat (
-          displacement (position_value (b.root) - position_value (a.root)));
-        const square_meters_t apart2 =
-          length2 (displacement_value (between)) * u::m2;
+        const displacement_t between = flat (b.root - a.root);
+        const square_meters_t apart2 = dot_m2 (between, between);
         if (apart2 < 1.0f * u::m2 || apart2 > 49.0f * u::m2)
           continue;
         // Standing between them: along the middle of the line, and near it.
-        const displacement_t to =
-          flat (displacement (position_value (feet) - position_value (a.root)));
-        const proportion_t t =
-          dot (displacement_value (to), displacement_value (between)) * u::m2 /
-          apart2;
+        const displacement_t to = flat (feet - a.root);
+        const proportion_t t = dot_m2 (to, between) / apart2;
         if (t < 0.12f * proportion[one] || t > 0.88f * proportion[one])
           continue;
-        const meters_t off =
-          length (displacement_value (to) -
-                  displacement_value (between) * t.numerical_value_in (one)) *
-          u::m;
+        const meters_t off = length_of (to - as_offset (between * t));
         if (off > 1.5f * u::m)
           continue;
         HammockSite site;
@@ -416,7 +405,7 @@ namespace moppe::game {
           off +
           0.5f *
             std::fabs ((t - 0.5f * proportion[one]).numerical_value_in (one)) *
-            std::sqrt (apart2.numerical_value_in (u::m2)) * u::m;
+            sqrt (apart2);
         if (score < best_score) {
           best_score = score;
           best = site;
@@ -435,7 +424,7 @@ namespace moppe::game {
     // order.
     std::vector<mov::Trunk> sorted (trunks.begin (), trunks.end ());
     std::ranges::sort (sorted, [] (const mov::Trunk& a, const mov::Trunk& b) {
-      return position_value (a.root)[0] < position_value (b.root)[0];
+      return east_of (a.root) < east_of (b.root);
     });
     constexpr meters_t window = hammock_most_span + 2.0f * most_girth;
     // The crown standing over a place: each tree round it by the depth of
@@ -444,21 +433,14 @@ namespace moppe::game {
     const auto overhead = [&] (const position_t& middle) {
       scale_factor_t crown = 0.0f * scale_factor[one];
       const auto from = std::ranges::lower_bound (
-        sorted,
-        position_value (middle)[0] - meters_value (open_sky),
-        {},
-        [] (const mov::Trunk& trunk) {
-          return static_cast<float> (position_value (trunk.root)[0]);
+        sorted, east_of (middle) - open_sky, {}, [] (const mov::Trunk& trunk) {
+          return east_of (trunk.root);
         });
       for (auto trunk = from;
            trunk != sorted.end () &&
-           position_value (trunk->root)[0] <=
-             position_value (middle)[0] + meters_value (open_sky);
+           east_of (trunk->root) <= east_of (middle) + open_sky;
            ++trunk)
-        if (const meters_t away =
-              length (displacement_value (flat (displacement (
-                position_value (trunk->root) - position_value (middle))))) *
-              u::m;
+        if (const meters_t away = length_of (flat (trunk->root - middle));
             trunk->height > 3.0f * u::m && away < open_sky)
           crown += quantity_cast<scale_factor> ((trunk->height - trunk->clear) /
                                                 (away + 2.0f * u::m));
@@ -471,31 +453,25 @@ namespace moppe::game {
       const mov::Trunk& a = sorted[i];
       if (!carries (a))
         continue;
-      while (position_value (sorted[first].root)[0] <
-             position_value (a.root)[0] - meters_value (window))
+      while (east_of (sorted[first].root) < east_of (a.root) - window)
         ++first;
       std::size_t last = i;
       while (last + 1 < sorted.size () &&
-             position_value (sorted[last + 1].root)[0] <=
-               position_value (a.root)[0] + meters_value (window))
+             east_of (sorted[last + 1].root) <= east_of (a.root) + window)
         ++last;
       const std::span<const mov::Trunk> around (sorted.data () + first,
                                                 last - first + 1);
       for (std::size_t j = i + 1; j <= last; ++j) {
         const mov::Trunk& b = sorted[j];
-        const position_t middle =
-          position ((position_value (a.root) + position_value (b.root)) * 0.5f);
-        meters_t distance =
-          length (displacement_value (flat (
-            displacement (position_value (middle) - position_value (near))))) *
-          u::m;
+        const position_t middle = halfway (a.root, b.root);
+        meters_t distance = length_of (flat (middle - near));
         if (distance >= best_distance)
           continue;
         HammockSite site;
         if (!fits (a, b, around, ground, site))
           continue;
         if (shade > 0.0f * u::m)
-          distance += shade * overhead (middle).numerical_value_in (one);
+          distance += as_length (shade * overhead (middle));
         if (distance >= best_distance)
           continue;
         best_distance = distance;
@@ -513,7 +489,7 @@ namespace moppe::game {
     using namespace camp_parts;
     std::vector<mov::Trunk> sorted (trunks.begin (), trunks.end ());
     std::ranges::sort (sorted, [] (const mov::Trunk& a, const mov::Trunk& b) {
-      return position_value (a.root)[0] < position_value (b.root)[0];
+      return east_of (a.root) < east_of (b.root);
     });
     constexpr meters_t window = hammock_most_span + 2.0f * most_girth;
     struct Found {
@@ -527,23 +503,17 @@ namespace moppe::game {
       const mov::Trunk& a = sorted[i];
       if (!carries (a))
         continue;
-      while (position_value (sorted[first].root)[0] <
-             position_value (a.root)[0] - meters_value (window))
+      while (east_of (sorted[first].root) < east_of (a.root) - window)
         ++first;
       std::size_t last = i;
       while (last + 1 < sorted.size () &&
-             position_value (sorted[last + 1].root)[0] <=
-               position_value (a.root)[0] + meters_value (window))
+             east_of (sorted[last + 1].root) <= east_of (a.root) + window)
         ++last;
       const std::span<const mov::Trunk> around (sorted.data () + first,
                                                 last - first + 1);
       for (std::size_t j = i + 1; j <= last; ++j) {
-        const position_t middle = position (
-          (position_value (a.root) + position_value (sorted[j].root)) * 0.5f);
-        const meters_t distance =
-          length (displacement_value (flat (
-            displacement (position_value (middle) - position_value (near))))) *
-          u::m;
+        const position_t middle = halfway (a.root, sorted[j].root);
+        const meters_t distance = length_of (flat (middle - near));
         HammockSite site;
         if (distance > within || !fits (a, sorted[j], around, ground, site))
           continue;
@@ -588,19 +558,14 @@ namespace moppe::game {
     };
     const auto normal_at = [&] (int i, int j) {
       const displacement_t du =
-        displacement (position_value (at (std::min (i + 1, along), j)) -
-                      position_value (at (std::max (i - 1, 0), j)));
+        at (std::min (i + 1, along), j) - at (std::max (i - 1, 0), j);
       const displacement_t dv =
-        displacement (position_value (at (i, std::min (j + 1, across))) -
-                      position_value (at (i, std::max (j - 1, 0))));
-      if (length2 (cross (displacement_value (du), displacement_value (dv))) <
-          1e-10f)
+        at (i, std::min (j + 1, across)) - at (i, std::max (j - 1, 0));
+      const auto square = cross (du, dv);
+      if (length2 (square.numerical_value_in (u::m2)) < 1e-10f)
         return s.up;
-      const direction_t n = unit_direction (
-        normalized (cross (displacement_value (du), displacement_value (dv))));
-      return dot (direction_value (n), direction_value (s.up)) < 0.0f
-               ? unit_direction (-direction_value (n))
-               : n;
+      const direction_t n = unit_of (square);
+      return dot (n, s.up).numerical_value_in (one) < 0.0f ? -n : n;
     };
     for (int j = 0; j < across; ++j) {
       dl.color (j == 0 || j == across - 1   ? hem
@@ -608,8 +573,8 @@ namespace moppe::game {
                                             : canvas);
       for (int i = 0; i < along; ++i) {
         const auto put = [&] (int a, int b) {
-          dl.normal (direction_value (normal_at (a, b)));
-          dl.vertex (position_value (at (a, b)));
+          dl.normal (normal_at (a, b));
+          dl.vertex (at (a, b));
         };
         put (i, j);
         put (i + 1, j);
@@ -635,20 +600,15 @@ namespace moppe::game {
       constexpr int sides = 14;
       const meters_t radius = site.girth[end] + 0.008f * u::m;
       for (int i = 0; i < sides; ++i) {
-        const radians_t a0 = tau * i / sides;
-        const radians_t a1 = tau * (i + 1) / sides;
-        const direction_t n0 = unit_direction (Vec3 (
-          std::cos (radians_value (a0)), 0.0f, std::sin (radians_value (a0))));
-        const direction_t n1 = unit_direction (Vec3 (
-          std::cos (radians_value (a1)), 0.0f, std::sin (radians_value (a1))));
-        const position_t low = position (position_value (site.strap[end]) -
-                                         direction_value (world_up) * 0.03f);
-        const position_t high = position (position_value (site.strap[end]) +
-                                          direction_value (world_up) * 0.03f);
+        const direction_t n0 = compass (tau * i / sides);
+        const direction_t n1 = compass (tau * (i + 1) / sides);
+        const position_t low =
+          site.strap[end] - shift (moppe::along (world_up, 0.03f * u::m));
+        const position_t high =
+          site.strap[end] + shift (moppe::along (world_up, 0.03f * u::m));
         const auto put = [&] (const position_t& p, const direction_t& n) {
-          dl.normal (direction_value (n));
-          dl.vertex (position_value (p) +
-                     direction_value (n) * meters_value (radius));
+          dl.normal (n);
+          dl.vertex (p + shift (n * radius));
         };
         put (low, n0);
         put (high, n0);
@@ -668,14 +628,13 @@ namespace moppe::game {
                                seconds_t time) {
     using namespace camp_parts;
     const Shape s = shape_of (site, whole, swing);
-    const meters_t span = length (displacement_value (s.run)) * u::m;
+    const meters_t span = length_of (s.run);
     // The hips lie a little toward the foot from the lowest point, so the
     // whole body is cradled.
     const proportion_t at = 0.46f * proportion[one];
     const direction_t facing = s.normal (at + 0.04f * proportion[one]);
     const direction_t headward = s.tangent (at + 0.06f * proportion[one]);
-    const direction_t right = unit_direction (normalized (
-      cross (direction_value (headward), direction_value (facing))));
+    const direction_t right = unit_of (cross (headward, facing));
     const meters_t breath =
       0.006f * u::m * std::sin (seconds_value (time) * 1.3f);
 
@@ -683,37 +642,30 @@ namespace moppe::game {
     hold.facing = facing;
     hold.up = headward;
     // High enough in the cloth that the pack on their back stays in it.
-    hold.pelvis = position (position_value (s.centre (at)) +
-                            direction_value (s.normal (at)) * 0.21f);
+    hold.pelvis = s.centre (at) + shift (along (s.normal (at), 0.21f * u::m));
     hold.lean = 0.16f * u::rad;
     // The head rests back; it turns only part of the way after the eyes.
-    hold.gaze = normalized (direction_value (facing) +
-                            normalized (direction_value (gaze)) * 0.7f);
+    hold.gaze = direction_value (unit_of (facing + unit_of (gaze) * 0.7f));
     hold.head_up = direction_value (s.tangent (at + 0.22f * proportion[one]));
     const proportion_t cross_ankles = 0.86f * u::m / span;
     for (int i = 0; i < 2; ++i) {
       const float side = i == 0 ? -1.0f : 1.0f;
-      hold.wrist[i] = position (
-        position_value (hold.pelvis) + direction_value (headward) * 0.25f +
-        direction_value (facing) * meters_value (0.13f * u::m + breath) +
-        direction_value (right) * (side * 0.035f));
-      hold.elbow_pole[i] =
-        direction_value (right) * side - direction_value (facing) * 0.4f;
+      hold.wrist[i] = hold.pelvis + shift (along (headward, 0.25f * u::m)) +
+                      shift (along (facing, 0.13f * u::m + breath)) +
+                      shift (along (right, side * 0.035f * u::m));
+      hold.elbow_pole[i] = direction_value (right * side - facing * 0.4f);
       const proportion_t foot = at - cross_ankles;
       hold.ankle[i] =
-        position (position_value (s.centre (foot)) +
-                  direction_value (s.normal (foot)) * (0.10f + 0.05f * i) +
-                  direction_value (s.side) * (side * 0.03f));
-      hold.knee_pole[i] =
-        direction_value (facing) + direction_value (right) * (side * 0.2f);
+        s.centre (foot) +
+        shift (along (s.normal (foot), (0.10f + 0.05f * i) * u::m)) +
+        shift (along (s.side, side * 0.03f * u::m));
+      hold.knee_pole[i] = direction_value (facing + right * (side * 0.2f));
     }
     // The feet fall slack, toes up and a little away.
     const direction_t at_feet = s.normal (at - cross_ankles);
     const direction_t to_head = s.tangent (at - cross_ankles);
-    hold.sole = unit_direction (normalized (direction_value (at_feet) * 0.82f -
-                                            direction_value (to_head) * 0.57f));
-    hold.instep = unit_direction (normalized (
-      direction_value (to_head) * 0.82f + direction_value (at_feet) * 0.57f));
+    hold.sole = unit_of (at_feet * 0.82f - to_head * 0.57f);
+    hold.instep = unit_of (to_head * 0.82f + at_feet * 0.57f);
     return pose_holding (hold);
   }
 
@@ -721,9 +673,8 @@ namespace moppe::game {
     using namespace camp_parts;
     const Shape s = shape_of (site, whole, swing);
     const AvatarSkeleton k = pose_resting (site, swing, s.up, 0.0f * u::s);
-    return position (position_value (k.head) +
-                     direction_value (s.normal (0.6f * proportion[one])) *
-                       0.09f);
+    return k.head +
+           shift (along (s.normal (0.6f * proportion[one]), 0.09f * u::m));
   }
 
   direction_t
@@ -731,15 +682,12 @@ namespace moppe::game {
     using namespace camp_parts;
     // Yaw turns from the foot of the hammock; a sleeper looks along
     // their own length and up.
-    const direction_t ahead =
-      unit_direction (-direction_value (hammock_along (site)));
-    const direction_t right = unit_direction (
-      cross (direction_value (ahead), direction_value (world_up)));
-    return unit_direction (
-      (direction_value (ahead) * std::cos (radians_value (yaw)) +
-       direction_value (right) * std::sin (radians_value (yaw))) *
-        std::cos (radians_value (pitch)) +
-      direction_value (world_up) * std::sin (radians_value (pitch)));
+    const direction_t ahead = -hammock_along (site);
+    const direction_t right =
+      quantity_cast<direction> (cross (ahead, world_up));
+    return (ahead * libm::cos (yaw) + right * libm::sin (yaw)) *
+             libm::cos (pitch) +
+           world_up * libm::sin (pitch);
   }
 
   proportion_t fire_burn (const Camp& camp, play_time_t now) {
@@ -749,24 +697,19 @@ namespace moppe::game {
     constexpr seconds_t dying = 1.5f * u::s;
     const seconds_t since = seconds_between (now, camp.fire_time);
     if (camp.fire)
-      return (0.12f + 0.88f * smoothstep (0.0f,
-                                          seconds_value (catching),
-                                          seconds_value (since))) *
-             proportion[one];
-    return since < dying ? whole - smoothstep (0.0f,
-                                               seconds_value (dying),
-                                               seconds_value (since)) *
-                                     proportion[one]
+      return 0.12f * proportion[one] +
+             0.88f * band (0.0f * u::s, catching, since);
+    return since < dying ? whole - band (0.0f * u::s, dying, since)
                          : 0.0f * proportion[one];
   }
 
   position_t fire_light_position (const Camp& camp) {
     using namespace camp_parts;
-    return position (position_value (camp.hearth) +
-                     direction_value (world_up) * 0.55f);
+    return camp.hearth + shift (along (world_up, 0.55f * u::m));
   }
 
   DisplayColor fire_light_color (proportion_t burn, seconds_t time) {
+    using namespace camp_parts;
     const float t = seconds_value (time);
     const proportion_t flicker = (0.80f + 0.10f * std::sin (t * 11.3f) +
                                   0.06f * std::sin (t * 23.7f + 1.3f) +
@@ -775,9 +718,10 @@ namespace moppe::game {
     // A display colour: the renderer's light is its 2.2 power.
     return scale_display (
       DisplayColor (1.50f, 1.04f, 0.56f),
-      std::pow (
-        std::clamp ((burn * flicker).numerical_value_in (one), 0.0f, 1.0f),
-        1.0f / 2.2f) *
+      std::pow (std::clamp (as_share (burn * flicker).numerical_value_in (one),
+                            0.0f,
+                            1.0f),
+                1.0f / 2.2f) *
         scale_factor[one]);
   }
 
@@ -800,17 +744,13 @@ namespace moppe::game {
 
   Pan pan_set_on (const position_t& hearth, const position_t& feet) {
     using namespace camp_parts;
-    const displacement_t toward =
-      flat (displacement (position_value (feet) - position_value (hearth)));
+    const displacement_t toward = flat (feet - hearth);
     const direction_t way =
-      unit_direction (length2 (displacement_value (toward)) > 1e-6f
-                        ? normalized (displacement_value (toward))
-                        : Vec3 (0, 0, 1));
+      dot_m2 (toward, toward) > 1e-6f * u::m2 ? unit_of (toward) : north;
     Pan pan;
     pan.on = true;
-    pan.place =
-      position (position_value (hearth) + direction_value (way) * 0.36f +
-                direction_value (world_up) * 0.17f);
+    pan.place = hearth + shift (along (way, 0.36f * u::m)) +
+                shift (along (world_up, 0.17f * u::m));
     pan.yaw = std::atan2 (direction_value (way)[2], direction_value (way)[0]) *
               heading[u::rad];
     return pan;
@@ -827,8 +767,6 @@ namespace moppe::game {
     constexpr meters_t radius = 0.17f * u::m;
     constexpr meters_t wall = 0.045f * u::m;
     constexpr int rim = 14;
-    const Vec3& centre = position_value (place);
-    const Vec3& up = direction_value (world_up);
     render::DrawState solid;
     solid.cull = false;
     dl.state (solid);
@@ -836,87 +774,74 @@ namespace moppe::game {
     dl.fogged (true);
     dl.begin (render::Prim::Triangles);
     const auto round = [&] (int i, meters_t r, meters_t height) {
-      const radians_t a = tau * i / rim;
-      return position (centre +
-                       Vec3 (std::cos (radians_value (a)),
-                             0.0f,
-                             std::sin (radians_value (a))) *
-                         meters_value (r) +
-                       up * meters_value (height));
-    };
-    const auto vertex = [&] (const position_t& p) {
-      dl.vertex (position_value (p));
+      return place + shift (along (compass (tau * i / rim), r)) +
+             shift (along (world_up, height));
     };
     constexpr meters_t floor = 0.0f * u::m;
     // The floor, glistening a little, and the wall round it.
     dl.color (0.11f, 0.10f, 0.10f);
-    dl.normal (up);
+    dl.normal (world_up);
     for (int i = 0; i < rim; ++i) {
-      dl.vertex (centre);
-      vertex (round (i + 1, radius, floor));
-      vertex (round (i, radius, floor));
+      dl.vertex (place);
+      dl.vertex (round (i + 1, radius, floor));
+      dl.vertex (round (i, radius, floor));
     }
     dl.color (0.07f, 0.07f, 0.075f);
     for (int i = 0; i < rim; ++i) {
       const radians_t a = tau * (i + 0.5f) / rim;
-      dl.normal (normalized (Vec3 (
-        std::cos (radians_value (a)), 0.4f, std::sin (radians_value (a)))));
-      vertex (round (i, radius, floor));
-      vertex (round (i + 1, radius, floor));
-      vertex (round (i + 1, radius * 1.1f, wall));
-      vertex (round (i, radius, floor));
-      vertex (round (i + 1, radius * 1.1f, wall));
-      vertex (round (i, radius * 1.1f, wall));
+      dl.normal (
+        unit_of (displacement (Vec3 (libm::cos (a), 0.4f, libm::sin (a)))));
+      dl.vertex (round (i, radius, floor));
+      dl.vertex (round (i + 1, radius, floor));
+      dl.vertex (round (i + 1, radius * 1.1f, wall));
+      dl.vertex (round (i, radius, floor));
+      dl.vertex (round (i + 1, radius * 1.1f, wall));
+      dl.vertex (round (i, radius * 1.1f, wall));
     }
-    const direction_t out = unit_direction (Vec3 (
-      std::cos (radians_value (yaw)), 0.0f, std::sin (radians_value (yaw))));
-    const Vec3& out_v = direction_value (out);
+    const direction_t out = compass (yaw);
     tube (dl,
-          position (centre + out_v * meters_value (radius * 1.05f) +
-                    up * meters_value (wall)),
-          position (centre + out_v * meters_value (radius + 0.27f * u::m) +
-                    up * meters_value (wall + 0.035f * u::m)),
+          place + shift (along (out, radius * 1.05f)) +
+            shift (along (world_up, wall)),
+          place + shift (along (out, radius + 0.27f * u::m)) +
+            shift (along (world_up, wall + 0.035f * u::m)),
           0.014f * u::m,
           6);
 
     // A fish lies across the pan, square to the handle, and the
     // mushrooms in what room it leaves.
+    const Vec3& out_v = direction_value (out);
     const direction_t across =
       unit_direction (Vec3 (-out_v[2], 0.0f, out_v[0]));
-    const Vec3& across_v = direction_value (across);
     if (fish) {
       const meters_t drawn = 1.5f * fish->length;
       const scale_factor_t fit =
         std::min (1.0f * scale_factor[one],
                   quantity_cast<scale_factor> (2.0f * radius * 1.15f / drawn));
-      draw_fish (
-        dl,
-        *fish,
-        position (centre -
-                  across_v * (0.5f * drawn * fit).numerical_value_in (u::m) -
-                  out_v * 0.03f + up * 0.035f),
-        across,
-        unit_direction (out_v * -1.0f),
-        fit,
-        0.0f,
-        cooked.numerical_value_in (one));
+      draw_fish (dl,
+                 *fish,
+                 place -
+                   shift (along (across, as_length (0.5f * drawn * fit))) -
+                   shift (along (out, 0.03f * u::m)) +
+                   shift (along (world_up, 0.035f * u::m)),
+                 across,
+                 out * -1.0f,
+                 fit,
+                 0.0f * wriggle[one],
+                 cooked);
     }
     // Eggs broken into the middle, the mushrooms round them.
     for (int i = 0; i < eggs; ++i) {
       const radians_t around = tau * (i + 0.25f) / eggs + yaw;
-      position_t at = position (centre + up * 0.004f);
+      position_t at = place + shift (along (world_up, 0.004f * u::m));
       if (fish)
-        position_value (at) +=
-          out_v * 0.09f + across_v * (0.1f * (i % 2 ? 1.0f : -1.0f));
+        at += shift (along (out, 0.09f * u::m) +
+                     along (across, 0.1f * (i % 2 ? 1.0f : -1.0f) * u::m));
       else if (eggs > 1)
-        position_value (at) += Vec3 (std::cos (radians_value (around)),
-                                     0.0f,
-                                     std::sin (radians_value (around))) *
-                               0.065f;
+        at += shift (along (compass (around), 0.065f * u::m));
       draw_fried_egg (dl,
                       at,
                       around + 2.0f * u::rad,
-                      cooked.numerical_value_in (one),
+                      cooked,
                       static_cast<std::uint32_t> (i * 7919 + 13));
     }
     for (std::size_t i = 0; i < mushrooms.size (); ++i) {
@@ -926,15 +851,12 @@ namespace moppe::game {
       const meters_t out_from_middle = eggs > 0                ? 0.125f * u::m
                                        : mushrooms.size () > 1 ? 0.07f * u::m
                                                                : 0.0f * u::m;
-      lying.base = position (centre +
-                             Vec3 (std::cos (radians_value (around)),
-                                   0.0f,
-                                   std::sin (radians_value (around))) *
-                               meters_value (out_from_middle) +
-                             up * 0.03f);
+      lying.base = place + shift (along (compass (around), out_from_middle)) +
+                   shift (along (world_up, 0.03f * u::m));
       if (fish)
-        position_value (lying.base) +=
-          out_v * 0.09f + across_v * (0.11f * ((i + eggs) % 2 ? 1.0f : -1.0f));
+        lying.base += shift (
+          along (out, 0.09f * u::m) +
+          along (across, 0.11f * ((i + eggs) % 2 ? 1.0f : -1.0f) * u::m));
       lying.scale = 0.5f * mushrooms[i].scale;
       lying.lean = 1.3f * inclination[u::rad];
       lying.lean_toward =
@@ -951,9 +873,11 @@ namespace moppe::game {
                     proportion_t burn) {
     using namespace camp_parts;
     const Vec3& centre = position_value (hearth);
-    const Vec3& up = direction_value (world_up);
     const auto seed = static_cast<std::uint32_t> (
       std::lround (centre[0] * 13.0f) * 7919 + std::lround (centre[2] * 13.0f));
+    const auto up_by = [] (meters_t height) {
+      return shift (along (world_up, height));
+    };
     dl.state (render::DrawState ());
     dl.lit (true);
     dl.fogged (true);
@@ -970,15 +894,11 @@ namespace moppe::game {
                 (grey * 0.97f).numerical_value_in (one),
                 (grey * 0.92f).numerical_value_in (one));
       dl.push ();
-      dl.translate (centre +
-                    Vec3 (std::cos (radians_value (around)),
-                          0.0f,
-                          std::sin (radians_value (around))) *
-                      0.43f +
-                    up * meters_value (size * 0.45f));
+      dl.translate (hearth + shift (along (compass (around), 0.43f * u::m)) +
+                    up_by (size * 0.45f));
       dl.rotate (tau * hash_lane (seed, 70 + i), 0, 1, 0);
       dl.scale (1.25f, 0.72f, 0.95f);
-      dl.sphere (meters_value (size), 7, 5);
+      dl.sphere (size, 7, 5);
       dl.pop ();
     }
 
@@ -986,20 +906,14 @@ namespace moppe::game {
     // The bed of ash.
     constexpr int rim = 14;
     dl.color (0.10f, 0.095f, 0.09f);
-    dl.normal (up);
-    const position_t bed = position (centre + up * 0.02f);
+    dl.normal (world_up);
+    const position_t bed = hearth + up_by (0.02f * u::m);
     for (int i = 0; i < rim; ++i) {
       const radians_t a0 = tau * i / rim;
       const radians_t a1 = tau * (i + 1) / rim;
-      dl.vertex (position_value (bed));
-      dl.vertex (position_value (bed) + Vec3 (std::cos (radians_value (a1)),
-                                              0.0f,
-                                              std::sin (radians_value (a1))) *
-                                          0.40f);
-      dl.vertex (position_value (bed) + Vec3 (std::cos (radians_value (a0)),
-                                              0.0f,
-                                              std::sin (radians_value (a0))) *
-                                          0.40f);
+      dl.vertex (bed);
+      dl.vertex (bed + shift (along (compass (a1), 0.40f * u::m)));
+      dl.vertex (bed + shift (along (compass (a0), 0.40f * u::m)));
     }
     // Split logs leaned together over it, and two laid across the bottom;
     // they char as the fire takes.
@@ -1009,10 +923,7 @@ namespace moppe::game {
     for (int i = 0; i < logs; ++i) {
       const radians_t around =
         tau * (i + 0.3f * hash_lane (seed, 90 + i)) / logs;
-      const direction_t out =
-        unit_direction (Vec3 (std::cos (radians_value (around)),
-                              0.0f,
-                              std::sin (radians_value (around))));
+      const direction_t out = compass (around);
       const proportion_t bark = (0.20f + 0.08f * hash_lane (seed, 110 + i)) *
                                 charred.numerical_value_in (one) *
                                 proportion[one];
@@ -1020,8 +931,8 @@ namespace moppe::game {
                 (bark * 0.74f).numerical_value_in (one),
                 (bark * 0.52f).numerical_value_in (one));
       tube (dl,
-            position (centre + direction_value (out) * 0.29f + up * 0.05f),
-            position (centre - direction_value (out) * 0.07f + up * 0.40f),
+            hearth + shift (along (out, 0.29f * u::m)) + up_by (0.05f * u::m),
+            hearth - shift (along (out, 0.07f * u::m)) + up_by (0.40f * u::m),
             0.042f * u::m,
             6);
     }
@@ -1029,13 +940,13 @@ namespace moppe::game {
               (0.12f * charred).numerical_value_in (one),
               (0.085f * charred).numerical_value_in (one));
     tube (dl,
-          position (centre + Vec3 (-0.26f, 0.06f, -0.10f)),
-          position (centre + Vec3 (0.26f, 0.06f, 0.08f)),
+          hearth + shift (displacement (Vec3 (-0.26f, 0.06f, -0.10f))),
+          hearth + shift (displacement (Vec3 (0.26f, 0.06f, 0.08f))),
           0.05f * u::m,
           6);
     tube (dl,
-          position (centre + Vec3 (-0.08f, 0.07f, 0.25f)),
-          position (centre + Vec3 (0.10f, 0.07f, -0.25f)),
+          hearth + shift (displacement (Vec3 (-0.08f, 0.07f, 0.25f))),
+          hearth + shift (displacement (Vec3 (0.10f, 0.07f, -0.25f))),
           0.05f * u::m,
           6);
     dl.end ();
@@ -1045,24 +956,16 @@ namespace moppe::game {
       dl.lit (false);
       dl.begin (render::Prim::Triangles);
       dl.color (burn.numerical_value_in (one),
-                (0.36f * burn * burn).numerical_value_in (one),
-                (0.07f * burn * burn).numerical_value_in (one));
-      dl.normal (up);
-      const position_t embers = position (centre + up * 0.035f);
+                as_share (0.36f * burn * burn).numerical_value_in (one),
+                as_share (0.07f * burn * burn).numerical_value_in (one));
+      dl.normal (world_up);
+      const position_t embers = hearth + up_by (0.035f * u::m);
       for (int i = 0; i < rim; ++i) {
         const radians_t a0 = tau * i / rim;
         const radians_t a1 = tau * (i + 1) / rim;
-        dl.vertex (position_value (embers));
-        dl.vertex (position_value (embers) +
-                   Vec3 (std::cos (radians_value (a1)),
-                         0.0f,
-                         std::sin (radians_value (a1))) *
-                     0.22f);
-        dl.vertex (position_value (embers) +
-                   Vec3 (std::cos (radians_value (a0)),
-                         0.0f,
-                         std::sin (radians_value (a0))) *
-                     0.22f);
+        dl.vertex (embers);
+        dl.vertex (embers + shift (along (compass (a1), 0.22f * u::m)));
+        dl.vertex (embers + shift (along (compass (a0), 0.22f * u::m)));
       }
       dl.end ();
       dl.lit (true);
@@ -1077,9 +980,10 @@ namespace moppe::game {
     using namespace camp_parts;
     if (burn <= 0.01f * proportion[one])
       return;
-    const Vec3& centre = position_value (hearth);
-    const Vec3& up = direction_value (world_up);
     const float clock = seconds_value (time);
+    const auto up_by = [] (meters_t height) {
+      return shift (along (world_up, height));
+    };
     static const render::TexturePtr disc = make_soft_disc_texture (renderer);
     static render::DrawList dl;
     dl.clear ();
@@ -1097,7 +1001,7 @@ namespace moppe::game {
     // The warm air round the fire, for the bloom to take up.
     flame_sprite (dl,
                   camera,
-                  position (centre + up * 0.45f),
+                  hearth + up_by (0.45f * u::m),
                   world_up,
                   1.0f * u::m,
                   1.0f * u::m,
@@ -1105,7 +1009,7 @@ namespace moppe::game {
                   0.15f * burn);
     flame_sprite (dl,
                   camera,
-                  position (centre + up * 0.6f),
+                  hearth + up_by (0.6f * u::m),
                   world_up,
                   2.3f * u::m,
                   2.3f * u::m,
@@ -1122,10 +1026,7 @@ namespace moppe::game {
       const float phase_v = radians_value (phase);
       const radians_t around = tau * tongue / tongues + 0.6f * u::rad;
       const displacement_t foot =
-        displacement (Vec3 (std::cos (radians_value (around)),
-                            0.0f,
-                            std::sin (radians_value (around))) *
-                      (tongue == 0 ? 0.0f : 0.11f));
+        along (compass (around), (tongue == 0 ? 0.0f : 0.11f) * u::m);
       const scale_factor_t lick =
         (0.80f + 0.20f * std::sin (clock * (6.1f + tongue) + phase_v) *
                    std::sin (clock * 3.3f + 2.0f * phase_v)) *
@@ -1140,31 +1041,32 @@ namespace moppe::game {
           Vec3 (0.07f * std::sin (clock * 4.7f + 3.0f * tv + phase_v),
                 0.0f,
                 0.07f * std::sin (clock * 5.9f + 2.2f * tv + 1.7f * phase_v)));
-        const position_t middle =
-          position (centre + displacement_value (foot) * (1.0f - 0.7f * tv) +
-                    up * (0.12f + tv * meters_value (height)) +
-                    displacement_value (lean) * tv);
+        const position_t middle = hearth + shift (foot * (1.0f - 0.7f * tv)) +
+                                  up_by (0.12f * u::m + tv * height) +
+                                  shift (lean * tv);
         const DisplayColor colour =
           t < 0.30f * proportion[one]   ? DisplayColor (1.0f, 0.88f, 0.55f)
           : t < 0.65f * proportion[one] ? DisplayColor (1.0f, 0.55f, 0.16f)
                                         : DisplayColor (0.95f, 0.26f, 0.07f);
-        const proportion_t fade = (whole - t) * (whole - t);
+        const proportion_t fade = as_share ((whole - t) * (whole - t));
+        // The lean, doubled, tips the blob off the upright.
         flame_sprite (
           dl,
           camera,
           middle,
-          unit_direction (normalized (up + displacement_value (lean) * 2.0f)),
+          unit_direction (normalized (direction_value (world_up) +
+                                      displacement_value (lean) * 2.0f)),
           0.8f * height / blobs + 0.06f * u::m,
           (0.035f + 0.11f * (1.0f - 0.7f * tv)) * u::m,
           colour,
-          (0.22f * proportion[one] + 0.50f * fade) * burn);
+          as_share ((0.22f * proportion[one] + 0.50f * fade) * burn));
       }
     }
     // The white heart of it.
     for (int i = 0; i < 2; ++i)
       flame_sprite (dl,
                     camera,
-                    position (centre + up * (0.14f + 0.10f * i)),
+                    hearth + up_by ((0.14f + 0.10f * i) * u::m),
                     world_up,
                     0.12f * u::m,
                     0.085f * u::m,
@@ -1185,20 +1087,18 @@ namespace moppe::game {
     using namespace camp_parts;
     if (burn <= 0.01f * proportion[one])
       return;
-    const Vec3& centre = position_value (hearth);
-    const Vec3& up = direction_value (world_up);
     const float clock = seconds_value (time);
-    const meters_t far = length (position_value (camera) - centre) * u::m;
+    const auto up_by = [] (meters_t height) {
+      return shift (along (world_up, height));
+    };
+    const meters_t far = length_of (camera - hearth);
     // Near, the stack burns as several fires together.
     if (far < 220.0f * u::m) {
       draw_fire (renderer, hearth, camera, burn, time);
       for (int i = 0; i < 3; ++i) {
         const radians_t around = tau * i / 3.0f + 0.5f * u::rad;
         draw_fire (renderer,
-                   position (centre + Vec3 (std::cos (radians_value (around)),
-                                            0.0f,
-                                            std::sin (radians_value (around))) *
-                                        0.32f),
+                   hearth + shift (along (compass (around), 0.32f * u::m)),
                    camera,
                    0.85f * burn,
                    time + 1.7f * u::s * i);
@@ -1228,17 +1128,20 @@ namespace moppe::game {
       const proportion_t t =
         std::fmod (clock * 0.012f + (i + 0.5f) / puffs, 1.0f) * proportion[one];
       const float tv = t.numerical_value_in (one);
-      const meters_t rise = 2.0f * u::m + 170.0f * u::m * t;
-      const position_t middle = position (
-        centre + up * meters_value (rise) +
-        direction_value (wind) *
-          meters_value (rise * (0.25f * proportion[one] + 0.9f * t)) +
-        Vec3 (std::sin (i * 2.3f + clock * 0.1f), 0.0f, std::cos (i * 1.7f)) *
-          meters_value (2.0f * t * rise * 0.05f));
+      const meters_t rise = 2.0f * u::m + as_length (170.0f * u::m * t);
+      // Each puff wanders off the column's line by its own swing, a way
+      // of less than unit length.
+      const direction_t wander = unit_direction (
+        Vec3 (std::sin (i * 2.3f + clock * 0.1f), 0.0f, std::cos (i * 1.7f)));
+      const position_t middle =
+        hearth + up_by (rise) +
+        shift (along (
+          wind, as_length (rise * (0.25f * proportion[one] + 0.9f * t)))) +
+        shift (along (wander, as_length (2.0f * t * rise * 0.05f)));
       const meters_t size = 1.0f * u::m + 22.0f * u::m * std::sqrt (tv);
       const proportion_t alpha =
-        burn * (0.1f * proportion[one] + 0.4f * daylight) *
-        smoothstep (0.0f, 0.06f, tv) * (whole - t) * (whole - t);
+        as_share (burn * (0.1f * proportion[one] + 0.4f * daylight) *
+                  smoothstep (0.0f, 0.06f, tv) * (whole - t) * (whole - t));
       flame_sprite (dl,
                     camera,
                     middle,
@@ -1267,27 +1170,24 @@ namespace moppe::game {
                                               std::sin (clock * 3.1f + 0.7f)) *
                                    proportion[one];
       const proportion_t dark = whole - 0.8f * daylight;
-      const proportion_t grow =
-        smoothstep (40.0f, 400.0f, meters_value (far)) * proportion[one];
+      const proportion_t grow = band (40.0f * u::m, 400.0f * u::m, far);
       const meters_t size = 1.5f * u::m + 0.0045f * far;
-      flame_sprite (
-        dl,
-        camera,
-        position (centre + up * (1.2f + 0.002f * meters_value (far))),
-        world_up,
-        size * 1.5f,
-        size,
-        DisplayColor (1.0f, 0.55f, 0.18f),
-        burn * flicker * dark * grow * 0.9f);
-      flame_sprite (
-        dl,
-        camera,
-        position (centre + up * (1.5f + 0.002f * meters_value (far))),
-        world_up,
-        size * 4.0f,
-        size * 4.0f,
-        DisplayColor (1.0f, 0.38f, 0.10f),
-        burn * flicker * dark * grow * 0.18f);
+      flame_sprite (dl,
+                    camera,
+                    hearth + up_by (1.2f * u::m + 0.002f * far),
+                    world_up,
+                    size * 1.5f,
+                    size,
+                    DisplayColor (1.0f, 0.55f, 0.18f),
+                    as_share (burn * flicker * dark * grow * 0.9f));
+      flame_sprite (dl,
+                    camera,
+                    hearth + up_by (1.5f * u::m + 0.002f * far),
+                    world_up,
+                    size * 4.0f,
+                    size * 4.0f,
+                    DisplayColor (1.0f, 0.38f, 0.10f),
+                    as_share (burn * flicker * dark * grow * 0.18f));
       dl.end ();
     }
     dl.set_texture (nullptr);

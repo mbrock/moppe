@@ -7,9 +7,11 @@
 
 namespace moppe::game {
   namespace fishing_parts {
-    constexpr float tau = 6.2831853f;
-    constexpr float pi = 3.14159265f;
-    const Vec3 world_up (0, 1, 0);
+    constexpr radians_t tau = 6.2831853f * u::rad;
+    constexpr radians_t pi = 3.14159265f * u::rad;
+    const direction_t world_up = unit_direction (Vec3 (0, 1, 0));
+    const direction_t east = unit_direction (Vec3 (1, 0, 0));
+    const direction_t north = unit_direction (Vec3 (0, 0, 1));
 
     // The rod, butt to tip, and how much of it is behind the hand.
     constexpr meters_t rod_length = 2.7f * u::m;
@@ -18,21 +20,55 @@ namespace moppe::game {
     // they show at the end of a line.
     constexpr scale_factor_t fish_drawn = 1.5f * scale_factor[one];
 
-    float mix (float a, float b, float t) {
+    // Of `a` and `b`, `t` of the way from one to the other: numbers,
+    // lengths, places, or ways.
+    template <typename V>
+    V mix (V a, V b, float t) {
       return a + (b - a) * t;
     }
 
-    Vec3 mix (const Vec3& a, const Vec3& b, float t) {
-      return a + (b - a) * t;
+    template <typename V>
+    V mix (V a, V b, proportion_t t) {
+      return mix (a, b, t.numerical_value_in (one));
     }
 
-    Vec3 flat (Vec3 v) {
-      v[1] = 0.0f;
+    // What moves a place by an offset (docs/typed-quantities.md).
+    auto shift (const displacement_t& d) {
+      return quantity_cast<isq::position_vector> (d);
+    }
+
+    // Seen from the side: the same with no rise or fall.
+    template <typename V>
+    V flat (V v) {
+      v.numerical_value_ref_in (V::unit)[1] = 0.0f;
       return v;
     }
 
-    Vec3 unit_or (const Vec3& v, const Vec3& otherwise) {
-      return length2 (v) > 1e-8f ? normalized (v) : otherwise;
+    // How far a straight offset reaches.
+    meters_t length_of (const displacement_t& d) {
+      return length (displacement_value (d)) * u::m;
+    }
+
+    // The way `v` points, or `otherwise` when it is too short to say.
+    template <Quantity Q>
+    direction_t unit_or (const Q& v, const direction_t& otherwise) {
+      const Vec3& raw = v.numerical_value_ref_in (Q::unit);
+      return length2 (raw) > 1e-8f ? unit_direction (normalized (raw))
+                                   : otherwise;
+    }
+
+    // The way `v` points; it must have some length.
+    template <Quantity Q>
+    direction_t unit_of (const Q& v) {
+      return unit_direction (normalized (v.numerical_value_ref_in (Q::unit)));
+    }
+
+    // `v` with its part along `way` taken out.
+    template <Quantity Q>
+    Q square_off (const Q& v, const direction_t& way) {
+      const Vec3& raw = v.numerical_value_ref_in (Q::unit);
+      return Q (raw - direction_value (way) * dot (raw, direction_value (way)),
+                Q::reference);
     }
 
     float within_unit (float x) {
@@ -46,26 +82,28 @@ namespace moppe::game {
 
     // A thin tube of `sides` faces through `points`.
     void strand (render::DrawList& dl,
-                 const Vec3* points,
+                 const position_t* points,
                  int count,
                  meters_t radius,
                  int sides) {
       for (int i = 0; i + 1 < count; ++i) {
-        const Vec3 a = points[i], b = points[i + 1];
-        const Vec3 axis = unit_or (b - a, world_up);
-        Vec3 u = cross (axis, world_up);
-        if (length2 (u) < 1e-6f)
-          u = cross (axis, Vec3 (1, 0, 0));
-        u = normalized (u);
-        const Vec3 v = cross (axis, u);
+        const position_t a = points[i], b = points[i + 1];
+        const direction_t axis = unit_or (b - a, world_up);
+        // Square to the axis: across it from the up, or from the east
+        // when it stands upright.
+        const auto level = cross (axis, world_up);
+        const direction_t u = length2 (level.numerical_value_in (one)) < 1e-6f
+                                ? unit_of (cross (axis, east))
+                                : unit_of (level);
+        const direction_t v = quantity_cast<direction> (cross (axis, u));
         for (int s = 0; s < sides; ++s) {
-          const float t0 = tau * s / sides;
-          const float t1 = tau * (s + 1) / sides;
-          const Vec3 n0 = u * std::cos (t0) + v * std::sin (t0);
-          const Vec3 n1 = u * std::cos (t1) + v * std::sin (t1);
-          const auto put = [&] (const Vec3& p, const Vec3& n) {
+          const radians_t t0 = tau * s / sides;
+          const radians_t t1 = tau * (s + 1) / sides;
+          const direction_t n0 = u * libm::cos (t0) + v * libm::sin (t0);
+          const direction_t n1 = u * libm::cos (t1) + v * libm::sin (t1);
+          const auto put = [&] (const position_t& p, const direction_t& n) {
             dl.normal (n);
-            dl.vertex (p + n * meters_value (radius));
+            dl.vertex (p + shift (along (n, radius)));
           };
           put (a, n0);
           put (b, n0);
@@ -80,27 +118,27 @@ namespace moppe::game {
     // A small ball of `radius` at `centre`, its upper half in `top` and
     // its lower in `bottom`: the float.
     void ball (render::DrawList& dl,
-               const Vec3& centre,
+               const position_t& centre,
                meters_t radius,
                DisplayColor top,
                DisplayColor bottom) {
       constexpr int rings = 6;
       constexpr int sides = 8;
       const auto at = [&] (int ring, int side) {
-        const float polar = pi * ring / rings;
-        const float around = tau * side / sides;
-        return Vec3 (std::sin (polar) * std::cos (around),
-                     std::cos (polar),
-                     std::sin (polar) * std::sin (around));
+        const radians_t polar = pi * ring / rings;
+        const radians_t around = tau * side / sides;
+        return unit_direction (Vec3 (libm::sin (polar) * libm::cos (around),
+                                     libm::cos (polar),
+                                     libm::sin (polar) * libm::sin (around)));
       };
       for (int r = 0; r < rings; ++r) {
         dl.color (r < rings / 2 ? top : bottom);
         for (int s = 0; s < sides; ++s) {
-          const Vec3 n00 = at (r, s), n01 = at (r, s + 1);
-          const Vec3 n10 = at (r + 1, s), n11 = at (r + 1, s + 1);
-          const auto put = [&] (const Vec3& n) {
+          const direction_t n00 = at (r, s), n01 = at (r, s + 1);
+          const direction_t n10 = at (r + 1, s), n11 = at (r + 1, s + 1);
+          const auto put = [&] (const direction_t& n) {
             dl.normal (n);
-            dl.vertex (centre + n * meters_value (radius));
+            dl.vertex (centre + shift (along (n, radius)));
           };
           put (n00);
           put (n10);
@@ -134,13 +172,13 @@ namespace moppe::game {
         { { 0.33f, 0.40f, 0.16f },
           { 0.86f, 0.84f, 0.66f },
           { 0.85f, 0.38f, 0.12f },
-          0.30f,
+          0.30f * proportion[one],
           true } },
       { "pike",
         { { 0.22f, 0.30f, 0.13f },
           { 0.82f, 0.80f, 0.62f },
           { 0.40f, 0.36f, 0.18f },
-          0.17f,
+          0.17f * proportion[one],
           false,
           false,
           true } },
@@ -148,19 +186,19 @@ namespace moppe::game {
         { { 0.30f, 0.36f, 0.38f },
           { 0.86f, 0.87f, 0.86f },
           { 0.80f, 0.25f, 0.16f },
-          0.30f } },
+          0.30f * proportion[one] } },
       { "brown trout",
         { { 0.40f, 0.33f, 0.16f },
           { 0.88f, 0.78f, 0.50f },
           { 0.45f, 0.36f, 0.20f },
-          0.23f,
+          0.23f * proportion[one],
           false,
           true } },
       { "grayling",
         { { 0.36f, 0.38f, 0.40f },
           { 0.80f, 0.80f, 0.82f },
           { 0.45f, 0.30f, 0.40f },
-          0.22f,
+          0.22f * proportion[one],
           false,
           true,
           false,
@@ -169,7 +207,7 @@ namespace moppe::game {
         { { 0.24f, 0.30f, 0.30f },
           { 0.92f, 0.42f, 0.18f },
           { 0.90f, 0.40f, 0.20f },
-          0.22f,
+          0.22f * proportion[one],
           false,
           false,
           true } },
@@ -177,12 +215,12 @@ namespace moppe::game {
         { { 0.20f, 0.34f, 0.42f },
           { 0.88f, 0.90f, 0.92f },
           { 0.60f, 0.66f, 0.70f },
-          0.20f } },
+          0.20f * proportion[one] } },
       { "cod",
         { { 0.42f, 0.38f, 0.22f },
           { 0.88f, 0.86f, 0.76f },
           { 0.45f, 0.40f, 0.26f },
-          0.22f,
+          0.22f * proportion[one],
           false,
           true } },
     };
@@ -199,7 +237,8 @@ namespace moppe::game {
     }
 
     // Fried, a fish goes golden brown, and then black.
-    DisplayColor cook (DisplayColor raw, float cooked) {
+    DisplayColor cook (DisplayColor raw, quantity<doneness[one], float> done) {
+      const float cooked = done.numerical_value_in (one);
       const DisplayColor golden (0.66f, 0.44f, 0.20f);
       const DisplayColor burnt (0.09f, 0.07f, 0.06f);
       DisplayColor c = blend (raw, golden, 0.8f * within_unit (cooked));
@@ -372,13 +411,13 @@ namespace moppe::game {
       proportion[one];
     const float d = done.numerical_value_in (one);
     // It runs from side to side as it is wound in to a few metres out.
-    const Vec3 in =
-      flat (position_value (line.stand) - position_value (line.bobber));
-    const Vec3 side = unit_or (cross (in, world_up), Vec3 (1, 0, 0));
-    return position (
-      position_value (line.bobber) + in * (0.6f * smoothstep (0.0f, 1.0f, d)) +
-      side * ((1.0f - d) * 1.1f * std::sin (2.3f * seconds_value (t))) -
-      world_up * 0.05f);
+    const displacement_t in = flat (line.stand - line.bobber);
+    const direction_t side = unit_or (cross (in, world_up), east);
+    return line.bobber + shift (in * (0.6f * smoothstep (0.0f, 1.0f, d))) +
+           shift (along (side,
+                         (1.0f - d) * 1.1f *
+                           std::sin (2.3f * seconds_value (t)) * u::m)) -
+           shift (along (world_up, 0.05f * u::m));
   }
 
   std::optional<RodPose>
@@ -447,7 +486,7 @@ namespace moppe::game {
         mix (mix (0.95f, 1.2f, lifted), 0.4f, lowered) * inclination[u::rad];
       rod.bend = mix (0.5f, 0.15f, lifted) * proportion[one];
       rod.out = (1.0f - lifted) * proportion[one];
-      rod.arc = 0.8f * std::sin (pi * lifted) * u::m;
+      rod.arc = 0.8f * libm::sin (pi * lifted) * u::m;
       rod.tight = 1.0f * proportion[one];
       rod.fish_on = true;
       rod.fish = line.fish;
@@ -459,7 +498,7 @@ namespace moppe::game {
       const float wound = smoothstep (0.0f, seconds_value (wind_seconds), age);
       rod.raise = mix (0.55f, 1.1f, wound) * inclination[u::rad];
       rod.out = (1.0f - wound) * proportion[one];
-      rod.arc = 0.6f * std::sin (pi * wound) * u::m;
+      rod.arc = 0.6f * libm::sin (pi * wound) * u::m;
       rod.tight = 0.7f * proportion[one];
       break;
     }
@@ -469,17 +508,16 @@ namespace moppe::game {
 
   position_t rod_hand (const AvatarSkeleton& k, radians_t raise) {
     using namespace fishing_parts;
-    const Vec3 chest_right = unit_or (
-      cross (direction_value (k.chest_up), direction_value (k.chest_forward)),
-      direction_value (k.right));
+    const direction_t chest_right =
+      unit_or (cross (k.chest_up, k.chest_forward), k.right);
     // Out before the belly; swung back, up by the shoulder.
     const proportion_t back =
       smoothstep (1.2f, 1.9f, radians_value (raise)) * proportion[one];
-    const float b = back.numerical_value_in (one);
-    return position (position_value (k.shoulder[1]) +
-                     direction_value (k.chest_forward) * mix (0.36f, 0.12f, b) +
-                     direction_value (k.chest_up) * mix (-0.24f, 0.12f, b) +
-                     chest_right * 0.04f);
+    return k.shoulder[1] +
+           shift (
+             along (k.chest_forward, mix (0.36f * u::m, 0.12f * u::m, back))) +
+           shift (along (k.chest_up, mix (-0.24f * u::m, 0.12f * u::m, back))) +
+           shift (along (chest_right, 0.04f * u::m));
   }
 
   void draw_rod (render::DrawList& dl,
@@ -487,39 +525,38 @@ namespace moppe::game {
                  const RodPose& rod,
                  seconds_t time) {
     using namespace fishing_parts;
-    const Vec3 hand = position_value (k.wrist[1]);
+    const position_t hand = k.wrist[1];
     // The rod points out over the water the line runs to, which need not
     // be the way the angler faces: one at a boat's helm casts over the
     // side.
-    const Vec3 ahead =
-      unit_or (flat (position_value (rod.water) - hand),
-               unit_or (flat (direction_value (k.forward)), Vec3 (0, 0, 1)));
-    const Vec3 right = unit_or (cross (world_up, ahead), Vec3 (1, 0, 0));
-    const Vec3 along =
-      normalized (ahead * std::cos (rod.raise.numerical_value_in (u::rad)) +
-                  world_up * std::sin (rod.raise.numerical_value_in (u::rad)) +
-                  right * 0.10f);
-    const Vec3 butt = hand - along * meters_value (rod_butt);
-    const meters_t reach = rod_length - rod_butt;
-    const Vec3 straight_tip = hand + along * meters_value (reach);
-    const Vec3 hang = straight_tip - world_up * 0.45f;
-    const Vec3 water_end =
-      position_value (rod.water) + world_up * meters_value (rod.arc);
-    const Vec3 end = mix (hang, water_end, rod.out.numerical_value_in (one));
+    const direction_t ahead =
+      unit_or (flat (rod.water - hand), unit_or (flat (k.forward), north));
+    const direction_t right = unit_or (cross (world_up, ahead), east);
+    const direction_t rod_way =
+      unit_of (ahead * libm::cos (rod.raise) +
+               world_up * libm::sin (rod.raise) + right * 0.10f);
+    const position_t butt = hand - shift (along (rod_way, rod_butt));
+    const position_t straight_tip =
+      hand + shift (along (rod_way, rod_length - rod_butt));
+    const position_t hang =
+      straight_tip - shift (along (world_up, 0.45f * u::m));
+    const position_t water_end = rod.water + shift (along (world_up, rod.arc));
+    const position_t end = mix (hang, water_end, rod.out);
 
     // The rod bends toward what pulls it, and droops a little anyway.
-    Vec3 pull = end - straight_tip;
-    pull = pull - along * dot (pull, along);
-    const Vec3 toward = unit_or (pull, -world_up);
-    const float bend = 0.04f + 0.30f * rod.bend.numerical_value_in (one);
-    const float rod_m = meters_value (rod_length);
+    const displacement_t pull =
+      square_off<displacement_t> (end - straight_tip, rod_way);
+    const direction_t toward = unit_or (pull, -world_up);
+    const proportion_t bend = 0.04f * proportion[one] + 0.30f * rod.bend;
+    const meters_t bent = quantity_cast<isq::length> (bend * rod_length);
     constexpr int pieces = 8;
-    Vec3 points[pieces + 1];
+    position_t points[pieces + 1];
     for (int i = 0; i <= pieces; ++i) {
       const float s = static_cast<float> (i) / pieces;
-      points[i] = butt + along * (rod_m * s) + toward * (bend * rod_m * s * s);
+      points[i] = butt + shift (along (rod_way, rod_length * s)) +
+                  shift (along (toward, bent * s * s));
     }
-    const Vec3 tip = points[pieces];
+    const position_t tip = points[pieces];
 
     render::DrawState solid;
     solid.cull = false;
@@ -530,62 +567,69 @@ namespace moppe::game {
     // A cork grip, then the blank tapering to the tip.
     dl.color (0.62f, 0.48f, 0.30f);
     {
-      const Vec3 grip[2] = { butt, hand + along * 0.08f };
+      const position_t grip[2] = {
+        butt, hand + shift (along (rod_way, 0.08f * u::m))
+      };
       strand (dl, grip, 2, 0.016f * u::m, 6);
     }
     dl.color (0.20f, 0.13f, 0.08f);
     for (int i = 1; i < pieces; ++i) {
       const float s = static_cast<float> (i) / pieces;
-      strand (dl, points + i, 2, mix (0.010f, 0.004f, s) * u::m, 5);
+      strand (dl, points + i, 2, mix (0.010f * u::m, 0.004f * u::m, s), 5);
     }
     // The reel under the grip.
     dl.color (0.55f, 0.56f, 0.58f);
     {
-      const Vec3 under = hand + along * 0.05f - world_up * 0.05f;
-      const Vec3 spool[2] = { under - right * 0.025f, under + right * 0.025f };
+      const position_t under = hand + shift (along (rod_way, 0.05f * u::m)) -
+                               shift (along (world_up, 0.05f * u::m));
+      const position_t spool[2] = {
+        under - shift (along (right, 0.025f * u::m)),
+        under + shift (along (right, 0.025f * u::m))
+      };
       strand (dl, spool, 2, 0.032f * u::m, 8);
     }
 
     // The line, sagging as much as it is slack.
     constexpr int stretch = 14;
-    Vec3 line[stretch + 1];
-    const meters_t span = length (end - tip) * u::m;
+    position_t line[stretch + 1];
+    const meters_t span = length_of (end - tip);
     const meters_t sag =
       (0.08f * (1.0f - rod.tight.numerical_value_in (one)) + 0.005f) * span;
     for (int i = 0; i <= stretch; ++i) {
       const float s = static_cast<float> (i) / stretch;
       line[i] = mix (tip, end, s) -
-                world_up * (meters_value (sag) * 4.0f * s * (1.0f - s));
+                shift (along (world_up, sag * 4.0f * s * (1.0f - s)));
     }
     dl.color (0.86f, 0.88f, 0.84f);
     strand (dl, line, stretch + 1, 0.006f * u::m, 4);
 
     if (rod.fish_on) {
       // Out of the water it hangs from its mouth; in it, it heads away.
-      const Vec3 away = unit_or (flat (end - position_value (k.pelvis)), ahead);
-      const Vec3 along_fish =
-        unit_or (mix (-world_up, away, rod.out.numerical_value_in (one)), away);
-      const Vec3 side = unit_or (cross (along_fish, world_up), right);
-      const Vec3 back =
-        unit_or (mix (side * -1.0f, world_up, rod.out.numerical_value_in (one)),
-                 world_up);
+      const direction_t away = unit_or (flat (end - k.pelvis), ahead);
+      const direction_t along_fish =
+        unit_or (mix<direction_t> (-world_up, away, rod.out), away);
+      const direction_t side = unit_or (cross (along_fish, world_up), right);
+      const direction_t back =
+        unit_or (mix<direction_t> (side * -1.0f, world_up, rod.out), world_up);
       draw_fish (dl,
                  rod.fish,
-                 position (end),
-                 unit_direction (along_fish),
-                 unit_direction (back),
+                 end,
+                 along_fish,
+                 back,
                  1.0f * scale_factor[one],
-                 rod.wriggle.numerical_value_in (one));
+                 rod.wriggle);
     } else {
       // The float: red over white, with a little stem.
-      const Vec3 bob = end + world_up * 0.04f;
+      const position_t bob = end + shift (along (world_up, 0.04f * u::m));
       ball (dl,
             bob,
             0.065f * u::m,
             DisplayColor (0.90f, 0.12f, 0.08f),
             DisplayColor (0.92f, 0.92f, 0.88f));
       dl.color (0.90f, 0.12f, 0.08f);
-      const Vec3 stem[2] = { bob, bob + world_up * 0.11f };
+      const position_t stem[2] = {
+        bob, bob + shift (along (world_up, 0.11f * u::m))
+      };
       strand (dl, stem, 2, 0.008f * u::m, 4);
     }
     (void)time;
@@ -595,33 +639,32 @@ namespace moppe::game {
 
   void draw_fish (render::DrawList& dl,
                   const Fish& fish,
-                  const position_t& mouth_at,
+                  const position_t& mouth,
                   const direction_t& along_way,
                   const direction_t& back_way,
                   scale_factor_t scale_q,
-                  float wriggle,
-                  float cooked) {
+                  wriggle_t wriggle_q,
+                  quantity<doneness[one], float> cooked) {
     using namespace fishing_parts;
     const Look look = look_of (fish.kind);
-    // The body is laid out in plain metres, converted here at its edge.
-    const Vec3& mouth = position_value (mouth_at);
-    const Vec3& along_in = direction_value (along_way);
-    const Vec3& back_in = direction_value (back_way);
     const float drawn = fish_drawn.numerical_value_in (one);
     const float scale = scale_q.numerical_value_in (one);
-    const Vec3 along = unit_or (along_in, Vec3 (0, 0, 1));
-    Vec3 back = back_in - along * dot (back_in, along);
-    back = unit_or (back, world_up);
-    const Vec3 side = normalized (cross (along, back));
-    const float body = meters_value (fish.length) * drawn * scale * 0.84f;
-    const float depth = meters_value (fish.length) * drawn * scale *
-                        look.depth.numerical_value_in (one);
-    const float width = depth * 0.42f;
+    const float wriggle = wriggle_q.numerical_value_in (one);
+    const direction_t ahead = unit_or (along_way, north);
+    const direction_t back = unit_or (square_off (back_way, ahead), world_up);
+    const direction_t side = unit_of (cross (ahead, back));
+    const meters_t body = fish.length * drawn * scale * 0.84f;
+    const meters_t depth =
+      fish.length * drawn * scale * look.depth.numerical_value_in (one);
+    const meters_t width = depth * 0.42f;
+    // The section's slope, as the normals take it.
+    const float depth_m = meters_value (depth);
+    const float width_m = meters_value (width);
 
     // The spine, wriggling more toward the tail.
     const auto spine = [&] (float u) {
-      return mouth + along * (body * u) +
-             side * (0.10f * body * wriggle * std::pow (u, 1.6f));
+      return mouth + shift (along (ahead, body * u)) +
+             shift (along (side, 0.10f * body * wriggle * std::pow (u, 1.6f)));
     };
     // Its section's half height and half width, blunt at the nose and
     // narrowing to the tail's root.
@@ -632,16 +675,17 @@ namespace moppe::game {
     };
     constexpr int rings = 10;
     constexpr int sides = 10;
-    const auto colour_at = [&] (float u, float a, const Vec3& n) {
-      const float upness = dot (n, back);
+    const auto colour_at = [&] (float u, radians_t a, const direction_t& n) {
+      const float upness = dot (n, back).numerical_value_in (one);
       DisplayColor c =
         blend (look.belly, look.back, smoothstep (-0.35f, 0.45f, upness));
-      if (look.bars && upness > -0.2f && std::sin (u * pi * 11.0f) > 0.45f &&
+      if (look.bars && upness > -0.2f && libm::sin (u * pi * 11.0f) > 0.45f &&
           u > 0.15f && u < 0.9f)
         c = blend (c, DisplayColor (0.08f, 0.10f, 0.05f), 0.6f);
       if ((look.spots || look.pale_spots) && u > 0.12f && upness > -0.3f) {
-        const auto cell = static_cast<std::uint32_t> (u * 23.0f) * 31U +
-                          static_cast<std::uint32_t> ((a + pi) * 3.0f);
+        const auto cell =
+          static_cast<std::uint32_t> (u * 23.0f) * 31U +
+          static_cast<std::uint32_t> (radians_value ((a + pi) * 3.0f));
         if (hash_lane (fish.seed + cell, 7) < 0.28f)
           c = blend (c,
                      look.pale_spots ? DisplayColor (0.85f, 0.82f, 0.62f)
@@ -650,26 +694,30 @@ namespace moppe::game {
       }
       return cook (c, cooked);
     };
-    const auto ring_point = [&] (float u, float a, Vec3& normal) {
+    const auto ring_point = [&] (float u, radians_t a, direction_t& normal) {
       const float g = girth (u);
-      const float c = std::cos (a), s = std::sin (a);
-      normal = unit_or (side * (c / width) + back * (s / depth) -
-                          along * (0.6f * (0.5f - u)),
+      const float c = libm::cos (a), s = libm::sin (a);
+      normal = unit_or (side * (c / width_m) + back * (s / depth_m) -
+                          ahead * (0.6f * (0.5f - u)),
                         back);
-      return spine (u) + side * (c * width * g) + back * (s * depth * g);
+      return spine (u) + shift (along (side, c * width * g)) +
+             shift (along (back, s * depth * g));
     };
     for (int r = 0; r < rings; ++r) {
       const float u0 = static_cast<float> (r) / rings;
       const float u1 = static_cast<float> (r + 1) / rings;
       for (int s = 0; s < sides; ++s) {
-        const float a0 = tau * s / sides;
-        const float a1 = tau * (s + 1) / sides;
-        Vec3 n00, n01, n10, n11;
-        const Vec3 p00 = ring_point (u0, a0, n00);
-        const Vec3 p01 = ring_point (u0, a1, n01);
-        const Vec3 p10 = ring_point (u1, a0, n10);
-        const Vec3 p11 = ring_point (u1, a1, n11);
-        const auto put = [&] (const Vec3& p, const Vec3& n, float u, float a) {
+        const radians_t a0 = tau * s / sides;
+        const radians_t a1 = tau * (s + 1) / sides;
+        direction_t n00, n01, n10, n11;
+        const position_t p00 = ring_point (u0, a0, n00);
+        const position_t p01 = ring_point (u0, a1, n01);
+        const position_t p10 = ring_point (u1, a0, n10);
+        const position_t p11 = ring_point (u1, a1, n11);
+        const auto put = [&] (const position_t& p,
+                              const direction_t& n,
+                              float u,
+                              radians_t a) {
           dl.color (colour_at (u, a, n));
           dl.normal (n);
           dl.vertex (p);
@@ -684,42 +732,60 @@ namespace moppe::game {
     }
     // The tail, forked, and the fins on the back.
     dl.color (cook (look.fin, cooked));
-    const auto fin = [&] (const Vec3& a, const Vec3& b, const Vec3& c) {
-      dl.normal (side);
-      dl.vertex (a);
-      dl.vertex (b);
-      dl.vertex (c);
-    };
-    const Vec3 root = spine (1.0f);
-    const Vec3 tail_along = unit_or (spine (1.0f) - spine (0.9f), along);
-    const float tail = 0.30f * body;
-    const Vec3 fork = root + tail_along * (tail * 0.7f);
-    fin (root, root + tail_along * tail + back * (0.55f * depth), fork);
-    fin (root, fork, root + tail_along * tail - back * (0.55f * depth));
+    const auto fin =
+      [&] (const position_t& a, const position_t& b, const position_t& c) {
+        dl.normal (side);
+        dl.vertex (a);
+        dl.vertex (b);
+        dl.vertex (c);
+      };
+    const position_t root = spine (1.0f);
+    const direction_t tail_along = unit_or (spine (1.0f) - spine (0.9f), ahead);
+    const meters_t tail = 0.30f * body;
+    const position_t fork = root + shift (along (tail_along, tail * 0.7f));
+    fin (root,
+         root + shift (along (tail_along, tail)) +
+           shift (along (back, 0.55f * depth)),
+         fork);
+    fin (root,
+         fork,
+         root + shift (along (tail_along, tail)) -
+           shift (along (back, 0.55f * depth)));
     const float sail = look.sail ? 1.0f : 0.45f;
-    fin (spine (0.35f) + back * (0.45f * depth),
-         spine (0.40f) + back * (depth * (0.5f + 0.5f * sail)),
-         spine (look.sail ? 0.70f : 0.62f) + back * (0.40f * depth));
+    fin (spine (0.35f) + shift (along (back, 0.45f * depth)),
+         spine (0.40f) + shift (along (back, depth * (0.5f + 0.5f * sail))),
+         spine (look.sail ? 0.70f : 0.62f) +
+           shift (along (back, 0.40f * depth)));
     // Pectorals by the gills.
-    fin (spine (0.22f) + side * width * 0.8f - back * 0.1f * depth,
-         spine (0.36f) + side * width * 1.9f - back * 0.35f * depth,
-         spine (0.30f) + side * width * 0.8f - back * 0.3f * depth);
-    fin (spine (0.22f) - side * width * 0.8f - back * 0.1f * depth,
-         spine (0.36f) - side * width * 1.9f - back * 0.35f * depth,
-         spine (0.30f) - side * width * 0.8f - back * 0.3f * depth);
+    const auto aside = [&] (const direction_t& way, meters_t by, float more) {
+      return shift (along (way, by) * more);
+    };
+    fin (spine (0.22f) + aside (side, width, 0.8f) -
+           shift (along (back * 0.1f, depth)),
+         spine (0.36f) + aside (side, width, 1.9f) -
+           shift (along (back * 0.35f, depth)),
+         spine (0.30f) + aside (side, width, 0.8f) -
+           shift (along (back * 0.3f, depth)));
+    fin (spine (0.22f) - aside (side, width, 0.8f) -
+           shift (along (back * 0.1f, depth)),
+         spine (0.36f) - aside (side, width, 1.9f) -
+           shift (along (back * 0.35f, depth)),
+         spine (0.30f) - aside (side, width, 0.8f) -
+           shift (along (back * 0.3f, depth)));
     // An eye each side.
     dl.color (0.04f, 0.04f, 0.04f);
     for (const float hand : { 1.0f, -1.0f }) {
-      const Vec3 eye =
-        spine (0.09f) + side * (hand * width * 0.75f) + back * (0.22f * depth);
-      const float e = 0.10f * depth + 0.004f;
+      const position_t eye = spine (0.09f) +
+                             shift (along (side, hand * width * 0.75f)) +
+                             shift (along (back, 0.22f * depth));
+      const meters_t e = 0.10f * depth + 0.004f * u::m;
       dl.normal (side * hand);
-      dl.vertex (eye + back * e);
-      dl.vertex (eye + along * e);
-      dl.vertex (eye - back * e);
-      dl.vertex (eye + back * e);
-      dl.vertex (eye - back * e);
-      dl.vertex (eye - along * e);
+      dl.vertex (eye + shift (along (back, e)));
+      dl.vertex (eye + shift (along (ahead, e)));
+      dl.vertex (eye - shift (along (back, e)));
+      dl.vertex (eye + shift (along (back, e)));
+      dl.vertex (eye - shift (along (back, e)));
+      dl.vertex (eye - shift (along (ahead, e)));
     }
   }
 }

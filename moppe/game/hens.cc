@@ -13,7 +13,39 @@ namespace moppe::game {
   namespace {
     namespace hen_parts {
       constexpr float tau = 6.28318531f;
-      const Vec3 up (0.0f, 1.0f, 0.0f);
+      constexpr radians_t turn = tau * u::rad;
+      const direction_t up = unit_direction (Vec3 (0.0f, 1.0f, 0.0f));
+      const direction_t east = unit_direction (Vec3 (1.0f, 0.0f, 0.0f));
+
+      // What moves a place by an offset (docs/typed-quantities.md).
+      auto shift (const displacement_t& d) {
+        return quantity_cast<isq::position_vector> (d);
+      }
+
+      // The way `v` points; it must have some length.
+      template <Quantity Q>
+      direction_t unit_of (const Q& v) {
+        return unit_direction (normalized (v.numerical_value_ref_in (Q::unit)));
+      }
+
+      // The way round the up axis `a` turns from east.
+      direction_t compass (radians_t a) {
+        return unit_direction (Vec3 (libm::cos (a), 0.0f, libm::sin (a)));
+      }
+
+      // The whole laps of the world from `at` toward the copy of it
+      // nearest `eye`.
+      displacement_t laps_toward (const position_t& at,
+                                  const position_t& eye,
+                                  const plan_extent_t& period) {
+        const Vec3& a = position_value (at);
+        const Vec3& e = position_value (eye);
+        const Vec2& n = plan_value (period);
+        return displacement (
+          Vec3 (terrain::whole_periods (e[0] - a[0], n.x ()),
+                0.0f,
+                terrain::whole_periods (e[2] - a[2], n.z ())));
+      }
 
       std::uint32_t hash (std::uint32_t a, std::uint32_t b) {
         std::uint32_t h = a * 0x9e3779b1u ^ (b + 0x7f4a7c15u);
@@ -505,12 +537,9 @@ namespace moppe::game {
                      const plan_extent_t& period,
                      std::uint64_t motion_base) {
     using namespace hen_parts;
-    // Into the renderer's frames, in metres and seconds.
-    const Vec3& eye = position_value (camera);
-    const Vec3& ahead = direction_value (forward);
-    const float far = meters_value (reach);
+    // Into the meshes' matrices, in metres and seconds.
+    const Vec3& up_axis = direction_value (up);
     const float clock = seconds_value (time);
-    const Vec2& laps = plan_value (period);
     static const std::array<BirdMeshes, 3> meshes = [&r] {
       std::array<BirdMeshes, 3> out;
       for (int k = 0; k < 3; ++k) {
@@ -529,17 +558,15 @@ namespace moppe::game {
                          : -1.0f;
     for (std::size_t i = 0; i < birds.size (); ++i) {
       const Bird& b = birds[i];
-      const Vec3& at = position_value (b.position);
-      const Vec3 lap (terrain::whole_periods (eye[0] - at[0], laps.x ()),
-                      0.0f,
-                      terrain::whole_periods (eye[2] - at[2], laps.z ()));
-      const Vec3 to = at + lap - eye;
-      if (length2 (to) > far * far || dot (to, ahead) < -1.0f)
+      const displacement_t lap = laps_toward (b.position, camera, period);
+      const displacement_t to = b.position + shift (lap) - camera;
+      if (dot (to, to) > reach * reach ||
+          quantity_cast<isq::length> (dot (to, forward)) < -1.0f * u::m)
         continue;
       const BirdBuild& build = build_of (b.kind);
       const BirdMeshes& m = meshes[static_cast<int> (b.kind)];
-      const Vec3 f = direction_value (forward_of (b.heading));
-      const Vec3 left = cross (up, f);
+      const direction_t f = forward_of (b.heading);
+      const direction_t left = quantity_cast<direction> (cross (up, f));
       const proportion_t walking =
         std::min (1.0f, speed_value (b.speed) / 0.4f) * proportion[one];
       const float stepping = walking.numerical_value_in (one);
@@ -549,8 +576,9 @@ namespace moppe::game {
       const meters_t bob =
         0.008f * stepping * std::abs (std::sin (cycle)) * u::m;
       const Mat4 frame =
-        Mat4::translation (at + lap + up * meters_value (bob)) *
-        Mat4::basis (left, up, f);
+        Mat4::translation (
+          position_value (b.position + shift (lap) + shift (along (up, bob)))) *
+        Mat4::basis (direction_value (left), up_axis, direction_value (f));
       std::uint64_t id = motion_base ? motion_base + i * 8 : 0;
       const auto draw = [&] (const render::Mesh& mesh, const Mat4& at) {
         r.draw_mesh (mesh, at, id ? ++id : 0);
@@ -573,7 +601,8 @@ namespace moppe::game {
                                u::rad;
       draw (*m.head,
             frame * Mat4::translation (build.neck) *
-              Mat4::rotation (glance, up) * Mat4::rotation (pitch, x_axis));
+              Mat4::rotation (glance, up_axis) *
+              Mat4::rotation (pitch, x_axis));
       // The legs swing in turn about the hips.
       for (int side = 0; side < 2; ++side) {
         const radians_t swing = down * -0.55f * stepping *
@@ -656,36 +685,35 @@ namespace moppe::game {
 
   void draw_egg (render::DrawList& dl,
                  const position_t& at,
-                 const direction_t& along,
+                 const direction_t& along_way,
                  std::uint32_t seed) {
     using namespace hen_parts;
-    // The shell's mesh, in metres in the world.
-    const Vec3& centre = position_value (at);
     // A blommehöna's egg is cream, now and then a little tinted.
     const float tint = unit (seed, 1);
     dl.color (0.93f - 0.05f * tint, 0.89f - 0.09f * tint, 0.80f - 0.14f * tint);
-    const Vec3& axis = direction_value (along);
-    const Vec3 a = length2 (axis) > 1e-6f ? normalized (axis) : up;
-    Vec3 u = cross (a, std::abs (a[1]) < 0.9f ? up : Vec3 (1, 0, 0));
-    u = normalized (u);
-    const Vec3 v = cross (a, u);
+    const direction_t a =
+      length2 (direction_value (along_way)) > 1e-6f ? unit_of (along_way) : up;
+    const direction_t u =
+      unit_of (cross (a, std::abs (direction_value (a)[1]) < 0.9f ? up : east));
+    const direction_t v = quantity_cast<direction> (cross (a, u));
     constexpr int slices = 10, stacks = 7;
-    constexpr float half = 0.04f, round = 0.029f;
-    const auto point = [&] (int i, int j, Vec3& normal) {
-      const float t = 3.14159265f * j / stacks;
-      const float s = tau * i / slices;
+    constexpr meters_t half = 0.04f * u::m, round = 0.029f * u::m;
+    const auto point = [&] (int i, int j, direction_t& normal) {
+      const radians_t t = 3.14159265f * u::rad * j / stacks;
+      const radians_t s = turn * i / slices;
       // Fuller at the blunt end.
-      const float c = std::cos (t);
-      const float w = round * std::sin (t) * (1.0f + 0.12f * c);
-      const Vec3 radial = u * std::cos (s) + v * std::sin (s);
-      normal = normalized (radial * std::sin (t) * (half / round) + a * c);
-      return centre + a * (half * c) + radial * w;
+      const float c = libm::cos (t);
+      const meters_t w = round * libm::sin (t) * (1.0f + 0.12f * c);
+      const direction_t radial = u * libm::cos (s) + v * libm::sin (s);
+      normal = unit_of (radial * libm::sin (t) * (half / round) + a * c);
+      return at + shift (along (a, half * c)) + shift (along (radial, w));
     };
     for (int j = 0; j < stacks; ++j)
       for (int i = 0; i < slices; ++i) {
-        Vec3 n00, n10, n01, n11;
-        const Vec3 p00 = point (i, j, n00), p10 = point (i + 1, j, n10);
-        const Vec3 p01 = point (i, j + 1, n01), p11 = point (i + 1, j + 1, n11);
+        direction_t n00, n10, n01, n11;
+        const position_t p00 = point (i, j, n00), p10 = point (i + 1, j, n10);
+        const position_t p01 = point (i, j + 1, n01),
+                         p11 = point (i + 1, j + 1, n11);
         dl.normal (n00);
         dl.vertex (p00);
         dl.normal (n01);
@@ -702,15 +730,13 @@ namespace moppe::game {
   }
 
   void draw_fried_egg (render::DrawList& dl,
-                       const position_t& at_q,
-                       radians_t yaw_q,
-                       float cooked,
+                       const position_t& at,
+                       radians_t yaw,
+                       quantity<doneness[one], float> cooked_q,
                        std::uint32_t seed) {
     using namespace hen_parts;
-    // The egg's mesh, in metres and radians.
-    const Vec3& at = position_value (at_q);
-    const float yaw = radians_value (yaw_q);
     // The white spreads and sets, browning lacy at its edge, then burns.
+    const float cooked = cooked_q.numerical_value_in (one);
     const float done = std::clamp (cooked, 0.0f, 1.0f);
     const float burnt = std::clamp (cooked - 1.0f, 0.0f, 1.0f);
     const auto mix = [] (float a, float b, float t) { return a + (b - a) * t; };
@@ -732,46 +758,48 @@ namespace moppe::game {
         mix (c.blue, black.blue, burnt * (0.5f + 0.5f * edge)));
     };
     constexpr int rim = 14;
-    const float spread = 0.042f + 0.012f * done;
+    const meters_t spread = (0.042f + 0.012f * done) * u::m;
     const auto edge = [&] (int i) {
-      const float a = yaw + tau * i / rim;
-      const float r =
+      const radians_t a = yaw + turn * i / rim;
+      const meters_t r =
         spread *
         (0.8f + 0.35f * unit (seed, static_cast<std::uint32_t> (i % rim)));
-      return at + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
+      return at + shift (along (compass (a), r));
     };
     dl.normal (up);
     for (int i = 0; i < rim; ++i) {
       dl.color (white (0.0f));
-      dl.vertex (at + up * 0.006f);
+      dl.vertex (at + shift (along (up, 0.006f * u::m)));
       dl.color (white (1.0f));
       dl.vertex (edge (i + 1));
       dl.vertex (edge (i));
     }
     // The yolk, a low dome a little off the middle.
-    const Vec3 yolk =
-      at + Vec3 (std::cos (yaw), 0.0f, std::sin (yaw)) * 0.008f + up * 0.004f;
+    const position_t yolk = at + shift (along (compass (yaw), 0.008f * u::m)) +
+                            shift (along (up, 0.004f * u::m));
     const float set_yolk = 0.6f * done;
     dl.color (mix (0.98f, 0.92f, set_yolk) * (1.0f - 0.8f * burnt),
               mix (0.64f, 0.70f, set_yolk) * (1.0f - 0.8f * burnt),
               mix (0.10f, 0.30f, set_yolk) * (1.0f - 0.8f * burnt));
     constexpr int ring = 10;
-    constexpr float radius = 0.017f, height = 0.011f;
+    constexpr meters_t radius = 0.017f * u::m, height = 0.011f * u::m;
     for (int i = 0; i < ring; ++i) {
-      const float a0 = tau * i / ring, a1 = tau * (i + 1) / ring;
-      const Vec3 e0 (std::cos (a0), 0.0f, std::sin (a0));
-      const Vec3 e1 (std::cos (a1), 0.0f, std::sin (a1));
-      const Vec3 m0 = yolk + e0 * (radius * 0.7f) + up * (height * 0.75f);
-      const Vec3 m1 = yolk + e1 * (radius * 0.7f) + up * (height * 0.75f);
-      dl.normal (normalized (e0 + up * 0.6f));
-      dl.vertex (yolk + e0 * radius);
-      dl.vertex (yolk + e1 * radius);
+      const radians_t a0 = turn * i / ring, a1 = turn * (i + 1) / ring;
+      const direction_t e0 = compass (a0);
+      const direction_t e1 = compass (a1);
+      const position_t m0 = yolk + shift (along (e0, radius * 0.7f)) +
+                            shift (along (up, height * 0.75f));
+      const position_t m1 = yolk + shift (along (e1, radius * 0.7f)) +
+                            shift (along (up, height * 0.75f));
+      dl.normal (unit_of (e0 + up * 0.6f));
+      dl.vertex (yolk + shift (along (e0, radius)));
+      dl.vertex (yolk + shift (along (e1, radius)));
       dl.vertex (m1);
-      dl.vertex (yolk + e0 * radius);
+      dl.vertex (yolk + shift (along (e0, radius)));
       dl.vertex (m1);
       dl.vertex (m0);
       dl.normal (up);
-      dl.vertex (yolk + up * height);
+      dl.vertex (yolk + shift (along (up, height)));
       dl.vertex (m0);
       dl.vertex (m1);
     }
@@ -780,22 +808,18 @@ namespace moppe::game {
   void draw_nest_eggs (render::DrawList& dl,
                        std::span<const Nest> nests,
                        std::span<const NestState> states,
-                       const position_t& camera_q,
+                       const position_t& camera,
                        const plan_extent_t& period) {
     using namespace hen_parts;
-    // The boxes' meshes, in metres in the world.
-    const Vec3& camera = position_value (camera_q);
-    const Vec2& laps = plan_value (period);
     bool open = false;
     for (std::size_t k = 0; k < nests.size () && k < states.size (); ++k) {
       // The box at the copy of the world nearest the camera.
-      const Vec3& nest = position_value (nests[k].at);
-      const Vec3& out = direction_value (nests[k].out);
-      const Vec3 lap (terrain::whole_periods (camera[0] - nest[0], laps.x ()),
-                      0.0f,
-                      terrain::whole_periods (camera[2] - nest[2], laps.z ()));
-      const Vec3 box = nest + lap;
-      if (states[k].eggs == 0 || length2 (box - camera) > 60.0f * 60.0f)
+      const direction_t& out = nests[k].out;
+      const position_t box =
+        nests[k].at + shift (laps_toward (nests[k].at, camera, period));
+      const displacement_t seen = box - camera;
+      if (states[k].eggs == 0 ||
+          dot (seen, seen) > (60.0f * u::m) * (60.0f * u::m))
         continue;
       if (!open) {
         dl.state (render::DrawState ());
@@ -804,18 +828,19 @@ namespace moppe::game {
         dl.begin (render::Prim::Triangles);
         open = true;
       }
-      const Vec3 side = cross (up, out);
+      const direction_t side = quantity_cast<direction> (cross (up, out));
       for (int e = 0; e < states[k].eggs; ++e) {
         const auto s = hash (static_cast<std::uint32_t> (k) * 31u, e);
-        const float a = tau * (e / 3.0f + 0.1f * unit (s, 2));
-        const Vec3 at = box + side * (0.05f * std::cos (a)) +
-                        out * (0.05f * std::sin (a)) + up * 0.02f;
-        draw_egg (
-          dl,
-          position (at),
-          unit_direction (normalized (side * std::cos (a + 1.3f) +
-                                      out * std::sin (a + 1.3f) + up * 0.15f)),
-          s);
+        const radians_t a = turn * (e / 3.0f + 0.1f * unit (s, 2));
+        const position_t at =
+          box + shift (along (side, 0.05f * libm::cos (a) * u::m)) +
+          shift (along (out, 0.05f * libm::sin (a) * u::m)) +
+          shift (along (up, 0.02f * u::m));
+        draw_egg (dl,
+                  at,
+                  unit_of (side * libm::cos (a + 1.3f * u::rad) +
+                           out * libm::sin (a + 1.3f * u::rad) + up * 0.15f),
+                  s);
       }
     }
     if (open)
