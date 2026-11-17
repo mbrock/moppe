@@ -39,7 +39,8 @@ MOPPE_TEST (priority_flood_fills_a_basin_to_its_lowest_spill) {
                              3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (5, 5), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
 
   MOPPE_CHECK_NEAR (water_level_at (flood, 2, 2), 2.0f, 0.0f);
   MOPPE_CHECK_NEAR (water_depth_at (flood, 2, 2), 1.0f, 0.0f);
@@ -50,7 +51,8 @@ MOPPE_TEST (standing_sea_uses_the_global_water_plane) {
   const std::array heights { -2.f, -1.f, 1.f, 2.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (2, 2), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
 
   MOPPE_CHECK_NEAR (water_level_at (flood, 0, 0), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (water_depth_at (flood, 0, 0), 2.0f, 0.0f);
@@ -66,7 +68,8 @@ MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
                              3.f,  -1.f, -1.f, -1.f, -1.f, -1.f, -1.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (5, 5), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK_NEAR (water_level_at (flood, 2, 2), 3.0f, 0.0f);
@@ -81,7 +84,8 @@ MOPPE_TEST (periodic_flood_can_spill_across_the_wrap) {
   const std::array heights { 1.f, 3.f, 0.f, 1.f, 3.f, 0.f, 1.f, 3.f, 0.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (3, 3), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
 
   MOPPE_CHECK (flood.width () == 3);
   MOPPE_CHECK (flood.spill_receiver[0] == 2);
@@ -91,7 +95,8 @@ MOPPE_TEST (all_land_torus_roots_at_its_global_minimum) {
   const std::array heights { 4.f, 3.f, 2.f, 4.f, 1.f, 3.f, 4.f, 4.f, 4.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (3, 3), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
 
   MOPPE_CHECK (!flood.has_ocean);
   MOPPE_CHECK (flood.spill_receiver[4] == 4);
@@ -101,7 +106,8 @@ MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
   const std::array heights { 0.f, 4.f, 3.f, 2.f, 1.f, 5.f, 3.f, 2.f, 4.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (3, 3), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const std::size_t count = flood.width () * flood.height ();
 
   for (std::uint32_t origin = 0; origin < count; ++origin) {
@@ -123,7 +129,8 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
                              30.f, 0.f, 0.f,  0.f,  0.f,  0.f, 0.f };
   const ElevationMap terrain = make_elevation_map (
     TerrainDomain (5, 5, 2.0f * mp_units::si::metre), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK (census.domain ().size () == 1);
@@ -212,7 +219,8 @@ MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {
   const std::array heights { -2.f, -1.f, 1.f, 2.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (2, 2), heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const ElevationMap permanent = permanent_water_surface (
     flood,

@@ -204,27 +204,11 @@ namespace moppe::terrain {
     analyze_standing_water (const TerrainDomain& domain,
                             std::span<const SurfaceElevation> elevations,
                             SurfaceElevation sea_level);
-
-    // The sea level in bare metres, for callers not yet typed.
-    inline FloodField
-    analyze_standing_water (const TerrainDomain& domain,
-                            std::span<const SurfaceElevation> elevations,
-                            float sea_level) {
-      return analyze_standing_water (
-        domain, elevations, surface_elevation_point (sea_level * u::m));
-    }
   }
 
   template <TerrainElevations Terrain>
   FloodField analyze_standing_water (const Terrain& terrain,
                                      SurfaceElevation sea_level) {
-    return detail::analyze_standing_water (
-      terrain.domain (), elevations (terrain), sea_level);
-  }
-
-  // The sea level in bare metres, for callers not yet typed.
-  template <TerrainElevations Terrain>
-  FloodField analyze_standing_water (const Terrain& terrain, float sea_level) {
     return detail::analyze_standing_water (
       terrain.domain (), elevations (terrain), sea_level);
   }

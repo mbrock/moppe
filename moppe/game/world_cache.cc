@@ -318,6 +318,7 @@ namespace moppe::game {
     constexpr auto cubic_metre = u::m * u::m * u::m;
     constexpr auto julian_year = mp_units::astronomy::Julian_year;
     constexpr auto slope_ratio = terrain::terrain_slope[mp_units::one];
+    constexpr auto share = proportion[mp_units::one];
 
     void write_recipe (BinaryWriter& output,
                        const terrain::WorldRecipe& recipe) {
@@ -516,16 +517,16 @@ namespace moppe::game {
           static_cast<std::uint64_t> (reach.alignment.points.size ()));
         for (const terrain::RiverAlignmentPoint& point :
              reach.alignment.points) {
-          output.scalar (point.x_m);
-          output.scalar (point.z_m);
-          output.scalar (point.distance_m);
-          output.scalar (point.flow_distance_m);
-          output.scalar (point.contributing_area_m2);
-          output.scalar (point.slope);
-          output.scalar (point.waterfall);
-          output.scalar (point.standing_water);
-          output.scalar (point.water_level_m);
-          output.scalar (point.pooled);
+          output.quantity (x_of (point.place), u::m);
+          output.quantity (z_of (point.place), u::m);
+          output.quantity (point.distance, u::m);
+          output.quantity (point.flow_distance, u::m);
+          output.quantity (point.contributing_area, square_metre);
+          output.quantity (point.slope, slope_ratio);
+          output.quantity (point.waterfall, share);
+          output.quantity (point.standing_water, share);
+          output.quantity (point.water_level.delta_from_zero (), u::m);
+          output.quantity (point.pooled, share);
         }
       }
       output.scalar (static_cast<std::uint64_t> (rivers.waterfalls.size ()));
@@ -573,16 +574,21 @@ namespace moppe::game {
           return false;
         reach.downstream_ocean = downstream_ocean != 0;
         reach.alignment.points.resize (static_cast<std::size_t> (point_count));
-        for (terrain::RiverAlignmentPoint& point : reach.alignment.points)
-          if (!input.scalar (point.x_m) || !input.scalar (point.z_m) ||
-              !input.scalar (point.distance_m) ||
-              !input.scalar (point.flow_distance_m) ||
-              !input.scalar (point.contributing_area_m2) ||
-              !input.scalar (point.slope) || !input.scalar (point.waterfall) ||
-              !input.scalar (point.standing_water) ||
-              !input.scalar (point.water_level_m) ||
-              !input.scalar (point.pooled))
+        for (terrain::RiverAlignmentPoint& point : reach.alignment.points) {
+          meters_t x, z, water_level;
+          if (!input.quantity (x, u::m) || !input.quantity (z, u::m) ||
+              !input.quantity (point.distance, u::m) ||
+              !input.quantity (point.flow_distance, u::m) ||
+              !input.quantity (point.contributing_area, square_metre) ||
+              !input.quantity (point.slope, slope_ratio) ||
+              !input.quantity (point.waterfall, share) ||
+              !input.quantity (point.standing_water, share) ||
+              !input.quantity (water_level, u::m) ||
+              !input.quantity (point.pooled, share))
             return false;
+          point.place = plan_position (x, z);
+          point.water_level = terrain::surface_elevation_point (water_level);
+        }
         rivers.reaches.push_back (std::move (reach));
       }
       std::uint64_t waterfall_count = 0;

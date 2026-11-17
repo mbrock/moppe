@@ -324,18 +324,18 @@ namespace moppe::terrain {
       for (const RiverReach& reach : rivers.reaches) {
         const auto& points = reach.alignment.points;
         const bool springs =
-          !fed[reach.id] &&
-          (points.empty () || points.front ().standing_water < 0.99f);
+          !fed[reach.id] && (points.empty () || points.front ().standing_water <
+                                                  0.99f * proportion[one]);
         beds.clear ();
         for (const RiverAlignmentPoint& point : points) {
-          const plan_position_t at = plan_position (point.x_m, point.z_m);
+          const plan_position_t at = point.place;
           const std::uint32_t cell = course_near (at);
           if (cell == none)
             continue;
-          const meters_t bed_width = std::max (
-            least_width,
-            meters_t (parameters.width_share *
-                      river_width (point.contributing_area_m2 * u::m * u::m)));
+          const meters_t bed_width =
+            std::max (least_width,
+                      meters_t (parameters.width_share *
+                                river_width (point.contributing_area)));
           meters_t depth =
             least_depth *
             cr::pow ((bed_width / least_width).numerical_value_in (one),
@@ -346,9 +346,8 @@ namespace moppe::terrain {
             depth = meters_t (
               depth * band (0.0f * u::m, 2.5f * bed_width, below_sill[cell]));
           if (springs)
-            depth = meters_t (depth * band (0.0f * u::m,
-                                            3.0f * bed_width,
-                                            point.distance_m * u::m));
+            depth = meters_t (
+              depth * band (0.0f * u::m, 3.0f * bed_width, point.distance));
           beds.push_back (
             { .at = at,
               .level = graded[cell],

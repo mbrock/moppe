@@ -62,46 +62,6 @@ namespace moppe::game {
     // the road, and stopped whatever rode it.
     bool on_road (const plan_position_t& at, meters_t reach, bool decks) const;
 
-    // ---- Untyped adapters ----
-    //
-    // The queries above in floats and Vec3s (heights in metres, `at`'s y
-    // ignored), for callers not yet typed; each forwards to its typed
-    // query. Remove one when its last caller has moved
-    // (docs/typed-quantities.md).
-
-    float period_x () const {
-      return plan_value (period ()).x ();
-    }
-    float period_z () const {
-      return plan_value (period ()).z ();
-    }
-    float height (const Vec3& at) const {
-      return terrain::surface_elevation_value (elevation (plan_of (at)));
-    }
-    GroundHeight reader () const {
-      return
-        [g = *this] (float x, float z) { return g.height (Vec3 (x, 0.0f, z)); };
-    }
-    float still_level (const Vec3& at) const {
-      return terrain::surface_elevation_value (still_water (plan_of (at)));
-    }
-    float depth (const Vec3& at) const {
-      return still_level (at) - height (at);
-    }
-    bool open (const Vec3& at, float room, float relief) const {
-      return open (plan_of (at), room * u::m, relief * u::m);
-    }
-    // Keeps `want`'s height.
-    Vec3 open_near (const Vec3& want,
-                    float room,
-                    float relief,
-                    float search = 30.0f) const {
-      return lift (
-        plan_value (open_near (
-          plan_of (want), room * u::m, relief * u::m, search * u::m)),
-        want[1]);
-    }
-
     // Where a trail cell and a point of the trail's alignment stand.
     position_t trail_cell (terrain::CellIndex cell) const;
     position_t trail_point (const plan_position_t& point) const;
@@ -111,11 +71,6 @@ namespace moppe::game {
 
     // What the places are planned and built on.
     PlaceGround place_ground () const;
-
-  private:
-    static plan_position_t plan_of (const Vec3& at) {
-      return plan_position (at[0], at[2]);
-    }
   };
 }
 

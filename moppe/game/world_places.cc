@@ -156,19 +156,15 @@ namespace moppe::game {
     return {
       .ground =
         [ground, this] (plan_position_t p) {
-          const float x = plan_value (p).x (), z = plan_value (p).z ();
-          const float height = ground.height (Vec3 (x, 0.0f, z));
+          const terrain::SurfaceElevation height = ground.elevation (p);
           if (const std::optional<terrain::SurfaceElevation> floor =
-                floor_at (layout, plan_position (x, z)))
-            return terrain::surface_elevation_point (
-              std::max (terrain::surface_elevation_value (*floor), height) *
-              u::m);
-          return terrain::surface_elevation_point (height * u::m);
+                floor_at (layout, p))
+            return std::max (*floor, height);
+          return height;
         },
       .dry =
         [ground] (plan_position_t p) {
-          const Vec3 at (plan_value (p).x (), 0.0f, plan_value (p).z ());
-          return ground.still_level (at) < ground.height (at) + 0.05f;
+          return ground.still_water (p) < ground.elevation (p) + 0.05f * u::m;
         },
       .pasture =
         [ground] (plan_position_t p) {

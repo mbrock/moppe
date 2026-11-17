@@ -47,7 +47,8 @@ namespace {
                               5.0f * mp_units::si::metre,
                               5.0f * mp_units::si::metre);
     const ElevationMap terrain = make_elevation_map (grid, heights);
-    FloodField flood = analyze_standing_water (terrain, 0.0f);
+    FloodField flood =
+      analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
     LakeCensus census = census_lakes (flood);
     const DrainageGraph drainage = analyze_wet_drainage (flood, census);
     const RiverNetwork rivers = extract_river_network (
@@ -60,8 +61,8 @@ namespace {
     std::vector<float> after;
     for (const SurfaceElevation height : result.heights)
       after.push_back (surface_elevation_value (height));
-    FloodField flooded =
-      analyze_standing_water (make_elevation_map (grid, after), 0.0f);
+    FloodField flooded = analyze_standing_water (
+      make_elevation_map (grid, after), surface_elevation_point (0.0f * u::m));
     return {
       heights, std::move (after), std::move (flood), std::move (flooded)
     };
@@ -147,7 +148,8 @@ MOPPE_TEST (a_bed_stepping_diagonally_runs_on_from_cell_to_cell) {
   const TerrainDomain grid (
     size, size, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre);
   const ElevationMap terrain = make_elevation_map (grid, heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph drainage = analyze_wet_drainage (flood, census);
   const RiverNetwork rivers =

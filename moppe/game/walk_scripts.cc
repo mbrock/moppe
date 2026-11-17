@@ -46,7 +46,8 @@ namespace moppe::game {
     const auto depth_at = [&] (const position_t& at) {
       return (still_water_at (s.ground.world, s.ground.surface (), &sheets, at)
                 .numerical_value_in (u::m) -
-              s.ground.height (position_value (at))) *
+              terrain::surface_elevation_value (
+                s.ground.elevation (plan (at)))) *
              u::m;
     };
     constexpr meters_t step = 4.0f * u::m;
@@ -58,11 +59,11 @@ namespace moppe::game {
                     (2.0f * PI * radius / step).numerical_value_in (one)));
       for (int k = 0; k < count; ++k) {
         const radians_t a = 2.0f * PI * k / count * u::rad;
-        position_t stand =
-          position (s.spawn + Vec3 (std::cos (radians_value (a)),
-                                    0.0f,
-                                    std::sin (radians_value (a))) *
-                                meters_value (radius));
+        position_t stand = position (position_value (s.spawn) +
+                                     Vec3 (std::cos (radians_value (a)),
+                                           0.0f,
+                                           std::sin (radians_value (a))) *
+                                       meters_value (radius));
         if (depth_at (stand) > -0.3f * u::m)
           continue;
         for (int d = 0; d < 16; ++d) {
@@ -75,12 +76,13 @@ namespace moppe::game {
               depth_at (position (position_value (stand) +
                                   direction_value (out) * 8.0f)) < 0.8f * u::m)
             continue;
-          position_value (stand)[1] =
-            s.ground.height (position_value (stand)) + 0.1f;
+          stand = terrain::at_elevation (
+            plan (stand), s.ground.elevation (plan (stand)) + 0.1f * u::m);
           s.session.walker ().spawn (stand, out);
           s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
           std::cerr << "moppe: fish script: a bank "
-                    << length (position_value (stand) - s.spawn)
+                    << length (position_value (stand) -
+                               position_value (s.spawn))
                     << " m from the spawn" << std::endl;
           return;
         }
@@ -149,10 +151,8 @@ namespace moppe::game {
       meters_t best_d = 1e9f * u::m;
       for (const bool stock : { true, false }) {
         for (const Animal& a : s.session.animals ().animals ()) {
-          const meters_t d =
-            std::hypot (position_value (a.position)[0] - s.spawn[0],
-                        position_value (a.position)[2] - s.spawn[2]) *
-            u::m;
+          const plan_displacement_t apart = plan (a.position) - plan (s.spawn);
+          const meters_t d = libm::hypot (x_of (apart), z_of (apart));
           if (wanted (a, stock) && d < best_d) {
             best_d = d;
             best = &a;
@@ -210,9 +210,8 @@ namespace moppe::game {
       for (const Farm& farm : s.places.layout.farms)
         for (const Building& b : farm.buildings)
           if (farm.kept && !farm.ruined && b.kind == Building::Kind::barn) {
-            const Vec3& base = position_value (b.at);
-            const meters_t d =
-              std::hypot (base[0] - s.spawn[0], base[2] - s.spawn[2]) * u::m;
+            const plan_displacement_t apart = plan (b.at) - plan (s.spawn);
+            const meters_t d = libm::hypot (x_of (apart), z_of (apart));
             if (d < best) {
               best = d;
               nearest = &b;
@@ -274,7 +273,8 @@ namespace moppe::game {
     if (!stand)
       return;
     position_t at = stand->first;
-    position_value (at)[1] = s.ground.height (position_value (at)) + 0.1f;
+    at = terrain::at_elevation (plan (at),
+                                s.ground.elevation (plan (at)) + 0.1f * u::m);
     if (const std::optional<terrain::SurfaceElevation> floor = floor_at (
           s.places.layout,
           plan_position (position_value (at)[0], position_value (at)[2])))
@@ -296,12 +296,10 @@ namespace moppe::game {
         s.session.logic ().m_doing != Doing::on_foot ())
       return;
     const std::vector<mov::Trunk> near =
-      s.ground.trunks.gather (position (s.spawn), 700.0f * u::m);
+      s.ground.trunks.gather (s.spawn, 700.0f * u::m);
     // Under open sky, so there are stars to lie and look at.
-    m_state.camp.site = nearest_hammock_site (near,
-                                              moppe::position (s.spawn),
-                                              s.ground.elevation_field (),
-                                              60.0f * u::m);
+    m_state.camp.site = nearest_hammock_site (
+      near, s.spawn, s.ground.elevation_field (), 60.0f * u::m);
     if (!m_state.camp.site) {
       std::cerr << "moppe: camp script: no two trees near the spawn "
                    "would take a hammock\n";
@@ -328,7 +326,8 @@ namespace moppe::game {
     position_t stand =
       position (position_value (middle) + across * (m_state.camp.side * 8.5f) +
                 direction_value (hammock_along (site)) * 1.5f);
-    position_value (stand)[1] = s.ground.height (position_value (stand)) + 0.1f;
+    stand = terrain::at_elevation (
+      plan (stand), s.ground.elevation (plan (stand)) + 0.1f * u::m);
     Vec3 facing = position_value (middle) - position_value (stand);
     facing[1] = 0.0f;
     s.session.walker ().spawn (stand, unit_direction (normalized (facing)));
@@ -336,7 +335,8 @@ namespace moppe::game {
     std::cerr << "moppe: camp script: two trees "
               << length (position_value (site.strap[1]) -
                          position_value (site.strap[0]))
-              << " m apart, " << length (position_value (middle) - s.spawn)
+              << " m apart, "
+              << length (position_value (middle) - position_value (s.spawn))
               << " m from the spawn" << std::endl;
   }
 
@@ -373,7 +373,8 @@ namespace moppe::game {
       return false;
     };
     position_t middle = hammock_middle (site);
-    position_value (middle)[1] = s.ground.height (position_value (middle));
+    middle =
+      terrain::at_elevation (plan (middle), s.ground.elevation (plan (middle)));
     const position_t fireside =
       position (position_value (middle) +
                 direction_value (hammock_across (site)) * (script.side * 3.6f) -

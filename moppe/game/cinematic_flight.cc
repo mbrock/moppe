@@ -852,7 +852,7 @@ namespace moppe::game {
     for (auto reach = course.rbegin (); reach != course.rend (); ++reach)
       for (const terrain::RiverAlignmentPoint& point :
            (*reach)->alignment.points) {
-        const plan_position_t at = plan_position (point.x_m, point.z_m);
+        const plan_position_t at = point.place;
         line.push_back (
           line.empty () ? at : unwrap_near (at, line.back (), surface));
       }

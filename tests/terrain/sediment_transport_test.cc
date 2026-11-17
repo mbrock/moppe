@@ -381,7 +381,8 @@ MOPPE_TEST (lake_storage_is_distributed_without_overfilling_the_basin) {
       heights[domain.offset ({ column, row })] =
         row == 1 || row == 5 || column == 1 || column == 5 ? 3.0f : -2.0f;
   const ElevationMap terrain = make_elevation_map (domain, heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const FractionalFlowDomain flow = flat_flow_domain (domain);
   const std::vector<FractionalContributingArea> areas (
@@ -425,8 +426,8 @@ MOPPE_TEST (lake_storage_is_distributed_without_overfilling_the_basin) {
   for (std::size_t cell = 0; cell < domain.size (); ++cell)
     filled[cell] +=
       static_cast<float> (test_sediment_value (result.deposited[cell]));
-  const FloodField next_flood =
-    analyze_standing_water (make_elevation_map (domain, filled), 0.0f);
+  const FloodField next_flood = analyze_standing_water (
+    make_elevation_map (domain, filled), surface_elevation_point (0.0f * u::m));
   const std::size_t lake_center = domain.offset ({ 3, 3 });
   MOPPE_CHECK (next_flood.water_depth_m (lake_center) <
                flood.water_depth_m (lake_center));
@@ -439,7 +440,8 @@ MOPPE_TEST (mouth_deposition_fans_out_and_exports_excess_accommodation) {
     for (std::size_t column = 0; column < domain.width (); ++column)
       heights[domain.offset ({ column, row })] = column < 4 ? 1.0f : -2.0f;
   const ElevationMap terrain = make_elevation_map (domain, heights);
-  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const FractionalFlowDomain flow = flat_flow_domain (domain);
   const std::vector<FractionalContributingArea> areas (

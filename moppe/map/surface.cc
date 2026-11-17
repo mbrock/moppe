@@ -254,7 +254,7 @@ namespace moppe::map {
     // The rivers as the finished world will find them, but for the beds
     // this is about to give them.
     const terrain::FloodField flood = terrain::analyze_standing_water (
-      surface, water_datum.numerical_value_in (u::m));
+      surface, terrain::surface_elevation_point (water_datum));
     const terrain::LakeCensus lakes = terrain::census_lakes (flood);
     const terrain::DrainageGraph drainage =
       terrain::analyze_wet_drainage (flood, lakes);
@@ -915,10 +915,12 @@ namespace moppe::map {
         const std::size_t i = domain.offset (site);
         const noise_signal_t whaleback = layered_noise (
           domain.lap_position (site), laps (60.0f * u::m), seed ^ 0x9a817eU, 3);
-        rock[i] = band (0.22f * part,
-                        0.48f * part,
-                        rock[i] + quantity_cast<proportion> (
-                                    0.7f * (whaleback - 0.5f * signal)));
+        rock[i] = band (
+          0.22f * part,
+          0.48f * part,
+          rock[i] +
+            (0.7f * (whaleback - 0.5f * signal)).numerical_value_in (one) *
+              part);
       }
     }
 
@@ -929,7 +931,7 @@ namespace moppe::map {
       // How far up the land's relief the place stands; under the sea,
       // below none of it.
       const proportion_t rise =
-        quantity_cast<proportion> ((height[i] - sea) / relief);
+        ((height[i] - sea) / relief).numerical_value_in (one) * part;
       const ElevationChange above = height[i] - around[i];
       const proportion_t fed =
         std::clamp (2.0f * spring[i], 0.0f * part, whole);

@@ -181,7 +181,8 @@ namespace moppe::game {
       }
     };
 
-    float river_mix (float a, float b, blend_weight_t t) {
+    template <typename T>
+    T river_mix (T a, T b, blend_weight_t t) {
       return a + (b - a) * t.numerical_value_in (one);
     }
 
@@ -194,10 +195,7 @@ namespace moppe::game {
         return sections;
       std::vector<meters_t> along (points.size (), 0.0f * u::m);
       for (std::size_t i = 1; i < points.size (); ++i)
-        along[i] =
-          along[i - 1] + cr::hypot (points[i].x_m - points[i - 1].x_m,
-                                    points[i].z_m - points[i - 1].z_m) *
-                           u::m;
+        along[i] = along[i - 1] + hypot (points[i].place - points[i - 1].place);
       const meters_t length = along.back ();
       if (length < 4.0f * river_step)
         return sections;
@@ -227,15 +225,14 @@ namespace moppe::game {
                 blend_weight[one]
             : 0.0f * blend_weight[one];
         RiverSection& section = sections[k];
-        section.centreline = plan_position (river_mix (a.x_m, b.x_m, t),
-                                            river_mix (a.z_m, b.z_m, t));
-        area[k] =
-          river_mix (a.contributing_area_m2, b.contributing_area_m2, t) * u::m *
-          u::m;
+        section.centreline = river_mix (a.place, b.place, t);
+        area[k] = river_mix (a.contributing_area, b.contributing_area, t);
         unpooled[k] =
           std::max (
-            { a.pooled, b.pooled, a.standing_water, b.standing_water }) < 0.5f;
-        section.falling = std::max (a.waterfall, b.waterfall) > 0.0f;
+            { a.pooled, b.pooled, a.standing_water, b.standing_water }) <
+          0.5f * proportion[one];
+        section.falling =
+          std::max (a.waterfall, b.waterfall) > 0.0f * proportion[one];
       }
 
       for (std::size_t k = 0; k < count; ++k) {
@@ -619,7 +616,8 @@ namespace moppe::game {
             0.5f * keystone * (0.75f + 0.5f * hash_lane (stone, 0));
           across += 0.9f * (previous + radius);
           previous = radius;
-          const meters_t along = 0.2f * radius * river_gaussian (stone, 1);
+          const meters_t along =
+            0.2f * radius * river_gaussian (stone, 1).numerical_value_in (one);
           layer.loose (
             section.at (across, along), radius, stone, -0.08f * u::m);
         }

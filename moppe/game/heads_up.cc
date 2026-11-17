@@ -601,20 +601,18 @@ namespace moppe::game {
         }
       }
       if (name)
-        add_waymark (
-          state,
-          frame,
-          width,
-          height,
-          name,
-          HudState::Waymark::Place,
-          at_height (found,
-                     w.ground.height (lift (plan_value (found))) * u::m +
-                       4.0f * u::m),
-          40.0f * u::m,
-          70.0f * u::m,
-          DisplayColor (1.0f, 0.86f, 0.55f),
-          place_waymark);
+        add_waymark (state,
+                     frame,
+                     width,
+                     height,
+                     name,
+                     HudState::Waymark::Place,
+                     terrain::at_elevation (
+                       found, w.ground.elevation (found) + 4.0f * u::m),
+                     40.0f * u::m,
+                     70.0f * u::m,
+                     DisplayColor (1.0f, 0.86f, 0.55f),
+                     place_waymark);
     }
     // Every machine but the one being driven, and the bike while it
     // hangs under the wing.
