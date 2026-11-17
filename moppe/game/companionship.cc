@@ -392,7 +392,8 @@ namespace moppe::game {
     lighting.lamp_color = scale_display (
       fire_light_color (companion->fire_burn.numerical_value_in (one),
                         seconds_value (lighting.time)),
-      1.0f - 0.25f * lighting.daylight.numerical_value_in (one));
+      (1.0f - 0.25f * lighting.daylight.numerical_value_in (one)) *
+        scale_factor[one]);
   }
 
   void Companionship::add_readings (HudState& state,

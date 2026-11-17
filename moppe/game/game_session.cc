@@ -190,7 +190,8 @@ namespace moppe::game {
         1.3f *
         smoothstep (wait, wait + 1.0f, seconds_value (logic.m_look_idle)) *
         smoothstep (0.5f, 6.0f, speed);
-      const float settle = smoothing_alpha (rate / u::s, elapsed * u::s);
+      const float settle =
+        smoothing_alpha (rate / u::s, elapsed * u::s).numerical_value_in (one);
       logic.m_look_yaw -= logic.m_look_yaw * settle;
       logic.m_look_pitch -= logic.m_look_pitch * settle;
     }
@@ -974,7 +975,7 @@ namespace moppe::game {
           rig.velocity * static_cast<float> (dt.numerical_value_in (u::s));
       position_value (m_logic.m_fp_eye) +=
         (rig.eye - position_value (m_logic.m_fp_eye)) *
-        smoothing_alpha (25.0f / u::s, dt);
+        smoothing_alpha (25.0f / u::s, dt).numerical_value_in (one);
       m_camera.place (position_value (m_logic.m_fp_eye),
                       position_value (m_logic.m_fp_eye) + look * 10.0f);
       return;
@@ -1978,8 +1979,9 @@ namespace moppe::game {
       logic.m_doing != Doing::on_foot () ? session.subject_speed_kmh () : 0.0f;
     const float fov_target =
       std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
-    logic.m_fov_k += (fov_target * blend_weight[one] - logic.m_fov_k) *
-                     smoothing_alpha (5.0f / u::s, elapsed * u::s);
+    logic.m_fov_k +=
+      (fov_target * blend_weight[one] - logic.m_fov_k) *
+      smoothing_alpha (5.0f / u::s, elapsed * u::s).numerical_value_in (one);
 
     return result;
   }

@@ -317,7 +317,8 @@ namespace moppe::game {
       lighting.lamp_color = scale_display (
         fire_light_color (burn[i].numerical_value_in (one),
                           seconds_value (lighting.time)),
-        1.4f * (1.0f - 0.25f * lighting.daylight.numerical_value_in (one)));
+        1.4f * (1.0f - 0.25f * lighting.daylight.numerical_value_in (one)) *
+          scale_factor[one]);
     }
   }
 
@@ -350,14 +351,15 @@ namespace moppe::game {
         1.0f + 0.03f * std::sin (seconds_value (time) * 7.3f) +
         0.02f * std::sin (seconds_value (time) * 12.9f + 1.7f);
       lighting.lamp_reach = 11.0f * u::m;
-      lighting.lamp_color =
-        scale_display (DisplayColor (1.30f, 0.95f, 0.55f), dark * flicker);
+      lighting.lamp_color = scale_display (DisplayColor (1.30f, 0.95f, 0.55f),
+                                           dark * flicker * scale_factor[one]);
     } else {
       // The day's light, warmed by the boards it comes in over.
       lighting.lamp_reach = 13.0f * u::m;
-      lighting.lamp_color = scale_display (DisplayColor (1.0f, 0.93f, 0.80f),
-                                           0.9f * (1.0f - dark) *
-                                             daylight.numerical_value_in (one));
+      lighting.lamp_color =
+        scale_display (DisplayColor (1.0f, 0.93f, 0.80f),
+                       0.9f * (1.0f - dark) *
+                         daylight.numerical_value_in (one) * scale_factor[one]);
     }
   }
 }

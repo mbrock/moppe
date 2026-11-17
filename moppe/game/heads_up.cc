@@ -538,8 +538,10 @@ namespace moppe::game {
       DisplayColor jacket = pale;
       for (std::size_t c = 0; c < figure::colours.size (); ++c)
         if (std::string_view (figure::colour_names[c]) == "jacket")
-          jacket = mix_display (
-            figure::outfit_colour (c, w.company.their_outfit ()), pale, 0.35f);
+          jacket =
+            mix_display (figure::outfit_colour (c, w.company.their_outfit ()),
+                         pale,
+                         0.35f * blend_weight[one]);
       add_waymark (state,
                    frame,
                    width,

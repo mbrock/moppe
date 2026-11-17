@@ -105,29 +105,33 @@ namespace moppe::game {
     key[1] = std::max (static_cast<float> (key[1]), 0.06f);
     sky.light = normalized (key);
     sky.light_diffuse = scale_display (
-      sunlit ? mix_display (ivory, warm, golden) : silver, strength);
+      sunlit ? mix_display (ivory, warm, golden * blend_weight[one]) : silver,
+      strength * scale_factor[one]);
     sky.light_specular =
       sunlit ? scale_display (mix_display (DisplayColor (0.92f, 0.95f, 1.0f),
                                            DisplayColor (1.0f, 0.86f, 0.70f),
-                                           golden),
+                                           golden * blend_weight[one]),
                               (0.15f + 0.85f * sky.daylight) *
-                                smoothstep (-0.12f, -0.04f, sine))
-             : scale_display (silver, 1.2f * moon_strength);
+                                smoothstep (-0.12f, -0.04f, sine) *
+                                scale_factor[one])
+             : scale_display (silver, 1.2f * moon_strength * scale_factor[one]);
 
     // The sky's fill: the day's grey-blue, and at night a deep blue that
     // the moon lifts a little.
     const DisplayColor day (0.39f, 0.43f, 0.49f);
-    const DisplayColor night = scale_display (
-      DisplayColor (0.18f, 0.24f, 0.40f), 0.80f + 0.30f * sky.moonlight);
-    sky.ambient = mix_display (night, day, sky.daylight);
+    const DisplayColor night =
+      scale_display (DisplayColor (0.18f, 0.24f, 0.40f),
+                     (0.80f + 0.30f * sky.moonlight) * scale_factor[one]);
+    sky.ambient = mix_display (night, day, sky.daylight * blend_weight[one]);
 
     const DisplayColor day_horizon (0.55f, 0.68f, 0.84f);
     const DisplayColor night_horizon (0.035f, 0.045f, 0.09f);
     const DisplayColor warm_horizon (0.92f, 0.58f, 0.32f);
-    sky.horizon =
-      mix_display (mix_display (night_horizon, day_horizon, sky.daylight),
-                   warm_horizon,
-                   golden * 0.16f);
+    sky.horizon = mix_display (mix_display (night_horizon,
+                                            day_horizon,
+                                            sky.daylight * blend_weight[one]),
+                               warm_horizon,
+                               golden * 0.16f * blend_weight[one]);
   }
 
   SkyReading Almanac::at (double hours) const {

@@ -139,18 +139,20 @@ namespace moppe {
   }
 
   // Frame-rate-independent exponential decay: the surviving
-  // proportion of a quantity after dt at decay rate k.  Returns the
-  // plain float weight that the unit-blind vector lerps consume; the
-  // typed rate is the point, making the exponent's dimensionlessness
-  // (frame-rate independence) a compile-time fact.
-  inline float decay (damping_t k, seconds_t dt) {
-    return cr::exp (-scalar_value (k * dt));
+  // proportion of a quantity after dt at decay rate k.  The typed rate
+  // makes the exponent's dimensionlessness (frame-rate independence) a
+  // compile-time fact.  A length or a duration scales by it directly;
+  // unit-blind floats take numerical_value_in (one).
+  inline proportion_t decay (damping_t k, seconds_t dt) {
+    return cr::exp (-scalar_value (k * dt)) * proportion[one];
   }
 
   // The complementary smoothing weight: how far toward a target a
-  // low-pass filter moves during dt when it converges at rate k.
-  inline float smoothing_alpha (damping_t k, seconds_t dt) {
-    return 1.0f - decay (k, dt);
+  // low-pass filter moves during dt when it converges at rate k.  A
+  // blend weight is its own kind, so a step toward a typed target is
+  // named back into the target's type: radians_t ((to - x) * alpha).
+  inline blend_weight_t smoothing_alpha (damping_t k, seconds_t dt) {
+    return (1.0f - decay (k, dt).numerical_value_in (one)) * blend_weight[one];
   }
 
   // Trig on typed angles.  Degrees convert implicitly at the call
@@ -419,9 +421,11 @@ namespace moppe {
     return Vec3 (left.native () * right.native ());
   }
 
-  inline Vec3
-  linear_vector_interpolate (const Vec3& from, const Vec3& to, float alpha) {
-    return (1.0f - alpha) * from + alpha * to;
+  inline Vec3 linear_vector_interpolate (const Vec3& from,
+                                         const Vec3& to,
+                                         blend_weight_t alpha) {
+    const float weight = alpha.numerical_value_in (one);
+    return (1.0f - weight) * from + weight * to;
   }
 
   // The horizontal plane's two lanes: x, then z (the world's y is up).

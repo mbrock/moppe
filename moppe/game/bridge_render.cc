@@ -62,7 +62,7 @@ namespace moppe::game {
               meters_t hw,
               DisplayColor colour,
               scale_factor_t shade = 1.0f * scale_factor[one]) {
-      dl.color (scale_display (colour, shade.numerical_value_in (one)));
+      dl.color (scale_display (colour, shade));
       // Each face is wound to face outward whichever hand the axes are:
       // the way across a deck is given to the left of the way along, a
       // beam's to its right.
@@ -404,7 +404,7 @@ namespace moppe::game {
                                 const displacement_t& b,
                                 const direction_t& ob,
                                 scale_factor_t shade) {
-      dl.color (scale_display (steel, shade.numerical_value_in (one)));
+      dl.color (scale_display (steel, shade));
       // Toward the road, twice over (not a unit vector).
       const Vec3 toward = -(direction_value (oa) + direction_value (ob));
       for (std::size_t j = 0; j + 1 < std::size (section); ++j) {

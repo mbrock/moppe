@@ -123,12 +123,12 @@ namespace moppe {
                               velocity_t velocity,
                               seconds_t dt) {
       // dt-correct smoothing (3.1/s reproduces the old 0.05 @ 60Hz)
-      float alpha = smoothing_alpha (3.1f / u::s, dt);
-      float fast = smoothing_alpha (12.0f / u::s, dt);
+      blend_weight_t alpha = smoothing_alpha (3.1f / u::s, dt);
+      blend_weight_t fast = smoothing_alpha (12.0f / u::s, dt);
 
       const bool reset = m_is_uninitialized;
       if (reset) {
-        alpha = fast = 1;
+        alpha = fast = 1.0f * blend_weight[one];
         m_ahead = displacement (Vec3 ());
       }
 
@@ -171,7 +171,7 @@ namespace moppe {
       const meters_t ahead_len = magnitude (ahead);
       if (ahead_len > 8.0f * u::m)
         ahead *= 8.0f * u::m / ahead_len;
-      m_ahead += (ahead - m_ahead) * fast;
+      m_ahead += displacement_t ((ahead - m_ahead) * fast);
 
       // Looking up from low down, the look point rises over the subject,
       // which sinks in the frame and leaves the sky above it.
@@ -223,8 +223,8 @@ namespace moppe {
 
       // Clamp the HORIZONTAL trail only, against a smoothed speed so
       // collisions can't shrink the window in one frame.
-      m_speed +=
-        (magnitude (velocity) - m_speed) * smoothing_alpha (6.0f / u::s, dt);
+      m_speed += speed_t ((magnitude (velocity) - m_speed) *
+                          smoothing_alpha (6.0f / u::s, dt));
 
       Vec3& camera_position = position_value (m_position);
       const Vec3& subject_position = position_value (position);
@@ -292,7 +292,8 @@ namespace moppe {
         boom_length = clear;
       else
         boom_length +=
-          (clear - boom_length) * smoothing_alpha (2.0f / u::s, dt);
+          (clear - boom_length) *
+          smoothing_alpha (2.0f / u::s, dt).numerical_value_in (one);
       boom_length = std::min (boom_length, span);
       m_boom = boom_length * u::m;
       m_snap = false;

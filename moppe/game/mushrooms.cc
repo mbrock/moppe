@@ -88,10 +88,10 @@ namespace moppe::game {
       if (cooked <= 0.0f)
         return raw;
       if (cooked <= 1.0f)
-        return mix_display (raw, brown, 0.72f * cooked);
-      return mix_display (mix_display (raw, brown, 0.72f),
+        return mix_display (raw, brown, 0.72f * cooked * blend_weight[one]);
+      return mix_display (mix_display (raw, brown, 0.72f * blend_weight[one]),
                           char_black,
-                          std::min (1.0f, cooked - 1.0f));
+                          std::min (1.0f, cooked - 1.0f) * blend_weight[one]);
     }
 
     MushroomFrame mushroom_frame (const MushroomSite& site) {

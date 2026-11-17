@@ -94,7 +94,8 @@ namespace moppe {
           // smoothly at the edge and wins over the orbit near collection.
           const float pull = 1.0f - distance / 22.0f;
           const float alpha =
-            smoothing_alpha ((1.2f + 7.0f * pull * pull) / u::s, dt * u::s);
+            smoothing_alpha ((1.2f + 7.0f * pull * pull) / u::s, dt * u::s)
+              .numerical_value_in (one);
           Vec3 tangent (-delta[2], 0, delta[0]);
           if (length2 (tangent) > 0.0001f)
             normalize (tangent);

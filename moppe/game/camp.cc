@@ -615,7 +615,8 @@ namespace moppe::game {
     // A display colour: the renderer's light is its 2.2 power.
     return scale_display (
       DisplayColor (1.50f, 1.04f, 0.56f),
-      std::pow (std::clamp (burn * flicker, 0.0f, 1.0f), 1.0f / 2.2f));
+      std::pow (std::clamp (burn * flicker, 0.0f, 1.0f), 1.0f / 2.2f) *
+        scale_factor[one]);
   }
 
   float pan_cooked (const Pan& pan, play_time_t now) {

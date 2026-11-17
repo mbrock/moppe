@@ -193,7 +193,8 @@ namespace moppe::mov {
 
     const float turn = scalar_value (m_turn);
     const radians_t bank_target = turn * full_bank;
-    m_bank += (bank_target - m_bank) * smoothing_alpha (3.2f / u::s, dt);
+    m_bank +=
+      radians_t ((bank_target - m_bank) * smoothing_alpha (3.2f / u::s, dt));
     const float bank = radians_value (m_bank);
 
     m_air_mass_lift = ridge_lift (height_above_ground ());
@@ -237,7 +238,8 @@ namespace moppe::mov {
     wanted = std::clamp (
       wanted / std::max (0.6f, std::cos (bank)), least_loading, stall_loading);
     const damping_t bar = m_flare ? 5.0f / u::s : 4.0f / u::s;
-    m_loading += (wanted - m_loading) * smoothing_alpha (bar, dt);
+    m_loading +=
+      (wanted - m_loading) * smoothing_alpha (bar, dt).numerical_value_in (one);
 
     // Lift acts across the path through the air, in the plane the bank
     // tilts; drag acts back along it.
