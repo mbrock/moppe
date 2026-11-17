@@ -4,7 +4,7 @@
     "Checkpoints & caches": {
       "share": 96.9,
       "files": 5,
-      "typed": 93,
+      "typed": 95,
       "raw_float": 3,
       "raw_vector": 0,
       "escapes": 14
@@ -18,9 +18,9 @@
       "escapes": 94
     },
     "Developer tools & site": {
-      "share": 36.0,
+      "share": 36.2,
       "files": 52,
-      "typed": 253,
+      "typed": 255,
       "raw_float": 387,
       "raw_vector": 62,
       "escapes": 85
@@ -42,28 +42,28 @@
       "escapes": 47
     },
     "Game logic": {
-      "share": 14.4,
+      "share": 14.7,
       "files": 43,
-      "typed": 273,
+      "typed": 279,
       "raw_float": 940,
       "raw_vector": 685,
-      "escapes": 281
+      "escapes": 294
     },
     "HUD & map": {
-      "share": 1.4,
+      "share": 2.8,
       "files": 8,
-      "typed": 10,
+      "typed": 20,
       "raw_float": 662,
       "raw_vector": 37,
-      "escapes": 60
+      "escapes": 68
     },
     "Places & camp": {
-      "share": 4.4,
+      "share": 4.7,
       "files": 12,
-      "typed": 36,
-      "raw_float": 444,
-      "raw_vector": 332,
-      "escapes": 53
+      "typed": 38,
+      "raw_float": 445,
+      "raw_vector": 333,
+      "escapes": 62
     },
     "Platform game interface": {
       "share": 88.8,
@@ -74,12 +74,12 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 70.6,
+      "share": 71.2,
       "files": 61,
-      "typed": 1078,
-      "raw_float": 303,
-      "raw_vector": 146,
-      "escapes": 658
+      "typed": 1081,
+      "raw_float": 297,
+      "raw_vector": 140,
+      "escapes": 654
     },
     "Rivers, water & sediment": {
       "share": 98.0,
@@ -90,36 +90,36 @@
       "escapes": 184
     },
     "Roads & trails": {
-      "share": 11.0,
+      "share": 81.8,
       "files": 10,
-      "typed": 125,
-      "raw_float": 946,
-      "raw_vector": 66,
+      "typed": 1008,
+      "raw_float": 164,
+      "raw_vector": 61,
       "escapes": 125
     },
     "Terrain & world generation": {
-      "share": 50.4,
+      "share": 50.6,
       "files": 39,
-      "typed": 585,
-      "raw_float": 490,
-      "raw_vector": 86,
-      "escapes": 207
+      "typed": 591,
+      "raw_float": 488,
+      "raw_vector": 88,
+      "escapes": 209
     },
     "Tests": {
-      "share": 35.1,
+      "share": 35.4,
       "files": 83,
-      "typed": 527,
-      "raw_float": 783,
-      "raw_vector": 192,
-      "escapes": 665
+      "typed": 540,
+      "raw_float": 789,
+      "raw_vector": 195,
+      "escapes": 714
     },
     "Vehicles & on-foot body": {
-      "share": 32.8,
+      "share": 32.9,
       "files": 47,
-      "typed": 860,
+      "typed": 864,
       "raw_float": 887,
       "raw_vector": 877,
-      "escapes": 309
+      "escapes": 314
     }
   }
 }
