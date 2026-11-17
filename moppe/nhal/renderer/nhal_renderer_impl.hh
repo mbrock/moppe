@@ -468,7 +468,8 @@ namespace moppe::nhal {
 
       void draw_world_text (const render::WorldText& text) override;
 
-      void draw_world_labels (const render::TextList& text) override;
+      void draw_world_labels (const render::TextList& text,
+                              float hidden) override;
 
       float scene_focal_pixels () const override;
 

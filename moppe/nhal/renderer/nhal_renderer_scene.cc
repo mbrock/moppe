@@ -83,14 +83,15 @@ namespace moppe::nhal {
       }
     }
 
-    void NhalRenderer::draw_world_labels (const render::TextList& text) {
+    void NhalRenderer::draw_world_labels (const render::TextList& text,
+                                          float hidden) {
       if (text.empty () || m_sun_shadow.casting || m_scene_closed)
         return;
       open_scene ();
       // Behind the scene's surfaces faintly, then in front of them.
       std::vector<render::GlyphQuad> faint = text.quads ();
       for (render::GlyphQuad& quad : faint)
-        quad.color[3] *= 0.3f;
+        quad.color[3] *= hidden;
       for (const bool behind : { true, false }) {
         const std::vector<render::GlyphQuad>& quads =
           behind ? faint : text.quads ();

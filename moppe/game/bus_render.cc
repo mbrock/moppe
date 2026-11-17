@@ -369,6 +369,9 @@ namespace moppe::game {
     }
     // Its foot over the bus's roof and the luggage on its rack.
     m_board.stand (sign + Vec3 (0, 3.4f, 0), height_pts);
-    renderer.draw_world_labels (m_board);
+    // Whole even where grass, the bus, or its mirror stands nearer than
+    // the sign: every glyph lies at the sign's one depth, so anything
+    // between took bites out of the letters.
+    renderer.draw_world_labels (m_board, 1.0f);
   }
 }
