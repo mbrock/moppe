@@ -17,22 +17,16 @@ namespace moppe::mov {
   struct BoatWater {
     std::function<meters_t (position_t at)> level;
     std::function<velocity_t (position_t at)> current;
-
-    float level_at (const Vec3& at) const {
-      return meters_value (level (position (at)));
-    }
-    Vec3 current_at (const Vec3& at) const {
-      return velocity_value (current (position (at)));
-    }
   };
 
   // A small piece of a hull's skin, in the hull's frame: its middle, its
   // outward normal and area, and half its two edges, by which its depth
   // across it is reckoned.
   struct HullPanel {
-    Vec3 centre, normal;
+    displacement_t centre {};
+    direction_t normal {};
     square_meters_t area {};
-    Vec3 half_u, half_v;
+    displacement_t half_u {}, half_v {};
     // The transom ventilates: the water draws away from it without
     // sucking at it.
     bool transom = false;
@@ -41,19 +35,19 @@ namespace moppe::mov {
     // panel is at most the height of `rim`, the gunwale over it, above
     // it. A decked hull, panelled all round, keeps the water out.
     bool open = false;
-    Vec3 rim;
+    displacement_t rim {};
   };
 
   // Splits the quad a, b, c, d (in order round it) into n by m panels
   // whose normals face away from `inside`.
   void add_hull_quad (std::vector<HullPanel>& out,
-                      const Vec3& a,
-                      const Vec3& b,
-                      const Vec3& c,
-                      const Vec3& d,
+                      const displacement_t& a,
+                      const displacement_t& b,
+                      const displacement_t& c,
+                      const displacement_t& d,
                       int n,
                       int m,
-                      const Vec3& inside,
+                      const displacement_t& inside,
                       bool transom = false);
 
   // How the water presses on a hull: the pressure where a panel pushes
@@ -62,10 +56,10 @@ namespace moppe::mov {
   // second, that damps the hull's bobbing; and the skin friction along
   // it.
   struct HullWaterTraits {
-    magnitude_t ram = 1.0f * one;
-    magnitude_t suction = 0.25f * one;
+    proportion_t ram = 1.0f * proportion[one];
+    proportion_t suction = 0.25f * proportion[one];
     speed_t damping = 0.6f * u::m / u::s;
-    magnitude_t friction = 0.0055f * one;
+    drag_coefficient_t friction = 0.0055f * isq::drag_coefficient[one];
   };
 
   inline constexpr kilograms_per_cubic_metre_t water_density =

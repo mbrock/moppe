@@ -271,8 +271,7 @@ namespace moppe::game {
                   .nearest = 3.0f * u::m,
                   .elevation = 16.0f * u::deg },
         // The fore seat.
-        .passenger_seat =
-          Vec3 (mov::Boat::fore[0], mov::Boat::fore[1], mov::Boat::fore[2]),
+        .passenger_seat = displacement_value (mov::Boat::fore),
         .mark_height = 1.4f * u::m,
         .driver_mark = 1.2f * u::m,
         .bumpers = boat_bumpers,
@@ -334,9 +333,10 @@ namespace moppe::game {
                   .nearest = 2.8f * u::m,
                   .elevation = 15.0f * u::deg },
         // Pillion, on the saddle's back half.
-        .passenger_seat = Vec3 (mov::JetSki::saddle[0],
-                                mov::JetSki::saddle[1] + 0.03f,
-                                mov::JetSki::saddle[2] - 0.5f),
+        .passenger_seat =
+          Vec3 (displacement_value (mov::JetSki::saddle)[0],
+                displacement_value (mov::JetSki::saddle)[1] + 0.03f,
+                displacement_value (mov::JetSki::saddle)[2] - 0.5f),
         .mark_height = 1.6f * u::m,
         .driver_mark = 1.3f * u::m,
         .bumpers = jet_ski_bumpers,

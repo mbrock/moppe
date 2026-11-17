@@ -46,10 +46,14 @@ namespace {
 
 MOPPE_TEST (the_boat_model_puts_the_long_tail_where_the_physics_does) {
   for (int i = 0; i < 3; ++i) {
-    MOPPE_CHECK_NEAR (game::boat_model::pivot[i], mov::Boat::pivot[i], 1e-3f);
-    MOPPE_CHECK_NEAR (game::boat_model::hub[i], mov::Boat::hub[i], 1e-3f);
+    MOPPE_CHECK_NEAR (game::boat_model::pivot[i],
+                      displacement_value (mov::Boat::pivot)[i],
+                      1e-3f);
     MOPPE_CHECK_NEAR (
-      game::boat_model::seat_helm[i], mov::Boat::helm[i], 1e-3f);
+      game::boat_model::hub[i], displacement_value (mov::Boat::hub)[i], 1e-3f);
+    MOPPE_CHECK_NEAR (game::boat_model::seat_helm[i],
+                      displacement_value (mov::Boat::helm)[i],
+                      1e-3f);
   }
 }
 

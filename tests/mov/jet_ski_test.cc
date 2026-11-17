@@ -47,14 +47,18 @@ namespace {
 MOPPE_TEST (
   the_jet_ski_model_puts_the_pump_and_the_saddle_where_the_physics_does) {
   for (int i = 0; i < 3; ++i) {
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::jet[i], mov::JetSki::nozzle[i], 1e-3f);
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::intake[i], mov::JetSki::intake[i], 1e-3f);
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::seat[i], mov::JetSki::saddle[i], 1e-3f);
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::column[i], mov::JetSki::column[i], 1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::jet[i],
+                      displacement_value (mov::JetSki::nozzle)[i],
+                      1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::intake[i],
+                      displacement_value (mov::JetSki::intake)[i],
+                      1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::seat[i],
+                      displacement_value (mov::JetSki::saddle)[i],
+                      1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::column[i],
+                      displacement_value (mov::JetSki::column)[i],
+                      1e-3f);
   }
 }
 
@@ -222,7 +226,8 @@ MOPPE_TEST (a_jet_ski_rides_over_a_swell_without_burying_its_bow) {
     ski.update (moppe::seconds (1.0f / 60.0f), swell);
     least_up = std::min<float> (least_up, ski.up ()[1]);
     const Vec3 at = ski.position ();
-    lowest = std::min<float> (lowest, at[1] - swell.level_at (at));
+    lowest = std::min<float> (
+      lowest, at[1] - meters_value (swell.level (moppe::position (at))));
   }
   MOPPE_CHECK (least_up > 0.6f);
   MOPPE_CHECK (lowest > -0.6f);

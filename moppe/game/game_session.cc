@@ -1079,12 +1079,14 @@ namespace moppe::game {
 
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const DisplayColor spray_color (0.86f, 0.92f, 0.97f);
-      const Vec3 pivot (
-        mov::Boat::pivot[0], mov::Boat::pivot[1], mov::Boat::pivot[2]);
+      const Vec3 pivot = displacement_value (mov::Boat::pivot);
       // Blue-grey smoke off the muffler, more under load and most with
       // the governor tied back.
-      const Vec3 exhaust = boat.point (mov::Boat::tail_point (
-        pivot + Vec3 (-0.26f, 0.27f, 0.0f), boat.swing (), boat.tilt ()));
+      const Vec3 exhaust =
+        boat.point (displacement_value (mov::Boat::tail_point (
+          mov::Boat::pivot + displacement (Vec3 (-0.26f, 0.27f, 0.0f)),
+          boat.swing (),
+          boat.tilt ())));
       if (chance (logic.m_fx_rng) < 0.10f + 0.45f * boat.rpm ()) {
         const float shade = 0.55f + 0.2f * chance (logic.m_fx_rng);
         Dust::Style smoke;
@@ -1103,7 +1105,7 @@ namespace moppe::game {
 
       // The rooster tail: the propeller, running at the surface, throws a
       // plume of water up and back along the shaft.
-      const Vec3 prop = boat.propeller ();
+      const Vec3 prop = position_value (boat.propeller ());
       const float bite = boat.propeller_depth ().numerical_value_in (u::m);
       if (boat.thrust () > 30.0f * u::N && bite > -0.05f && bite < 0.35f) {
         const Vec3 aft = normalized (prop - boat.point (pivot));
@@ -1207,7 +1209,7 @@ namespace moppe::game {
       const float power = (ski.thrust () / mov::JetSki::static_thrust ())
                             .numerical_value_in (one);
       if (power > 0.08f) {
-        Vec3 back = ski.jet_direction ();
+        Vec3 back = direction_value (ski.jet_direction ());
         back[1] = 0.0f;
         back = length2 (back) > 1e-6f ? normalized (back) : -ski.forward ();
         Dust::Style plume;
@@ -1218,7 +1220,7 @@ namespace moppe::game {
         plume.spread = 0.3f * one;
         plume.flake = true;
         session.dust ().emit (
-          moppe::position (ski.jet () + Vec3 (0, 0.1f, 0)),
+          moppe::position (position_value (ski.jet ()) + Vec3 (0, 0.1f, 0)),
           velocity (ski.velocity () * 0.6f + back * (2.5f + 5.0f * power) +
                     Vec3 (0, 2.0f + 4.5f * power, 0)),
           static_cast<int> (std::round (5.0f * power + 0.5f)),
@@ -1232,7 +1234,8 @@ namespace moppe::game {
             1.0f * isq::acceleration[u::m / pow<2> (u::s)];
           mist.spread = 0.9f * one;
           session.dust ().emit (
-            moppe::position (ski.jet () + back * 0.9f + Vec3 (0, 0.5f, 0)),
+            moppe::position (position_value (ski.jet ()) + back * 0.9f +
+                             Vec3 (0, 0.5f, 0)),
             velocity (ski.velocity () * 0.5f + Vec3 (0, 0.8f, 0)),
             1,
             spray_color,
@@ -1326,7 +1329,8 @@ namespace moppe::game {
       const bool skiff = logic.m_doing == Doing::driving (Machine::boat);
       const float beside = skiff ? 1.1f : 1.0f;
       const float amidships = skiff ? 0.4f : 0.0f;
-      const float bow = (skiff ? mov::Boat::stem : mov::JetSki::stem) + 0.7f;
+      const float bow =
+        meters_value (skiff ? mov::Boat::stem : mov::JetSki::stem) + 0.7f;
       Vec3 best;
       float shallowest = 1e30f;
       for (const Vec3& side : { Vec3 (beside, 0.3f, amidships),

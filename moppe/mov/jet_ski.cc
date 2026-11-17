@@ -16,25 +16,27 @@ namespace moppe::mov {
       constexpr metres_per_second_squared_t g = standard_gravity;
       constexpr kilograms_per_cubic_metre_t rho = water_density;
       constexpr int substeps = 4;
-      constexpr float pi = 3.14159265f;
+      constexpr proportion_t none = 0.0f * proportion[one];
+      constexpr proportion_t whole = 1.0f * proportion[one];
 
       // The hull's lines, as tools/figure/jet_ski.py draws them: a vee
       // bottom of some fifteen degrees between hard chines, sides that
       // stand up to the bond line, and a crowned deck over it. Forward
       // of the middle the keel sweeps up and the breadth draws in to
       // the stem.
-      constexpr float deadrise = 0.12f; // the chine over the keel, aft
-      constexpr float chine_share = 0.86f;
-      constexpr float sheer = 0.36f;  // the bond line over the keel, aft
-      constexpr float spring = 0.10f; // its rise to the stem
-      constexpr float rocker = 0.30f; // the keel's rise at the stem
-      constexpr float crown = 0.16f;  // the deck over the bond line
-      constexpr float stem_half = 0.05f;
+      constexpr meters_t deadrise = 0.12f * u::m; // the chine over the keel
+      constexpr proportion_t chine_share = 0.86f * proportion[one];
+      constexpr meters_t sheer = 0.36f * u::m;  // the bond line over the keel
+      constexpr meters_t spring = 0.10f * u::m; // its rise to the stem
+      constexpr meters_t rocker = 0.30f * u::m; // the keel's rise at the stem
+      constexpr meters_t crown = 0.16f * u::m;  // the deck over the bond line
+      constexpr meters_t stem_half = 0.05f * u::m;
 
       // The hull, its engine and pump, and a tank of two-stroke mix; and
       // the rider on the saddle, who comes aboard and steps off.
       constexpr kilograms_t mass = 205.0f * u::kg;
-      constexpr float mass_centre[3] = { 0.0f, 0.24f, -0.12f };
+      const displacement_t mass_centre =
+        displacement (Vec3 (0.0f, 0.24f, -0.12f));
       // Pitch, yaw, and roll about the centre of mass.
       constexpr kilogram_square_metres_t inertia[3] = { 100.0f * u::kg * u::m2,
                                                         110.0f * u::kg* u::m2,
@@ -44,26 +46,27 @@ namespace moppe::mov {
                                               0.03f * u::m2,
                                               0.07f * u::m2 };
       constexpr kilograms_t crew = 80.0f * u::kg;
-      constexpr float crew_centre[3] = { 0.0f, 0.92f, -0.25f };
+      const displacement_t crew_centre =
+        displacement (Vec3 (0.0f, 0.92f, -0.25f));
 
       b3MassData mass_data (bool manned) {
-        const Vec3 hull (mass_centre[0], mass_centre[1], mass_centre[2]);
-        const Vec3 seat (crew_centre[0], crew_centre[1], crew_centre[2]);
+        const displacement_t& hull = mass_centre;
+        const displacement_t& seat = crew_centre;
         const kilograms_t aboard = manned ? crew : 0.0f * u::kg;
         const kilograms_t total = mass + aboard;
-        const auto kg = [] (kilograms_t m) {
-          return m.numerical_value_in (u::kg);
-        };
-        const Vec3 centre =
-          (hull * kg (mass) + seat * kg (aboard)) / kg (total);
+        const displacement_t centre = quantity_cast<isq::displacement> (
+          (hull * mass + seat * aboard) / total);
         std::array<kilogram_square_metres_t, 3> about = { inertia[0],
                                                           inertia[1],
                                                           inertia[2] };
-        const auto carry = [&] (const Vec3& at, kilograms_t m) {
-          const Vec3 d = at - centre;
-          about[0] += m * ((d[1] * d[1] + d[2] * d[2]) * u::m2);
-          about[1] += m * ((d[0] * d[0] + d[2] * d[2]) * u::m2);
-          about[2] += m * ((d[0] * d[0] + d[1] * d[1]) * u::m2);
+        const auto carry = [&] (const displacement_t& at, kilograms_t m) {
+          const displacement_t d = at - centre;
+          const auto lane = [&] (int i) -> meters_t {
+            return displacement_value (d)[i] * u::m;
+          };
+          about[0] += m * (lane (1) * lane (1) + lane (2) * lane (2));
+          about[1] += m * (lane (0) * lane (0) + lane (2) * lane (2));
+          about[2] += m * (lane (0) * lane (0) + lane (1) * lane (1));
         };
         carry (hull, mass);
         if (manned) {
@@ -76,10 +79,12 @@ namespace moppe::mov {
 
       // How the water presses on its panels (mov/hull_water.hh): a
       // glass-fibre bottom slicker than the skiff's film.
-      constexpr HullWaterTraits water_traits { .ram = 1.0f * one,
-                                               .suction = 0.25f * one,
-                                               .damping = 0.8f * u::m / u::s,
-                                               .friction = 0.0040f * one };
+      constexpr HullWaterTraits water_traits {
+        .ram = 1.0f * proportion[one],
+        .suction = 0.25f * proportion[one],
+        .damping = 0.8f * u::m / u::s,
+        .friction = 0.0040f * isq::drag_coefficient[one]
+      };
 
       // The pump: at full speed it throws a jet 75 mm across out of the
       // nozzle at 24 m/s, some 30 kW of the engine's 37 in the water.
@@ -88,19 +93,19 @@ namespace moppe::mov {
       // turns a part of the jet forward.
       constexpr square_meters_t nozzle_area = 0.0044f * u::m2;
       constexpr speed_t jet_speed = 24.0f * u::m / u::s;
-      constexpr float astern = 0.3f;
-      constexpr float astern_revs = 0.6f;
+      constexpr proportion_t astern = 0.3f * proportion[one];
+      constexpr proportion_t astern_revs = 0.6f * proportion[one];
       constexpr seconds_t spin_up = 0.35f * u::s;
-      constexpr float idle = 0.14f;
+      constexpr proportion_t idle = 0.14f * proportion[one];
       // Revolutions a second as drawn, at full speed.
       constexpr per_second_t impeller_rate = 9.0f / u::s;
-      constexpr float most_steer = 0.42f;
+      constexpr radians_t most_steer = 0.42f * u::rad;
       constexpr radians_per_second_t steer_rate = 3.0f * u::rad / u::s;
 
       // The rider's balance: how far they lean it into a turn at speed,
       // how hard they right it for how far off it is, and the most
       // their weight, shifted a foot or so across, can do, newton metres.
-      constexpr float most_lean = 0.42f;
+      constexpr radians_t most_lean = 0.42f * u::rad;
       constexpr auto balance = 900.0f * u::N * u::m / u::rad;
       constexpr auto balance_damping = 160.0f * u::N * u::m * u::s / u::rad;
       constexpr newton_metres_t most_balance = 260.0f * u::N * u::m;
@@ -108,7 +113,7 @@ namespace moppe::mov {
       constexpr auto air_drag = 0.4f * u::kg / u::m;
 
       // Its draft at rest with no one on it.
-      constexpr float draft = 0.15f;
+      constexpr meters_t draft = 0.15f * u::m;
 
       constexpr int patch_samples = 97;
       constexpr float patch_recentre_distance = 24.0f;
@@ -118,48 +123,72 @@ namespace moppe::mov {
       constexpr std::uint64_t trunk_bit = 2;
       constexpr std::uint64_t body_bit = 8;
 
-      float smoothstep (float a, float b, float x) {
-        const float t = std::clamp ((x - a) / (b - a), 0.0f, 1.0f);
-        return t * t * (3.0f - 2.0f * t);
+      // A stick's deflection, either way, as a share of all the way.
+      proportion_t ski_share (control_signal_t signal) {
+        return quantity_cast<proportion> (
+          quantity_cast<mp_units::dimensionless> (abs (signal)));
+      }
+
+      template <class Q>
+      proportion_t smoothstep (Q a, Q b, Q x) {
+        const proportion_t t = std::clamp (
+          quantity_cast<proportion> ((x - a) / (b - a)), none, whole);
+        return quantity_cast<proportion> (t * t *
+                                          (3.0f * proportion[one] - 2.0f * t));
+      }
+
+      displacement_t ski_offset (meters_t x, meters_t y, meters_t z) {
+        return displacement (
+          Vec3 (meters_value (x), meters_value (y), meters_value (z)));
       }
 
       // Each line by s, 0 at the transom and 1 at the stem.
-      float fore (float s) {
-        return std::max (0.0f, (s - 0.5f) / 0.5f);
+      proportion_t fore (proportion_t s) {
+        return std::max (none, (s - 0.5f * proportion[one]) / 0.5f);
       }
-      float planform (float s) {
+      meters_t planform (proportion_t s) {
         return std::max (
-          stem_half, JetSki::half_beam * (1.0f - std::pow (fore (s), 2.2f)));
+          stem_half,
+          JetSki::half_beam *
+            (1.0f - std::pow (fore (s).numerical_value_in (one), 2.2f)));
       }
-      float keel_y (float s) {
-        const float t = fore (s);
-        return rocker * t * t;
+      meters_t keel_y (proportion_t s) {
+        const proportion_t t = fore (s);
+        return quantity_cast<isq::length> (rocker * t * t);
       }
-      float sheer_y (float s) {
-        return sheer + spring * s * s;
+      meters_t sheer_y (proportion_t s) {
+        return sheer + quantity_cast<isq::length> (spring * s * s);
       }
-      float chine_y (float s) {
-        const float t = fore (s);
-        const float k = t * t;
-        return (keel_y (s) + deadrise) * (1.0f - k) + (sheer_y (s) - 0.03f) * k;
+      meters_t chine_y (proportion_t s) {
+        const proportion_t t = fore (s);
+        const proportion_t k = quantity_cast<proportion> (t * t);
+        return quantity_cast<isq::length> ((keel_y (s) + deadrise) *
+                                           (whole - k)) +
+               quantity_cast<isq::length> ((sheer_y (s) - 0.03f * u::m) * k);
       }
-      float station (float s) {
-        return JetSki::transom + s * JetSki::hull_length;
+      meters_t station (proportion_t s) {
+        return JetSki::transom +
+               quantity_cast<isq::length> (s * JetSki::hull_length);
       }
-      Vec3 keel (float s) {
-        return Vec3 (0.0f, keel_y (s), station (s));
+      displacement_t keel (proportion_t s) {
+        return ski_offset (0.0f * u::m, keel_y (s), station (s));
       }
-      Vec3 chine (float s, float side) {
-        return Vec3 (side * std::max (stem_half, planform (s) * chine_share),
-                     chine_y (s),
-                     station (s));
+      displacement_t chine (proportion_t s, float side) {
+        return ski_offset (
+          side * std::max (stem_half,
+                           meters_t (quantity_cast<isq::length> (planform (s) *
+                                                                 chine_share))),
+          chine_y (s),
+          station (s));
       }
-      Vec3 bond (float s, float side) {
-        return Vec3 (side * planform (s), sheer_y (s), station (s));
+      displacement_t bond (proportion_t s, float side) {
+        return ski_offset (side * planform (s), sheer_y (s), station (s));
       }
-      Vec3 ridge (float s) {
-        return Vec3 (
-          0.0f, sheer_y (s) + crown * (1.0f - 0.4f * s), station (s));
+      displacement_t ridge (proportion_t s) {
+        return ski_offset (
+          0.0f * u::m,
+          sheer_y (s) + quantity_cast<isq::length> (crown * (whole - 0.4f * s)),
+          station (s));
       }
 
       // Closed all round: the bottom, the sides, the deck, and the
@@ -168,10 +197,11 @@ namespace moppe::mov {
         std::vector<HullPanel> panels;
         constexpr int stations = 14;
         for (int k = 0; k < stations; ++k) {
-          const float s0 = float (k) / stations, s1 = float (k + 1) / stations;
-          const float sm = 0.5f * (s0 + s1);
-          const Vec3 middle (
-            0.0f, 0.5f * (keel_y (sm) + sheer_y (sm)), station (sm));
+          const proportion_t s0 = float (k) / stations * proportion[one];
+          const proportion_t s1 = float (k + 1) / stations * proportion[one];
+          const proportion_t sm = 0.5f * (s0 + s1);
+          const displacement_t middle = ski_offset (
+            0.0f * u::m, 0.5f * (keel_y (sm) + sheer_y (sm)), station (sm));
           for (const float side : { 1.0f, -1.0f }) {
             add_hull_quad (panels,
                            keel (s0),
@@ -201,13 +231,13 @@ namespace moppe::mov {
         }
         for (const float side : { 1.0f, -1.0f })
           add_hull_quad (panels,
-                         keel (0),
-                         chine (0, side),
-                         bond (0, side),
-                         ridge (0),
+                         keel (none),
+                         chine (none, side),
+                         bond (none, side),
+                         ridge (none),
                          2,
                          2,
-                         Vec3 (0.0f, 0.25f, 0.0f),
+                         displacement (Vec3 (0.0f, 0.25f, 0.0f)),
                          true);
         return panels;
       }
@@ -216,7 +246,6 @@ namespace moppe::mov {
         static const std::vector<HullPanel> all = hull_panels ();
         return all;
       }
-
     }
   }
 
@@ -274,7 +303,7 @@ namespace moppe::mov {
       // and the deck's ridge.
       std::vector<b3Vec3> points;
       for (int k = 0; k <= 10; ++k) {
-        const float s = k / 10.0f;
+        const proportion_t s = k / 10.0f * proportion[one];
         points.push_back (to_b3 (keel (s)));
         points.push_back (to_b3 (ridge (s)));
         for (const float side : { 1.0f, -1.0f }) {
@@ -335,19 +364,29 @@ namespace moppe::mov {
       return from_b3 (b3Body_GetPosition (body)) + axis (local);
     }
 
-    // The way the jet pushes the hull, in the hull's frame: ahead,
-    // swung by the nozzle.
-    Vec3 push_local () const {
-      const float steer = radians_value (kept.steer);
-      return Vec3 (std::sin (steer), 0.0f, std::cos (steer));
+    direction_t facing (const direction_t& local) const {
+      return turned (b3Body_GetRotation (body), local);
     }
 
-    void place (const Vec3& at, const Vec3& heading, float level) {
+    position_t where (const displacement_t& local) const {
+      return body_position (body) +
+             quantity_cast<isq::position_vector> (
+               turned (b3Body_GetRotation (body), local));
+    }
+
+    // The way the jet pushes the hull, in the hull's frame: ahead,
+    // swung by the nozzle.
+    direction_t push_local () const {
+      return unit_direction (Vec3 (std::sin (radians_value (kept.steer)),
+                                   0.0f,
+                                   std::cos (radians_value (kept.steer))));
+    }
+
+    void place (const position_t& at, const Vec3& heading, meters_t level) {
       const b3Quat q = level_rotation (heading);
-      Vec3 centre = at;
-      centre[1] =
-        std::max (level - jet_ski_rig::draft,
-                  surface_elevation_at (surface, at[0], at[2]) + 0.02f);
+      Vec3 centre = position_value (at);
+      centre[1] = meters_value (std::max (
+        level - jet_ski_rig::draft, ground_under (surface, at) + 0.02f * u::m));
       State s = kept;
       s.body = { centre, array_of (q), Vec3 (), Vec3 () };
       patch.origin_for (centre, s.ground_column, s.ground_row);
@@ -381,12 +420,15 @@ namespace moppe::mov {
       using namespace jet_ski_rig;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
 
-      const Vec3 v = from_b3 (b3Body_GetLinearVelocity (body));
-      const Vec3 at = point (Vec3 ());
-      const Vec3 current = water.current_at (at);
-      Vec3 way = v - current;
-      way[1] = 0.0f;
-      const float speed = length (way);
+      const direction_t local_left = unit_direction (Vec3 (1, 0, 0));
+      const direction_t local_up = unit_direction (Vec3 (0, 1, 0));
+      const direction_t local_forward = unit_direction (Vec3 (0, 0, 1));
+      const velocity_t v = linear_velocity (body);
+      const position_t at = where (displacement (Vec3 ()));
+      const velocity_t current = water.current (at);
+      velocity_t way = v - current;
+      velocity_value (way)[1] = 0.0f;
+      const speed_t speed = length (velocity_value (way)) * u::m / u::s;
 
       // The water on each panel.
       const square_meters_t wetted =
@@ -395,103 +437,123 @@ namespace moppe::mov {
       kept.grounded = touching_ground ();
 
       // The engine and the bars.
-      const float drive =
-        kept.parked ? 0.0f
-                    : std::clamp (scalar_value (kept.drive), -1.0f, 1.0f);
-      const float turn =
-        kept.parked ? 0.0f : std::clamp (scalar_value (kept.turn), -1.0f, 1.0f);
-      const Vec3 grate (intake[0], intake[1], intake[2]);
-      const Vec3 grate_at = point (grate);
-      const float intake_depth = water.level_at (grate_at) - grate_at[1];
-      kept.intake_depth = intake_depth * u::m;
-      const float bite = smoothstep (-0.03f, 0.06f, intake_depth);
+      constexpr control_signal_t let_go = 0.0f * control_signal[one];
+      constexpr control_signal_t full = 1.0f * control_signal[one];
+      const control_signal_t drive =
+        kept.parked ? let_go : std::clamp (kept.drive, -full, full);
+      const control_signal_t turn =
+        kept.parked ? let_go : std::clamp (kept.turn, -full, full);
+      const position_t grate_at = where (intake);
+      const meters_t intake_depth =
+        water.level (grate_at) - height_of (grate_at);
+      kept.intake_depth = intake_depth;
+      const proportion_t bite =
+        smoothstep (-0.03f * u::m, 0.06f * u::m, intake_depth);
       // Out of the water the pump has nothing to work on and the engine
       // races.
-      const float load = drive < 0.0f ? astern_revs * -drive : drive;
-      const float wanted_rpm =
-        kept.parked ? 0.0f
-                    : std::max (idle, load) * (1.0f + 0.15f * (1.0f - bite));
-      float rpm = scalar_value (kept.rpm);
-      rpm += (wanted_rpm - rpm) *
-             std::min (1.0f, (dt / spin_up).numerical_value_in (one));
-      kept.rpm = rpm * one;
+      const proportion_t load = drive < let_go
+                                  ? proportion_t (quantity_cast<proportion> (
+                                      astern_revs * ski_share (drive)))
+                                  : ski_share (drive);
+      const proportion_t wanted_rpm =
+        kept.parked
+          ? none
+          : quantity_cast<proportion> (std::max (idle, load) *
+                                       (whole + 0.15f * (whole - bite)));
+      proportion_t rpm = kept.rpm;
+      rpm += quantity_cast<proportion> (
+        (wanted_rpm - rpm) *
+        std::min (1.0f * blend_weight[one],
+                  quantity_cast<blend_weight> (dt / spin_up)));
+      kept.rpm = rpm;
       kept.impeller_angle =
         std::remainder (
           radians_value (kept.impeller_angle) +
-            (rpm * 2.0f * pi * impeller_rate * dt).numerical_value_in (one),
-          2.0f * pi) *
+            (rpm * 2.0f * PI * impeller_rate * dt).numerical_value_in (one),
+          2.0f * PI) *
         u::rad;
-      const float steer_step = radians_value (steer_rate * dt);
-      float steer = radians_value (kept.steer);
-      steer += std::clamp (turn * most_steer - steer, -steer_step, steer_step);
-      kept.steer = steer * u::rad;
+      const radians_t steer_step = steer_rate * dt;
+      radians_t steer = kept.steer;
+      steer += std::clamp (
+        radians_t (quantity_cast<isq::angular_measure> (turn * most_steer)) -
+          steer,
+        -steer_step,
+        steer_step);
+      kept.steer = steer;
 
       // The jet: the water's change of speed through the pump.
-      const Vec3 push = axis (push_local ());
+      const direction_t push = facing (push_local ());
       const speed_t still = 0.0f * u::m / u::s;
-      const speed_t ahead =
-        std::max (still, dot (v - current, push) * u::m / u::s);
-      const speed_t jet = jet_speed * std::min (rpm, 1.0f);
-      newtons_t thrust =
-        bite * rho * nozzle_area * jet * std::max (jet - ahead, still);
-      if (drive < 0.0f)
-        thrust = -astern * bite * rho * nozzle_area * jet * jet;
-      else if (drive == 0.0f)
+      const speed_t ahead = std::max (
+        still, speed_t (quantity_cast<isq::speed> (dot (v - current, push))));
+      const speed_t jet =
+        quantity_cast<isq::speed> (jet_speed * std::min (rpm, whole));
+      newtons_t thrust = quantity_cast<isq::force> (
+        bite * rho * nozzle_area * jet * std::max (jet - ahead, still));
+      if (drive < let_go)
+        thrust = quantity_cast<isq::force> (-astern * bite * rho * nozzle_area *
+                                            jet * jet);
+      else if (drive == let_go)
         thrust = 0.0f * u::N;
       kept.thrust = thrust;
       if (thrust != 0.0f * u::N)
-        apply_force (
-          body, push, thrust, point (Vec3 (nozzle[0], nozzle[1], nozzle[2])));
+        apply_force (body, push, thrust, where (nozzle));
 
       // The rider holds it upright with their body, and leans it into a
       // turn as it gathers way.
       if (!kept.parked) {
-        const float tilt = axis (Vec3 (1, 0, 0))[1];
-        const float roll = std::asin (std::clamp (tilt, -1.0f, 1.0f));
-        const Vec3 forward = axis (Vec3 (0, 0, 1));
+        const radians_t roll =
+          std::asin (std::clamp (
+            direction_value (facing (local_left))[1], -1.0f, 1.0f)) *
+          u::rad;
+        const direction_t forward = facing (local_forward);
         const radians_per_second_t rolling =
-          dot (from_b3 (b3Body_GetAngularVelocity (body)), forward) * u::rad /
-          u::s;
-        const float lean_to = most_lean * turn * smoothstep (1.5f, 7.0f, speed);
-        const float lean_step = radians_value (1.6f * u::rad / u::s * dt);
-        float lean = radians_value (kept.lean);
+          quantity_cast<isq::angular_velocity> (
+            dot (angular_velocity (body), forward));
+        const radians_t lean_to = quantity_cast<isq::angular_measure> (
+          most_lean * turn *
+          smoothstep (1.5f * u::m / u::s, 7.0f * u::m / u::s, speed));
+        const radians_t lean_step = 1.6f * u::rad / u::s * dt;
+        radians_t lean = kept.lean;
         lean += std::clamp (lean_to - lean, -lean_step, lean_step);
-        kept.lean = lean * u::rad;
-        const newton_metres_t torque =
-          std::clamp (newton_metres_t (balance * ((lean - roll) * u::rad) -
-                                       balance_damping * rolling),
-                      -most_balance,
-                      most_balance);
+        kept.lean = lean;
+        const newton_metres_t torque = std::clamp (
+          newton_metres_t (balance * (lean - roll) - balance_damping * rolling),
+          -most_balance,
+          most_balance);
         apply_torque (body, forward, torque);
       } else {
         kept.lean = radians_t {};
       }
 
       // The air's drag on what stands out of the water.
-      apply_drag (body, v, air_drag * (length (v) * u::m / u::s));
+      apply_drag (
+        body, v, air_drag * (length (velocity_value (v)) * u::m / u::s));
 
       b3World_Step (world, seconds_value (dt), substeps);
 
       // Capsized and drifting: righted where it floats.
-      const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (body));
-      const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
-      const float upright = axis (Vec3 (0, 1, 0))[1];
-      kept.overturned = upright < 0.25f && length2 (moving) < 9.0f
+      const velocity_t moving = linear_velocity (body);
+      const angular_velocity_t turning = angular_velocity (body);
+      const auto squared = [] (auto q) { return q * q; };
+      kept.overturned = direction_value (facing (local_up))[1] < 0.25f &&
+                            dot (moving, moving) < squared (3.0f * u::m / u::s)
                           ? kept.overturned + dt
                           : seconds_t {};
       if (kept.overturned > 2.0f * u::s) {
-        const Vec3 here = point (Vec3 ());
+        const position_t here = where (displacement (Vec3 ()));
         const bool parked = kept.parked;
-        place (here, axis (Vec3 (0, 0, 1)), water.level_at (here));
+        place (here, axis (Vec3 (0, 0, 1)), water.level (here));
         kept.parked = parked;
         b3Body_SetMassData (body, mass_data (!parked));
         return;
       }
 
       // Left alone and still, on still water or on the shore: it rests.
-      const bool quiet = length2 (moving) < 0.04f * 0.04f &&
-                         length2 (turning) < 0.04f * 0.04f &&
-                         length2 (current) < 0.05f * 0.05f;
+      const bool quiet =
+        dot (moving, moving) < squared (0.04f * u::m / u::s) &&
+        dot (turning, turning) < squared (0.04f * u::rad / u::s) &&
+        dot (current, current) < squared (0.05f * u::m / u::s);
       kept.still = kept.parked && quiet ? kept.still + dt : seconds_t {};
       if (kept.still > 2.0f * u::s)
         kept.asleep = true;
@@ -500,7 +562,7 @@ namespace moppe::mov {
 
   JetSki::JetSki (const map::SurfaceGeometry& surface)
       : m_impl (std::make_unique<Impl> (surface)) {
-    m_impl->place (Vec3 (), Vec3 (0, 0, 1), -1e6f);
+    m_impl->place (moppe::position (Vec3 ()), Vec3 (0, 0, 1), -1e6f * u::m);
   }
 
   JetSki::~JetSki () = default;
@@ -514,7 +576,7 @@ namespace moppe::mov {
   }
 
   void JetSki::place (const Vec3& at, const Vec3& heading, meters_t level) {
-    m_impl->place (at, heading, meters_value (level));
+    m_impl->place (moppe::position (at), heading, level);
   }
 
   void JetSki::set_trunks (const TrunkField* trunks) {
@@ -624,12 +686,12 @@ namespace moppe::mov {
     return m_impl->kept.thrust;
   }
 
-  Vec3 JetSki::jet () const {
-    return m_impl->point (Vec3 (nozzle[0], nozzle[1], nozzle[2]));
+  position_t JetSki::jet () const {
+    return m_impl->where (nozzle);
   }
 
-  Vec3 JetSki::jet_direction () const {
-    return -m_impl->axis (m_impl->push_local ());
+  direction_t JetSki::jet_direction () const {
+    return -m_impl->facing (m_impl->push_local ());
   }
 
   meters_t JetSki::intake_depth () const {

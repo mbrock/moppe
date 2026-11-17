@@ -41,15 +41,19 @@ namespace moppe::mov {
   class Boat {
   public:
     // models/boat.blend agrees.
-    static constexpr float hull_length = 3.93f;
-    static constexpr float half_beam = 0.47f;
-    static constexpr float transom = -0.98f;
-    static constexpr float stem = transom + hull_length;
-    static constexpr float pivot[3] = { 0.0f, 0.429f, -0.8982f };
-    static constexpr float hub[3] = { 0.0f, -0.05f, -2.6f };
-    static constexpr float helm[3] = { 0.0f, 0.2f, -0.3482f };
+    static constexpr meters_t hull_length = 3.93f * u::m;
+    static constexpr meters_t half_beam = 0.47f * u::m;
+    static constexpr meters_t transom = -0.98f * u::m;
+    static constexpr meters_t stem = transom + hull_length;
+    static inline const displacement_t pivot =
+      displacement (Vec3 (0.0f, 0.429f, -0.8982f));
+    static inline const displacement_t hub =
+      displacement (Vec3 (0.0f, -0.05f, -2.6f));
+    static inline const displacement_t helm =
+      displacement (Vec3 (0.0f, 0.2f, -0.3482f));
     // The fore seat, where someone riding along sits.
-    static constexpr float fore[3] = { 0.0f, 0.2f, 0.5718f };
+    static inline const displacement_t fore =
+      displacement (Vec3 (0.0f, 0.2f, 0.5718f));
 
     struct State {
       RigidBodyState body;
@@ -122,7 +126,7 @@ namespace moppe::mov {
     bool afloat () const;
     bool grounded () const;
     Vec3 helm_seat () const {
-      return point (Vec3 (helm[0], helm[1], helm[2]));
+      return point (displacement_value (helm));
     }
 
     // The engine's speed, a share of its rated speed.
@@ -133,12 +137,13 @@ namespace moppe::mov {
     newtons_t thrust () const;
     // Where the propeller's hub is in the world, and how deep under the
     // water it last ran (negative is out of it).
-    Vec3 propeller () const;
+    position_t propeller () const;
     meters_t propeller_depth () const;
 
     // The tail's frame about the pivot, in the boat's: swung by `swing`
     // and tipped up by `tilt`, as a rotation of the boat's own axes.
-    static Vec3 tail_point (const Vec3& local, radians_t swing, radians_t tilt);
+    static displacement_t
+    tail_point (const displacement_t& local, radians_t swing, radians_t tilt);
 
   private:
     struct Impl;
