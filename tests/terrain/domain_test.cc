@@ -86,3 +86,16 @@ MOPPE_TEST (typed_torus_offsets_cross_each_seam_by_its_own_period) {
                             period);
   MOPPE_CHECK (position_value (near) == Vec3 (1010.0f, 42.0f, 2030.0f));
 }
+
+MOPPE_TEST (library_rounded_trig_matches_the_standard_library) {
+  // libm:: keeps std::'s bits, so presentation code can be typed without
+  // moving a vertex.
+  for (const float a : { 0.1f, 1.234f, 2.5f, -3.0f, 100.0f }) {
+    MOPPE_CHECK (libm::sin (a * u::rad) == std::sin (a));
+    MOPPE_CHECK (libm::cos (a * u::rad) == std::cos (a));
+    MOPPE_CHECK (radians_value (libm::atan2 (a * u::m, 0.7f * u::m)) ==
+                 std::atan2 (a, 0.7f));
+    MOPPE_CHECK (libm::hypot (a * u::m, 0.7f * u::m) ==
+                 std::hypot (a, 0.7f) * u::m);
+  }
+}

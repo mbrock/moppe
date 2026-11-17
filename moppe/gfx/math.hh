@@ -2,17 +2,13 @@
 #define MOPPE_MATH_HH
 
 #include <moppe/correct_math.hh>
+#include <moppe/gfx/vector.hh>
 #include <moppe/quantities.hh>
 
 #include <mp-units/framework.h>
 #include <mp-units/math.h>
 #include <mp-units/systems/isq.h>
 #include <mp-units/systems/si.h>
-#include <mp-units/utility/cartesian_vector.h>
-
-#ifdef __APPLE__
-#include <simd/simd.h>
-#endif
 
 #include <cmath>
 #include <cstddef>
@@ -34,7 +30,7 @@ namespace moppe {
 
   using seconds_t = quantity<si::second, float>;
   using degrees_t = quantity<si::degree, float>;
-  using radians_t = quantity<si::radian, float>;
+  // radians_t is in moppe/gfx/vector.hh, which the quaternion needs it in.
   using magnitude_t = quantity<one, float>;
   using speed_t = quantity<si::metre / si::second, float>;
   // A speed as a speedometer reads it.
@@ -209,6 +205,50 @@ namespace moppe {
     return cr::tan (radians_value (a));
   }
 
+  // The same trig, and the plane's measures, rounded as the platform's
+  // library rounds them (std::sinf, std::hypotf, ...), for presentation
+  // code -- meshes, posing, the camera, the renderer -- that has always
+  // called std:: and must keep its bits when it is typed. Generation
+  // never uses these: it calls the correctly rounded ones above, which
+  // agree on every platform (docs/determinism.md). Float only, as the
+  // calls they replace were; call them qualified, libm::sin (a).
+  namespace libm {
+    inline float sin (radians_t a) {
+      return std::sin (radians_value (a));
+    }
+    inline float cos (radians_t a) {
+      return std::cos (radians_value (a));
+    }
+    inline float tan (radians_t a) {
+      return std::tan (radians_value (a));
+    }
+    // The angle of (x, y), from two lengths (or any two quantities of one
+    // kind and unit) or two plain numbers of one frame.
+    template <Quantity Q>
+      requires std::same_as<typename Q::rep, float>
+    inline radians_t atan2 (Q y, Q x) {
+      return std::atan2 (y.numerical_value_in (Q::unit),
+                         x.numerical_value_in (Q::unit)) *
+             si::radian;
+    }
+    inline radians_t atan2 (float y, float x) {
+      return std::atan2 (y, x) * si::radian;
+    }
+    template <Quantity Q>
+      requires std::same_as<typename Q::rep, float>
+    inline Q hypot (Q a, Q b) {
+      return Q (std::hypot (a.numerical_value_in (Q::unit),
+                            b.numerical_value_in (Q::unit)) *
+                Q::reference);
+    }
+    inline radians_t asin (float value) {
+      return std::asin (value) * si::radian;
+    }
+    inline radians_t acos (float value) {
+      return std::acos (value) * si::radian;
+    }
+  }
+
   template <typename T>
   void clamp (T& x, const T& min, const T& max) {
     if (x > max)
@@ -232,382 +272,11 @@ namespace moppe {
     return (1 - alpha) * x + alpha * y;
   }
 
-  template <typename T>
-  using Vec3T = mp_units::utility::cartesian_vector<T, 3>;
-
-  template <typename T>
-  T length (const Vec3T<T>& value) {
-    return value.magnitude ();
-  }
-
-  template <typename T>
-  T length2 (const Vec3T<T>& value) {
-    return scalar_product (value, value);
-  }
-
-  template <typename T>
-  void normalize (Vec3T<T>& value) {
-    value = value.unit ();
-  }
-
-  template <typename T>
-  Vec3T<T> normalized (const Vec3T<T>& value) {
-    return value.unit ();
-  }
-
-  template <typename T, typename U>
-  auto dot (const Vec3T<T>& left, const Vec3T<U>& right) {
-    return scalar_product (left, right);
-  }
-
-  template <typename T, typename U>
-  auto cross (const Vec3T<T>& left, const Vec3T<U>& right) {
-    return vector_product (left, right);
-  }
-
-  template <typename T, typename U>
-  auto scaled (const Vec3T<T>& left, const Vec3T<U>& right) {
-    return Vec3T { left[0] * right[0], left[1] * right[1], left[2] * right[2] };
-  }
-
-  template <typename T>
-  Vec3T<T> linear_vector_interpolate (const Vec3T<T>& from,
-                                      const Vec3T<T>& to,
-                                      const T& alpha) {
-    return Vec3T<T> (linear_interpolate (from[0], to[0], alpha),
-                     linear_interpolate (from[1], to[1], alpha),
-                     linear_interpolate (from[2], to[2], alpha));
-  }
-
-  // Clang's three-lane float vector, which Apple's simd names simd_float3.
-  using Float3 = float __attribute__ ((ext_vector_type (3)));
-
-  // mp-units deliberately accepts user-owned linear-algebra representations.
-  // Keep the general Vec3T available for non-float component types while the
-  // ubiquitous gameplay Vec3 is one SIMD register on every platform. Lanewise
-  // arithmetic is exact IEEE; the reductions (dot, length, cross) are
-  // spelled out in a fixed order, because the platforms' own -- simd's and
-  // the standard library's hypot -- round differently, and a world must
-  // generate the same everywhere (docs/determinism.md).
-  class Vec3 {
-  public:
-    using value_type = float;
-    static constexpr std::integral_constant<std::size_t, 3> extent {};
-
-    class component_ref {
-    public:
-      component_ref (Vec3& vector, std::size_t index)
-          : m_vector (vector), m_index (index) {}
-
-      operator float () const {
-        return m_vector.m_value[m_index];
-      }
-
-      component_ref& operator= (float value) {
-        m_vector.m_value[m_index] = value;
-        return *this;
-      }
-
-      component_ref& operator= (const component_ref& other) {
-        return *this = static_cast<float> (other);
-      }
-
-      component_ref& operator+= (float value) {
-        return *this = static_cast<float> (*this) + value;
-      }
-
-      component_ref& operator-= (float value) {
-        return *this = static_cast<float> (*this) - value;
-      }
-
-      component_ref& operator*= (float value) {
-        return *this = static_cast<float> (*this) * value;
-      }
-
-      component_ref& operator/= (float value) {
-        return *this = static_cast<float> (*this) / value;
-      }
-
-    private:
-      Vec3& m_vector;
-      std::size_t m_index;
-    };
-
-    Vec3 () : m_value {} {}
-
-    Vec3 (float x, float y = 0.0f, float z = 0.0f) : m_value { x, y, z } {}
-
-    explicit Vec3 (Float3 value) : m_value (value) {}
-
-    component_ref operator[] (std::size_t index) {
-      return component_ref (*this, index);
-    }
-
-    float operator[] (std::size_t index) const {
-      return m_value[index];
-    }
-
-    float magnitude () const {
-      return std::sqrt (scalar_product (*this, *this));
-    }
-
-    float norm () const {
-      return magnitude ();
-    }
-
-    Vec3 unit () const {
-      return *this / magnitude ();
-    }
-
-    Vec3& operator+= (const Vec3& other) {
-      m_value += other.m_value;
-      return *this;
-    }
-
-    Vec3& operator-= (const Vec3& other) {
-      m_value -= other.m_value;
-      return *this;
-    }
-
-    Vec3& operator*= (float scale) {
-      m_value *= scale;
-      return *this;
-    }
-
-    Vec3& operator/= (float scale) {
-      m_value /= scale;
-      return *this;
-    }
-
-    const Float3& native () const {
-      return m_value;
-    }
-
-    Float3& native () {
-      return m_value;
-    }
-
-    friend Vec3 operator- (const Vec3& value) {
-      return Vec3 (-value.m_value);
-    }
-
-    friend Vec3 operator+ (const Vec3& left, const Vec3& right) {
-      return Vec3 (left.m_value + right.m_value);
-    }
-
-    friend Vec3 operator- (const Vec3& left, const Vec3& right) {
-      return Vec3 (left.m_value - right.m_value);
-    }
-
-    friend Vec3 operator* (const Vec3& value, float scale) {
-      return Vec3 (value.m_value * scale);
-    }
-
-    friend Vec3 operator* (float scale, const Vec3& value) {
-      return value * scale;
-    }
-
-    friend Vec3 operator/ (const Vec3& value, float scale) {
-      return Vec3 (value.m_value / scale);
-    }
-
-    friend bool operator== (const Vec3& left, const Vec3& right) {
-      return left[0] == right[0] && left[1] == right[1] && left[2] == right[2];
-    }
-
-    friend float scalar_product (const Vec3& left, const Vec3& right) {
-      return (left[0] * right[0] + left[1] * right[1]) + left[2] * right[2];
-    }
-
-    friend Vec3 vector_product (const Vec3& left, const Vec3& right) {
-      return Vec3 (left[1] * right[2] - left[2] * right[1],
-                   left[2] * right[0] - left[0] * right[2],
-                   left[0] * right[1] - left[1] * right[0]);
-    }
-
-    friend std::ostream& operator<< (std::ostream& stream, const Vec3& value) {
-      return stream << '[' << value[0] << ", " << value[1] << ", " << value[2]
-                    << ']';
-    }
-
-  private:
-    Float3 m_value;
-  };
-
-  inline float length (const Vec3& value) {
-    return value.magnitude ();
-  }
-
-  inline float length2 (const Vec3& value) {
-    return scalar_product (value, value);
-  }
-
-  inline void normalize (Vec3& value) {
-    value = value.unit ();
-  }
-
-  inline Vec3 normalized (const Vec3& value) {
-    return value.unit ();
-  }
-
-  inline float dot (const Vec3& left, const Vec3& right) {
-    return scalar_product (left, right);
-  }
-
-  inline Vec3 cross (const Vec3& left, const Vec3& right) {
-    return vector_product (left, right);
-  }
-
-  inline Vec3 scaled (const Vec3& left, const Vec3& right) {
-    return Vec3 (left.native () * right.native ());
-  }
-
   inline Vec3 linear_vector_interpolate (const Vec3& from,
                                          const Vec3& to,
                                          blend_weight_t alpha) {
     const float weight = alpha.numerical_value_in (one);
     return (1.0f - weight) * from + weight * to;
-  }
-
-  // The horizontal plane's two lanes: x, then z (the world's y is up).
-  // The map, the torus, and everything planned on the ground live here, so
-  // a place that has no height of its own says so by its type. Lanewise
-  // arithmetic is exact IEEE and the reductions are written out in a fixed
-  // order, as Vec3's are: `magnitude` is sqrt (x * x + z * z), the same
-  // bits as the hand-written sum it replaces, and `hypot` is
-  // cr::hypot (x, z), for code that measured that way.
-  class Vec2 {
-  public:
-    using value_type = float;
-    static constexpr std::integral_constant<std::size_t, 2> extent {};
-
-    constexpr Vec2 () = default;
-    constexpr Vec2 (float x, float z) : m_x (x), m_z (z) {}
-
-    constexpr float x () const {
-      return m_x;
-    }
-    constexpr float z () const {
-      return m_z;
-    }
-
-    constexpr float operator[] (std::size_t index) const {
-      return index == 0 ? m_x : m_z;
-    }
-    constexpr float& operator[] (std::size_t index) {
-      return index == 0 ? m_x : m_z;
-    }
-
-    // The tuple protocol, through which mp-units names each lane's axis.
-    template <std::size_t Index>
-    constexpr float get () const {
-      static_assert (Index < 2);
-      return Index == 0 ? m_x : m_z;
-    }
-
-    float magnitude () const {
-      return std::sqrt (scalar_product (*this, *this));
-    }
-
-    Vec2 unit () const {
-      return *this / magnitude ();
-    }
-
-    constexpr Vec2& operator+= (const Vec2& other) {
-      m_x += other.m_x;
-      m_z += other.m_z;
-      return *this;
-    }
-    constexpr Vec2& operator-= (const Vec2& other) {
-      m_x -= other.m_x;
-      m_z -= other.m_z;
-      return *this;
-    }
-    constexpr Vec2& operator*= (float scale) {
-      m_x *= scale;
-      m_z *= scale;
-      return *this;
-    }
-    constexpr Vec2& operator/= (float scale) {
-      m_x /= scale;
-      m_z /= scale;
-      return *this;
-    }
-
-    friend constexpr Vec2 operator- (const Vec2& value) {
-      return { -value.m_x, -value.m_z };
-    }
-    friend constexpr Vec2 operator+ (Vec2 left, const Vec2& right) {
-      return left += right;
-    }
-    friend constexpr Vec2 operator- (Vec2 left, const Vec2& right) {
-      return left -= right;
-    }
-    friend constexpr Vec2 operator* (Vec2 value, float scale) {
-      return value *= scale;
-    }
-    friend constexpr Vec2 operator* (float scale, Vec2 value) {
-      return value *= scale;
-    }
-    friend constexpr Vec2 operator/ (Vec2 value, float scale) {
-      return value /= scale;
-    }
-    friend constexpr bool operator== (const Vec2&, const Vec2&) = default;
-
-    friend constexpr float scalar_product (const Vec2& left,
-                                           const Vec2& right) {
-      return left.m_x * right.m_x + left.m_z * right.m_z;
-    }
-
-    friend std::ostream& operator<< (std::ostream& stream, const Vec2& value) {
-      return stream << '[' << value.m_x << ", " << value.m_z << ']';
-    }
-
-  private:
-    float m_x = 0.0f;
-    float m_z = 0.0f;
-  };
-
-}
-
-// Before any quantity over a Vec2 is formed: mp-units reads a vector's
-// length from the tuple protocol once, when it first meets the type.
-template <>
-struct std::tuple_size<moppe::Vec2> : std::integral_constant<std::size_t, 2> {};
-
-template <std::size_t Index>
-struct std::tuple_element<Index, moppe::Vec2> {
-  using type = float;
-};
-
-namespace moppe {
-  inline float length (const Vec2& value) {
-    return value.magnitude ();
-  }
-
-  inline float length2 (const Vec2& value) {
-    return scalar_product (value, value);
-  }
-
-  inline Vec2 normalized (const Vec2& value) {
-    return value.unit ();
-  }
-
-  inline float dot (const Vec2& left, const Vec2& right) {
-    return scalar_product (left, right);
-  }
-
-  inline float hypot (const Vec2& value) {
-    return cr::hypot (value.x (), value.z ());
-  }
-
-  // The horizontal part of a 3-vector, and a 3-vector at height y.
-  inline Vec2 plan (const Vec3& value) {
-    return { value[0], value[2] };
-  }
-
-  inline Vec3 lift (const Vec2& value, float y = 0.0f) {
-    return Vec3 (value.x (), y, value.z ());
   }
 
   template <Quantity Q1, Quantity Q2>
@@ -623,142 +292,6 @@ namespace moppe {
                            right.numerical_value_in (Q2::unit)) *
            (Q1::reference * Q2::reference);
   }
-
-  template <typename T>
-  using QuaternionVector =
-    std::conditional_t<std::same_as<T, float>, Vec3, Vec3T<T>>;
-
-  template <typename T>
-  struct QuaternionG {
-    T x, y, z, w;
-
-    QuaternionG (T x, T y, T z, T w) : x (x), y (y), z (z), w (w) {}
-
-    QuaternionG (const QuaternionVector<T>& v, T w)
-        : x (v[0]), y (v[1]), z (v[2]), w (w) {}
-
-    // Make a rotation quaternion from an axis and an angle.
-    static inline QuaternionG rotation (const QuaternionVector<T>& axis,
-                                        radians_t angle) {
-      return QuaternionG (moppe::sin (angle / 2) * axis,
-                          moppe::cos (angle / 2));
-    }
-
-    // Rotate a vector around an axis by an angle.
-    static inline QuaternionVector<T> rotate (const QuaternionVector<T>& v,
-                                              const QuaternionVector<T>& axis,
-                                              radians_t angle) {
-      QuaternionG r = rotation (axis, angle);
-      return rotate (v, r);
-    }
-
-    // Apply a rotation quaternion to a vector.
-    static inline QuaternionVector<T> rotate (const QuaternionVector<T>& v,
-                                              const QuaternionG& q) {
-      QuaternionG r (q);
-      const QuaternionG rc (r.conjugate ());
-
-      r *= QuaternionG (v, 0);
-      r *= rc;
-
-      return r.vector ();
-    }
-
-    // Return my non-w components as a 3D vector.
-    inline QuaternionVector<T> vector () const {
-      return QuaternionVector<T> (x, y, z);
-    }
-
-    QuaternionG& operator*= (const QuaternionG& q) {
-      const QuaternionG a (*this);
-
-      x = a.w * q.x + a.x * q.w + a.y * q.z - a.z * q.y;
-      y = a.w * q.y - a.x * q.z + a.y * q.w + a.z * q.x;
-      z = a.w * q.z + a.x * q.y - a.y * q.x + a.z * q.w;
-      w = a.w * q.w - a.x * q.x - a.y * q.y - a.z * q.z;
-
-      return *this;
-    }
-
-    inline QuaternionG conjugate () const {
-      return QuaternionG (-x, -y, -z, w);
-    }
-
-    T length () const {
-      return std::sqrt (x * x + y * y + z * z + w * w);
-    }
-  };
-
-#ifdef __APPLE__
-  // Keep the generic quaternion available for other component types while the
-  // gameplay float quaternion uses Apple's native SIMD register and ABI.
-  template <>
-  class QuaternionG<float> {
-  public:
-    QuaternionG (float x, float y, float z, float w)
-        : m_value (simd_quaternion (x, y, z, w)) {}
-
-    QuaternionG (const Vec3& v, float w) : QuaternionG (v[0], v[1], v[2], w) {}
-
-    static QuaternionG rotation (const Vec3& axis, radians_t angle) {
-      const radians_t half_angle = angle / 2;
-      return QuaternionG (moppe::sin (half_angle) * axis,
-                          moppe::cos (half_angle));
-    }
-
-    static Vec3 rotate (const Vec3& v, const Vec3& axis, radians_t angle) {
-      return rotate (v, rotation (axis, angle));
-    }
-
-    static Vec3 rotate (const Vec3& v, const QuaternionG& q) {
-      const simd_quatf vector = simd_quaternion (v[0], v[1], v[2], 0.0f);
-      const simd_quatf rotated =
-        simd_mul (simd_mul (q.m_value, vector), simd_conjugate (q.m_value));
-      return Vec3 (rotated.vector.xyz);
-    }
-
-    Vec3 vector () const {
-      return Vec3 (m_value.vector.xyz);
-    }
-
-    QuaternionG& operator*= (const QuaternionG& q) {
-      m_value = simd_mul (m_value, q.m_value);
-      return *this;
-    }
-
-    QuaternionG conjugate () const {
-      return QuaternionG (simd_conjugate (m_value));
-    }
-
-    float length () const {
-      return simd_length (m_value.vector);
-    }
-
-    const simd_quatf& native () const {
-      return m_value;
-    }
-
-  private:
-    explicit QuaternionG (simd_quatf value) : m_value (value) {}
-
-    simd_quatf m_value;
-  };
-#endif
-
-  template <typename T>
-  inline QuaternionG<T> operator* (QuaternionG<T> a, const QuaternionG<T>& b) {
-    a *= b;
-    return a;
-  }
-
-  using Quaternion = QuaternionG<float>;
-
-#ifdef __APPLE__
-  static_assert (sizeof (Quaternion) == sizeof (simd_quatf));
-  static_assert (alignof (Quaternion) == alignof (simd_quatf));
-  static_assert (std::is_trivially_copyable_v<Quaternion>);
-  static_assert (std::is_standard_layout_v<Quaternion>);
-#endif
 
   // Physical spatial vectors keep one unit around one numerical vector.  The
   // simulation can migrate fields to these types incrementally without ever

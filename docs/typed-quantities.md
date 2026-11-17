@@ -144,6 +144,16 @@ overloads (`height`, `still_level`, `depth`, `reader`, `period_x/z`) are
 adapters for callers not yet typed; delete each when its last caller
 moves.
 
+## Trig and its rounding
+
+`sin`, `cos`, and `tan` on a `radians_t` are correctly rounded
+(`cr::`), the same on every platform: generation uses them.
+`libm::sin`, `libm::cos`, `libm::tan`, `libm::atan2`, `libm::asin`,
+`libm::acos`, and `libm::hypot` take and give typed values but round as
+`std::` does, so presentation code (meshes, posing, the camera, the
+renderer) that called `std::sinf`/`std::hypotf` keeps its bits when it
+is typed. Pick the one the code already used.
+
 ## Where raw floats stay
 
 Only true storage and API boundaries, with typed values at their edges
@@ -153,6 +163,9 @@ Only true storage and API boundaries, with typed values at their edges
   shaders, `mat4.hh`, `render/types.hh`.
 - Glyph outlines and font units: `render/slug.*`, `truetype.*`, `text.*`.
 - Box3D's API: `mov/box3d_vec.hh` (`to_b3`/`from_b3`).
+- The vector representations themselves: `gfx/vector.hh` (`Vec3`,
+  `Vec2`, `Float3`, `Quaternion`), which the typed vectors in
+  `gfx/math.hh` wrap.
 - Noise internals (`terrain/noise.*`); what leaves it is `noise_signal_t`.
 - Scalar math libraries (`correct_math.hh`, `gfx/signal.hh`).
 - Platform hosts' OS input.

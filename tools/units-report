@@ -82,6 +82,9 @@ BOUNDARIES = (
     ("Glyphs & text", ("moppe/render/slug.*", "moppe/render/truetype.*",
                        "moppe/render/text.*")),
     # Conversions to and from Box3D's b3Vec3 at its API.
+    # The float vectors and quaternion the typed vector quantities are
+    # built on (position_t over Vec3, plan_position_t over Vec2).
+    ("Vector representations", ("moppe/gfx/vector.hh",)),
     ("Box3D API", ("moppe/mov/box3d_vec.hh",)),
     # Noise internals: lattice hashes and gradients in unitless space.
     ("Noise internals", ("moppe/terrain/noise.*",)),

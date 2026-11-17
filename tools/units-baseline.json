@@ -34,12 +34,12 @@
       "escapes": 205
     },
     "Foundations (math & units)": {
-      "share": 36.2,
+      "share": 60.4,
       "files": 9,
-      "typed": 100,
-      "raw_float": 78,
-      "raw_vector": 98,
-      "escapes": 54
+      "typed": 102,
+      "raw_float": 40,
+      "raw_vector": 27,
+      "escapes": 61
     },
     "Game logic": {
       "share": 72.8,
@@ -109,9 +109,9 @@
       "share": 37.2,
       "files": 83,
       "typed": 581,
-      "raw_float": 787,
+      "raw_float": 788,
       "raw_vector": 194,
-      "escapes": 1313
+      "escapes": 1314
     },
     "Vehicles & on-foot body": {
       "share": 75.3,
