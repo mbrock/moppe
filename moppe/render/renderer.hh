@@ -111,6 +111,13 @@ namespace moppe {
       meters_t radius = 160.0f * u::m;
     };
 
+    // The scene camera's near and far planes, metres. The near one is
+    // close enough that a rider's eye a hand's breadth from a cab's wall
+    // (the bus's front seat) still sees the wall; the depth is reversed,
+    // so this costs the distance nothing.
+    inline constexpr float camera_near_m = 0.15f;
+    inline constexpr float camera_far_m = 9000.0f;
+
     // Two cascades share the sun's map: a sharp one over the camera's
     // neighbourhood and a coarse one reaching out to the haze, so shadows
     // reach as far as a glider can see instead of stopping at a radius.
@@ -145,16 +152,16 @@ namespace moppe {
       Vec3 up_span;    // up * tan(fov/2)
       magnitude_t strength = 1.0f * one;
       meters_t radius = 1.6f * u::m;
-      meters_t near_plane = 0.5f * u::m;
-      meters_t far_plane = 9000.0f * u::m;
+      meters_t near_plane = camera_near_m * u::m;
+      meters_t far_plane = camera_far_m * u::m;
     };
 
     // The local, wave-displaced water at the camera, not the world's sea
     // datum. The grade reads the scene's depth before temporal resolve.
     struct UnderwaterParams {
       meters_t water_level = 0.0f * u::m;
-      meters_t near_plane = 0.5f * u::m;
-      meters_t far_plane = 9000.0f * u::m;
+      meters_t near_plane = camera_near_m * u::m;
+      meters_t far_plane = camera_far_m * u::m;
     };
 
     // World-change-time terrain setup.  Heights/normals are the same

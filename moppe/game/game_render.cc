@@ -83,8 +83,10 @@ namespace moppe {
       fp.render_scale_override = m_graphics.render_scale_override;
       fp.scene_megapixel_budget = m_graphics.scene_megapixel_budget;
       fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
-      fp.proj = Mat4::perspective_reversed (
-        64.0f * u::deg, width / std::max (1.0f, height), 0.5f, 9000.0f);
+      fp.proj = Mat4::perspective_reversed (64.0f * u::deg,
+                                            width / std::max (1.0f, height),
+                                            render::camera_near_m,
+                                            render::camera_far_m);
       fp.camera_pos = eye;
       constexpr float loading_sun_height = 0.70f;
       fp.clear_color = horizon_color_for (loading_sun_height);

@@ -262,8 +262,11 @@ namespace moppe::game {
                                         -result.camera.view.element (6),
                                         -result.camera.view.element (10));
 
-    result.camera.projection = Mat4::perspective_reversed (
-      result.camera.field_of_view, result.camera.aspect, 0.5f, 9000.0f);
+    result.camera.projection =
+      Mat4::perspective_reversed (result.camera.field_of_view,
+                                  result.camera.aspect,
+                                  render::camera_near_m,
+                                  render::camera_far_m);
 
     const Weather& weather = logic.m_weather;
     // Lightning lights the cloud and the haze, and everything under it.
