@@ -189,9 +189,11 @@ int main (int argc, char** argv) {
       argc > 3 ? static_cast<std::uint32_t> (std::stoul (argv[3])) : 123;
     // The game's default extent, as tools/bake-world bakes it, or as wide
     // as --world-size would make it.
-    const float across_m = argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f;
+    const meters_t across =
+      (argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f) * u::m;
     const WorldRecipe recipe = make_world_recipe (
-      spatial_extent_in_metres (Vec3 (across_m, 320.0f, across_m)),
+      spatial_extent_in_metres (
+        Vec3 (meters_value (across), 320.0f, meters_value (across))),
       resolution,
       Seed { seed },
       50.0f * u::m,
@@ -263,7 +265,7 @@ int main (int argc, char** argv) {
       std::filesystem::temp_directory_path () /
       ("world-fingerprint-" + std::to_string (seed) + "-" +
        std::to_string (resolution) + "-" +
-       std::to_string (static_cast<int> (across_m)));
+       std::to_string (static_cast<int> (meters_value (across))));
     std::filesystem::remove_all (directory);
     game::save_world_cache (*world, directory.string ());
     cost ("world cache saved");

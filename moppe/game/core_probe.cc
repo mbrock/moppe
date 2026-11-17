@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -28,9 +29,26 @@
 namespace moppe::game {
   namespace {
     using clock = std::chrono::steady_clock;
+    using seconds_f64_t = quantity<si::second, double>;
+    using microseconds_t = quantity<si::micro<si::second>, double>;
 
-    double seconds_since (clock::time_point start) {
-      return std::chrono::duration<double> (clock::now () - start).count ();
+    seconds_f64_t seconds_since (clock::time_point start) {
+      return std::chrono::duration<double> (clock::now () - start).count () *
+             si::second;
+    }
+
+    microseconds_t microseconds_since (clock::time_point start) {
+      return std::chrono::duration<double, std::micro> (clock::now () - start)
+               .count () *
+             si::micro<si::second>;
+    }
+
+    // A wall-clock time for the report, in its unit.
+    double reported (seconds_f64_t time) {
+      return time.numerical_value_in (si::second);
+    }
+    double reported (microseconds_t time) {
+      return time.numerical_value_in (si::micro<si::second>);
     }
 
     double mebibytes (std::uint64_t bytes) {
@@ -86,24 +104,27 @@ namespace moppe::game {
     }
 
     struct StepTimes {
-      std::vector<double> micros;
+      std::vector<microseconds_t> micros;
 
       void write (Report& report) {
         if (micros.empty ())
           return;
-        std::vector<double> sorted = micros;
+        std::vector<microseconds_t> sorted = micros;
         std::sort (sorted.begin (), sorted.end ());
-        const auto at = [&] (double q) {
-          return sorted[static_cast<std::size_t> (q * (sorted.size () - 1))];
+        // The time QUANTILE of the steps took or less.
+        const auto at = [&] (quantity<probability[one], double> quantile) {
+          return reported (sorted[static_cast<std::size_t> (
+            quantile.numerical_value_in (one) * (sorted.size () - 1))]);
         };
-        double sum = 0.0;
-        for (double value : sorted)
+        microseconds_t sum = 0.0 * si::micro<si::second>;
+        for (const microseconds_t value : sorted)
           sum += value;
         report << std::fixed << std::setprecision (1) << "  steps "
-               << sorted.size () << ", mean " << sum / sorted.size ()
+               << sorted.size () << ", mean "
+               << reported (sum / static_cast<double> (sorted.size ()))
                << " us, p50 " << at (0.5) << " us, p95 " << at (0.95)
-               << " us, p99 " << at (0.99) << " us, max " << sorted.back ()
-               << " us\n";
+               << " us, p99 " << at (0.99) << " us, max "
+               << reported (sorted.back ()) << " us\n";
       }
     };
 
@@ -124,83 +145,91 @@ namespace moppe::game {
       while (!(world = loading.take_completed_world ())) {
         pump (host);
         const LoadingStatus status = loading.status ();
-        progress (host,
-                  status.title + (status.detail.empty () ? "" : "\n") +
-                    status.detail,
-                  status.progress);
+        progress (
+          host,
+          status.title + (status.detail.empty () ? "" : "\n") + status.detail,
+          status.progress ? status.progress->numerical_value_in (one) : -1.0f);
       }
-      const double total = seconds_since (start);
+      const seconds_f64_t total = seconds_since (start);
       const LoadingStatus status = loading.status ();
       report << "\n== " << name << " ==\n";
       report << std::fixed << std::setprecision (2);
       for (std::size_t i = 0; i < status.events.size (); ++i) {
-        const double begin = status.events[i].elapsed;
-        const double end =
+        const seconds_f64_t begin = status.events[i].elapsed;
+        const seconds_f64_t end =
           i + 1 < status.events.size () ? status.events[i + 1].elapsed : total;
-        report << "  " << std::setw (8) << end - begin << " s  "
+        report << "  " << std::setw (8) << reported (end - begin) << " s  "
                << status.events[i].title << '\n';
       }
-      report << "  " << std::setw (8) << total << " s  total\n";
+      report << "  " << std::setw (8) << reported (total) << " s  total\n";
       report.memory ("after");
       report.flush ();
       return world;
     }
 
-    Vec3 trail_position (const GeneratedWorld& world, float x, float z) {
-      return Vec3 (x,
-                   terrain::surface_elevation_value (
-                     spatial::sample<terrain::surface_elevation> (
-                       world.surface (), moppe::position (Vec3 (x, 0.0f, z)))),
-                   z);
+    // The ground at a place on the map, as the session stands on it.
+    position_t trail_position (const GeneratedWorld& world,
+                               plan_position_t at) {
+      return terrain::at_elevation (
+        at,
+        spatial::sample<terrain::surface_elevation> (
+          world.surface (), at_height (at, 0.0f * u::m)));
     }
 
     // Where the game puts a new rider: a few metres back from the home base
     // along the trail, facing up it.
-    std::pair<Vec3, Vec3> spawn_of (const GeneratedWorld& world) {
+    std::pair<position_t, direction_t> spawn_of (const GeneratedWorld& world) {
       const terrain::TrailNetwork& trails = world.trails ();
-      Vec3 heading (0, 0, 1);
+      direction_t heading = unit_direction (Vec3 (0, 0, 1));
       if (trails.alignment.points.size () >= 2) {
         const plan_position_t& a = trails.alignment.points[0];
         const plan_position_t& b = trails.alignment.points[1];
-        Vec3 d =
-          trail_position (world, plan_value (b).x (), plan_value (b).z ()) -
-          trail_position (world, plan_value (a).x (), plan_value (a).z ());
-        d[1] = 0.0f;
-        if (length2 (d) > 1e-5f)
-          heading = normalized (d);
+        displacement_t d =
+          trail_position (world, b) - trail_position (world, a);
+        d.numerical_value_ref_in (si::metre)[1] = 0.0f;
+        if (length2 (d.numerical_value_in (si::metre)) > 1e-5f)
+          heading = direction_of (d);
       }
-      Vec3 home;
+      position_t home = position (Vec3 ());
       if (trails.plan.home_base != terrain::no_cell) {
         const std::size_t width = trails.domain.width ();
         const std::size_t cell = trails.plan.home_base.value;
         home = trail_position (
           world,
-          (cell % width) * trails.domain.spacing_x ().numerical_value_in (u::m),
-          (cell / width) *
-            trails.domain.spacing_z ().numerical_value_in (u::m));
+          plan_position (
+            static_cast<float> (cell % width) * trails.domain.spacing_x (),
+            static_cast<float> (cell / width) * trails.domain.spacing_z ()));
       }
-      Vec3 spawn = home - heading * 8.0f;
-      spawn = trail_position (world, spawn[0], spawn[2]);
-      spawn[1] += 1.2f;
+      position_t spawn =
+        trail_position (world,
+                        plan (home - quantity_cast<isq::position_vector> (
+                                       along (heading, 8.0f * u::m))));
+      position_value (spawn)[1] += 1.2f;
       return { spawn, heading };
     }
 
     struct Course {
       std::uint64_t steps = 0;
-      double path = 0.0;
-      Vec3 start, end;
+      meters_f64_t path = 0.0 * u::m;
+      position_t start, end;
     };
 
-    void write_course (Report& report, const Course& course, double wall) {
-      const double simulated = course.steps * FIXED_SIMULATION_STEP_SECONDS;
+    void
+    write_course (Report& report, const Course& course, seconds_f64_t wall) {
+      const seconds_f64_t simulated = static_cast<double> (course.steps) *
+                                      FIXED_SIMULATION_STEP_SECONDS *
+                                      si::second;
+      const Vec3& from = position_value (course.start);
+      const Vec3& to = position_value (course.end);
       report << std::fixed << std::setprecision (2) << "  simulated "
-             << simulated << " s in " << std::setprecision (3) << wall
-             << " s wall (" << std::setprecision (0)
-             << simulated / std::max (wall, 1e-9) << "x real time)\n"
-             << std::setprecision (1) << "  travelled " << course.path
-             << " m, from (" << course.start[0] << ", " << course.start[1]
-             << ", " << course.start[2] << ") to (" << course.end[0] << ", "
-             << course.end[1] << ", " << course.end[2] << ")\n";
+             << reported (simulated) << " s in " << std::setprecision (3)
+             << reported (wall) << " s wall (" << std::setprecision (0)
+             << reported (simulated) / std::max (reported (wall), 1e-9)
+             << "x real time)\n"
+             << std::setprecision (1) << "  travelled "
+             << course.path.numerical_value_in (u::m) << " m, from (" << from[0]
+             << ", " << from[1] << ", " << from[2] << ") to (" << to[0] << ", "
+             << to[1] << ", " << to[2] << ")\n";
     }
 
     void simulate (const CoreProbeHost& host,
@@ -212,8 +241,8 @@ namespace moppe::game {
       ForestLandscape forest;
       forest.rebuild (renderer, world.forest ());
       const meters_t sea = world.params ().water_level;
-      const float highest =
-        terrain::measure_height_range (world.surface ()).maximum;
+      const terrain::SurfaceElevation highest =
+        terrain::measure_elevation_range (world.surface ()).maximum;
       const BoulderPlan boulder_plan = plan_boulders (
         world.surface (),
         world.readings (),
@@ -221,61 +250,79 @@ namespace moppe::game {
         std::get<terrain::RiverNetwork> (world.hydrology ()),
         world.recipe ().seed ().value ^ 0x6b0d1e55U,
         terrain::surface_elevation_point (sea),
-        std::max (highest - sea.numerical_value_in (u::m), 1.0f) * u::m);
+        std::max (meters_t (highest - terrain::surface_elevation_point (sea)),
+                  1.0f * u::m));
       BoulderLandscape boulders;
       boulders.rebuild (renderer, boulder_plan);
       std::vector<mov::Trunk> obstacles = forest.trunks ();
       obstacles.insert (obstacles.end (),
                         boulders.colliders ().begin (),
                         boulders.colliders ().end ());
-      const Vec3 period = extent_value (world.forest ().period);
+      const spatial_extent_t period = world.forest ().period;
       mov::TrunkField trunks;
-      trunks.set_trunks (std::move (obstacles), period[0], period[2]);
+      trunks.set_trunks (std::move (obstacles),
+                         extent_value (period)[0],
+                         extent_value (period)[2]);
       const auto [spawn, heading] = spawn_of (world);
       report << "\n== simulation setup ==\n"
              << "  " << forest.tree_count () << " trees, "
              << boulders.boulder_count () << " boulders, "
              << trunks.trunk_count () << " colliders, in " << std::fixed
-             << std::setprecision (2) << seconds_since (setup_start) << " s\n";
+             << std::setprecision (2) << reported (seconds_since (setup_start))
+             << " s\n";
       report.flush ();
 
-      const float dt = static_cast<float> (FIXED_SIMULATION_STEP_SECONDS);
+      const seconds_t dt =
+        static_cast<float> (FIXED_SIMULATION_STEP_SECONDS) * si::second;
+      // Where the session's subject stands, and how far it went.
+      const auto subject_at = [] (const GameSession& session) {
+        return position (session.subject_position ());
+      };
+      const auto travelled = [] (position_t from, position_t to) {
+        return std::sqrt (
+                 length2 (position_value (to) - position_value (from))) *
+               u::m;
+      };
 
       // On foot, as the game starts: walk, run, and jump, turning gently.
       {
         GameSession session (world.params (), world.surface ());
         session.bike ().set_water_level (sea);
-        session.bike ().reset (spawn);
-        session.bike ().set_heading (heading);
+        session.bike ().reset (position_value (spawn));
+        session.bike ().set_heading (direction_value (heading));
         session.start_on_foot ();
         StepTimes times;
-        Course course { .start = session.subject_position () };
-        Vec3 last = course.start;
+        Course course { .start = subject_at (session) };
+        position_t last = course.start;
         const std::uint64_t steps =
-          static_cast<std::uint64_t> (options.walk_seconds / dt);
+          static_cast<std::uint64_t> (static_cast<double> (options.walk / dt));
         const clock::time_point start = clock::now ();
         for (std::uint64_t step = 0; step < steps; ++step) {
-          const float t = step * dt;
+          const seconds_t t = static_cast<float> (step) * dt;
+          const float clock_s = seconds_value (t);
           InputFrame input;
-          input.drive = t > 0.5f ? 1.0f : 0.0f;
-          input.run = t > 3.0f;
-          input.boost = std::fmod (t, 2.5f) < 0.1f && t > 4.0f ? 1.0f : 0.0f;
-          input.look_yaw = 0.25f * std::sin (t * 0.35f) * dt;
+          input.drive = t > 0.5f * si::second ? 1.0f : 0.0f;
+          input.run = t > 3.0f * si::second;
+          input.boost =
+            std::fmod (clock_s, 2.5f) < 0.1f && t > 4.0f * si::second ? 1.0f
+                                                                      : 0.0f;
+          // A gentle swing of the head, in radians this tick.
+          const radians_per_second_t yaw_rate =
+            0.25f * std::sin (clock_s * 0.35f) * u::rad / u::s;
+          input.look_yaw = radians_value (yaw_rate * dt);
           const clock::time_point before = clock::now ();
           trunks.focus (session.subject_position ());
           advance_game_session (world.params (),
                                 world.surface (),
                                 session,
                                 input,
-                                seconds (dt),
+                                dt,
                                 &trunks,
                                 {},
                                 &world.water_surface ());
-          times.micros.push_back (
-            std::chrono::duration<double, std::micro> (clock::now () - before)
-              .count ());
-          const Vec3 now = session.subject_position ();
-          course.path += std::sqrt (length2 (now - last));
+          times.micros.push_back (microseconds_since (before));
+          const position_t now = subject_at (session);
+          course.path += travelled (last, now);
           last = now;
           if (step % 120 == 0)
             progress (host, "Walking", static_cast<float> (step) / steps);
@@ -293,32 +340,42 @@ namespace moppe::game {
       {
         GameSession session (world.params (), world.surface ());
         session.bike ().set_water_level (sea);
-        session.bike ().reset (spawn);
-        session.bike ().set_heading (heading);
+        session.bike ().reset (position_value (spawn));
+        session.bike ().set_heading (direction_value (heading));
         StepTimes times;
-        Course course { .start = session.subject_position () };
-        Vec3 last = course.start;
+        Course course { .start = subject_at (session) };
+        position_t last = course.start;
         const std::uint64_t steps =
-          static_cast<std::uint64_t> (options.ride_seconds / dt);
+          static_cast<std::uint64_t> (static_cast<double> (options.ride / dt));
         const clock::time_point start = clock::now ();
         for (std::uint64_t step = 0; step < steps; ++step) {
-          const float t = step * dt;
+          const float clock_s = seconds_value (static_cast<float> (step) * dt);
           InputFrame input {
-            .turn = 0.35f * std::sin (t * 0.25f),
+            .turn = 0.35f * std::sin (clock_s * 0.25f),
             .drive = 1.0f,
-            .boost = std::fmod (t, 11.0f) < 1.35f ? 1.0f : 0.0f,
+            .boost = std::fmod (clock_s, 11.0f) < 1.35f ? 1.0f : 0.0f,
           };
           const clock::time_point before = clock::now ();
-          const Vec3 at = session.subject_position ();
-          const Vec3 ahead_dir = session.subject_heading ();
-          const Vec3 right = normalized (cross (ahead_dir, Vec3 (0, 1, 0)));
-          trunks.focus (at);
-          for (const float ahead : { 4.0f, 9.0f }) {
-            const Vec3 probe = at + ahead_dir * ahead;
+          const position_t at = subject_at (session);
+          const direction_t ahead_dir =
+            unit_direction (session.subject_heading ());
+          const direction_t right = unit_direction (
+            normalized (cross (direction_value (ahead_dir), Vec3 (0, 1, 0))));
+          trunks.focus (position_value (at));
+          // A bike's height of trunk, its reach to either side.
+          const meters_t height = 1.5f * u::m;
+          const meters_t reach = 1.8f * u::m;
+          for (const meters_t ahead : { 4.0f * u::m, 9.0f * u::m }) {
+            const Vec3 probe = position_value (at) +
+                               displacement_value (along (ahead_dir, ahead));
             const mov::TrunkContact contact =
-              trunks.collide (probe, probe + Vec3 (0, 1.5f, 0), 1.8f);
+              trunks.collide (probe,
+                              probe + Vec3 (0, meters_value (height), 0),
+                              meters_value (reach));
             if (contact.hit) {
-              input.turn = dot (contact.normal, right) >= 0.0f ? 1.0f : -1.0f;
+              input.turn = dot (contact.normal, direction_value (right)) >= 0.0f
+                             ? 1.0f
+                             : -1.0f;
               break;
             }
           }
@@ -326,15 +383,13 @@ namespace moppe::game {
                                 world.surface (),
                                 session,
                                 input,
-                                seconds (dt),
+                                dt,
                                 &trunks,
                                 {},
                                 &world.water_surface ());
-          times.micros.push_back (
-            std::chrono::duration<double, std::micro> (clock::now () - before)
-              .count ());
-          const Vec3 now = session.subject_position ();
-          course.path += std::sqrt (length2 (now - last));
+          times.micros.push_back (microseconds_since (before));
+          const position_t now = subject_at (session);
+          course.path += travelled (last, now);
           last = now;
           if (step % 120 == 0)
             progress (host, "Riding", static_cast<float> (step) / steps);
@@ -364,26 +419,25 @@ namespace moppe::game {
       std::unique_ptr<platform::Game> game = make_moppe_game (launch, recipe);
       const clock::time_point start = clock::now ();
       game->setup (renderer, 1920, 1080);
-      const float dt = 1.0f / 60.0f;
-      double ready_at = -1.0;
+      const seconds_t dt = 1.0f / 60.0f * si::second;
+      // When the forest was first drawn, or not yet.
+      std::optional<seconds_f64_t> ready_at;
       StepTimes frames;
       std::uint64_t loading_frames = 0;
       const std::uint64_t frame_count =
-        static_cast<std::uint64_t> (options.game_seconds / dt);
+        static_cast<std::uint64_t> (static_cast<double> (options.game / dt));
       while (frames.micros.size () < frame_count) {
         pump (host);
         const clock::time_point before = clock::now ();
-        game->tick (seconds (dt));
+        game->tick (dt);
         game->render (renderer);
-        const double micros =
-          std::chrono::duration<double, std::micro> (clock::now () - before)
-            .count ();
-        if (ready_at < 0.0 && renderer.forest_draws > 0)
+        const microseconds_t micros = microseconds_since (before);
+        if (!ready_at && renderer.forest_draws > 0)
           ready_at = seconds_since (start);
-        if (ready_at < 0.0) {
+        if (!ready_at) {
           ++loading_frames;
           progress (host, "Starting the game", 0.0f);
-          if (seconds_since (start) > 600.0)
+          if (seconds_since (start) > 600.0 * si::second)
             throw std::runtime_error ("the game did not become ready");
           std::this_thread::sleep_for (std::chrono::milliseconds (10));
         } else {
@@ -397,7 +451,8 @@ namespace moppe::game {
       moppe::set_environment ("MOPPE_DEMO", nullptr);
       report << "\n== application shell (game.cc, recording renderer) ==\n"
              << std::fixed << std::setprecision (2) << "  ready after "
-             << ready_at << " s (" << loading_frames << " loading frames)\n"
+             << reported (*ready_at) << " s (" << loading_frames
+             << " loading frames)\n"
              << "  frames: tick(1/60 s) + render, CPU only\n";
       frames.write (report);
       report << "  meshes baked " << renderer.baked_vertex_counts.size ()
@@ -471,7 +526,8 @@ namespace moppe::game {
     }
     report << "\n"
            << (ok ? "PASS" : "FAIL") << " after " << std::fixed
-           << std::setprecision (1) << seconds_since (start) << " s\n";
+           << std::setprecision (1) << reported (seconds_since (start))
+           << " s\n";
     report.memory ("at the end");
     report.flush ();
     progress (host, ok ? "Done" : "Failed", 1.0f);
