@@ -3,7 +3,9 @@
 // driving them. The class is in game.hh; the rest of its members live in the
 // game_*.cc files beside this one.
 
+#include <moppe/environment.hh>
 #include <moppe/game/game.hh>
+#include <moppe/profile.hh>
 
 namespace moppe {
   namespace game {
@@ -136,11 +138,10 @@ namespace moppe {
         }
       }
 
-      // Screenshot autopilot for headless verification: rides in a
-      // lazy arc with periodic boost-assisted leaps (demo_pilot.hh).
       m_trunk_field.focus (session ().subject_position ());
       static const char* walk_script = moppe::environment ("MOPPE_WALK");
-      // The bump script drives the jeep too, and boat-fish the boat.
+      // A walk script drives (the bump script drives the jeep too, and
+      // boat-fish the boat), or else the demo autopilot (demo_pilot.hh).
       if (walk_script && (logic ().m_mode == M_FOOT ||
                           std::string_view (walk_script) == "bump" ||
                           std::string_view (walk_script) == "boat-fish"))

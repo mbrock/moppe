@@ -2,7 +2,9 @@
 // (the doing is the session's step, surroundings.hh), and the camp's
 // hammock, fire, and pan as drawn.
 
+#include <moppe/game/figure.hh>
 #include <moppe/game/game.hh>
+#include <moppe/game/walker_render.hh>
 
 namespace moppe {
   namespace game {

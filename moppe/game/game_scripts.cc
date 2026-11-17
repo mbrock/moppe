@@ -1,6 +1,8 @@
 // The scripted walks for captures (MOPPE_WALK): where each starts and the
 // deterministic input it drives the walker with.
 
+#include <moppe/environment.hh>
+#include <moppe/game/fishing.hh>
 #include <moppe/game/game.hh>
 
 namespace moppe {

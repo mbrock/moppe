@@ -2,8 +2,17 @@
 // and stands on it, the actors and their shadows, the water and the wakes,
 // effects, and overlays such as the fingerposts and the scan.
 
+#include <moppe/game/animal_render.hh>
+#include <moppe/game/caddy_render.hh>
 #include <moppe/game/game.hh>
-#include <moppe/terrain/torus.hh>
+#include <moppe/game/glider_render.hh>
+#include <moppe/game/helicopter_render.hh>
+#include <moppe/game/jet_ski_render.hh>
+#include <moppe/game/long_john_render.hh>
+#include <moppe/game/mountain_bike_render.hh>
+#include <moppe/game/tractor_render.hh>
+#include <moppe/game/vehicle_render.hh>
+#include <moppe/game/walker_render.hh>
 
 namespace moppe {
   namespace game {

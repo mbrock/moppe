@@ -3,6 +3,7 @@
 // frame_capture.hh's.
 
 #include <moppe/game/game.hh>
+#include <moppe/profile.hh>
 
 namespace moppe {
   namespace game {

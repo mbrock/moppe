@@ -2,7 +2,18 @@
 // with them, their machines as ours meet them, riding along in their jeep or
 // boat, and drawing them.
 
+#include <moppe/environment.hh>
+#include <moppe/game/caddy_render.hh>
+#include <moppe/game/figure.hh>
 #include <moppe/game/game.hh>
+#include <moppe/game/glider_render.hh>
+#include <moppe/game/helicopter_render.hh>
+#include <moppe/game/jet_ski_render.hh>
+#include <moppe/game/long_john_render.hh>
+#include <moppe/game/mountain_bike_render.hh>
+#include <moppe/game/tractor_render.hh>
+#include <moppe/game/vehicle_render.hh>
+#include <moppe/game/walker_render.hh>
 
 namespace moppe {
   namespace game {

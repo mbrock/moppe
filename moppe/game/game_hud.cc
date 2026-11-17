@@ -2,8 +2,10 @@
 // fishing, and the basket, the waymarks, the chart, the map sheet, the trail
 // map, and the opening's titles.
 
+#include <moppe/game/figure.hh>
+#include <moppe/game/fishing.hh>
 #include <moppe/game/game.hh>
-#include <moppe/terrain/torus.hh>
+#include <moppe/profile.hh>
 
 namespace moppe {
   namespace game {

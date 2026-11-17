@@ -2,7 +2,16 @@
 // boulders, and mushrooms, uploading it to the renderer once loaded, and the
 // sky and weather over it as the day turns.
 
+#include <moppe/environment.hh>
+#include <moppe/game/cairn.hh>
 #include <moppe/game/game.hh>
+#include <moppe/game/place_names.hh>
+#include <moppe/game/seed_memory.hh>
+#include <moppe/game/surface_presentation.hh>
+#include <moppe/game/water_presentation.hh>
+#include <moppe/mov/box3d_vec.hh>
+#include <moppe/profile.hh>
+#include <moppe/terrain/readings.hh>
 
 namespace moppe {
   namespace game {

@@ -1,7 +1,11 @@
 // The opening's shots: planning them, playing them, and the clock they set.
 // The capture cameras are capture_scripts.hh's.
 
+#include <moppe/environment.hh>
 #include <moppe/game/game.hh>
+#include <moppe/profile.hh>
+
+#include <fstream>
 
 namespace moppe {
   namespace game {
