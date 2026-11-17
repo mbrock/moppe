@@ -11,12 +11,12 @@ namespace moppe {
         // How deep the wheels of a bike whose reference point stands
         // `ride_height` over the ground at `height` run in water standing
         // at `level`: 0 dry, 1 from 0.6 m, a little over the axles.
-        float
+        proportion_t
         wading_depth (meters_t height, meters_t level, meters_t ride_height) {
-          return std::clamp (((level - height + ride_height) / (0.6f * u::m))
-                               .numerical_value_in (one),
-                             0.0f,
-                             1.0f);
+          return std::clamp (quantity_cast<proportion> (
+                               (level - height + ride_height) / (0.6f * u::m)),
+                             0.0f * proportion[one],
+                             1.0f * proportion[one]);
         }
 
         constexpr acceleration_component_t boost_acceleration =
@@ -25,18 +25,18 @@ namespace moppe {
         constexpr seconds_t boost_full_burn_time = 3.0f * u::s;
         constexpr seconds_t boost_recharge_time = 5.0f * u::s;
         constexpr seconds_t boost_recharge_pause = 0.65f * u::s;
-        constexpr float boost_reserve_charge = 0.06f;
-        constexpr float boost_emergency_level = 0.18f;
+        constexpr proportion_t boost_reserve_charge = 0.06f * proportion[one];
+        constexpr proportion_t boost_emergency_level = 0.18f * proportion[one];
 
         constexpr per_second_t steering_smoothing = 9.0f / u::s;
-        constexpr float full_turn = 2.0f * 3.14159265f;
+        constexpr radians_t full_turn = 2.0f * 3.14159265f * u::rad;
 
         // Keeps an angle in [0, 2pi).
-        radians_t wrapped (float radians) {
-          float a = std::fmod (radians, full_turn);
-          if (a < 0.0f)
+        radians_t wrapped (radians_t angle) {
+          radians_t a = fmod (angle, full_turn);
+          if (a < 0.0f * u::rad)
             a += full_turn;
-          return a * u::rad;
+          return a;
         }
       }
     }
@@ -71,7 +71,7 @@ namespace moppe {
       // an unedited state finds them equal bit for bit.
       state.position = moppe::position (m_rigid->reference_of (state.rigid));
       state.velocity = moppe::velocity (state.rigid.chassis.linear_velocity);
-      state.heading = RigidBike::forward_of (state.rigid);
+      state.heading = unit_direction (RigidBike::forward_of (state.rigid));
       state.yaw = m_yaw;
       state.yaw_target = m_yaw_target;
       state.wheel_spin = m_wheel_spin;
@@ -119,20 +119,21 @@ namespace moppe {
       const Vec3& velocity = velocity_value (state.velocity);
       if (!(position == m_rigid->reference_of (rigid) &&
             velocity == rigid.chassis.linear_velocity &&
-            state.heading == RigidBike::forward_of (rigid)))
-        rigid = m_rigid->repose (rigid, position, state.heading, velocity);
+            direction_value (state.heading) == RigidBike::forward_of (rigid)))
+        rigid = m_rigid->repose (
+          rigid, position, direction_value (state.heading), velocity);
       m_rigid->restore (rigid);
     }
 
     void Vehicle::reset (const Vec3& position) {
-      m_boost_input = 0;
-      m_boost_drive = 0;
-      m_boost_level = 0;
-      m_boost_charge = 1;
+      m_boost_input = {};
+      m_boost_drive = {};
+      m_boost_level = {};
+      m_boost_charge = 1.0f * proportion[one];
       m_boost_recharge_delay = {};
       m_boost_flight = false;
       m_impact = {};
-      m_rigid->place (position, orientation (), Vec3 (0, 1, 0), Vec3 ());
+      m_rigid->place (position, forward (), Vec3 (0, 1, 0), Vec3 ());
     }
 
     void Vehicle::set_heading (const Vec3& h) {
@@ -149,34 +150,40 @@ namespace moppe {
     // burn and is deliberately slower in the air, so feathering the
     // jets cannot produce permanent flight.
     void Vehicle::update_jets (seconds_t dt, bool grounded) {
-      const float burn =
-        (dt / vehicle_rig::boost_full_burn_time).numerical_value_in (one);
-      if (m_boost_input > 0.001f) {
+      // The share of a full charge a full burn spends over the step.
+      const proportion_t burn =
+        quantity_cast<proportion> (dt / vehicle_rig::boost_full_burn_time);
+      if (m_boost_input > 0.001f * control_signal[one]) {
         if (m_boost_charge > vehicle_rig::boost_reserve_charge) {
-          const float available =
-            (m_boost_charge - vehicle_rig::boost_reserve_charge) / burn;
-          m_boost_level = std::min (m_boost_input, available);
-          m_boost_charge = std::max (vehicle_rig::boost_reserve_charge,
-                                     m_boost_charge - m_boost_level * burn);
+          const proportion_t available = quantity_cast<proportion> (
+            (m_boost_charge - vehicle_rig::boost_reserve_charge) / burn);
+          m_boost_level =
+            std::min (quantity_cast<proportion> (m_boost_input), available);
+          m_boost_charge = std::max (
+            vehicle_rig::boost_reserve_charge,
+            m_boost_charge - quantity_cast<proportion> (m_boost_level * burn));
           m_boost_flight = true;
         } else
           // The reserve cannot sustain flight, but it always supplies enough
           // thrust to take the cruelty out of a long fall.
-          m_boost_level = vehicle_rig::boost_emergency_level * m_boost_input;
+          m_boost_level = quantity_cast<proportion> (
+            vehicle_rig::boost_emergency_level * m_boost_input);
         // The trigger must be released before recharge starts; this avoids
         // alternating reserve thrust and tiny rechargeable impulses.
         m_boost_recharge_delay = vehicle_rig::boost_recharge_pause;
       } else {
-        m_boost_level = 0;
+        m_boost_level = {};
         if (m_boost_recharge_delay > seconds_t {})
           m_boost_recharge_delay -= dt;
         else {
-          const float recharge_scale = grounded ? 1.0f : 0.35f;
-          m_boost_charge =
-            std::min (1.0f,
-                      m_boost_charge +
-                        recharge_scale * (dt / vehicle_rig::boost_recharge_time)
-                                           .numerical_value_in (one));
+          // In the air the jets recharge at a share of the ground's rate.
+          const proportion_t recharge_scale =
+            (grounded ? 1.0f : 0.35f) * proportion[one];
+          m_boost_charge = std::min (
+            1.0f * proportion[one],
+            m_boost_charge +
+              quantity_cast<proportion> (
+                recharge_scale * (dt / vehicle_rig::boost_recharge_time)));
         }
       }
     }
@@ -203,29 +210,29 @@ namespace moppe {
       ahead[1] = 0.0f;
       ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
       const radians_t tilt =
-        vehicle_rig::boost_max_tilt * std::abs (m_boost_drive);
-      const float drive_sign = m_boost_drive < 0 ? -1.0f : 1.0f;
-      const Vec3 boost_direction =
-        Vec3 (0, cos (tilt), 0) + ahead * (drive_sign * sin (tilt));
+        vehicle_rig::boost_max_tilt * scalar_value (abs (m_boost_drive));
+      const control_signal_t drive_sign =
+        (m_boost_drive < control_signal_t {} ? -1.0f : 1.0f) *
+        control_signal[one];
+      const direction_t boost_direction =
+        unit_direction (Vec3 (0, cos (tilt), 0) +
+                        ahead * scalar_value (drive_sign * sin (tilt)));
 
       RigidBikeControls controls;
-      controls.throttle = scalar_value (m_thrust);
+      controls.throttle = m_thrust;
       controls.steer = m_yaw;
-      controls.boost_acceleration =
+      controls.boost_acceleration = quantity_cast<isq::acceleration> (
         boost_direction *
-        (vehicle_rig::boost_acceleration.numerical_value_in (u::m /
-                                                             pow<2> (u::s)) *
-         m_boost_level) *
-        isq::acceleration[u::m / pow<2> (u::s)];
+        (vehicle_rig::boost_acceleration * scalar_value (m_boost_level)));
       controls.parked = m_parked;
       controls.skid = m_skid;
       controls.wheelie = m_wheelie;
       controls.hop = first ? m_hop : speed_t {};
       if (m_hung) {
-        controls.throttle = 0.0f;
+        controls.throttle = {};
         controls.steer = radians_t {};
-        controls.skid = 0.0f;
-        controls.wheelie = 0.0f;
+        controls.skid = {};
+        controls.wheelie = {};
         controls.boost_acceleration = m_hang.acceleration;
         controls.hung = true;
         controls.hang_forward = m_hang.forward;
@@ -264,34 +271,34 @@ namespace moppe {
       m_impact = std::max (m_impact, speed_t (0.4f * m_rigid->trunk_hit ()));
       m_impact = std::max (m_impact, m_rigid->body_hit ());
 
-      const float wheel_rate =
-        m_rigid->wheel_spin_rate ().numerical_value_in (u::rad / u::s);
-      const float h_s = seconds_value (h);
-      m_wheel_spin =
-        vehicle_rig::wrapped (radians_value (m_wheel_spin) + wheel_rate * h_s);
+      const radians_per_second_t wheel_rate = m_rigid->wheel_spin_rate ();
+      m_wheel_spin = vehicle_rig::wrapped (m_wheel_spin + wheel_rate * h);
 
       // Pedalling, the rider keeps to a cadence of some eight radians a
       // second through the gears, from the lowest, which turns the wheel
       // a little slower than the crank, to the highest, three times as
       // fast; a wheel off the ground spins up to it. A single speed's
       // crank goes round with the wheel at its one gear.
-      if (m_thrust > 0.02f && !m_hung && !m_parked) {
-        const float wheel = std::abs (wheel_rate);
-        const float gear = m_rigid->rig ().gear_ratio;
-        const float cadence =
-          gear > 0.0f && (m_rigid->rear_contact () || wheel > 1.0f)
-            ? wheel / gear
+      if (m_thrust > 0.02f * control_signal[one] && !m_hung && !m_parked) {
+        constexpr radians_per_second_t pedalling = 8.0f * u::rad / u::s;
+        const radians_per_second_t wheel = abs (wheel_rate);
+        const scale_factor_t gear = m_rigid->rig ().gear_ratio;
+        const radians_per_second_t cadence =
+          gear > scale_factor_t {} &&
+              (m_rigid->rear_contact () || wheel > 1.0f * u::rad / u::s)
+            ? wheel / gear.numerical_value_in (one)
           : m_rigid->rear_contact ()
-            ? wheel / std::clamp (wheel / 8.0f, 0.75f, 3.0f)
-            : 8.0f * scalar_value (m_thrust);
-        m_crank =
-          vehicle_rig::wrapped (radians_value (m_crank) + cadence * h_s);
+            ? wheel / std::clamp (scalar_value (wheel / pedalling), 0.75f, 3.0f)
+            : pedalling * scalar_value (m_thrust);
+        m_crank = vehicle_rig::wrapped (m_crank + cadence * h);
       }
     }
 
-    void Vehicle::set_boost (float boost, float drive) {
-      m_boost_input = std::clamp (boost, 0.0f, 1.0f);
-      m_boost_drive = std::clamp (drive, -1.0f, 1.0f);
+    void Vehicle::set_boost (control_signal_t boost, control_signal_t drive) {
+      m_boost_input = std::clamp (
+        boost, 0.0f * control_signal[one], 1.0f * control_signal[one]);
+      m_boost_drive = std::clamp (
+        drive, -1.0f * control_signal[one], 1.0f * control_signal[one]);
     }
   }
 }

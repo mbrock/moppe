@@ -26,16 +26,16 @@ namespace moppe {
         // match.
         position_t position {};
         velocity_t velocity {};
-        Vec3 heading {};
+        direction_t heading {};
         radians_t yaw {};
         radians_t yaw_target {};
         radians_t wheel_spin {};
         bool boost_flight {};
         control_signal_t thrust {};
-        float boost_input {};
-        float boost_drive {};
-        float boost_level {};
-        float boost_charge {};
+        control_signal_t boost_input {};
+        control_signal_t boost_drive {};
+        proportion_t boost_level {};
+        proportion_t boost_charge {};
         seconds_t boost_recharge_delay {};
         meters_t water_level {};
         seconds_t airborne_time {};
@@ -44,8 +44,8 @@ namespace moppe {
         meters_t fall_drop {};
         RigidBikeState rigid {};
         bool parked {};
-        float skid {};
-        float wheelie {};
+        control_signal_t skid {};
+        control_signal_t wheelie {};
         radians_t crank {};
       };
 
@@ -83,24 +83,27 @@ namespace moppe {
 
       // Continuous jump jets.  boost is 0..1; drive is -1..1 and tilts
       // the jet backward/vertical/forward to match the driving stick.
-      void set_boost (float boost, float drive);
-      void replenish_boost (float amount) {
-        m_boost_charge = std::min (1.0f, m_boost_charge + amount);
+      void set_boost (control_signal_t boost, control_signal_t drive);
+      void replenish_boost (proportion_t amount) {
+        m_boost_charge =
+          std::min (1.0f * proportion[one], m_boost_charge + amount);
       }
 
       // The rear brake stamped on, 0..1: the rear wheel locks and slides,
       // and the handlebar swings the tail round (RigidBikeControls::skid).
-      void set_skid (float skid) {
-        m_skid = std::clamp (skid, 0.0f, 1.0f);
+      void set_skid (control_signal_t skid) {
+        m_skid = std::clamp (
+          skid, 0.0f * control_signal[one], 1.0f * control_signal[one]);
       }
       // How far the rear tyre is sliding under the locked brake, 0..1.
-      float skid () const {
+      proportion_t skid () const {
         return m_rigid->skid ();
       }
       // The rider leans back for a wheelie, 0..1
       // (RigidBikeControls::wheelie).
-      void set_wheelie (float wheelie) {
-        m_wheelie = std::clamp (wheelie, 0.0f, 1.0f);
+      void set_wheelie (control_signal_t wheelie) {
+        m_wheelie = std::clamp (
+          wheelie, 0.0f * control_signal[one], 1.0f * control_signal[one]);
       }
       // On the back wheel alone.
       bool wheeling () const {
@@ -111,7 +114,7 @@ namespace moppe {
       }
       // How far back the rider's weight is, a share of how far it goes
       // (negative forward).
-      float rider_lean () const {
+      proportion_t rider_lean () const {
         return m_rigid->rider_lean ();
       }
       // The chassis' pitch above the ground under it, nose up.
@@ -164,8 +167,8 @@ namespace moppe {
       struct Hang {
         acceleration_t acceleration =
           Vec3 () * isq::acceleration[si::metre / pow<2> (si::second)];
-        Vec3 forward { 0, 0, 1 };
-        Vec3 up { 0, 1, 0 };
+        direction_t forward = unit_direction (Vec3 (0, 0, 1));
+        direction_t up = unit_direction (Vec3 (0, 1, 0));
       };
       void hang (const Hang& hang) {
         m_hang = hang;
@@ -188,7 +191,7 @@ namespace moppe {
       // drifting, ~zero when rolling straight
       speed_t drift_speed () const {
         const Vec3 v = velocity ();
-        const Vec3 heading = orientation ();
+        const Vec3 heading = forward ();
         return length (v - heading * dot (v, heading)) * u::m / u::s;
       }
 
@@ -207,13 +210,13 @@ namespace moppe {
       }
 
       // Stored energy and current output of the continuous jump jets.
-      float boost_charge () const {
+      proportion_t boost_charge () const {
         return m_boost_charge;
       }
-      float boost_level () const {
+      proportion_t boost_level () const {
         return m_boost_level;
       }
-      float boost_drive () const {
+      control_signal_t boost_drive () const {
         return m_boost_drive;
       }
 
@@ -229,14 +232,14 @@ namespace moppe {
       }
       // The chassis carries its own roll, so the drawn frame is the
       // assemblage's: where it stands, its forward, and its top.
-      Vec3 render_normal () const {
-        return m_rigid->up ();
+      direction_t render_normal () const {
+        return unit_direction (m_rigid->up ());
       }
-      Vec3 render_orientation () const {
+      direction_t render_orientation () const {
         return orientation ();
       }
-      Vec3 render_position () const {
-        return position ();
+      position_t render_position () const {
+        return physical_position ();
       }
       // How far each wheel hangs below its drawn rest position along the
       // chassis' down axis; negative is compressed.
@@ -257,15 +260,15 @@ namespace moppe {
       position_t physical_position () const {
         return moppe::position (position ());
       }
-      Vec3 orientation () const {
-        return m_rigid->forward ();
+      direction_t orientation () const {
+        return unit_direction (m_rigid->forward ());
       }
       // Its frame, named as every other machine names it.
       Vec3 forward () const {
-        return orientation ();
+        return m_rigid->forward ();
       }
       Vec3 up () const {
-        return render_normal ();
+        return m_rigid->up ();
       }
       // A point given in its frame (x to the left, y up, z forward).
       Vec3 point (const Vec3& local) const {
@@ -294,10 +297,10 @@ namespace moppe {
       bool m_boost_flight = false; // landing softened after using the jets
       control_signal_t m_thrust {};
 
-      float m_boost_input = 0.0f;
-      float m_boost_drive = 0.0f;
-      float m_boost_level = 0.0f;
-      float m_boost_charge = 1.0f;
+      control_signal_t m_boost_input {};
+      control_signal_t m_boost_drive {};
+      proportion_t m_boost_level {};
+      proportion_t m_boost_charge = 1.0f * proportion[one];
       seconds_t m_boost_recharge_delay {};
       meters_t m_water_level = -1000.0f * u::m;
 
@@ -308,8 +311,8 @@ namespace moppe {
 
       std::unique_ptr<RigidBike> m_rigid;
       bool m_parked = false;
-      float m_skid = 0.0f;
-      float m_wheelie = 0.0f;
+      control_signal_t m_skid {};
+      control_signal_t m_wheelie {};
       radians_t m_crank {};
       // Set by hop() for the next update only, never restored.
       speed_t m_hop {};

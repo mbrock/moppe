@@ -251,7 +251,9 @@ MOPPE_TEST (fixed_glider_and_camera_motion_matches_at_60_and_120_callbacks) {
   check_vec_near (moppe::position_value (at_60.glider.position),
                   moppe::position_value (at_120.glider.position),
                   1e-5f);
-  check_vec_near (at_60.glider.heading, at_120.glider.heading, 1e-6f);
+  check_vec_near (direction_value (at_60.glider.heading),
+                  direction_value (at_120.glider.heading),
+                  1e-6f);
   check_vec_near (moppe::position_value (at_60.camera.position),
                   moppe::position_value (at_120.camera.position),
                   1e-5f);

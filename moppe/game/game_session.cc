@@ -23,9 +23,8 @@ namespace moppe::game {
     }
 
     position_t wing_over_bike (const mov::Vehicle& bike) {
-      return moppe::position (bike.position () +
-                              bike.render_normal () *
-                                meters_value (mov::Glider::bike_hang));
+      return moppe::position (
+        bike.position () + bike.up () * meters_value (mov::Glider::bike_hang));
     }
 
     // True once a wheel is down.
@@ -40,7 +39,8 @@ namespace moppe::game {
       track[1] = 0.0f;
       const Vec3 ahead =
         length2 (track) > 4.0f ? normalized (track) : glider.heading ();
-      bike.hang ({ pull, ahead, glider.up () });
+      bike.hang (
+        { pull, unit_direction (ahead), unit_direction (glider.up ()) });
       bike.update (dt);
       bike.unhang ();
       glider.follow (wing_over_bike (bike), bike.physical_velocity ());
@@ -527,7 +527,7 @@ namespace moppe::game {
     if (!session.can_deploy_glider (terrain))
       return;
     const Vec3 position = session.bike ().position ();
-    const Vec3 heading = session.bike ().orientation ();
+    const Vec3 heading = session.bike ().forward ();
     const velocity_t inherited = session.bike ().physical_velocity ();
     session.bike ().set_thrust (0);
     session.bike ().set_yaw (0 * u::deg);
@@ -1536,7 +1536,7 @@ namespace moppe::game {
     bool clean_stunt_landing = false;
     int landed_trick_quarters = 0;
     if (driving && vehicle.airtime () > 0.0f) {
-      Vec3 heading = vehicle.orientation ();
+      Vec3 heading = vehicle.forward ();
       heading[1] = 0.0f;
       if (length2 (heading) > 0.0001f)
         normalize (heading);
@@ -1575,8 +1575,7 @@ namespace moppe::game {
         float alignment = 1.0f;
         if (length2 (horizontal_velocity) > 1.0f) {
           normalize (horizontal_velocity);
-          alignment =
-            std::abs (dot (horizontal_velocity, vehicle.orientation ()));
+          alignment = std::abs (dot (horizontal_velocity, vehicle.forward ()));
         }
         clean_stunt_landing = impact < 7.0f && alignment > 0.82f;
 
@@ -1626,7 +1625,7 @@ namespace moppe::game {
           logic.m_doing != Doing::driving (Machine::bike)) {
         logic.m_last_wheelie_m = logic.m_wheelie_m;
         // One looped over onto its back scores nothing.
-        const bool looped = vehicle.render_normal ()[1] < 0.3f;
+        const bool looped = vehicle.up ()[1] < 0.3f;
         logic.m_last_wheelie_points =
           logic.m_wheelie_m >= 5.0f && !looped
             ? (int)std::round (2.0f * logic.m_wheelie_m)
@@ -1685,7 +1684,8 @@ namespace moppe::game {
     if (driving && vehicle.grounded () && vehicle.skid () > 0.3f &&
         sliding > 1.5f) {
       const float count =
-        std::min (3.0f, sliding * (pedalled ? 0.25f : 0.15f)) * vehicle.skid ();
+        std::min (3.0f, sliding * (pedalled ? 0.25f : 0.15f)) *
+        scalar_value (vehicle.skid ());
       Dust::Style spray;
       spray.size = (pedalled ? 0.22f : 0.35f) * u::m;
       spray.lifetime = 0.8f * u::s;
@@ -1756,8 +1756,8 @@ namespace moppe::game {
     // blast of whatever the ground is made of. The nozzles swing from
     // straight down at rest to back and down under full drive.
     if (driving && vehicle.boost_level () > 0.05f) {
-      const float level = vehicle.boost_level ();
-      const float swing = 1.047f * vehicle.boost_drive ();
+      const float level = scalar_value (vehicle.boost_level ());
+      const float swing = 1.047f * scalar_value (vehicle.boost_drive ());
       const Vec3 jet = normalized (Vec3 (0, -std::cos (swing), 0) -
                                    forward * std::sin (swing));
       const Vec3 nozzles =

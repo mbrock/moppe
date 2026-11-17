@@ -151,14 +151,15 @@ namespace moppe::game {
                    : boat    ? session.boat ().forward ()
                    : ski     ? session.jet_ski ().forward ()
                    : driving ? session.jeep ().forward ()
-                             : bike.render_orientation ();
+                             : direction_value (bike.render_orientation ());
     heading[1] = 0.0f;
     heading = normalized (heading);
     const Vec3 right (heading[2], 0.0f, -heading[0]);
-    const Vec3 at = gliding ? session.glider ().position () - Vec3 (0, 0.9f, 0)
-                    : driving  ? car + Vec3 (0, tractor ? 0.9f : 0.5f, 0)
-                    : pedalled ? bike.render_position () + Vec3 (0, 0.55f, 0)
-                               : bike.render_position () + Vec3 (0, 0.4f, 0);
+    const Vec3 at =
+      gliding    ? session.glider ().position () - Vec3 (0, 0.9f, 0)
+      : driving  ? car + Vec3 (0, tractor ? 0.9f : 0.5f, 0)
+      : pedalled ? position_value (bike.render_position ()) + Vec3 (0, 0.55f, 0)
+                 : position_value (bike.render_position ()) + Vec3 (0, 0.4f, 0);
     const float away = gliding    ? 7.0f
                        : caddy    ? 7.5f
                        : boat     ? 7.0f

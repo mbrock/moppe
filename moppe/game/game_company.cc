@@ -21,7 +21,7 @@ namespace moppe {
       apart[1] = 0.0f;
       if (length2 (apart) > 2.5f * 2.5f)
         return;
-      Vec3 heading = bike.orientation ();
+      Vec3 heading = bike.forward ();
       heading[1] = 0.0f;
       heading =
         length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);

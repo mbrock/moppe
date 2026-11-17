@@ -105,16 +105,17 @@ namespace moppe::mov {
     m_airspeed = length (inherited) * moppe::airspeed[u::m / u::s];
     m_vertical_speed = inherited[1] * rate_of_climb_speed[u::m / u::s];
     m_air_mass_lift = 0.0f * rate_of_climb_speed[u::m / u::s];
-    m_loading = loading_at (trim_speed);
+    m_loading = loading_at (trim_speed) * scale_factor[one];
     m_bank = 0.0f * u::rad;
-    m_turn = 0.0f;
-    m_speed_control = 0.0f;
+    m_turn = {};
+    m_speed_control = {};
     m_flare = false;
     m_landed = false;
   }
 
-  float Glider::load () const {
-    return m_bike_attached ? loaded_weight_ratio : 1.0f;
+  // The weight the wing carries, against the pilot alone's.
+  scale_factor_t Glider::load () const {
+    return (m_bike_attached ? loaded_weight_ratio : 1.0f) * scale_factor[one];
   }
 
   rate_of_climb_t Glider::polar_sink (airspeed_t airspeed) {
@@ -182,7 +183,7 @@ namespace moppe::mov {
       path = m_heading * flat + Vec3 (0, path[1], 0);
     }
     // The bar pushed out raises the nose to the air.
-    const float attack = 0.09f * (m_loading - 1.0f);
+    const float attack = 0.09f * (m_loading.numerical_value_in (one) - 1.0f);
     return normalized (path + Vec3 (0, 1, 0) * attack);
   }
 
@@ -216,10 +217,11 @@ namespace moppe::mov {
     // a dive is neither frozen nor left to porpoise. A flare rounds the
     // path out level and holds it there, pushing further out as the speed
     // bleeds away, until the wing has no more to give and settles.
+    const float weight = load ().numerical_value_in (one);
     const float climb = std::asin (std::clamp<float> (path[1], -1.0f, 1.0f));
     float wanted;
     if (m_flare) {
-      const float level = load () * against_reference * against_reference;
+      const float level = weight * against_reference * against_reference;
       wanted = level * std::clamp (
                          1.0f - flare_hold * (climb - flare_climb), 0.4f, 1.8f);
     } else {
@@ -237,7 +239,9 @@ namespace moppe::mov {
     wanted = std::clamp (
       wanted / std::max (0.6f, std::cos (bank)), least_loading, stall_loading);
     const damping_t bar = m_flare ? 5.0f / u::s : 4.0f / u::s;
-    m_loading += (wanted - m_loading) * smoothing_alpha (bar, dt);
+    m_loading +=
+      (wanted * scale_factor[one] - m_loading) * smoothing_alpha (bar, dt);
+    const float loading = m_loading.numerical_value_in (one);
 
     // Lift acts across the path through the air, in the plane the bank
     // tilts; drag acts back along it.
@@ -249,10 +253,10 @@ namespace moppe::mov {
     const Vec3 lift = Quaternion::rotate (across, path, -m_bank);
     const metres_per_second_squared_t pressure =
       standard_gravity * share (m_airspeed, reference_speed) *
-      share (m_airspeed, reference_speed) / load ();
+      share (m_airspeed, reference_speed) / weight;
     const float drag =
-      drag_of (m_loading, m_bike_attached) + (m_flare ? flare_drag : 0.0f);
-    return quantity_cast<isq::acceleration> (lift * (pressure * m_loading) -
+      drag_of (loading, m_bike_attached) + (m_flare ? flare_drag : 0.0f);
+    return quantity_cast<isq::acceleration> (lift * (pressure * loading) -
                                              path * (pressure * drag));
   }
 
@@ -286,16 +290,17 @@ namespace moppe::mov {
   }
 
   Glider::State Glider::state () const {
-    return { m_position, m_velocity,       m_heading,       m_bank,
-             m_airspeed, m_vertical_speed, m_air_mass_lift, m_loading,
-             m_turn,     m_speed_control,  m_flare,         m_bike_attached,
+    return { m_position,      m_velocity, unit_direction (m_heading),
+             m_bank,          m_airspeed, m_vertical_speed,
+             m_air_mass_lift, m_loading,  m_turn,
+             m_speed_control, m_flare,    m_bike_attached,
              m_landed };
   }
 
   void Glider::restore (const State& state) {
     m_position = state.position;
     m_velocity = state.velocity;
-    m_heading = state.heading;
+    m_heading = direction_value (state.heading);
     m_bank = state.bank;
     m_airspeed = state.airspeed;
     m_vertical_speed = state.vertical_speed;

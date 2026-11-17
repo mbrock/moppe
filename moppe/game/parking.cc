@@ -341,7 +341,7 @@ namespace moppe::game {
   }
 
   std::pair<Vec3, Vec3> Parking::bike_frame (const ParkingLot& lot) {
-    Vec3 heading = lot.session.bike ().orientation ();
+    Vec3 heading = lot.session.bike ().forward ();
     heading[1] = 0.0f;
     heading = length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
     return { heading, Vec3 (heading[2], 0, -heading[0]) };

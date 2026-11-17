@@ -41,12 +41,12 @@ namespace moppe {
       radians_t lean {};
       // How far the rear tyre has broken loose under the locked rear
       // brake, 0 rolling to 1 sliding.
-      float skid = 0.0f;
+      proportion_t skid {};
       // How far back the rider's weight is along the chassis (negative
       // forward), and the throttle they have rolled on while leaning back
       // for a wheelie.
       meters_t rider_shift {};
-      float twist = 0.0f;
+      control_signal_t twist {};
       // How long since either wheel last touched the ground.
       seconds_t airborne {};
     };
@@ -55,7 +55,7 @@ namespace moppe {
     struct RigidBikeControls {
       // Normalized throttle: positive drives the rear wheel; negative brakes
       // both wheels and, once nearly stopped, reverses.
-      float throttle = 0.0f;
+      control_signal_t throttle {};
       // Handlebar command as an angle of the old yaw input; positive
       // turns right.
       radians_t steer {};
@@ -64,14 +64,14 @@ namespace moppe {
         Vec3 () * isq::acceleration[si::metre / pow<2> (si::second)];
       // How deep the wheels run in water, from 0 dry to 1 a little over
       // the axles, where the water holds the whole bike back.
-      float wading = 0.0f;
+      proportion_t wading {};
       // Hanging under the glider's wing. The wing's pull on the whole
       // weight arrives as `boost_acceleration`, with all the drag there is,
       // and in the air the chassis hangs as the harness holds it: facing
       // `hang_forward` with `hang_up` as its top.
       bool hung = false;
-      Vec3 hang_forward { 0, 0, 1 };
-      Vec3 hang_up { 0, 1, 0 };
+      direction_t hang_forward = unit_direction (Vec3 (0, 0, 1));
+      direction_t hang_up = unit_direction (Vec3 (0, 1, 0));
       // Nobody aboard: both wheels are locked, and once the bike has come
       // to rest on the ground it is held there, as on a stand.
       bool parked = false;
@@ -79,7 +79,7 @@ namespace moppe {
       // slides, and on the ground the handlebar swings the tail out about
       // the front wheel, so a held skid with the bars over brakes the bike
       // round into a new heading.
-      float skid = 0.0f;
+      control_signal_t skid {};
       // A hop: the rider springs the whole bike up off the ground by this
       // much speed. Only a bike on its wheels hops.
       speed_t hop {};
@@ -90,7 +90,7 @@ namespace moppe {
       // there the rider balances it with their body, as far as it reaches;
       // the throttle lifts it further (too much loops it over) and the
       // rear brake, covered rather than stamped on, brings it down.
-      float wheelie = 0.0f;
+      control_signal_t wheelie {};
     };
 
     // The shape and temperament of a bike: where its wheels are, how it is
@@ -115,12 +115,12 @@ namespace moppe {
       meters_t axle_height;
       // Width, height, and length of the box of frame and rider whose
       // inertia the chassis has.
-      Vec3 inertia_box;
+      spatial_extent_t inertia_box;
       // Its colliders against trunks and the ground: the frame from end
       // to end and the rider, each a capsule (a, b, radius).
-      Vec3 frame_a, frame_b;
+      displacement_t frame_a, frame_b;
       meters_t frame_radius;
-      Vec3 rider_a, rider_b;
+      displacement_t rider_a, rider_b;
       meters_t rider_radius;
 
       // Travel and static sag of each wheel, and the damping as a share of
@@ -129,11 +129,11 @@ namespace moppe {
       meters_t rear_travel;
       meters_t front_sag;
       meters_t rear_sag;
-      float damping_ratio;
+      damping_ratio_t damping_ratio;
 
       // The tyres' grip, rolling and sliding under the locked rear brake.
-      float tire_friction;
-      float skid_friction;
+      friction_coefficient_t tire_friction;
+      kinetic_friction_t skid_friction;
 
       // Full lock swings the heading at steering_rate per radian of input,
       // fading with speed, and air_steering_rate in the air; a held skid
@@ -159,7 +159,7 @@ namespace moppe {
       newton_metres_t wheelie_torque;
 
       speed_t reverse_speed;
-      float reverse_force_share;
+      proportion_t reverse_force_share;
       newtons_t front_brake_force;
       newtons_t rear_brake_force;
       // The drag of the drive off the throttle, the lock that holds a
@@ -167,8 +167,8 @@ namespace moppe {
       newton_metres_t engine_brake_torque;
       newton_metres_t parking_torque;
       newton_metres_t skid_torque;
-      float traction_share;
-      float wheelie_share;
+      proportion_t traction_share;
+      proportion_t wheelie_share;
       newton_metres_t free_rev_torque;
       // Drag of the whole bike, as accelerations: linear in speed per
       // second, and quadratic per metre.
@@ -176,7 +176,7 @@ namespace moppe {
       per_metre_t air_drag;
       // A pedalled bike of one gear turns its crank this many times slower
       // than its rear wheel; zero rides through the gears.
-      float gear_ratio = 0.0f;
+      scale_factor_t gear_ratio {};
 
       meters_t front_radius () const {
         return front_wheel_radius > meters_t {} ? front_wheel_radius
@@ -201,25 +201,25 @@ namespace moppe {
       .half_wheelbase = 0.61f * u::m,
       .reference_height = -0.42f * u::m,
       .axle_height = -0.42f * u::m,
-      .inertia_box = { 0.5f, 1.2f, 1.3f },
+      .inertia_box = spatial_extent_in_metres (Vec3 (0.5f, 1.2f, 1.3f)),
       // The engine and the pressed body from axle to axle, its underside
       // at the skid plate, reaching out over the front tyre; and the
       // seated rider, hips to head.
-      .frame_a = { 0.0f, -0.32f, -0.62f },
-      .frame_b = { 0.0f, -0.37f, 0.62f },
+      .frame_a = displacement (Vec3 (0.0f, -0.32f, -0.62f)),
+      .frame_b = displacement (Vec3 (0.0f, -0.37f, 0.62f)),
       .frame_radius = 0.17f * u::m,
-      .rider_a = { 0.0f, 0.18f, -0.22f },
-      .rider_b = { 0.0f, 0.63f, -0.1f },
+      .rider_a = displacement (Vec3 (0.0f, 0.18f, -0.22f)),
+      .rider_b = displacement (Vec3 (0.0f, 0.63f, -0.1f)),
       .rider_radius = 0.22f * u::m,
       // The telescopic fork's 11 cm and the twin shocks' 7.
       .front_travel = 0.11f * u::m,
       .rear_travel = 0.07f * u::m,
       .front_sag = 0.035f * u::m,
       .rear_sag = 0.025f * u::m,
-      .damping_ratio = 0.4f,
+      .damping_ratio = 0.4f * damping_ratio[one],
       // Trail tyres: a block tread, neither road nor knobbly.
-      .tire_friction = 1.35f,
-      .skid_friction = 0.65f,
+      .tire_friction = 1.35f * isq::static_friction_coefficient[one],
+      .skid_friction = 0.65f * isq::kinetic_friction_factor[one],
       .steering_rate = 1.7f / u::s,
       .steering_fade_speed = 10.0f * u::m / u::s,
       .air_steering_rate = 1.0f / u::s,
@@ -234,14 +234,14 @@ namespace moppe {
       .wheelie_pitch = 0.8f * u::rad,
       .wheelie_torque = 300.0f * u::N * u::m,
       .reverse_speed = 1.5f * u::m / u::s,
-      .reverse_force_share = 0.25f,
+      .reverse_force_share = 0.25f * proportion[one],
       .front_brake_force = 900.0f * u::N,
       .rear_brake_force = 800.0f * u::N,
       .engine_brake_torque = 20.0f * u::N * u::m,
       .parking_torque = 1500.0f * u::N * u::m,
       .skid_torque = 1200.0f * u::N * u::m,
-      .traction_share = 0.9f,
-      .wheelie_share = 0.8f,
+      .traction_share = 0.9f * proportion[one],
+      .wheelie_share = 0.8f * proportion[one],
       .free_rev_torque = 10.0f * u::N * u::m,
       // Its own air and rolling: a seated rider's 0.6 m2 or so, and tyres
       // at a fiftieth of the weight, which give the 5.2 kW engine the
@@ -261,21 +261,21 @@ namespace moppe {
       .half_wheelbase = 0.53f * u::m,
       .reference_height = -0.55f * u::m,
       .axle_height = -0.55f * u::m,
-      .inertia_box = { 0.45f, 1.3f, 1.3f },
-      .frame_a = { 0.0f, -0.32f, -0.55f },
-      .frame_b = { 0.0f, -0.32f, 0.55f },
+      .inertia_box = spatial_extent_in_metres (Vec3 (0.45f, 1.3f, 1.3f)),
+      .frame_a = displacement (Vec3 (0.0f, -0.32f, -0.55f)),
+      .frame_b = displacement (Vec3 (0.0f, -0.32f, 0.55f)),
       .frame_radius = 0.17f * u::m,
-      .rider_a = { 0.0f, 0.0f, -0.18f },
-      .rider_b = { 0.0f, 0.62f, 0.05f },
+      .rider_a = displacement (Vec3 (0.0f, 0.0f, -0.18f)),
+      .rider_b = displacement (Vec3 (0.0f, 0.62f, 0.05f)),
       .rider_radius = 0.24f * u::m,
       // Five centimetres of fork, and the tyres' give behind.
       .front_travel = 0.06f * u::m,
       .rear_travel = 0.03f * u::m,
       .front_sag = 0.02f * u::m,
       .rear_sag = 0.012f * u::m,
-      .damping_ratio = 0.5f,
-      .tire_friction = 1.3f,
-      .skid_friction = 0.62f,
+      .damping_ratio = 0.5f * damping_ratio[one],
+      .tire_friction = 1.3f * isq::static_friction_coefficient[one],
+      .skid_friction = 0.62f * isq::kinetic_friction_factor[one],
       // Full lock turns it hard at a walk and fades soon after, keeping a
       // flat-out turn within what its narrow tyres hold.
       .steering_rate = 1.7f / u::s,
@@ -291,15 +291,15 @@ namespace moppe {
       .wheelie_torque = 60.0f * u::N * u::m,
       // Walked back, slowly.
       .reverse_speed = 1.2f * u::m / u::s,
-      .reverse_force_share = 0.5f,
+      .reverse_force_share = 0.5f * proportion[one],
       .front_brake_force = 420.0f * u::N,
       .rear_brake_force = 260.0f * u::N,
       // A freewheel: next to no drag off the pedals.
       .engine_brake_torque = 0.3f * u::N * u::m,
       .parking_torque = 300.0f * u::N * u::m,
       .skid_torque = 400.0f * u::N * u::m,
-      .traction_share = 0.9f,
-      .wheelie_share = 0.8f,
+      .traction_share = 0.9f * proportion[one],
+      .wheelie_share = 0.8f * proportion[one],
       .free_rev_torque = 4.0f * u::N * u::m,
       .rolling_drag = 0.05f / u::s,
       .air_drag = 0.0035f / u::m,
@@ -321,23 +321,23 @@ namespace moppe {
       .half_wheelbase = 0.947f * u::m,
       .reference_height = -0.45f * u::m,
       .axle_height = -0.45f * u::m,
-      .inertia_box = { 0.6f, 1.2f, 2.4f },
+      .inertia_box = spatial_extent_in_metres (Vec3 (0.6f, 1.2f, 2.4f)),
       // The box and girder from the rear wheel to the bulkhead, low
       // between the axles; the rider on the saddle over the back wheel.
-      .frame_a = { 0.0f, -0.2f, -0.75f },
-      .frame_b = { 0.0f, -0.2f, 0.85f },
+      .frame_a = displacement (Vec3 (0.0f, -0.2f, -0.75f)),
+      .frame_b = displacement (Vec3 (0.0f, -0.2f, 0.85f)),
       .frame_radius = 0.2f * u::m,
-      .rider_a = { 0.0f, 0.15f, -0.65f },
-      .rider_b = { 0.0f, 0.75f, -0.45f },
+      .rider_a = displacement (Vec3 (0.0f, 0.15f, -0.65f)),
+      .rider_b = displacement (Vec3 (0.0f, 0.75f, -0.45f)),
       .rider_radius = 0.24f * u::m,
       // Only the tyres give.
       .front_travel = 0.03f * u::m,
       .rear_travel = 0.03f * u::m,
       .front_sag = 0.012f * u::m,
       .rear_sag = 0.014f * u::m,
-      .damping_ratio = 0.5f,
-      .tire_friction = 1.2f,
-      .skid_friction = 0.6f,
+      .damping_ratio = 0.5f * damping_ratio[one],
+      .tire_friction = 1.2f * isq::static_friction_coefficient[one],
+      .skid_friction = 0.6f * isq::kinetic_friction_factor[one],
       .steering_rate = 1.1f / u::s,
       .steering_fade_speed = 4.0f * u::m / u::s,
       .air_steering_rate = 0.6f / u::s,
@@ -350,19 +350,19 @@ namespace moppe {
       .wheelie_pitch = 0.3f * u::rad,
       .wheelie_torque = 0.0f * u::N * u::m,
       .reverse_speed = 1.0f * u::m / u::s,
-      .reverse_force_share = 0.5f,
+      .reverse_force_share = 0.5f * proportion[one],
       .front_brake_force = 450.0f * u::N,
       .rear_brake_force = 350.0f * u::N,
       .engine_brake_torque = 0.3f * u::N * u::m,
       .parking_torque = 400.0f * u::N * u::m,
       .skid_torque = 450.0f * u::N * u::m,
-      .traction_share = 0.9f,
-      .wheelie_share = 0.5f,
+      .traction_share = 0.9f * proportion[one],
+      .wheelie_share = 0.5f * proportion[one],
       .free_rev_torque = 4.0f * u::N * u::m,
       // Fat tyres and an upright rider behind an open box.
       .rolling_drag = 0.06f / u::s,
       .air_drag = 0.0045f / u::m,
-      .gear_ratio = 38.0f / 18.0f,
+      .gear_ratio = 38.0f / 18.0f * scale_factor[one],
     };
 
     // A bike as a Box3D assemblage: a chassis carrying the frame and
@@ -454,10 +454,10 @@ namespace moppe {
       // Rear wheel spin relative to the chassis.
       radians_per_second_t wheel_spin_rate () const;
       // How far the rear tyre slides under the locked brake, 0..1.
-      float skid () const;
+      proportion_t skid () const;
       // The rider's weight back from where they sit, as a share of
       // wheelie_lean: 1 leaning right back, negative forward.
-      float rider_lean () const;
+      proportion_t rider_lean () const;
       // The chassis' pitch above the ground under it, nose up.
       radians_t pitch () const;
       // On the back wheel alone, the front up off the ground.
