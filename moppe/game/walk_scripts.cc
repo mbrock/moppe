@@ -588,9 +588,8 @@ namespace moppe::game {
       // once within reach; poisonous ones are left after one try.
       const Walker& walker = s.session.walker ();
       const Vec3 feet = walker.position ();
-      const auto target =
-        s.mushrooms.nearest (position (feet), 60.0f * u::m,
-                             m_state.forage_refused);
+      const auto target = s.mushrooms.nearest (
+        position (feet), 60.0f * u::m, m_state.forage_refused);
       if (target) {
         Vec3 toward = position_value (s.mushrooms.site (*target).base) - feet;
         toward[1] = 0.0f;

@@ -564,8 +564,8 @@ namespace moppe::game {
     if (!around.mushrooms || session.logic ().m_doing != Doing::on_foot ())
       return std::nullopt;
     const Walker& walker = session.walker ();
-    return around.mushrooms->within_reach (
-      position (walker.position ()), unit_direction (walker.heading ()));
+    return around.mushrooms->within_reach (position (walker.position ()),
+                                           unit_direction (walker.heading ()));
   }
 
   void pick (GameSession& session,

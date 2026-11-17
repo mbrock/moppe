@@ -374,10 +374,9 @@ namespace moppe {
           const Vec3 to = actors.walker->position +
                           normalized (actors.walker->heading) * 0.2f +
                           Vec3 (0, 0.55f, 0);
-          rising.base =
-            position (position_value (rising.base) +
-                      (to - position_value (rising.base)) * t +
-                      Vec3 (0, 0.35f * std::sin (PI * t), 0));
+          rising.base = position (position_value (rising.base) +
+                                  (to - position_value (rising.base)) * t +
+                                  Vec3 (0, 0.35f * std::sin (PI * t), 0));
           rising.scale *= 1.0f - 0.5f * t;
           rising.yaw += 3.0f * t * heading[u::rad];
           m_world_dl.state (render::DrawState ());

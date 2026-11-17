@@ -269,8 +269,8 @@ namespace moppe {
                         recipe ().seed ().value ^ 0x3c5f00d5U,
                         world ().water_level,
                         position (m_home_base_position)));
-      if (const auto first = m_mushrooms.nearest (position (m_spawn_position),
-                                                  400.0f * u::m)) {
+      if (const auto first =
+            m_mushrooms.nearest (position (m_spawn_position), 400.0f * u::m)) {
         const Vec3 at = position_value (m_mushrooms.site (*first).base);
         std::cerr << "moppe: nearest mushrooms ("
                   << mushroom_plural (m_mushrooms.site (*first).kind) << ") "

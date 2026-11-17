@@ -61,8 +61,7 @@ namespace moppe::game {
     // height, in units of the mushroom's height, and the colour there.
     struct ProfilePoint {
       ProfilePoint (float r, float h, DisplayColor c)
-          : radius (r * scale_factor[one]),
-            height (h * scale_factor[one]),
+          : radius (r * scale_factor[one]), height (h * scale_factor[one]),
             colour (c) {}
       scale_factor_t radius;
       // Below zero, the stem's foot under the ground.
@@ -210,8 +209,9 @@ namespace moppe::game {
       // Waves round the rim.
       const float lobes = 4.0f + std::floor (3.0f * hash_lane (seed, 12));
       revolve (list, frame, profile, 14, [&] (std::size_t i, radians_t angle) {
-        return (i >= 3 ? 1.0f + 0.13f * std::sin (radians_value (
-                                                  lobes * angle + phase)) : 1.0f) *
+        return (i >= 3 ? 1.0f + 0.13f * std::sin (
+                                          radians_value (lobes * angle + phase))
+                       : 1.0f) *
                scale_factor[one];
       });
     }
@@ -232,8 +232,9 @@ namespace moppe::game {
       };
       const radians_t phase = mushroom_tau * hash_lane (seed, 11);
       revolve (list, frame, profile, 10, [&] (std::size_t i, radians_t angle) {
-        return (i >= 3 ? 1.0f + 0.16f * std::sin (radians_value (
-                                                  3.0f * angle + phase)) : 1.0f) *
+        return (i >= 3 ? 1.0f + 0.16f * std::sin (
+                                          radians_value (3.0f * angle + phase))
+                       : 1.0f) *
                scale_factor[one];
       });
     }
@@ -370,8 +371,7 @@ namespace moppe::game {
     // How many mushrooms a group holds: `draw` is how far toward its most.
     int group_size (MushroomKind kind, proportion_t draw) {
       return row (kind).least +
-             static_cast<int> (row (kind).more *
-                               draw.numerical_value_in (one));
+             static_cast<int> (row (kind).more * draw.numerical_value_in (one));
     }
   }
 
@@ -398,7 +398,8 @@ namespace moppe::game {
     const terrain::SurfaceElevation sea =
       terrain::surface_elevation_point (sea_level);
     const Vec3& extent = extent_value (forest.period);
-    const plan_extent_t period = plan_extent (extent[0] * u::m, extent[2] * u::m);
+    const plan_extent_t period =
+      plan_extent (extent[0] * u::m, extent[2] * u::m);
     // Every trunk, by the cell it stands in, so no mushroom grows through
     // a neighbouring tree.
     const auto cell_key = [] (meters_t x, meters_t z) {
@@ -420,8 +421,8 @@ namespace moppe::game {
       const Vec2& p = plan_value (spot);
       for (int dz = -1; dz <= 1; ++dz)
         for (int dx = -1; dx <= 1; ++dx) {
-          const auto found = trunks.find (cell_key (
-            x + dx * trunk_cell_metres, z + dz * trunk_cell_metres));
+          const auto found = trunks.find (
+            cell_key (x + dx * trunk_cell_metres, z + dz * trunk_cell_metres));
           if (found == trunks.end ())
             continue;
           for (const plan_position_t& trunk : found->second) {
@@ -472,15 +473,15 @@ namespace moppe::game {
         // From one end of the arc, -0.5, to the other, 0.5.
         const float place =
           members > 1 ? static_cast<float> (k) / (members - 1) - 0.5f : 0.0f;
-        const float angle = radians_value (
-          middle + spread * place +
-          0.25f * (hash_lane (one_seed, 0) - 0.5f) * u::rad);
+        const float angle =
+          radians_value (middle + spread * place +
+                         0.25f * (hash_lane (one_seed, 0) - 0.5f) * u::rad);
         const meters_t reach =
           distance + 0.7f * (hash_lane (one_seed, 1) - 0.5f) * u::m;
-        const plan_position_t spot = terrain::wrap (
-          at + plan_displacement (reach * std::cos (angle),
-                                  reach * std::sin (angle)),
-          period);
+        const plan_position_t spot =
+          terrain::wrap (at + plan_displacement (reach * std::cos (angle),
+                                                 reach * std::sin (angle)),
+                         period);
         if (!clear_of_trunks (spot))
           continue;
         const position_t where = at_height (spot, 0.0f * u::m);
@@ -498,7 +499,8 @@ namespace moppe::game {
         site.kind = kind;
         site.seed = one_seed;
         site.scale = group_scale * (0.7f + 0.55f * hash_lane (one_seed, 2));
-        site.yaw = quantity_cast<heading> (mushroom_tau * hash_lane (one_seed, 3));
+        site.yaw =
+          quantity_cast<heading> (mushroom_tau * hash_lane (one_seed, 3));
         site.lean = 0.18f * hash_lane (one_seed, 4) * inclination[u::rad];
         site.lean_toward =
           quantity_cast<heading> (mushroom_tau * hash_lane (one_seed, 5));
@@ -562,12 +564,12 @@ namespace moppe::game {
     m_tiles.clear ();
     // Tiles of about `tile_metres`, a whole number of them to the world.
     const auto fit = [] (meters_t period, meters_t& size, int& count) {
-      count = period > 0.0f * u::m
-                ? std::max (1,
-                            static_cast<int> (std::ceil (
-                              meters_value (period) /
-                              meters_value (tile_metres))))
-                : 0;
+      count =
+        period > 0.0f * u::m
+          ? std::max (1,
+                      static_cast<int> (std::ceil (meters_value (period) /
+                                                   meters_value (tile_metres))))
+          : 0;
       size = count > 0 ? period / static_cast<float> (count) : tile_metres;
     };
     const Vec3& period = extent_value (m_plan.period);
@@ -598,8 +600,8 @@ namespace moppe::game {
         for (const std::uint32_t index : found->second) {
           if (m_picked[index])
             continue;
-          const Vec3 offset = position_value (base_near (index, feet)) -
-                              position_value (feet);
+          const Vec3 offset =
+            position_value (base_near (index, feet)) - position_value (feet);
           if (std::abs (offset[1]) > 1.5f)
             continue;
           const meters_t distance = std::hypot (offset[0], offset[2]) * u::m;
@@ -736,11 +738,10 @@ namespace moppe::game {
     const auto tile_distance = [&] (int x, int z) {
       const meters_t cx = (static_cast<float> (x) + 0.5f) * m_tile_x;
       const meters_t cz = (static_cast<float> (z) + 0.5f) * m_tile_z;
-      return std::hypot (
-               meters_value (
-                 terrain::minimum_image_delta (cx - x_of (eye), period_x)),
-               meters_value (
-                 terrain::minimum_image_delta (cz - z_of (eye), period_z))) *
+      return std::hypot (meters_value (terrain::minimum_image_delta (
+                           cx - x_of (eye), period_x)),
+                         meters_value (terrain::minimum_image_delta (
+                           cz - z_of (eye), period_z))) *
                u::m -
              0.7072f * std::max (m_tile_x, m_tile_z);
     };
