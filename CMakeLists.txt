@@ -488,10 +488,10 @@ set(MOPPE_APPLICATION_SOURCES
   moppe/game/game_camp.cc
   moppe/game/game_company.cc
   moppe/game/game_draw.cc
-  moppe/game/game_hud.cc
   moppe/game/game_render.cc
   moppe/game/game_scripts.cc
   moppe/game/game_world.cc
+  moppe/game/heads_up.cc
   moppe/game/opening_director.cc
   moppe/game/parking.cc
   moppe/game/sky_clock.cc

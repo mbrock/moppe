@@ -50,7 +50,7 @@ namespace moppe {
       draw_boat_wakes (r, frame);
       draw_effect_layers (r, frame);
 
-      draw_overlays (r, frame);
+      m_heads_up.draw (r, hud_world (), m_opening, frame);
 
       r.end_frame ();
       m_capture.after_frame (captured);
@@ -110,29 +110,29 @@ namespace moppe {
       sky.fog_color = fp.clear_color;
       r.draw_sky (sky);
 
-      m_hud_dl.clear ();
-      m_hud_text.clear ();
+      m_heads_up.dl.clear ();
+      m_heads_up.text.clear ();
       render::DrawState state;
       state.blend = true;
       state.depth_test = false;
       state.depth_write = false;
       state.cull = false;
-      m_hud_dl.state (state);
-      m_hud_dl.lit (false);
-      m_hud_dl.fogged (false);
+      m_heads_up.dl.state (state);
+      m_heads_up.dl.lit (false);
+      m_heads_up.dl.fogged (false);
 
       // No panel: a soft dusk rises from the bottom edge behind a few
       // lines of type, and the sky stays the picture.
-      if (m_hud.font ()) {
+      if (m_heads_up.hud.font ()) {
         const float scrim = std::min (height, 300.0f);
-        m_hud_dl.begin (render::Prim::Quads);
-        m_hud_dl.color (0.0f, 0.02f, 0.03f, 0.0f);
-        m_hud_dl.vertex (0.0f, height - scrim);
-        m_hud_dl.vertex (width, height - scrim);
-        m_hud_dl.color (0.0f, 0.02f, 0.03f, 0.42f);
-        m_hud_dl.vertex (width, height);
-        m_hud_dl.vertex (0.0f, height);
-        m_hud_dl.end ();
+        m_heads_up.dl.begin (render::Prim::Quads);
+        m_heads_up.dl.color (0.0f, 0.02f, 0.03f, 0.0f);
+        m_heads_up.dl.vertex (0.0f, height - scrim);
+        m_heads_up.dl.vertex (width, height - scrim);
+        m_heads_up.dl.color (0.0f, 0.02f, 0.03f, 0.42f);
+        m_heads_up.dl.vertex (width, height);
+        m_heads_up.dl.vertex (0.0f, height);
+        m_heads_up.dl.end ();
 
         const float left = 44.0f;
         const float content_width = std::min (520.0f, width - 2.0f * left);
@@ -149,37 +149,37 @@ namespace moppe {
 
         std::ostringstream eyebrow;
         eyebrow << "SEED " << loading.seed;
-        m_hud.draw_shaded (m_hud_text,
-                           left,
-                           bottom - 118.0f,
-                           eyebrow.str (),
-                           style (9.0f, 0.62f, 0.16f));
-        m_hud.draw_shaded (m_hud_text,
-                           left,
-                           bottom - 86.0f,
-                           loading.title,
-                           style (27.0f, 0.96f, 0.0f));
-        m_hud.draw_shaded (m_hud_text,
-                           left,
-                           bottom - 62.0f,
-                           loading.detail,
-                           style (14.0f, 0.74f, 0.01f));
+        m_heads_up.hud.draw_shaded (m_heads_up.text,
+                                    left,
+                                    bottom - 118.0f,
+                                    eyebrow.str (),
+                                    style (9.0f, 0.62f, 0.16f));
+        m_heads_up.hud.draw_shaded (m_heads_up.text,
+                                    left,
+                                    bottom - 86.0f,
+                                    loading.title,
+                                    style (27.0f, 0.96f, 0.0f));
+        m_heads_up.hud.draw_shaded (m_heads_up.text,
+                                    left,
+                                    bottom - 62.0f,
+                                    loading.detail,
+                                    style (14.0f, 0.74f, 0.01f));
 
         // The rail fills only with a real measurement; stages that cannot
         // measure themselves show their text and nothing else.
         const auto fill_rect = [this] (float x, float y, float w, float h) {
-          m_hud_dl.begin (render::Prim::Quads);
-          m_hud_dl.vertex (x, y);
-          m_hud_dl.vertex (x + w, y);
-          m_hud_dl.vertex (x + w, y + h);
-          m_hud_dl.vertex (x, y + h);
-          m_hud_dl.end ();
+          m_heads_up.dl.begin (render::Prim::Quads);
+          m_heads_up.dl.vertex (x, y);
+          m_heads_up.dl.vertex (x + w, y);
+          m_heads_up.dl.vertex (x + w, y + h);
+          m_heads_up.dl.vertex (x, y + h);
+          m_heads_up.dl.end ();
         };
         const float rail_y = bottom - 44.0f;
-        m_hud_dl.color (0.96f, 0.96f, 0.96f, 0.16f);
+        m_heads_up.dl.color (0.96f, 0.96f, 0.96f, 0.16f);
         fill_rect (left, rail_y, content_width, 1.0f);
         if (loading.progress >= 0.0f) {
-          m_hud_dl.color (0.96f, 0.96f, 0.96f, 0.78f);
+          m_heads_up.dl.color (0.96f, 0.96f, 0.96f, 0.78f);
           fill_rect (left,
                      rail_y,
                      content_width * std::clamp (loading.progress, 0.0f, 1.0f),
@@ -187,12 +187,12 @@ namespace moppe {
           std::ostringstream percent;
           percent << static_cast<int> (std::lround (loading.progress * 100.0f))
                   << '%';
-          m_hud.draw_shaded (m_hud_text,
-                             left + content_width,
-                             rail_y - 8.0f,
-                             percent.str (),
-                             style (9.0f, 0.62f, 0.06f),
-                             render::TextAlign::Right);
+          m_heads_up.hud.draw_shaded (m_heads_up.text,
+                                      left + content_width,
+                                      rail_y - 8.0f,
+                                      percent.str (),
+                                      style (9.0f, 0.62f, 0.06f),
+                                      render::TextAlign::Right);
         }
 
         const std::size_t history_end =
@@ -204,14 +204,17 @@ namespace moppe {
           std::ostringstream line;
           line << std::fixed << std::setprecision (1) << event.elapsed
                << " s   " << event.title;
-          m_hud.draw_shaded (
-            m_hud_text, left, line_y, line.str (), style (10.0f, 0.46f, 0.02f));
+          m_heads_up.hud.draw_shaded (m_heads_up.text,
+                                      left,
+                                      line_y,
+                                      line.str (),
+                                      style (10.0f, 0.46f, 0.02f));
           line_y += 16.0f;
         }
       }
 
-      r.draw_hud_text (m_hud_text);
-      r.draw_hud (m_hud_dl);
+      r.draw_hud_text (m_heads_up.text);
+      r.draw_hud (m_heads_up.dl);
       r.end_frame ();
 
       // The frame announcing the finish is on its way to the display;
@@ -231,13 +234,13 @@ namespace moppe {
       if (!r.begin_frame (fp))
         return;
 
-      m_hud_dl.clear ();
-      m_hud_text.clear ();
-      m_hud.draw_game_over (
-        m_hud_dl, m_hud_text, r.width_pts (), r.height_pts ());
-      m_hud.publish_offers ();
-      r.draw_hud_text (m_hud_text);
-      r.draw_hud (m_hud_dl);
+      m_heads_up.dl.clear ();
+      m_heads_up.text.clear ();
+      m_heads_up.hud.draw_game_over (
+        m_heads_up.dl, m_heads_up.text, r.width_pts (), r.height_pts ());
+      m_heads_up.hud.publish_offers ();
+      r.draw_hud_text (m_heads_up.text);
+      r.draw_hud (m_heads_up.dl);
       r.end_frame ();
     }
 

@@ -31,7 +31,7 @@ namespace moppe {
       // runs behind the loading screen.
       {
         MOPPE_PROFILE_ZONE ("startup.load_hud");
-        m_hud.load (r);
+        m_heads_up.hud.load (r);
       }
       {
         MOPPE_PROFILE_ZONE ("startup.load_blob_shadow");
@@ -189,7 +189,7 @@ namespace moppe {
       }
 
       if (k == Key::H && down) {
-        m_hud.set_diagnostics (!m_hud.diagnostics ());
+        m_heads_up.hud.set_diagnostics (!m_heads_up.hud.diagnostics ());
         return;
       }
 
@@ -206,8 +206,8 @@ namespace moppe {
       // Esc in play asks whether to quit: Esc again quits, and any
       // other key goes back to the game (its releases still count, so
       // nothing stays held).
-      if (m_quit_asked && down) {
-        m_quit_asked = false;
+      if (m_heads_up.quit_asked && down) {
+        m_heads_up.quit_asked = false;
         if (k == Key::Escape) {
           m_capture.finish_video ();
           platform::request_quit ();
@@ -233,14 +233,14 @@ namespace moppe {
       // M unfolds the map, looks closer, and folds it away; Esc folds
       // it away too, and with it folded asks whether to quit.
       if (k == Key::M && down && m_ready) {
-        m_map.turn ();
+        m_heads_up.map.turn ();
         return;
       }
       if (k == Key::Escape && down) {
-        if (m_map.open ())
-          m_map.show (MapSheet::View::Closed);
+        if (m_heads_up.map.open ())
+          m_heads_up.map.show (MapSheet::View::Closed);
         else
-          m_quit_asked = true;
+          m_heads_up.quit_asked = true;
         return;
       }
 

@@ -21,7 +21,7 @@ namespace moppe {
     }
 
     void MoppeGame::draw_fingerposts (render::Renderer& r) {
-      if (!m_fingerposts_made && m_hud.font ()) {
+      if (!m_fingerposts_made && m_heads_up.hud.font ()) {
         m_fingerposts_made = true;
         // The signs letter in the face's heavier cut, which carries
         // further.
@@ -29,7 +29,7 @@ namespace moppe {
           m_sign_font = render::Font::load (r, "fonts/Geomini-SemiBold.ttf");
         FingerpostSigns signs = make_fingerposts (
           r,
-          m_sign_font->ok () ? *m_sign_font : *m_hud.font (),
+          m_sign_font->ok () ? *m_sign_font : *m_heads_up.hud.font (),
           m_fingerposts,
           m_place_names,
           [this] (float x, float z) {
@@ -65,7 +65,7 @@ namespace moppe {
 
     void MoppeGame::draw_scan (render::Renderer& r, const FrameView& frame) {
       const double now = seconds_into_play (logic ().m_total_time);
-      if (!m_scan.showing (now) || !m_hud.font ())
+      if (!m_scan.showing (now) || !m_heads_up.hud.font ())
         return;
       if (!m_scan_marks.set)
         m_scan_marks = make_scan_marks (r);
@@ -92,7 +92,7 @@ namespace moppe {
         .height_pts = static_cast<float> (r.height_pts ()),
       };
       draw_scan_labels (m_scan_text,
-                        *m_hud.font (),
+                        *m_heads_up.hud.font (),
                         m_scan_marks,
                         m_scan,
                         now,
@@ -676,56 +676,6 @@ namespace moppe {
       r.reconstruct_scene ();
       if (visibility.motion_blur)
         r.apply_motion_blur (frame.motion_blur_amount);
-    }
-
-    void MoppeGame::draw_overlays (render::Renderer& r,
-                                   const FrameView& frame) {
-      const FrameVisibility& visibility = frame.visibility;
-
-      // HUD, kept inside the safe area (notch / home indicator).
-      m_hud_dl.clear ();
-      m_hud_text.clear ();
-      const platform::Insets safe_insets = platform::safe_insets ();
-      m_hud_dl.translate (safe_insets.left, safe_insets.top, 0);
-      const int hud_width =
-        r.width_pts () - (int)(safe_insets.left + safe_insets.right);
-      const int hud_height =
-        r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
-      if (visibility.cinematic_hud) {
-        m_opening.draw_titles (
-          m_hud, m_hud_dl, m_hud_text, hud_width, hud_height);
-        m_hud.draw_ride_prompt (m_hud_text,
-                                frame.overlay.cinematic_prompt_alpha,
-                                hud_width,
-                                hud_height);
-      } else if (visibility.game_hud) {
-        HudState hud_state = hud_state_for (frame.hud);
-        add_basket_readings (hud_state);
-        add_camp_readings (hud_state);
-        add_fishing_readings (hud_state);
-        m_company.add_readings (hud_state, session ());
-        add_waymarks (hud_state, frame, hud_width, hud_height);
-        add_chart (hud_state, frame);
-        m_hud.draw (m_hud_dl, m_hud_text, hud_state, hud_width, hud_height);
-        if (m_hud.diagnostics ())
-          draw_trail_map (m_hud_dl,
-                          hud_width,
-                          hud_height,
-                          frame.hud.subject_position,
-                          frame.hud.subject_heading);
-        if (m_map.open ())
-          draw_map (r, hud_width, hud_height);
-        if (m_quit_asked)
-          m_hud.draw_quit_question (
-            m_hud_dl, m_hud_text, hud_width, hud_height);
-      }
-      m_hud.publish_offers ();
-      m_hud_text.translate (safe_insets.left, safe_insets.top);
-
-      // Even a clean inspection capture needs this empty HUD pass: it is
-      // also the final post-chain composite into the drawable.
-      r.draw_hud_text (m_hud_text);
-      r.draw_hud (m_hud_dl);
     }
   }
 }

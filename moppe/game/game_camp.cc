@@ -29,6 +29,19 @@ namespace moppe {
       };
     }
 
+    HudWorld MoppeGame::hud_world () const {
+      return { .session = session (),
+               .world = generated_world (),
+               .ground = world_ground (),
+               .around = surroundings (),
+               .company = m_company,
+               .mushrooms = m_mushrooms,
+               .places = m_places.layout,
+               .place_names = m_place_names,
+               .home_base = m_home_base_position,
+               .sky = m_sky.sky () };
+    }
+
     void MoppeGame::draw_camp (render::DrawList& dl) {
       const Camp& camp = logic ().m_camp;
       const play_time_t now = logic ().m_total_time;

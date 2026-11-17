@@ -80,7 +80,7 @@ namespace moppe {
       m_session = std::make_unique<GameSession> (world (), surface ());
       retired_session.reset ();
       retired_world.reset ();
-      m_map.forget ();
+      m_heads_up.map.forget ();
       m_place_names =
         name_places (m_generated_world->roads (),
                      static_cast<std::uint32_t> (m_recipe.seed ().value));
@@ -388,7 +388,7 @@ namespace moppe {
       // frame of play.
       const char* hud = moppe::environment ("MOPPE_HUD");
       if (!hud || std::string_view (hud) != "none")
-        paint_map (r);
+        m_heads_up.paint_map (r, generated_world ());
       m_ready = true;
       MOPPE_PROFILE_PLOT ("startup.ready", 1);
       std::cerr << "moppe: world ready " << m_loading.status ().elapsed

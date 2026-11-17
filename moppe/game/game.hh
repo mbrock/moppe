@@ -22,8 +22,8 @@
 #include <moppe/game/fingerposts.hh>
 #include <moppe/game/forest.hh>
 #include <moppe/game/frame_capture.hh>
+#include <moppe/game/heads_up.hh>
 #include <moppe/game/input_frame_adapter.hh>
-#include <moppe/game/map_sheet.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/opening_director.hh>
 #include <moppe/game/scan.hh>
@@ -109,12 +109,6 @@ namespace moppe {
 
       void draw_scan (render::Renderer& r, const FrameView& frame);
 
-      void draw_trail_map (render::DrawList& dl,
-                           int width_pts,
-                           int height_pts,
-                           const Vec3& subject,
-                           Vec3 heading) const;
-
       void activate_completed_world (std::unique_ptr<GeneratedWorld> completed);
 
       void prepare_world_water ();
@@ -161,15 +155,10 @@ namespace moppe {
       // field.
       void settle_obstacles (bool with_places);
 
-      // -- camp --------------------------------------------------------
+      // -- camp and the HUD ----------------------------------------------
 
-      // -- fishing -------------------------------------------------------
-
-      // What there is to do about the line here, and the last fish.
-      void add_fishing_readings (HudState& state) const;
-
-      // What there is to do about the camp where the walker stands.
-      void add_camp_readings (HudState& state) const;
+      // What the HUD reads of the world and of play (heads_up.hh).
+      HudWorld hud_world () const;
 
       void draw_camp (render::DrawList& dl);
 
@@ -221,30 +210,6 @@ namespace moppe {
       // room when first met, and tells them how this one looks.
       void keep_company (seconds_t interval);
 
-      // One waymark: where `at` falls in the frame, or which way it lies.
-      // Nothing is marked nearer than `near`, and it fades in to `far`.
-      static void add_waymark (HudState& state,
-                               const FrameView& frame,
-                               int width,
-                               int height,
-                               const char* name,
-                               unsigned who,
-                               const Vec3& at,
-                               float near,
-                               float far,
-                               const DisplayColor& tint,
-                               float vanish = 0.0f);
-
-      // How near a named place must be for a waymark to point to it.
-      static constexpr float place_waymark_m = 1200.0f;
-
-      // The way to the other player and to whatever of one's own is
-      // parked out of reach, and to the nearest named place.
-      void add_waymarks (HudState& state,
-                         const FrameView& frame,
-                         int width,
-                         int height) const;
-
       // -- simulation --------------------------------------------------
 
       void tick (seconds_t interval) override;
@@ -263,11 +228,6 @@ namespace moppe {
 
       static render::FrameParams frame_params_for (const FrameView& frame);
 
-      static HudState hud_state_for (const FrameHud& reading);
-
-      // The mushroom at hand and the basket, for the prompts and the tally.
-      void add_basket_readings (HudState& state) const;
-
       // The vehicles lend their meshes to the sun's shadow before it is
       // drawn, so that they shade the ground under them and their own
       // insides; riders, skinned into a draw list, cast none.
@@ -283,25 +243,6 @@ namespace moppe {
       void draw_boat_wakes (render::Renderer& r, const FrameView& frame);
 
       void draw_effect_layers (render::Renderer& r, const FrameView& frame);
-
-      void draw_overlays (render::Renderer& r, const FrameView& frame);
-
-      // Paints the map sheet of this world and uploads it: for the map
-      // over the view (M) and the chart in the HUD's corner.
-      void paint_map (render::Renderer& r);
-
-      // What there is to find on the map, the walker first.
-      std::vector<MapSheet::Mark> map_marks () const;
-
-      // The chart in the HUD's corner: the map sheet round the subject,
-      // turned to the way the camera looks, with the marks on it.
-      void add_chart (HudState& state, const FrameView& frame) const;
-
-      // The map over the view (M): the sheet is painted with the world
-      // (or the first time it is unfolded), and what moves is marked on
-      // it each frame. It takes the place of the rest of the HUD while it
-      // is open.
-      void draw_map (render::Renderer& r, int width_pts, int height_pts);
 
       void render (render::Renderer& r) override;
 
@@ -399,24 +340,18 @@ namespace moppe {
       WalkScriptState m_walk;
       CaptureCameras m_capture_camera;
       DemoPilot m_demo;
-      // What the HUD's prompts remember from frame to frame.
-      mutable HudPrompts m_prompts;
-      Hud m_hud;
-      render::TextList m_hud_text;
+      // The HUD, the map sheet, and the quit question.
+      HeadsUp m_heads_up;
 
       render::Renderer* m_renderer;
       FrameCapture m_capture;
       // Whether L has handed the mouse back to the desktop during play.
       bool m_pointer_free = false;
-      MapSheet m_map;
-      // Esc in play has asked whether to quit (Hud::draw_quit_question).
-      bool m_quit_asked = false;
       std::atomic<bool> m_ready;
 
       render::DrawList m_world_dl;
       // Where the shadow casters' riders go, to be thrown away.
       render::DrawList m_caster_dl;
-      render::DrawList m_hud_dl;
     };
   }
 }
