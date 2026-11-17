@@ -1,9 +1,11 @@
 // The SDL host's device on macOS: NHAL on Metal 4, drawing into the
 // CAMetalLayer of an SDL Metal view, in extended linear sRGB for EDR.
-#import <QuartzCore/CAMetalLayer.h>
-
 #include <moppe/nhal/metal/metal_device.hh>
 #include <moppe/platform/sdl/sdl.hh>
+
+// QuartzCore defines the legacy pascal macro, which collides with SI units.
+// Load the project's quantity headers before the Apple framework.
+#import <QuartzCore/CAMetalLayer.h>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
