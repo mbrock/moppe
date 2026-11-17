@@ -90,10 +90,9 @@ amended the first draft. The deltas, now integrated below, were:
   bug is documented at main.cc:3182). HUD coordinates are view **points**.
   On macOS the default drawable uses the view's full backing-pixel extent up
   to a 4.2 MP area cap; `--drawable-scale` overrides that policy, while
-  `--render-scale` or `MOPPE_RENDERSCALE` chooses the 3D scene fraction that
-  MetalFX reconstructs into it. `--scene-megapixels` optionally caps that
-  scene area on desktop, and `--msaa` selects 1x, 2x, or 4x scene
-  multisampling before pipeline creation. Safe-area insets offset HUD anchors
+  `--render-scale` chooses the 3D scene fraction that
+  MetalFX reconstructs into it, and the desktop scene area is capped by
+  `GraphicsSettings::scene_megapixel_budget`. Safe-area insets offset HUD anchors
   and touch zones on iOS, and "Times" maps to "Times New Roman" on iOS.
 - Underwater + motion blur no longer alias one texture (the GL build's
   shared m_blur_tex made submerged ghosts zoom the *current* frame); the
@@ -540,14 +539,10 @@ injecting the more intrusive per-encoder counter samples.
 The encoder spans are weak evidence about *which* work is expensive: on an
 M2 Pro they arrive as stage boundaries, and a cheap quarter-resolution bloom
 chain reports a longer span than the whole scene pass because the span
-includes waiting. The `--graphics-benchmark` cube is the instrument that
-answers the question, because it toggles one feature against a replayed tape.
-Read it as paired runs of the same schedule and compare per configuration;
-its ocean-on-minus-ocean-off contrast reproduces to a few tenths of a
-millisecond, while its absolute frame time does not. Add
-`--benchmark-pass-timing` when the CSV also needs precise
-Metal 4 pass columns. That mode may split encoders and is for attribution, not
-whole-frame throughput comparisons.
+includes waiting. The `--graphics-benchmark` cube (since removed) was the instrument that
+answered the question, because it toggled one feature against a replayed tape;
+read its results as paired runs of the same schedule, compared per
+configuration.
 
 That historical contrast also had two regimes: with the then-named
 `small-effects` block off the ocean cost about 12 ms, and with it on about
@@ -674,31 +669,17 @@ jittered scene; spatial and linear fallbacks use 2x scene MSAA instead of 4x.
 The television preset keeps water, particles, vehicle and star effects, lens
 flare, and detailed terrain materials, while disabling
 terrain shadows, motion blur, bloom, the exposure probe, and procedural
-undergrowth. Those remain available through `--graphics-quality high` or
-individual feature overrides. Explicit quality presets remain relative to the
-point-resolution baseline, and `MOPPE_RENDERSCALE` remains an absolute
+undergrowth. Those remain available through `--graphics-quality high`. Explicit quality presets remain relative to the
+point-resolution baseline, and `--render-scale` remains an absolute
 drawable fraction.
 
-Presets resolve into a typed graphics-settings value rather than remaining a
-quality-mode branch. Boolean features can then be changed independently with
-`--graphics-enable` and `--graphics-disable`; each accepts a comma-separated
-list such as `--graphics-quality low --graphics-enable ocean,bloom`. Startup
-prints every resolved feature and numeric graphics setting so scripted
-performance runs record the actual configuration. The legacy
-`MOPPE_RENDERSCALE`, `MOPPE_NOSHADOW`,
-`MOPPE_WATERFALL_CURTAINS`, `MOPPE_TERRAIN_TOPOLOGY`, and `MOPPE_SUNHEIGHT`
-controls remain supported but are resolved centrally into the same settings.
-Each Boolean feature descriptor also records whether it is hot-switchable:
-changing a hot feature's stored value is sufficient for the next frame, with
-no resource rebuild or renderer-state reset. Ocean, waterfall curtains,
-particles, vehicle and star effects, bloom, automatic exposure, and lens flare
-are currently hot. Forest is also hot: disabling it skips both its visible
-mesh submission and its contribution to terrain shadow passes while retaining
-its resident instance plan for later benchmark combinations. The fixed-size
-waterfall mesh is prepared once even when its draw is disabled, which lets the
-benchmark measure it independently. Terrain shadows and motion blur remain
-conservatively marked not hot. The terrain topology overlay is hot and can be
-toggled with `G`.
+Presets resolve into a typed graphics-settings value (`GraphicsSettings`)
+rather than remaining a quality-mode branch. Startup prints every resolved
+numeric graphics setting so scripted performance runs record the actual
+configuration. The per-feature switches (`--graphics-enable` and
+`--graphics-disable`, with their hot-switching bookkeeping and `G` for the
+terrain topology overlay) were removed with the benchmark that used them; the
+Boolean toggles that remain are plain fields of `GraphicsSettings`.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set

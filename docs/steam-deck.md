@@ -182,12 +182,12 @@ docker run --rm --network none \
 env -i PATH=/usr/bin:/bin HOME="$probe/home" \
   SDL_VIDEO_DRIVER=x11 SDL_AUDIO_DRIVER=dummy \
   VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json \
-  MOPPE_DEMO=1 MOPPE_OPENING=none MOPPE_RIDE_CAPTURE_START=0 \
-  MOPPE_RIDE_CAPTURE_FRAMES=1 MOPPE_RIDE_CAPTURE_DIR="$probe/frames" \
+  MOPPE_DEMO=1 MOPPE_OPENING=none \
   xvfb-run -a bwrap --ro-bind / / --dev-bind /dev /dev --tmpfs /nix \
   --bind "$probe" "$probe" --chdir /tmp -- \
   "$probe/unpacked game/moppe/moppe" \
-  --seed 123 --window-size 640x400 --graphics-quality low
+  --seed 123 --window-size 640x400 --graphics-quality low \
+  --screenshot "$probe/frames/shot.png"
 ```
 
 Use the software ICD filename installed by your distribution if it differs.

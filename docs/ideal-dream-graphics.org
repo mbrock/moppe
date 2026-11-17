@@ -4,6 +4,8 @@
 
 * Purpose
 
+/Note (2026-11): the capture instruments named in this notebook (the landscape gazetteer, MOPPE_GRASS_LAB, MOPPE_GLIDE, MOPPE_LOOK, tools/capture-*) were removed as unused; rerunning them needs an older checkout./
+
 This is the living plan and completion record for moving Moppe's production
 renderer toward the visual target below.  It is deliberately about the actual
 game path, not the Atelier.  A task becomes DONE only after it is present in a

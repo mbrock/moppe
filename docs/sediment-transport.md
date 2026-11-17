@@ -98,8 +98,9 @@ Fluvial incision already has a typed physical channel-initiation area and a
 smooth fourfold transition around it. The default remains 1 m2 for now. A
 same-seed 1--1200 m2 matrix found that physically resolved thresholds expose
 perched basins and sheer channel walls before cover feedback and distributed
-valley deposition exist. The experiment is available through
-`--channel-initiation-area`; it is not yet a selected process calibration.
+valley deposition exist. The experiment is available through the recipe's
+`channel_initiation_area` (the `--channel-initiation-area` switch was removed);
+it is not yet a selected process calibration.
 
 ## Conservative hillslope transport
 

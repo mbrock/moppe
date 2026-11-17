@@ -1,5 +1,10 @@
 # Handoff: the grass representation frontier
 
+> **Note (2026-11):** the capture instruments named here (the landscape
+> gazetteer, `MOPPE_GRASS_LAB`, `MOPPE_GLIDE`, `MOPPE_LOOK`, the tree studio,
+> `tools/capture-*`, `tools/ride-judge`) were removed as unused. The commands
+> below describe how the work was done and need an older checkout to rerun.
+
 Updated 2026-08-11 after reproducing the low-resolution failure. This note
 supersedes the earlier fixed-radius proposal in this file.
 

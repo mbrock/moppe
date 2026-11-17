@@ -40,7 +40,7 @@ executables do not stay in the active build.
 ## The naive look comes first
 
 Before any instrument: render the thing and look at whether it looks
-like the thing. One MOPPE_LOOK frame — a camera placed to answer one
+like the thing. One MOPPE_LOOK frame (that switch has since been removed) — a camera placed to answer one
 compositional question — settled in seconds what a day of profilers had
 missed: the "large grass field" was a green fringe around the camera on
 a brown world, because the terrain substrate and the grass geometry had
@@ -93,7 +93,8 @@ assemblages — vehicle, HUD, particles, trail, glare, relief — and a
 measurement taken through them attributes everything to everything.
 When the question is about one system, isolate it: the grass laboratory
 (MOPPE_GRASS_LAB) for the world, and a gazetteer glide (MOPPE_GLIDE)
-for a bare moving camera. The day this rule was written, isolation
+for a bare moving camera (both instruments have since been removed from the
+tree; they live in git history). The day this rule was written, isolation
 flipped a conclusion's sign: a demo-ride "measurement" showed a
 confident 2.5x appearance-residual wall at the vegetation window edge;
 the clean glide showed smooth decay and no wall — the wall had been

@@ -152,22 +152,20 @@ owns drawable acquisition, in-flight stream selection, timestamp-span labels,
 benchmark completion, ready-world Metal capture, screenshots, commit, and
 temporal-target reset. A move across these ownership boundaries must preserve
 the existing `GpuPass` timing names, capture-after-ready-world window, and
-benchmark sample completion contract. `./build/moppe-testbed`, the compact
-graphics benchmark, feature water captures, and an `MOPPE_METAL_CAPTURE`
+benchmark sample completion contract. `./build/moppe-testbed` and an `MOPPE_METAL_CAPTURE`
 trace are the integration checks for this seam; portable unit tests alone do
 not exercise the Metal backend.
 
 ## Completed-world smoke path
 
-`tools/capture-water OUTPUT river` is the deterministic integration smoke
+`tools/capture-game OUTPUT` is the deterministic integration smoke
 path. It starts the normal loading flow, waits for world generation, terrain
 and hydrology analysis, the single main-thread completed-world handoff, and
-renderer activation, then writes a river screenshot. Its deterministic inputs
-are seed `123` and the `fast` terrain profile unless overridden by `MOPPE_SEED`
-and `MOPPE_TERRAIN_PROFILE`.
+renderer activation, then writes a screenshot (seed `123` unless overridden by
+`MOPPE_SEED`).
 
-`MOPPE_REGENERATE_ONCE=1` exercises the same path twice: while the second
-candidate builds, the first active world and its session remain owned and
+Pressing `N` in play regenerates the world through the same path: while the
+second candidate builds, the first active world and its session remain owned and
 valid. At activation, the old session releases its terrain borrows before the
 old world retires, and a fresh session binds to the completed world. Generation
 is intentionally single-flight rather than cancellable asynchronous

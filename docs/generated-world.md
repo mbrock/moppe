@@ -46,20 +46,11 @@ plan. The automatic directory name contains a stable default namespace and the
 complete recipe identity. Ordinary executable rebuilds therefore reuse the
 same finished world instead of rerunning erosion. Profile, resolution, seed,
 extent, and water datum still select separate worlds, and the stored schema and
-recipe are validated before reuse. An explicit `--uplift-years YEARS`
-experiment becomes part of that immutable recipe and both cache identities,
-so forcing-matrix launches cannot reuse another schedule's terrain. The typed
-`--channel-initiation-area SQUARE_METERS` experiment has the same identity
-guarantee; it is available for process matrices but is not yet a selected Play
-calibration. `--sediment-concentration FRACTION` controls the effective solid
-concentration in the discharge-based transport-capacity law. Runoff and
-concentration are serialized in the recipe and both cache identities, so an
-older detachment-scaled transport world cannot masquerade as the current
-cover-aware result.
-`--world-cache-key NAME` selects an additional stable developer namespace.
-`--refresh-world-cache` rebuilds and replaces the selected entry, while
-`--no-world-cache` retains the older terrain-only cache path without loading or
-saving a completed world.
+recipe are validated before reuse. The recipe's uplift duration, channel-initiation area, sediment concentration,
+and hillslope parameters are still part of its identity and both cache
+identities, so a world made with other values can never reuse another
+schedule's terrain; the command-line switches that set them were removed, and
+only the defaults are played.
 
 The Apple TV install path additionally runs the same pipeline once in a native
 Release baker and bundles the directory for the default Play-profile, seed-123
@@ -103,9 +94,8 @@ runtime acceptance path exercises generation, handoff, renderer activation,
 and capture:
 
 ```sh
-MOPPE_TERRAIN_PROFILE=smoke tools/capture-game /tmp/moppe-smoke.png
+tools/capture-game /tmp/moppe-smoke.png
 ```
 
-`MOPPE_REGENERATE_ONCE=1` exercises the same ownership transition twice.
-Feature-targeted water captures use the full normal construction path while
-selecting a deterministic hydrological subject.
+`N` in play regenerates the world, which exercises the same ownership
+transition.

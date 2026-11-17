@@ -312,7 +312,6 @@ focus, and cinematic landmark order during startup.
 Useful interactive and deterministic checks are:
 
 ```sh
-tools/capture-cinematic /tmp/cinematic.mp4 18
 ctest --test-dir build --output-on-failure
 ```
 

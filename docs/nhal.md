@@ -303,12 +303,12 @@ occlusion and its blur 2.2, the shafts 2.1, the sun's shadow 1.8 (nearly
 all of it the far cascade's trees), the present 1.6, the resolve 1.3 after
 0.8 gathering its neighbourhoods, and the water's copy and pass 1.0. What
 scales with the drawable is about 4 ms of that and the rest follows the
-scene: at `MOPPE_RENDERSCALE=0.35` the ride holds 60 fps there.
+scene: at `--render-scale 0.35` the ride holds 60 fps there.
 
 So the scene's size follows the frame rate (`render::DynamicResolution`,
 `moppe/render/dynamic_resolution.hh`). Each frame the renderer sums the
 device's pass timings for the last finished frame and tells the controller,
-with how often frames are due: the game's target (`--target-fps`, 60) or the
+with how often frames are due: the game's 60 fps target or the
 display's refresh, whichever is slower. An unknown refresh leaves the
 target alone: the cadence of rendered frames is not the display's refresh,
 and missed frames must not loosen the next frame's budget.

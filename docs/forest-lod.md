@@ -213,21 +213,11 @@ acceleration-structure rebuilds.
 
 ## Instruments, and what each can and cannot verify
 
-- `moppe-tree-studio`: render(plane + tree). Solo specimen
-  (`MOPPE_STUDIO_SOLO`), interactive dolly/orbit (W/S/A/D, P screenshots),
-  deterministic dolly ladder (`MOPPE_STUDIO_DOLLY`). It is a microscope for
-  one construction, never acceptance evidence for the world.
-- `tools/tree-lod-atlas`: the dolly cropped to constant apparent size, so
-  the only thing changing between tiles is the LOD decision itself.
+- The tree studio, `tools/tree-lod-atlas`, and the `MOPPE_GLIDE` gazetteer
+  glide that were instruments here have been removed from the tree (see git
+  history before the dead-code removal); `moppe-testbed` is not vegetation
+  evidence.
 - In-game: `F` walks, `P` captures to `screenshots/run-<timestamp>/`.
-- `MOPPE_GLIDE=<gazetteer-shot>` records every consecutive frame of a bare
-  translating camera in the actual world renderer. It is the isolation tool
-  for aerial handoff; `MOPPE_GLIDE_SPEED` and
-  `MOPPE_GLIDE_VERTICAL_SPEED` exercise horizontal and altitude-changing
-  paths. `moppe-testbed` is not vegetation evidence.
-- `MOPPE_RIDE_CAPTURE_DIR` records consecutive gameplay frames;
-  `tools/ride-judge` encodes them to video and, with `GEMINI_API_KEY`,
-  asks a video-capable model for a 1-5 temporal-stability rating.
 - **Epistemics: still frames cannot verify temporal behaviour.** Settled
   captures kept "confirming" fixes the rider immediately refuted; the
   half-precision garbage was invisible in every still. Arithmetic in

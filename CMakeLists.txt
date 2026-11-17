@@ -756,13 +756,6 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   )
   moppe_configure_code_target(terrain-orogeny-benchmark)
 
-  add_executable(terrain-water-depth-experiment EXCLUDE_FROM_ALL
-    moppe/terrain/water_depth_experiment.cc
-    ${MOPPE_TERRAIN_SOURCES}
-    ${MOPPE_WORLD_SOURCES}
-  )
-  moppe_configure_code_target(terrain-water-depth-experiment)
-
   add_executable(terrain-trail-soak EXCLUDE_FROM_ALL
     moppe/terrain/trail_soak.cc
     ${MOPPE_TERRAIN_SOURCES}
@@ -1306,6 +1299,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
     # Renderer testbed: spinning solids and HUD shapes, no game.
     add_executable(moppe-testbed EXCLUDE_FROM_ALL
       moppe/game/testbed.cc
+      moppe/platform/input.cc
       ${MOPPE_RENDER_SOURCES}
       ${MOPPE_TERRAIN_SOURCES})
     moppe_add_sdl_host(moppe-testbed)

@@ -75,7 +75,7 @@ speed and flaring with `Space` to land back on two wheels. There is also a
 mountain bike up at the lookout, a vintage red tractor towing a
 rainbow-planked trailer, a VW Caddy pickup by the sea, a white-and-teal jet ski bobbing at the jetty's other side, an army
 jeep with a spare seat if a second player joins on the local network
-(`--multiplayer`), and a helicopter that can hook any vehicle on a sling line
+(`MOPPE_MULTIPLAYER=1`), and a helicopter that can hook any vehicle on a sling line
 (`F`) and carry it across the valley.
 
 <p align="center">
@@ -255,7 +255,7 @@ A few useful ways to run it:
 
 ```sh
 ./build/moppe --windowed --seed 123
-./build/moppe --multiplayer
+MOPPE_MULTIPLAYER=1 ./build/moppe
 MOPPE_CLOCK=21.5 MOPPE_WEATHER=clear ./build/moppe --windowed
 ./tools/record /tmp/camp.mp4 camp
 ```
