@@ -200,6 +200,24 @@ namespace moppe {
   QUANTITY_SPEC (z_displacement,
                  mp_units::isq::displacement,
                  mp_units::subkind);
+
+  // ---- The screen ----
+  //
+  // Lengths on the display in its logical points, which the HUD and the
+  // map sheet lay out in and the host maps to pixels. They have their own
+  // dimension: a point on the glass is no length in the world and never
+  // converts to a metre.
+  inline constexpr struct dim_display_length final
+      : mp_units::base_dimension<"P"> {
+  } dim_display_length;
+  QUANTITY_SPEC (display_length, dim_display_length);
+  inline constexpr struct display_point final
+      : mp_units::named_unit<"pt", mp_units::kind_of<display_length>> {
+  } display_point;
+
+  // How solid something drawn is, from unseen (0) to opaque (1): a fade's
+  // level, a colour's alpha.
+  QUANTITY_SPEC (opacity, proportion);
 }
 
 template <>

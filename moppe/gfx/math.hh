@@ -71,6 +71,14 @@ namespace moppe {
   using froude_number_t = quantity<froude_number[one], float>;
   using scaling_exponent_t = quantity<scaling_exponent[one], float>;
   using aspect_ratio_t = quantity<aspect_ratio[one], float>;
+  using opacity_t = quantity<opacity[one], float>;
+
+  // Lengths on the screen, in display points (moppe/quantities.hh):
+  // 12.0f * u::pt.
+  using points_t = quantity<display_point, float>;
+  namespace u {
+    inline constexpr auto pt = display_point;
+  }
 
   // Angles with a role (moppe/quantities.hh).
   using heading_t = quantity<heading[si::radian], float>;
@@ -114,6 +122,12 @@ namespace moppe {
   }
   inline float meters_value (meters_t q) {
     return q.numerical_value_in (si::metre);
+  }
+  inline float points_value (points_t q) {
+    return q.numerical_value_in (display_point);
+  }
+  inline float opacity_value (opacity_t q) {
+    return q.numerical_value_in (one);
   }
   inline float kilograms_value (kilograms_t q) {
     return q.numerical_value_in (si::kilogram);
