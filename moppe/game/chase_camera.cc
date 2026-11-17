@@ -9,11 +9,11 @@ namespace moppe {
     namespace {
       // The camera's follow spring: lightly underdamped, enough inertia
       // to feel physical through turns and jumps without becoming seasick.
-      constexpr float FOLLOW_HZ = 0.95f;
-      constexpr float FOLLOW_DAMPING = 0.74f;
+      constexpr frequency_t FOLLOW_HZ = 0.95f * u::Hz;
+      constexpr damping_ratio_t FOLLOW_DAMPING = 0.74f * damping_ratio[one];
       // Seconds of speed along the boom the camera falls back by (or
       // runs out ahead by, looking back), so going fast is felt.
-      constexpr float SPEED_REACH = 0.06f;
+      constexpr seconds_t SPEED_REACH = 0.06f * u::s;
 
       // damping_ratio is the dimensionless zeta of the second-order
       // system, not a rate: 1 is critical, below rings, above crawls. It
@@ -25,14 +25,15 @@ namespace moppe {
                    position_t target,
                    velocity_t reference,
                    frequency_t frequency,
-                   float damping_ratio,
+                   damping_ratio_t zeta,
                    seconds_t dt) {
         const frequency_t omega = PI2 * frequency;
         const displacement_t error =
           quantity_cast<isq::displacement> (target - value);
         const acceleration_t acceleration = quantity_cast<isq::acceleration> (
           error * omega * omega -
-          (velocity - reference) * (2.0f * damping_ratio * omega));
+          (velocity - reference) *
+            (2.0f * zeta.numerical_value_in (one) * omega));
         velocity += quantity_cast<isq::velocity> (acceleration * dt);
         value += quantity_cast<isq::position_vector> (velocity * dt);
       }
@@ -201,22 +202,23 @@ namespace moppe {
         Vec3 outward (d[0], 0, d[2]);
         if (length2 (outward) > 1e-6f) {
           normalize (outward);
-          const float rate = PI2 * FOLLOW_HZ / (2.0f * FOLLOW_DAMPING);
-          reach +=
-            outward * (SPEED_REACH * rate * std::abs (dot (level, outward)));
+          const frequency_t rate =
+            PI2 * FOLLOW_HZ / (2.0f * FOLLOW_DAMPING.numerical_value_in (one));
+          reach += outward * ((SPEED_REACH * rate).numerical_value_in (one) *
+                              std::abs (dot (level, outward)));
         }
         spring (m_target,
                 m_target_velocity,
                 want_target,
                 moppe::velocity (level),
                 2.4f * u::Hz,
-                0.92f,
+                0.92f * damping_ratio[one],
                 dt);
         spring (m_position,
                 m_position_velocity,
                 want_position,
                 moppe::velocity (reach),
-                FOLLOW_HZ * u::Hz,
+                FOLLOW_HZ,
                 FOLLOW_DAMPING,
                 dt);
       }
@@ -233,7 +235,7 @@ namespace moppe {
       const float horiz =
         std::sqrt (offset[0] * offset[0] + offset[2] * offset[2]);
       const float max_len =
-        dist + SPEED_REACH * m_speed.numerical_value_in (u::m / u::s);
+        dist + (SPEED_REACH * m_speed).numerical_value_in (u::m);
       if (horiz > max_len) {
         const float s = max_len / horiz;
         camera_position[0] = subject_position[0] + offset[0] * s;
