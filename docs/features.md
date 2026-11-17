@@ -152,7 +152,8 @@ build, test, and change the code; read this when working on a feature.
   -gården) wherever stops would lie over 1.4 km apart; each on the
   right-hand verge, off bridges, with a yellow hållplats sign and,
   where the verge is level, a falu-red shelter. The buses drive on the
-  right, 1.6 m right of the road's line on its 6 m carriageway, on a
+  right, 0.9 m right of the road's line on its 6 m carriageway (all
+  one way round, so they never meet), on a
   timetable from play's clock alone (gathering pace to 45 km/h,
   braking for each stop, standing 6 s, and 20 s at the landing where
   the round begins), evenly apart so one passes about every seven

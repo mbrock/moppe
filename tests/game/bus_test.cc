@@ -103,7 +103,7 @@ MOPPE_TEST (buses_keep_their_timetable_round_the_loop) {
   // As play begins it stands at the first stop, in the right-hand lane.
   const BusPose start = line.where (play_time (0.0)).front ();
   MOPPE_CHECK (start.at_stop == std::optional<std::size_t> (0));
-  MOPPE_CHECK (std::fabs (start.position[2] - 501.6f) < 0.01f);
+  MOPPE_CHECK (std::fabs (start.position[2] - 500.9f) < 0.01f);
   MOPPE_CHECK (start.forward[0] > 0.99f);
   // The second stop's board: due once the first stop's 20 s and the run
   // are done.
@@ -200,14 +200,14 @@ MOPPE_TEST (a_rider_boards_at_a_stop_and_gets_off_at_the_next_asked_for) {
   MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());
   // At the second stop (reached at 67.625 s) they step down by the door
   // (bus_model::door, 2.925 m ahead of the bus's middle and 1.8 m to its
-  // right): south of the lane's middle at z = 501.6, on the verge.
+  // right): south of the bus's middle at z = 500.9, on the verge.
   logic.m_total_time = play_time (70.0);
   ride_bus (session, line);
   MOPPE_CHECK (logic.m_doing == Doing::on_foot ());
   MOPPE_CHECK (!logic.m_bus_alight);
   const Vec3 feet = session.walker ().position ();
   MOPPE_CHECK (std::fabs (feet[0] - 402.925f) < 0.1f);
-  MOPPE_CHECK (std::fabs (feet[2] - 503.4f) < 0.1f);
+  MOPPE_CHECK (std::fabs (feet[2] - 502.7f) < 0.1f);
 }
 
 MOPPE_TEST (two_players_buses_keep_the_same_time) {

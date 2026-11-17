@@ -84,8 +84,12 @@ namespace moppe::game {
     static constexpr seconds_t dwell = 6.0f * u::s;
     static constexpr seconds_t layover = 20.0f * u::s;
     static constexpr seconds_t headway = 480.0f * u::s;
-    // How far right of the road's line a bus keeps: its lane's middle.
-    static constexpr meters_t lane = 1.6f * u::m;
+    // How far right of the road's line a bus keeps: its middle, near
+    // enough the line that its 2.5 m body and its mirrors keep inside
+    // the 3 m half carriageway round all but the tightest bends. The
+    // buses all go one way round and never meet, so nothing comes the
+    // other way.
+    static constexpr meters_t lane = 0.9f * u::m;
 
     BusLine () = default;
     // The loop and the stops along it, in order from its start.
