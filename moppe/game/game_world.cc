@@ -418,6 +418,9 @@ namespace moppe {
       if (!hud || std::string_view (hud) != "none")
         m_heads_up.paint_map (r, generated_world ());
       m_ready = true;
+      // Play's first frame is a cut from the loading screen's sky: its
+      // history must not smear in.
+      r.reset_temporal_state ();
       MOPPE_PROFILE_PLOT ("startup.ready", 1);
       std::cerr << "moppe: world ready "
                 << seconds_value (m_loading.status ().elapsed)

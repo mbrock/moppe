@@ -78,8 +78,11 @@ namespace moppe::nhal {
       const Vec3& sun_dir = direction_value (params.sun_dir);
       const Vec3& sky_sun_dir = direction_value (params.sky_sun_dir);
       const float time = seconds_value (params.time);
+      // A restarted history restarts the jitter sequence too, so a frame's
+      // jitter does not hang on how many frames (the loading screen's
+      // among them) came before the cut.
       if (m_restart)
-        m_previous_view_proj = view_proj, m_previous_time = time;
+        m_previous_view_proj = view_proj, m_previous_time = time, m_frame = 0;
       const float tan_x = 1.0f / params.proj.at (0, 0);
       const float tan_y = 1.0f / params.proj.at (1, 1);
       const std::uint32_t phase = m_frame++ % 16 + 1;
