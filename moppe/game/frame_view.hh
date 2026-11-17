@@ -250,15 +250,6 @@ namespace moppe::game {
     float wheelie_age_s = 10.0f;
     bool on_foot = false;
     bool gliding = false;
-    bool can_deploy_glider = false;
-    bool can_drop_bike = false;
-    // On foot beside a machine, the one the mount key would take.
-    std::optional<Machine> at_hand;
-    // On foot beside a stuck machine, which the mount key would haul
-    // out; hauling one; or driving one that is stuck (game/rescue.hh).
-    const char* haul = nullptr;
-    const char* hauling = nullptr;
-    bool stuck = false;
     float vertical_speed_mps = 0.0f;
     float frame_time_s = 1.0f / 60.0f;
     float heading_radians = 0.0f;

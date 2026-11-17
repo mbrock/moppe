@@ -325,7 +325,7 @@ namespace moppe::game {
       if (s.session.logic ().m_camp.resting)
         next ();
       else if (std::fmod (waited, 0.9f) < dt + 1e-4f && waited > 0.5f)
-        input.deploy_glider = true;
+        input.use = true;
       break;
     default:
       // Lying there: after a look from outside, through their eyes,
@@ -389,7 +389,7 @@ namespace moppe::game {
           -0.55f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
         input.light_fire = press (m_state.supper_since + 4.2f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
-        input.deploy_glider = press (7.5f + m_state.supper_since) > 0.0f ||
+        input.use = press (7.5f + m_state.supper_since) > 0.0f ||
                               press (19.0f + m_state.supper_since) > 0.0f;
         return input;
       }
@@ -399,7 +399,7 @@ namespace moppe::game {
         m_state.fish_rest = t;
       const float age =
         seconds_between (s.session.logic ().m_total_time, line.since);
-      input.deploy_glider =
+      input.use =
         (!line_out (line) && t - m_state.fish_rest > 1.5f) ||
         (line.phase == Line::Phase::biting && age > 0.4f);
       return input;
@@ -424,7 +424,7 @@ namespace moppe::game {
       if (s.session.logic ().m_fishing.creel.kept () >= 2 &&
           line.phase == Line::Phase::waiting && age > 3.0f)
         m_state.boat_fish_off = t;
-      input.deploy_glider = (!line_out (line) && t - m_state.fish_rest > 1.5f &&
+      input.use = (!line_out (line) && t - m_state.fish_rest > 1.5f &&
                              game::boat_drifting (s.session, s.around)) ||
                             (line.phase == Line::Phase::biting && age > 0.4f);
       return input;
@@ -474,7 +474,7 @@ namespace moppe::game {
           -0.55f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
         input.light_fire = press (m_state.supper_since + 0.8f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
-        input.deploy_glider = press (4.0f + m_state.supper_since) > 0.0f ||
+        input.use = press (4.0f + m_state.supper_since) > 0.0f ||
                               press (15.5f + m_state.supper_since) > 0.0f;
         return input;
       }
@@ -497,7 +497,7 @@ namespace moppe::game {
         if (game::egg_at_hand (s.session, s.around)) {
           steer (s.places.nests[*best].at, 0.0f);
           if (std::fmod (t, 0.9f) < dt + 1e-4f)
-            input.deploy_glider = true;
+            input.use = true;
         } else {
           steer (front, 0.4f);
         }
@@ -530,7 +530,7 @@ namespace moppe::game {
           -0.55f - s.session.logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
         input.light_fire = press (m_state.supper_since + 3.2f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
-        input.deploy_glider = press (6.5f + m_state.supper_since) > 0.0f ||
+        input.use = press (6.5f + m_state.supper_since) > 0.0f ||
                               press (18.0f + m_state.supper_since) > 0.0f;
         return input;
       }
@@ -561,7 +561,7 @@ namespace moppe::game {
                         : 0.0f;
         const float beat = std::fmod (t, 0.9f);
         if (reachable && beat < dt + 1e-4f) {
-          input.deploy_glider = true;
+          input.use = true;
           if (!mushroom_edible (s.mushrooms.site (*target).kind))
             m_state.forage_refused.push_back (*target);
         }

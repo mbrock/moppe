@@ -176,6 +176,28 @@ namespace moppe::game {
     // where the snapshots put them.
     std::array<Vec3, 4> m_slip {};
   };
+
+  class GameSession;
+  struct GameLogicState;
+
+  // The passenger's seat of the other player's jeep, in the world.
+  Vec3 jeep_seat (const CompanionSnapshot& theirs);
+
+  // The fore seat of the other player's boat, in the world.
+  Vec3 boat_seat (const CompanionSnapshot& theirs);
+
+  // On foot beside the other player's jeep, or their boat while they are
+  // at its helm, and nearer it than anything of one's own to ride: which
+  // of them, if either.
+  enum class Seat { none, jeep, boat };
+  Seat seat_within_reach (const GameSession& session,
+                          const CompanionSnapshot* theirs);
+
+  // Takes that seat, as the mount key does there (game/affordances.hh).
+  void take_seat (GameSession& session, const CompanionSnapshot& theirs);
+
+  // The seat moves with the other player's jeep, or their boat.
+  void keep_seat (GameLogicState& state, const CompanionSnapshot& theirs);
 }
 
 #endif

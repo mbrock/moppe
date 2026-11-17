@@ -12,7 +12,6 @@
 #include <moppe/game/fishing_state.hh>
 #include <moppe/game/game_clock.hh>
 #include <moppe/game/hens.hh>
-#include <moppe/game/hud.hh>
 #include <moppe/game/input_frame.hh>
 #include <moppe/game/mushrooms.hh>
 #include <moppe/game/places.hh>
@@ -82,9 +81,12 @@ namespace moppe::game {
   std::optional<Vec3> fire_at_hand (const GameSession& session,
                                     const Surroundings& around);
   bool beside_pan (const GameSession& session);
-  // What there is to do about supper where the walker stands.
-  HudState::Cook supper_at_hand (const GameSession& session,
-                                 const Surroundings& around);
+  // What there is to do about supper where the walker stands: fry what
+  // the basket and the creel hold on a fire at hand, wait while it
+  // fries, or eat it, done or burnt.
+  enum class Supper : std::uint8_t { none, fry, frying, eat, eat_burnt };
+  Supper supper_at_hand (const GameSession& session,
+                         const Surroundings& around);
   // The beacon a walker stands at, if any.
   std::optional<std::size_t> beacon_at_hand (const GameSession& session,
                                              const Surroundings& around);
@@ -105,13 +107,42 @@ namespace moppe::game {
   // the long-tail.
   std::optional<FishingWater> water_ahead (const GameSession& session,
                                            const Surroundings& around);
-  // Whether the pick key has nothing nearer to do than cast.
-  bool nothing_else_at_hand (const GameSession& session,
-                             const Surroundings& around);
+  // The mushroom within the walker's reach.
+  std::optional<std::uint32_t> mushroom_at_hand (const GameSession& session,
+                                                 const Surroundings& around);
+  // Where a fire would be laid: an old fire ring at hand, or level
+  // ground a step ahead; and whether the walker stands by their own.
+  std::optional<Vec3> fire_place (const GameSession& session,
+                                  const Surroundings& around);
+  bool beside_fire (const GameSession& session);
+
+  // What the walker's hands do, when game/affordances.hh says a button
+  // does it: pick a mushroom (a poisonous one is only looked at), take
+  // an egg from a nest box, fry or eat supper, cast a line or strike and
+  // reel it in, hang the hammock or take it down, lie in it or get up
+  // (not in the first moment), light or put out a beacon, and light or
+  // put out the fire.
+  void pick (GameSession& session,
+             const Surroundings& around,
+             std::uint32_t mushroom);
+  void take_egg (GameSession& session, std::size_t nest);
+  void cook (GameSession& session, const Surroundings& around);
+  void cast (GameSession& session, const Surroundings& around);
+  void tend_line_by_hand (GameSession& session);
+  void hang_hammock (GameSession& session);
+  void take_down_hammock (GameSession& session);
+  void lie_down (GameSession& session);
+  void get_up (GameSession& session);
+  void tend_beacon (GameSession& session,
+                    const Surroundings& around,
+                    std::size_t beacon);
+  void light_fire (GameSession& session, const Vec3& hearth);
+  void douse_fire (GameSession& session);
 
   // The steps advance_game_session takes about the walker before the
-  // bodies move, each taking from `input` what it uses: the clock, the
-  // line, the pan, the camp, and the basket.
+  // bodies move, once the buttons have done what they do
+  // (game/affordances.hh): the clock, the line, the pan, and the camp,
+  // each taking from `input` what it uses.
   void tend_by_hand (GameSession& session,
                      const Surroundings& around,
                      InputFrame& input,

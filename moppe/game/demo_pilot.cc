@@ -86,7 +86,7 @@ namespace moppe::game {
             : 0.0f,
         // MOPPE_DEMO=glide opens the wing on the first leap high
         // enough to allow it.
-        .deploy_glider_held = demo_glides,
+        .use_held = demo_glides,
         .look_yaw = look_yaw,
         .look_pitch = look_pitch,
       };

@@ -2,6 +2,8 @@
 // camp, fishing, and the basket, the waymarks, the chart, the map sheet,
 // the trail map, and the quit question.
 
+#include <moppe/game/affordances.hh>
+#include <moppe/game/camp.hh>
 #include <moppe/game/companionship.hh>
 #include <moppe/game/figure.hh>
 #include <moppe/game/fishing.hh>
@@ -32,6 +34,160 @@ namespace moppe::game {
       return at +
              Vec3 (0, meters_value (machine_kind (machine).driver_mark), 0);
     }
+
+    // A name at the head of a sentence.
+    std::string first_up (std::string_view name) {
+      std::string word (name);
+      if (!word.empty () && word[0] >= 'a' && word[0] <= 'z')
+        word[0] = static_cast<char> (word[0] - 'a' + 'A');
+      return word;
+    }
+
+    // How the HUD words an affordance: with a key for it, and without.
+    std::pair<std::string, std::string> worded (const Affordance& a,
+                                                const HudWorld& w) {
+      using Verb = Affordance::Verb;
+      using Words = std::pair<std::string, std::string>;
+      const GameLogicState& logic = w.session.logic ();
+      const auto same = [] (std::string words) {
+        return Words { words, words };
+      };
+      const std::string name = machine_kind (a.machine).name;
+      switch (a.verb) {
+      case Verb::let_go_rope:
+        return same ("Let go of " + name);
+      case Verb::tend_line:
+        switch (logic.m_fishing.line.phase) {
+        case Line::Phase::waiting:
+          return { "Reel in", "Waiting for a bite" };
+        case Line::Phase::biting:
+          return { "Strike!", "A bite!" };
+        default:
+          return same ("Reeling it in");
+        }
+      case Verb::pick: {
+        const std::string kind =
+          mushroom_name (w.mushrooms.site (a.object).kind);
+        if (a.refused)
+          return same (first_up (kind) + " -- poisonous, leave it be");
+        return { "Pick the " + kind, first_up (kind) + " within reach" };
+      }
+      case Verb::take_egg:
+        if (a.refused)
+          return same ("The basket holds no more eggs");
+        return { "Take the egg", "An egg in the nest" };
+      case Verb::cook: {
+        // A fish goes in first, then eggs, then mushrooms.
+        const Camp& camp = logic.m_camp;
+        const bool fish =
+          camp.pan.on ? camp.pan.has_fish : logic.m_fishing.creel.kept () > 0;
+        const bool eggs =
+          camp.pan.on ? camp.pan.eggs > 0 : logic.m_basket.eggs > 0;
+        switch (supper_at_hand (w.session, w.around)) {
+        case Supper::fry:
+          return fish   ? Words { "Fry the fish", "Fish to fry" }
+                 : eggs ? Words { "Fry the eggs", "Eggs to fry" }
+                        : Words { "Fry the mushrooms", "Mushrooms to fry" };
+        case Supper::frying:
+          return same (fish   ? "The fish is frying"
+                       : eggs ? "The eggs are frying"
+                              : "The mushrooms are frying");
+        case Supper::eat:
+          return { "Eat", "Supper is ready" };
+        case Supper::eat_burnt:
+          return { "Eat them anyway", "Supper is burnt" };
+        case Supper::none:
+          break;
+        }
+        return same ("");
+      }
+      case Verb::get_up:
+        return same ("Get up");
+      case Verb::lie_down:
+        return { "Lie down", "The hammock" };
+      case Verb::hang_hammock:
+        return { "Hang the hammock", "Two good trees for the hammock" };
+      case Verb::take_down_hammock:
+        return same ("Take down the hammock");
+      case Verb::tend_beacon:
+        return { "Light the beacon", "The beacon's fire is laid" };
+      case Verb::light_fire:
+        return same ("Light a fire");
+      case Verb::douse_fire:
+        return same ("Put out the fire");
+      case Verb::cast:
+        return { "Cast a line", "Water to fish" };
+      case Verb::drop_bike:
+        return same ("Release the Trail 90");
+      case Verb::deploy_glider:
+        return { "Deploy glider", "Glider ready" };
+      case Verb::let_load_go:
+        return { "Let " + name + " go", first_up (name) + " is on the line" };
+      case Verb::hook:
+        return { "Hook " + name, first_up (name) + " is under the hook" };
+      case Verb::haul:
+        // The boat and the jet ski are dragged the other way, back into
+        // the water.
+        if (a.machine == Machine::boat)
+          return { "Drag the boat by its handle", "The boat is aground" };
+        if (a.machine == Machine::jet_ski)
+          return { "Drag the jet ski by its bow", "The jet ski is aground" };
+        return { "Haul " + name + " out", first_up (name) + " is stuck" };
+      case Verb::ride_along:
+        return { "Ride along", "A seat is free" };
+      case Verb::take:
+        return { machine_kind (a.machine).take,
+                 machine_kind (a.machine).at_hand };
+      case Verb::step_out:
+        return same (machine_kind (a.machine).leave);
+      case Verb::stuck:
+        return same ("Stuck! Keep at it, or step out and haul");
+      }
+      return same ("");
+    }
+  }
+
+  void HeadsUp::add_prompt (HudState& state, const HudWorld& w) {
+    using Verb = Affordance::Verb;
+    const std::vector<Affordance> here =
+      affordances (w.session, *w.around.surface, &w.around);
+    for (const Affordance& a : here) {
+      if (!a.prompted)
+        continue;
+      std::tie (m_prompts.keyed, m_prompts.unkeyed) = worded (a, w);
+      // What will not do, and what goes on by itself, shows no key.
+      const bool keyless =
+        a.refused ||
+        (a.verb == Verb::tend_line &&
+         w.session.logic ().m_fishing.line.phase == Line::Phase::playing);
+      state.prompt_key = keyless ? std::nullopt : a.button;
+      state.prompt_keyed = m_prompts.keyed.c_str ();
+      state.prompt_unkeyed = m_prompts.unkeyed.c_str ();
+      break;
+    }
+    // What the fire and hammock keys do without a prompt for it.
+    const bool fire = w.session.logic ().m_camp.fire;
+    for (const Affordance& a : here)
+      switch (a.verb) {
+      case Verb::take_down_hammock:
+        state.can_take_down = true;
+        break;
+      case Verb::douse_fire:
+        state.can_douse_fire = true;
+        break;
+      case Verb::tend_beacon:
+        if (w.session.logic ().m_beacons[a.object].burning ())
+          state.can_douse_fire = true;
+        else
+          state.can_light_fire = !a.refused;
+        break;
+      case Verb::light_fire:
+        // A fire burning elsewhere is moved only by its own key.
+        state.can_light_fire = !a.refused && !fire;
+        break;
+      default:
+        break;
+      }
   }
 
   void HeadsUp::draw_trail_map (const HudWorld& w,
@@ -180,32 +336,6 @@ namespace moppe::game {
       state.catch_note = m_prompts.catch_note.c_str ();
       state.catch_age_s = since;
     }
-    if (!game::angler (w.session))
-      return;
-    const bool afloat =
-      w.session.logic ().m_doing == Doing::driving (Machine::boat);
-    switch (fishing.line.phase) {
-    case Line::Phase::idle:
-      if (afloat
-            ? game::boat_drifting (w.session, w.around) &&
-                game::water_ahead (w.session, w.around)
-            : !state.mushroom_in_reach && state.cook == HudState::Cook::none &&
-                state.camp != HudState::Camp::lie_down &&
-                game::water_ahead (w.session, w.around))
-        state.angle = HudState::Angle::cast;
-      break;
-    case Line::Phase::waiting:
-      state.angle = HudState::Angle::wait;
-      break;
-    case Line::Phase::biting:
-      state.angle = HudState::Angle::strike;
-      break;
-    case Line::Phase::playing:
-      state.angle = HudState::Angle::playing;
-      break;
-    default:
-      break;
-    }
   }
 
   void HeadsUp::add_camp_readings (HudState& state, const HudWorld& w) {
@@ -273,21 +403,6 @@ namespace moppe::game {
     case Doing::Way::foot:
       if (!camp.resting) {
         state.thumb = "Jump";
-        state.can_take_down = game::beside_hammock (w.session);
-        Vec3 to_fire = w.session.walker ().position () - camp.hearth;
-        to_fire[1] = 0.0f;
-        state.can_douse_fire = camp.fire && length2 (to_fire) < 3.0f * 3.0f;
-        state.can_light_fire =
-          !camp.fire &&
-          (game::hearth_ahead (w.session, w.around).has_value () ||
-           hearth_at_hand (w.places, w.session.walker ().position ()));
-        if (const std::optional<std::size_t> beacon =
-              game::beacon_at_hand (w.session, w.around)) {
-          const bool lit = w.session.logic ().m_beacons[*beacon].burning ();
-          state.can_douse_fire = lit;
-          state.can_light_fire =
-            !lit && !game::their_beacon (w.session.logic (), *beacon);
-        }
       }
       break;
     case Doing::Way::glider:
@@ -307,46 +422,15 @@ namespace moppe::game {
         break;
       state.flying = true;
       state.can_step_out = w.session.can_step_out_of_helicopter ();
-      // Letting go is prompted only once the load hangs near the
-      // ground, though the key lets it fall from any height.
-      if (w.session.logic ().m_sling.hooked &&
-          w.session.helicopter ().altitude () < sling_hang + 4.0f * u::m)
-        state.slung = machine_kind (w.session.logic ().m_sling.load).name;
-      if (const std::optional<Machine> under = w.session.hook_within_reach ())
-        state.hook = machine_kind (*under).name;
       if (w.session.logic ().m_sling.hooked)
         state.dismount = "Let go";
-      else if (state.hook)
+      else if (w.session.hook_within_reach ())
         state.dismount = "Hook on";
       else if (!state.can_step_out)
         state.dismount = nullptr;
       break;
     }
     }
-    if (w.session.logic ().m_doing != Doing::on_foot () ||
-        state.mushroom_in_reach)
-      return;
-    state.cook = game::supper_at_hand (w.session, w.around);
-    state.cook_fish = camp.pan.on
-                        ? camp.pan.has_fish
-                        : w.session.logic ().m_fishing.creel.kept () > 0;
-    state.cook_eggs =
-      camp.pan.on ? camp.pan.eggs > 0 : w.session.logic ().m_basket.eggs > 0;
-    if (const std::optional<std::size_t> beacon =
-          game::beacon_at_hand (w.session, w.around);
-        beacon && !w.session.logic ().m_beacons[*beacon].burning () &&
-        !game::their_beacon (w.session.logic (), *beacon) && !camp.resting)
-      state.camp = HudState::Camp::light_beacon;
-    else if (camp.resting)
-      state.camp = HudState::Camp::get_up;
-    else if (game::beside_hammock (w.session))
-      state.camp = HudState::Camp::lie_down;
-    else if (w.session.logic ().m_hammock_at_hand)
-      state.camp = HudState::Camp::hang;
-    else if (camp.hung && !hearth_laid (camp) &&
-             hammock_distance (camp.hammock, w.session.walker ().position ()) <
-               12.0f * u::m)
-      state.camp = HudState::Camp::light_fire;
   }
 
   void HeadsUp::add_waymark (HudState& state,
@@ -517,15 +601,6 @@ namespace moppe::game {
     state.wheelie_age_s = reading.wheelie_age_s;
     state.on_foot = reading.on_foot;
     state.gliding = reading.gliding;
-    state.can_deploy_glider = reading.can_deploy_glider;
-    state.can_drop_bike = reading.can_drop_bike;
-    if (reading.at_hand) {
-      state.take = machine_kind (*reading.at_hand).take;
-      state.at_hand = machine_kind (*reading.at_hand).at_hand;
-    }
-    state.haul = reading.haul;
-    state.hauling = reading.hauling;
-    state.stuck = reading.stuck;
     state.vertical_speed_mps = reading.vertical_speed_mps;
     state.frame_time_s = reading.frame_time_s;
     state.heading_radians = reading.heading_radians;
@@ -541,17 +616,6 @@ namespace moppe::game {
     state.reached_age_s =
       seconds_between (w.session.logic ().m_total_time, basket.last_reach_time);
     state.reached_refused = basket.last_refused;
-    if (w.session.logic ().m_doing != Doing::on_foot ())
-      return;
-    if (const std::optional<std::uint32_t> found = w.mushrooms.within_reach (
-          w.session.walker ().position (), w.session.walker ().heading ())) {
-      const MushroomKind kind = w.mushrooms.site (*found).kind;
-      state.mushroom_in_reach = mushroom_name (kind);
-      state.mushroom_edible = mushroom_edible (kind);
-    } else if (game::egg_at_hand (w.session, w.around)) {
-      state.egg_in_reach = true;
-      state.basket_takes_egg = basket.eggs < basket_holds_eggs;
-    }
   }
 
   void HeadsUp::paint_map (render::Renderer& r, const GeneratedWorld& world) {
@@ -770,6 +834,7 @@ namespace moppe::game {
       add_basket_readings (hud_state, w);
       add_camp_readings (hud_state, w);
       add_fishing_readings (hud_state, w);
+      add_prompt (hud_state, w);
       w.company.add_readings (hud_state, w.session);
       add_waymarks (hud_state, w, frame, hud_width, hud_height);
       add_chart (hud_state, frame, w);

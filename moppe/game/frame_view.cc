@@ -411,14 +411,6 @@ namespace moppe::game {
     hud.wheelie_age_s = logic.m_wheelie_age;
     hud.on_foot = logic.m_doing == Doing::on_foot ();
     hud.gliding = logic.m_doing == Doing::gliding ();
-    hud.can_deploy_glider = input.session.can_deploy_glider (input.surface);
-    hud.can_drop_bike = input.session.can_drop_bike ();
-    hud.at_hand = input.session.mount_within_reach ();
-    if (const auto stuck = input.session.haul_within_reach ())
-      hud.haul = machine_kind (*stuck).name;
-    if (const auto held = input.session.hauling ())
-      hud.hauling = machine_kind (*held).name;
-    hud.stuck = input.session.stuck ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();

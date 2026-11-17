@@ -1,3 +1,4 @@
+#include <moppe/game/affordances.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/surroundings.hh>
 #include <moppe/gfx/signal.hh>
@@ -74,36 +75,6 @@ namespace moppe::game {
       }
     }
 
-    void deploy_glider (GameSession& session,
-                        const map::SurfaceGeometry& terrain) {
-      if (!session.can_deploy_glider (terrain))
-        return;
-      const Vec3 position = session.bike ().position ();
-      const Vec3 heading = session.bike ().orientation ();
-      const velocity_t inherited = session.bike ().physical_velocity ();
-      session.bike ().set_thrust (0);
-      session.bike ().set_yaw (0 * u::deg);
-      session.bike ().set_boost (0, 0);
-      session.glider ().launch (
-        moppe::position (position +
-                         Vec3 (0, meters_value (mov::Glider::bike_hang), 0)),
-        inherited,
-        heading,
-        true);
-      GameLogicState& logic = session.logic ();
-      session.set_mode (Doing::gliding ());
-      steer (session, logic.m_controls);
-    }
-
-    void use_glider_control (GameSession& session,
-                             const map::SurfaceGeometry& terrain) {
-      if (session.logic ().m_doing == Doing::gliding ()) {
-        session.glider ().drop_bike ();
-        return;
-      }
-      deploy_glider (session, terrain);
-    }
-
     void finish_glide (GameSession& session) {
       GameLogicState& logic = session.logic ();
       if (session.glider ().bike_attached ()) {
@@ -132,22 +103,6 @@ namespace moppe::game {
 
     Trouble& trouble_of (GameLogicState& logic, Machine machine) {
       return logic.m_trouble[static_cast<std::size_t> (machine)];
-    }
-
-    // Takes up a rope tied to the nearer end of a stuck machine, as long
-    // as it reaches from there to the walker's feet.
-    void take_rope (GameSession& session, Machine machine) {
-      const MachineBody body = session.machine_body (machine);
-      const Vec3 feet = session.walker ().position ();
-      const bool front = dot (feet - body.position, body.forward) >= 0.0f;
-      Haul& haul = session.logic ().m_haul;
-      haul = { .active = true,
-               .machine = machine,
-               .tie = (front ? machine_kind (machine).front_tie
-                             : machine_kind (machine).back_tie) };
-      Vec3 out = feet - body.point (haul.tie);
-      out[1] = 0.0f;
-      haul.rope = std::clamp (length (out), 1.0f, 1.8f) * u::m;
     }
 
     // Lets the rope go; a machine let go of on purpose is taken to be
@@ -212,86 +167,6 @@ namespace moppe::game {
         heli.push (hook, quantity_cast<isq::impulse> (-pull * dt));
       }
       heli.set_load (-pull, sling_hang);
-    }
-
-    // Out of `machine` and onto the feet, where its kind says
-    // (MachineKind::step_out), letting go of everything.
-    void step_out (GameSession& session, Machine machine) {
-      GameLogicState& logic = session.logic ();
-      const MachineKind& kind = machine_kind (machine);
-      drive (session.fleet (), machine, Controls {}, false);
-      visit (session.fleet (), machine, [&] (Machine, const Drivable auto& b) {
-        const Vec3 at =
-          kind.step_out ? b.point (*kind.step_out) : session.boat_landing ();
-        // Off the water's machines one steps with half their way on.
-        const float keep = kind.medium == Medium::water ? 0.5f : 1.0f;
-        session.walker ().spawn (moppe::position (at),
-                                 b.forward (),
-                                 moppe::velocity (b.velocity () * keep));
-      });
-      session.set_mode (Doing::on_foot ());
-      steer (session, logic.m_controls);
-    }
-
-    void toggle_mount (GameSession& session) {
-      GameLogicState& logic = session.logic ();
-      switch (logic.m_doing.way) {
-      case Doing::Way::glider:
-      case Doing::Way::passenger:
-        // A passenger's seat is the game's to give and take away.
-        return;
-      case Doing::Way::driving: {
-        const Machine machine = logic.m_doing.machine;
-        if (machine == Machine::helicopter) {
-          // With a machine on the line, the key lets it go first; over one,
-          // it hooks it on.
-          if (logic.m_sling.hooked) {
-            logic.m_sling.hooked = false;
-            return;
-          }
-          if (const std::optional<Machine> under =
-                session.hook_within_reach ()) {
-            // The line goes on as long as it is: no slack, and none too
-            // little.
-            const Vec3 hook = session.helicopter ().point (sling_hook ());
-            const Vec3 ring =
-              session.machine_body (*under).point (machine_kind (*under).ring);
-            const meters_t span = length (hook - ring) * u::m;
-            logic.m_sling = { .hooked = true,
-                              .load = *under,
-                              .stretch =
-                                std::min (span - sling_line, meters_t {}),
-                              .payout =
-                                std::max (span - sling_line, meters_t {}) };
-            return;
-          }
-          // Out on the pilot's side once down near the ground.
-          if (!session.can_step_out_of_helicopter ())
-            return;
-        }
-        step_out (session, machine);
-        return;
-      }
-      case Doing::Way::foot:
-        break;
-      }
-
-      // On foot, holding a rope: let go of it. Beside a stuck machine:
-      // take up a rope to haul it out.
-      if (logic.m_doing == Doing::on_foot () && logic.m_haul.active) {
-        let_go (session, true);
-        return;
-      }
-      if (const std::optional<Machine> stuck = session.haul_within_reach ()) {
-        take_rope (session, *stuck);
-        return;
-      }
-
-      // On foot: take whatever stands nearest within reach.
-      if (const std::optional<Machine> reach = session.mount_within_reach ()) {
-        session.set_mode (Doing::driving (*reach));
-        steer (session, logic.m_controls);
-      }
     }
 
     // Riding, driving, or gliding, a look the player has let go of finds
@@ -450,7 +325,7 @@ namespace moppe::game {
       // The helicopter climbs on what boosts the bike and descends on
       // what runs on foot (or the held deploy key, a controller's A).
       const float climb = input_value (input.boost);
-      const bool descend = input.run || input.deploy_glider_held;
+      const bool descend = input.run || input.use_held;
       steer (session,
              { .turn = help.turn,
                .go = help.drive,
@@ -480,17 +355,12 @@ namespace moppe::game {
           std::remainder (logic.m_look_yaw + input.look_yaw, 6.2831853f);
       }
 
-      if (input.deploy_glider)
-        use_glider_control (session, terrain);
-      else if (input.deploy_glider_held &&
-               session.logic ().m_doing != Doing::gliding ())
+      InputFrame presses = input;
+      press_buttons (session, terrain, nullptr, presses);
+      // Held, the use key opens the wing as soon as the bike leaves the
+      // ground.
+      if (input.use_held && session.logic ().m_doing != Doing::gliding ())
         deploy_glider (session, terrain);
-      if (input.toggle_mount) {
-        if (session.can_deploy_glider (terrain) || session.can_drop_bike ())
-          use_glider_control (session, terrain);
-        else
-          toggle_mount (session);
-      }
       if (input.cycle_camera) {
         GameLogicState& logic = session.logic ();
         logic.m_cam_mode = (CamMode)((logic.m_cam_mode + 1) % 3);
@@ -646,6 +516,94 @@ namespace moppe::game {
       return moppe::position (position_value (world.spawn_position ()) -
                               heading * 20.0f);
     }
+  }
+
+  // What the hands do with the machines; game/affordances.hh says when.
+  void deploy_glider (GameSession& session,
+                      const map::SurfaceGeometry& terrain) {
+    if (!session.can_deploy_glider (terrain))
+      return;
+    const Vec3 position = session.bike ().position ();
+    const Vec3 heading = session.bike ().orientation ();
+    const velocity_t inherited = session.bike ().physical_velocity ();
+    session.bike ().set_thrust (0);
+    session.bike ().set_yaw (0 * u::deg);
+    session.bike ().set_boost (0, 0);
+    session.glider ().launch (
+      moppe::position (position +
+                       Vec3 (0, meters_value (mov::Glider::bike_hang), 0)),
+      inherited,
+      heading,
+      true);
+    GameLogicState& logic = session.logic ();
+    session.set_mode (Doing::gliding ());
+    steer (session, logic.m_controls);
+  }
+
+  void drop_bike (GameSession& session) {
+    session.glider ().drop_bike ();
+  }
+
+  // Takes up a rope tied to the nearer end of a stuck machine, as long
+  // as it reaches from there to the walker's feet.
+  void take_rope (GameSession& session, Machine machine) {
+    const MachineBody body = session.machine_body (machine);
+    const Vec3 feet = session.walker ().position ();
+    const bool front = dot (feet - body.position, body.forward) >= 0.0f;
+    Haul& haul = session.logic ().m_haul;
+    haul = { .active = true,
+             .machine = machine,
+             .tie = (front ? machine_kind (machine).front_tie
+                           : machine_kind (machine).back_tie) };
+    Vec3 out = feet - body.point (haul.tie);
+    out[1] = 0.0f;
+    haul.rope = std::clamp (length (out), 1.0f, 1.8f) * u::m;
+  }
+
+  void let_go_rope (GameSession& session) {
+    let_go (session, true);
+  }
+
+  void get_in (GameSession& session, Machine machine) {
+    session.set_mode (Doing::driving (machine));
+    steer (session, session.logic ().m_controls);
+  }
+
+  // Out of `machine` and onto the feet, where its kind says
+  // (MachineKind::step_out), letting go of everything.
+  void step_out (GameSession& session, Machine machine) {
+    GameLogicState& logic = session.logic ();
+    const MachineKind& kind = machine_kind (machine);
+    drive (session.fleet (), machine, Controls {}, false);
+    visit (session.fleet (), machine, [&] (Machine, const Drivable auto& b) {
+      const Vec3 at =
+        kind.step_out ? b.point (*kind.step_out) : session.boat_landing ();
+      // Off the water's machines one steps with half their way on.
+      const float keep = kind.medium == Medium::water ? 0.5f : 1.0f;
+      session.walker ().spawn (moppe::position (at),
+                               b.forward (),
+                               moppe::velocity (b.velocity () * keep));
+    });
+    session.set_mode (Doing::on_foot ());
+    steer (session, logic.m_controls);
+  }
+
+  // The line goes on as long as it is: no slack, and none too little.
+  void hook_load (GameSession& session, Machine under) {
+    const Vec3 hook = session.helicopter ().point (sling_hook ());
+    const Vec3 ring =
+      session.machine_body (under).point (machine_kind (under).ring);
+    const meters_t span = length (hook - ring) * u::m;
+    session.logic ().m_sling = { .hooked = true,
+                                 .load = under,
+                                 .stretch =
+                                   std::min (span - sling_line, meters_t {}),
+                                 .payout =
+                                   std::max (span - sling_line, meters_t {}) };
+  }
+
+  void let_load_go (GameSession& session) {
+    session.logic ().m_sling.hooked = false;
   }
 
   MachineBody GameSession::machine_body (Machine machine) const {
@@ -885,7 +843,7 @@ namespace moppe::game {
 
   void GameSession::start_on_foot () {
     if (m_logic.m_doing == Doing::driving (Machine::bike))
-      toggle_mount (*this);
+      step_out (*this, Machine::bike);
     m_logic.m_cam_mode = CAM_CHASE;
     m_logic.m_look_pitch = 0.0f;
     m_logic.m_fp_eye = m_walker.eye_position ();
@@ -1314,6 +1272,7 @@ namespace moppe::game {
       // What the walker does by hand takes from the input what it uses
       // before the bodies move, and the animals mind where they went.
       InputFrame rest = input;
+      press_buttons (session, surface, around, rest);
       tend_by_hand (session, *around, rest, dt);
       const GameSessionAdvanceResult result = advance_game_session (
         world, surface, session, rest, dt, trunks, ground, water, strangers);

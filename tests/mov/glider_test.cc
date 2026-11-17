@@ -185,7 +185,7 @@ namespace {
     const bool trace = std::getenv ("MOPPE_GLIDER_TRACE") != nullptr;
     const float health = session.logic ().m_health;
     game::InputFrame input;
-    input.deploy_glider = true;
+    input.use = true;
     GlideOutcome outcome {};
     for (int i = 0; i < 60 * 120; ++i) {
       const float agl = session.bike ().position ()[1] - 10.0f;
@@ -194,7 +194,7 @@ namespace {
       const float sink = -session.bike ().velocity ()[1];
       game::advance_game_session (
         world, surface, session, input, glider_test_step);
-      input.deploy_glider = false;
+      input.use = false;
       if (i == 0)
         MOPPE_CHECK (session.logic ().m_doing == game::Doing::gliding ());
       if (trace && i % 30 == 0)

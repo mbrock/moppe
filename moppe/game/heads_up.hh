@@ -64,14 +64,18 @@ namespace moppe::game {
   private:
     static HudState hud_state_for (const FrameHud& reading);
 
-    // The mushroom at hand and the basket, for the prompts and the tally.
+    // The basket's tally, and the last thing reached for.
     void add_basket_readings (HudState& state, const HudWorld& w);
 
-    // What there is to do about the camp where the walker stands.
+    // The meal just eaten, and what Space and the mount key do here.
     void add_camp_readings (HudState& state, const HudWorld& w);
 
-    // What there is to do about the line here, and the last fish.
+    // The creel's tally and the last fish.
     void add_fishing_readings (HudState& state, const HudWorld& w);
+
+    // What can be done here (affordances.hh): the prompt for what most
+    // wants doing, and what the fire and hammock keys would do besides.
+    void add_prompt (HudState& state, const HudWorld& w);
 
     // One waymark: where `at` falls in the frame, or which way it lies.
     // Nothing is marked nearer than `near`, and it fades in to `far`.

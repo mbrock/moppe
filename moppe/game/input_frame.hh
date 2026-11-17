@@ -11,8 +11,11 @@ namespace moppe::game {
     control_signal_t turn {};
     control_signal_t drive {};
     proportion_t boost {};
-    bool deploy_glider = false;
-    bool deploy_glider_held = false;
+    // The use key, pressed this tick and held (F, a controller's A), and
+    // the mount key: each does the most pressing thing it can here
+    // (game/affordances.hh).
+    bool use = false;
+    bool use_held = false;
     bool toggle_mount = false;
     bool cycle_camera = false;
     bool leave_cinematic = false;

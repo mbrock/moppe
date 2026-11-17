@@ -71,17 +71,10 @@ namespace moppe::game {
     // told).
     void meet_strangers (const GameSession& session, seconds_t interval);
 
-    // On foot beside the other player's jeep, or their boat while they
-    // are at its helm, and nearer it than anything of one's own to ride:
-    // which of them, if either.
-    enum class Seat { none, jeep, boat };
-    Seat seat_within_reach (const GameSession& session) const;
-    bool can_ride_along (const GameSession& session) const;
-
-    // Taking the seat beside the other player, or ahead of them in their
-    // boat, keeping it as it moves, and leaving it: by the mount key, or
-    // when they have gone. Their weight sits in our boat while they ride
-    // in it.
+    // Keeping the seat beside the other player, or ahead of them in their
+    // boat (companion.hh), as it moves, and leaving it: by the mount key,
+    // or when they have gone. Their weight sits in our boat while they ride in
+    // it.
     void ride_along (GameSession& session, InputFrame& input);
 
     // The other player as the world's second figure: their bike where
@@ -110,12 +103,6 @@ namespace moppe::game {
       return outfit == Outfit::blue_jacket ? Outfit::green_jacket
                                            : Outfit::blue_jacket;
     }
-
-    // The passenger's seat of the other player's jeep, in the world.
-    static Vec3 jeep_seat (const CompanionSnapshot& theirs);
-
-    // The fore seat of the other player's boat, in the world.
-    static Vec3 boat_seat (const CompanionSnapshot& theirs);
 
     // The wire to them, what they have lately sent, and how they look
     // this frame.

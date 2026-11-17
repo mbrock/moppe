@@ -1,3 +1,4 @@
+#include <moppe/game/affordances.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/map/surface.hh>
@@ -193,6 +194,12 @@ MOPPE_TEST (a_stuck_tractor_is_hauled_out_on_a_rope) {
   session.walker ().spawn (position (Vec3 (60, 10.1f, 177.5f)),
                            Vec3 (0, 0, -1));
   MOPPE_CHECK (session.haul_within_reach () == game::Machine::tractor);
+  // The prompt says so, and the key does what it says.
+  const std::vector<game::Affordance> here =
+    game::affordances (session, ground.surface, nullptr);
+  MOPPE_CHECK (!here.empty () &&
+               here.front ().verb == game::Affordance::Verb::haul &&
+               here.front ().machine == game::Machine::tractor);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (session.hauling () == game::Machine::tractor);

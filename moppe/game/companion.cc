@@ -1,5 +1,9 @@
 #include <moppe/game/companion.hh>
 
+#include <moppe/game/game_session.hh>
+#include <moppe/mov/boat.hh>
+#include <moppe/mov/car.hh>
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -958,5 +962,62 @@ namespace moppe::game {
     m_playing = false;
     m_rate = 1.0;
     m_slip = {};
+  }
+
+  Vec3 jeep_seat (const CompanionSnapshot& theirs) {
+    const CarPose& jeep = theirs.fleet.jeep;
+    const Vec3 left = normalized (cross (jeep.up, jeep.forward));
+    return jeep.position - left * mov::jeep_rig.seat[0] +
+           jeep.up * mov::jeep_rig.seat[1] +
+           jeep.forward * mov::jeep_rig.seat[2];
+  }
+
+  Vec3 boat_seat (const CompanionSnapshot& theirs) {
+    const BoatPose& boat = theirs.fleet.boat;
+    const Vec3 left = normalized (cross (boat.up, boat.forward));
+    return boat.position + left * mov::Boat::fore[0] +
+           boat.up * mov::Boat::fore[1] + boat.forward * mov::Boat::fore[2];
+  }
+
+  void keep_seat (GameLogicState& state, const CompanionSnapshot& theirs) {
+    if (state.m_seat_boat) {
+      state.m_seat_position = boat_seat (theirs);
+      state.m_seat_heading = theirs.fleet.boat.forward;
+      state.m_seat_up = theirs.fleet.boat.up;
+      state.m_seat_velocity = theirs.fleet.boat.velocity;
+      return;
+    }
+    state.m_seat_position = jeep_seat (theirs);
+    state.m_seat_heading = theirs.fleet.jeep.forward;
+    state.m_seat_up = theirs.fleet.jeep.up;
+    state.m_seat_velocity = theirs.fleet.jeep.velocity;
+  }
+
+  Seat seat_within_reach (const GameSession& session,
+                          const CompanionSnapshot* companion) {
+    if (!companion || session.logic ().m_doing != Doing::on_foot ())
+      return Seat::none;
+    const Vec3 feet = session.walker ().position ();
+    const float mine =
+      std::min ({ length2 (feet - session.jeep ().position ()),
+                  length2 (feet - session.bike ().position ()),
+                  length2 (feet - session.boat ().position ()) });
+    const float jeep = length2 (feet - companion->fleet.jeep.position);
+    float boat = 1e30f;
+    if (companion->mode == Doing::driving (Machine::boat))
+      boat = length2 (feet - boat_seat (*companion));
+    if (boat < 4.0f * 4.0f && boat < mine && boat < jeep)
+      return Seat::boat;
+    if (jeep < 4.5f * 4.5f && jeep < mine)
+      return Seat::jeep;
+    return Seat::none;
+  }
+
+  void take_seat (GameSession& session, const CompanionSnapshot& theirs) {
+    GameLogicState& state = session.logic ();
+    state.m_seat_boat = seat_within_reach (session, &theirs) == Seat::boat;
+    session.clear_controls ();
+    session.set_mode (Doing::riding_along ());
+    keep_seat (state, theirs);
   }
 }

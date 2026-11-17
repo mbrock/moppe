@@ -119,13 +119,6 @@ namespace moppe {
         return target + (value - target) * std::exp (-rate * dt);
       }
 
-      std::string capitalized (const char* name) {
-        std::string word (name);
-        if (!word.empty () && word[0] >= 'a' && word[0] <= 'z')
-          word[0] = static_cast<char> (word[0] - 'a' + 'A');
-        return word;
-      }
-
       float ease (float t) {
         t = clamp01 (t);
         return t * t * (3.0f - 2.0f * t);
@@ -1744,129 +1737,26 @@ namespace moppe {
                             int width_pts,
                             int height_pts) {
       std::string key, action;
-      if (st.hauling) {
-        key = mount_key;
-        action = "Let go of " + std::string (st.hauling);
-      } else if (st.angle != HudState::Angle::none &&
-                 st.angle != HudState::Angle::cast) {
-        key = deploy_key;
-        switch (st.angle) {
-        case HudState::Angle::wait:
-          action = *deploy_key ? "Reel in" : "Waiting for a bite";
-          break;
-        case HudState::Angle::strike:
-          action = *deploy_key ? "Strike!" : "A bite!";
-          break;
-        case HudState::Angle::playing:
-          key = "";
-          action = "Reeling it in";
-          break;
-        default:
-          break;
-        }
-      } else if (st.on_foot && st.mushroom_in_reach) {
-        const std::string name = capitalized (st.mushroom_in_reach);
-        if (!st.mushroom_edible) {
-          action = name + " -- poisonous, leave it be";
-        } else {
-          key = deploy_key;
-          action = *deploy_key
-                     ? "Pick the " + std::string (st.mushroom_in_reach)
-                     : name + " within reach";
-        }
-      } else if (st.on_foot && st.egg_in_reach) {
-        if (!st.basket_takes_egg) {
-          action = "The basket holds no more eggs";
-        } else {
-          key = deploy_key;
-          action = *deploy_key ? "Take the egg" : "An egg in the nest";
-        }
-      } else if (st.on_foot && st.cook != HudState::Cook::none) {
-        key = deploy_key;
-        switch (st.cook) {
-        case HudState::Cook::fry:
-          action = st.cook_fish ? (*deploy_key ? "Fry the fish" : "Fish to fry")
-                   : st.cook_eggs
-                     ? (*deploy_key ? "Fry the eggs" : "Eggs to fry")
-                     : (*deploy_key ? "Fry the mushrooms" : "Mushrooms to fry");
-          break;
-        case HudState::Cook::frying:
-          key = "";
-          action = st.cook_fish   ? "The fish is frying"
-                   : st.cook_eggs ? "The eggs are frying"
-                                  : "The mushrooms are frying";
-          break;
-        case HudState::Cook::eat:
-          action = *deploy_key ? "Eat" : "Supper is ready";
-          break;
-        case HudState::Cook::eat_burnt:
-          action = *deploy_key ? "Eat them anyway" : "Supper is burnt";
-          break;
-        case HudState::Cook::none:
-          break;
-        }
-      } else if (st.on_foot && st.camp != HudState::Camp::none) {
-        switch (st.camp) {
-        case HudState::Camp::hang:
-          key = hammock_key;
-          action = *hammock_key ? "Hang the hammock"
-                                : "Two good trees for the hammock";
-          break;
-        case HudState::Camp::lie_down:
-          key = deploy_key;
-          action = *deploy_key ? "Lie down" : "The hammock";
-          break;
-        case HudState::Camp::get_up:
-          key = deploy_key;
-          action = "Get up";
-          break;
-        case HudState::Camp::light_fire:
-          key = fire_key;
-          action = "Light a fire";
-          break;
-        case HudState::Camp::light_beacon:
-          key = fire_key;
-          action = *fire_key ? "Light the beacon" : "The beacon's fire is laid";
-          break;
-        case HudState::Camp::none:
-          break;
-        }
-      } else if (st.angle == HudState::Angle::cast) {
-        key = deploy_key;
-        action = *deploy_key ? "Cast a line" : "Water to fish";
-      } else if (st.can_drop_bike) {
-        key = deploy_key;
-        action = "Release the Trail 90";
-      } else if (st.slung) {
-        key = mount_key;
-        action = *mount_key ? "Let " + std::string (st.slung) + " go"
-                            : capitalized (st.slung) + " is on the line";
-      } else if (st.hook) {
-        key = mount_key;
-        action = *mount_key ? "Hook " + std::string (st.hook)
-                            : capitalized (st.hook) + " is under the hook";
-      } else if (st.can_deploy_glider) {
-        key = deploy_key;
-        action = *deploy_key ? "Deploy glider" : "Glider ready";
-      } else if (st.haul) {
-        key = mount_key;
-        // The boat and the jet ski are dragged the other way, back into
-        // the water.
-        const bool boat = std::string_view (st.haul) == "the boat";
-        const bool ski = std::string_view (st.haul) == "the jet ski";
-        action = *mount_key    ? boat  ? "Drag the boat by its handle"
-                                 : ski ? "Drag the jet ski by its bow"
-                                       : "Haul " + std::string (st.haul) + " out"
-                 : boat || ski ? capitalized (st.haul) + " is aground"
-                               : capitalized (st.haul) + " is stuck";
-      } else if (st.can_ride_along) {
-        key = mount_key;
-        action = *mount_key ? "Ride along" : "A seat is free";
-      } else if (st.take) {
-        key = mount_key;
-        action = *mount_key ? st.take : st.at_hand;
-      } else if (st.stuck) {
-        action = "Stuck! Keep at it, or step out and haul";
+      if (st.prompt_keyed) {
+        // The key a button is pressed with here, if there is one.
+        const char* keyed = "";
+        if (st.prompt_key)
+          switch (*st.prompt_key) {
+          case Button::use:
+            keyed = deploy_key;
+            break;
+          case Button::mount:
+            keyed = mount_key;
+            break;
+          case Button::hammock:
+            keyed = hammock_key;
+            break;
+          case Button::fire:
+            keyed = fire_key;
+            break;
+          }
+        key = keyed;
+        action = *keyed ? st.prompt_keyed : st.prompt_unkeyed;
       } else if (st.thumb_hint && st.thumb && *ride_key) {
         key = ride_key;
         action = st.thumb;

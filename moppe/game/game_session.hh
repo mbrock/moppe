@@ -273,6 +273,21 @@ namespace moppe::game {
     Hens m_hens;
   };
 
+  // What the hands do with the machines, when game/affordances.hh says
+  // a button does it: open the glider over the airborne bike, or let the
+  // bike go from under it; take up a rope to a stuck machine, or let it
+  // go; get in, or step out; and from the helicopter, hook a machine on
+  // the line, or let it go.
+  void deploy_glider (GameSession& session,
+                      const map::SurfaceGeometry& terrain);
+  void drop_bike (GameSession& session);
+  void take_rope (GameSession& session, Machine machine);
+  void let_go_rope (GameSession& session);
+  void get_in (GameSession& session, Machine machine);
+  void step_out (GameSession& session, Machine machine);
+  void hook_load (GameSession& session, Machine load);
+  void let_load_go (GameSession& session);
+
   // What the wheels roll over, read from the world by the caller: how much
   // loose dust the ground gives up and its colour, and how thickly fallen
   // leaves lie there to be thrown up.

@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_HUD_HH
 #define MOPPE_GAME_HUD_HH
 
+#include <moppe/game/affordances.hh>
 #include <moppe/game/doing.hh>
 #include <moppe/game/game_clock.hh>
 #include <moppe/game/rescue.hh>
@@ -35,6 +36,9 @@ namespace moppe {
       bool wheelie_tried = false;
       std::string meal_note;
       std::string catch_note;
+      // The words of the prompt (HudState::prompt_keyed).
+      std::string keyed;
+      std::string unkeyed;
     };
 
     struct HudState {
@@ -69,77 +73,35 @@ namespace moppe {
       bool wheelie_hint = false;
       bool on_foot;
       // Soaring turns the gauge into an airspeed instrument with a climb
-      // readout; an airborne bike earns the deploy prompt.
+      // readout.
       bool gliding;
-      bool can_deploy_glider;
-      bool can_drop_bike;
-      // On foot beside the other player's jeep with a seat free.
-      bool can_ride_along = false;
-      // On foot beside a machine, what the mount key would do with it
-      // ("Drive the tractor"), and what to say without a key for it
-      // ("Tractor within reach") (MachineKind).
-      const char* take = nullptr;
-      const char* at_hand = nullptr;
-      // On foot beside a stuck machine ("the tractor"), which the mount
-      // key would haul out; the machine being hauled; and whether the one
-      // being driven is stuck.
-      const char* haul = nullptr;
-      const char* hauling = nullptr;
-      bool stuck = false;
+      // What most wants doing here (game/affordances.hh): the button that
+      // does it, if it shows one, and the words with a key for it
+      // ("Drive the tractor") and without ("Tractor within reach").
+      std::optional<Button> prompt_key;
+      const char* prompt_keyed = nullptr;
+      const char* prompt_unkeyed = nullptr;
       // Flying it: whether it is low and slow enough to step out.
       bool flying = false;
       bool can_step_out = false;
       // Riding a bike, whose rear brake Shift stamps on.
       bool skids = false;
-      // Flying it: the machine under it that the mount key would hook on
-      // its line ("the jeep"), or the one on the line, once it hangs low
-      // enough to set down, that the key would let go.
-      const char* hook = nullptr;
-      const char* slung = nullptr;
       float vertical_speed_mps;
       // Real draw-callback interval: paces the fades and feeds the
       // diagnostic frame rate.
       float frame_time_s;
       // Heading in radians: zero is world +Z (north), positive turns east.
       float heading_radians;
-      // On foot: the mushroom within reach, if any, and whether it may go
-      // in the basket.
-      const char* mushroom_in_reach = nullptr;
-      bool mushroom_edible = true;
       // How many mushrooms the basket holds, and eggs among them.
       int basket_total = 0;
       int basket_eggs = 0;
-      // On foot by a nest box with an egg in it, and whether the basket
-      // has room for it.
-      bool egg_in_reach = false;
-      bool basket_takes_egg = true;
       // The last mushroom reached for and how long ago; a refused one was
       // poisonous and stayed where it grew.
       const char* reached_name = nullptr;
       float reached_age_s = 100.0f;
       bool reached_refused = false;
-      // On foot: what there is to do about the camp here (game/camp.hh).
-      enum class Camp {
-        none,
-        hang,
-        lie_down,
-        get_up,
-        light_fire,
-        light_beacon
-      };
-      Camp camp = Camp::none;
-      // On foot by a fire: what there is to do about supper.
-      enum class Cook { none, fry, frying, eat, eat_burnt };
-      Cook cook = Cook::none;
-      // Whether what goes in the pan, or is in it, is a fish, or eggs.
-      bool cook_fish = false;
-      bool cook_eggs = false;
-      // On foot at the water, or at the helm of a drifting boat
-      // (game/fishing.hh): what there is to do
-      // about the line, how many fish are in the creel, and the last one
-      // landed or lost, said for a moment afterwards.
-      enum class Angle { none, cast, wait, strike, playing };
-      Angle angle = Angle::none;
+      // How many fish are in the creel, and the last one landed or
+      // lost, said for a moment afterwards.
       int fish_total = 0;
       const char* catch_note = nullptr;
       float catch_age_s = 100.0f;
@@ -256,8 +218,7 @@ namespace moppe {
             odometer_m (0), lives (10), stars (0), score (0), airtime_s (0),
             spin_degrees (0), landed_airtime_s (0), landed_spin_degrees (0),
             landed_points (0), landed_clean (false), landed_age_s (10),
-            on_foot (false), gliding (false), can_deploy_glider (false),
-            can_drop_bike (false), vertical_speed_mps (0),
+            on_foot (false), gliding (false), vertical_speed_mps (0),
             frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
     };
 

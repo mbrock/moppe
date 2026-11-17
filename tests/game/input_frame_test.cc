@@ -14,12 +14,12 @@ MOPPE_TEST (recorded_input_frame_needs_no_platform_event) {
   recorded.turn = -0.25f;
   recorded.drive = 0.75f;
   recorded.boost = 0.5f;
-  recorded.deploy_glider = true;
+  recorded.use = true;
 
   MOPPE_CHECK_NEAR (game::input_value (recorded.turn), -0.25f, 0.0f);
   MOPPE_CHECK_NEAR (game::input_value (recorded.drive), 0.75f, 0.0f);
   MOPPE_CHECK_NEAR (game::input_value (recorded.boost), 0.5f, 0.0f);
-  MOPPE_CHECK (recorded.deploy_glider);
+  MOPPE_CHECK (recorded.use);
 }
 
 MOPPE_TEST (input_frame_adapter_maps_keyboard_controls_and_actions) {
@@ -43,17 +43,17 @@ MOPPE_TEST (input_frame_adapter_maps_keyboard_controls_and_actions) {
 
   input.key (platform::Key::E, true);
   frame = input.take_frame ();
-  MOPPE_CHECK (frame.deploy_glider);
-  MOPPE_CHECK (frame.deploy_glider_held);
+  MOPPE_CHECK (frame.use);
+  MOPPE_CHECK (frame.use_held);
   frame = input.take_frame ();
-  MOPPE_CHECK (!frame.deploy_glider);
-  MOPPE_CHECK (frame.deploy_glider_held);
+  MOPPE_CHECK (!frame.use);
+  MOPPE_CHECK (frame.use_held);
   input.key (platform::Key::E, true);
   frame = input.take_frame ();
-  MOPPE_CHECK (!frame.deploy_glider);
-  MOPPE_CHECK (frame.deploy_glider_held);
+  MOPPE_CHECK (!frame.use);
+  MOPPE_CHECK (frame.use_held);
   input.key (platform::Key::E, false);
-  MOPPE_CHECK (!input.take_frame ().deploy_glider_held);
+  MOPPE_CHECK (!input.take_frame ().use_held);
 
   input.key (platform::Key::Tab, true);
   frame = input.take_frame ();
