@@ -34,8 +34,9 @@ namespace {
 
 MOPPE_TEST (the_helicopter_model_seats_the_pilot_where_the_physics_does) {
   for (int i = 0; i < 3; ++i)
-    MOPPE_CHECK_NEAR (
-      game::helicopter_model::seat_pilot[i], mov::Helicopter::seat[i], 1e-4f);
+    MOPPE_CHECK_NEAR (game::helicopter_model::seat_pilot[i],
+                      displacement_value (mov::Helicopter::seat)[i],
+                      1e-4f);
   MOPPE_CHECK_NEAR (game::helicopter_model::rotor_hub[0], 0.0f, 1e-4f);
   MOPPE_CHECK_NEAR (game::helicopter_model::rotor_hub[2], 0.0f, 1e-4f);
 }

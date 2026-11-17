@@ -18,11 +18,12 @@ namespace moppe::mov {
       constexpr kilogram_square_metres_t inertia[3] = { 2400.0f * u::kg * u::m2,
                                                         2600.0f * u::kg* u::m2,
                                                         700.0f * u::kg* u::m2 };
-      constexpr float mass_centre[3] = { 0.0f, 1.15f, 0.05f };
+      const displacement_t mass_centre =
+        displacement (Vec3 (0.0f, 1.15f, 0.05f));
 
       // The rotor at flying speed lifts twice the helicopter's weight;
       // it takes a few seconds to get there and longer to run down.
-      constexpr float thrust_to_weight = 2.0f;
+      constexpr scale_factor_t thrust_to_weight = 2.0f * scale_factor[one];
       constexpr seconds_t spool_up = 3.5f * u::s;
       constexpr seconds_t spool_down = 10.0f * u::s;
       // Revolutions a second at flying speed, main and tail, as drawn:
@@ -42,11 +43,11 @@ namespace moppe::mov {
       constexpr damping_t speed_gain = 0.7f / u::s;
       constexpr damping_t climb_gain = 2.2f / u::s;
       // The heading loop turns at most this many radians a second.
-      constexpr float yaw_rate = 1.6f;
+      constexpr radians_per_second_t yaw_rate = 1.6f * u::rad / u::s;
       // The attitude loop, as a natural frequency and damping.
-      constexpr float attitude_hertz = 0.85f;
-      constexpr float attitude_damping = 0.85f;
-      constexpr float yaw_gain = 4.0f;
+      constexpr frequency_t attitude_hertz = 0.85f * u::Hz;
+      constexpr damping_ratio_t attitude_damping = 0.85f * damping_ratio[one];
+      constexpr per_second_t yaw_gain = 4.0f / u::s;
       // Kept above the ground, metres: the hover taxi's height, and more
       // the faster it goes.
       constexpr meters_t taxi_height = 1.6f * u::m;
@@ -66,13 +67,27 @@ namespace moppe::mov {
       constexpr std::uint64_t trunk_bit = 2;
       constexpr std::uint64_t body_bit = 8;
 
-      constexpr float pi = 3.14159265f;
+      constexpr proportion_t none = 0.0f * proportion[one];
+      constexpr proportion_t whole = 1.0f * proportion[one];
 
       // The skids' ends, where it meets the ground.
-      constexpr float skid_ends[4][3] = { { Helicopter::skid, 0.0f, 1.35f },
-                                          { -Helicopter::skid, 0.0f, 1.35f },
-                                          { Helicopter::skid, 0.0f, -1.35f },
-                                          { -Helicopter::skid, 0.0f, -1.35f } };
+      const float skid_x = meters_value (Helicopter::skid);
+      const displacement_t skid_ends[4] = {
+        displacement (Vec3 (skid_x, 0.0f, 1.35f)),
+        displacement (Vec3 (-skid_x, 0.0f, 1.35f)),
+        displacement (Vec3 (skid_x, 0.0f, -1.35f)),
+        displacement (Vec3 (-skid_x, 0.0f, -1.35f))
+      };
+
+      // A vector quantity's length and the way it points.
+      template <class Q>
+      auto magnitude_of (const Q& q) {
+        return length (q.numerical_value_ref_in (Q::unit)) * Q::reference;
+      }
+      template <class Q>
+      direction_t way_of (const Q& q) {
+        return unit_direction (normalized (q.numerical_value_ref_in (Q::unit)));
+      }
     }
   }
 
@@ -134,7 +149,7 @@ namespace moppe::mov {
         b3MakeOffsetBoxHull (0.20f, 0.22f, 2.30f, { 0.0f, 1.75f, -3.60f });
       b3CreateHullShape (body, &shape, &boom.base);
       shape.baseMaterial.friction = 0.7f;
-      for (const float x : { skid, -skid }) {
+      for (const float x : { heli_rig::skid_x, -heli_rig::skid_x }) {
         const b3Capsule runner { { x, 0.05f, -1.40f },
                                  { x, 0.05f, 1.45f },
                                  0.05f };
@@ -142,9 +157,7 @@ namespace moppe::mov {
       }
       b3Body_SetMassData (body,
                           body_mass (heli_rig::mass,
-                                     Vec3 (heli_rig::mass_centre[0],
-                                           heli_rig::mass_centre[1],
-                                           heli_rig::mass_centre[2]),
+                                     heli_rig::mass_centre,
                                      { heli_rig::inertia[0],
                                        heli_rig::inertia[1],
                                        heli_rig::inertia[2] }));
@@ -181,30 +194,37 @@ namespace moppe::mov {
       return from_b3 (b3Body_GetPosition (body)) + axis (local);
     }
 
-    float ground (const Vec3& p) const {
-      return surface_elevation_at (surface, p[0], p[2]);
+    direction_t facing (const direction_t& local) const {
+      return turned (b3Body_GetRotation (body), local);
     }
 
-    float altitude () const {
-      float least = 1e30f;
-      for (const auto& end : heli_rig::skid_ends) {
-        const Vec3 p = point (Vec3 (end[0], end[1], end[2]));
-        least = std::min (least, p[1] - ground (p));
+    position_t where (const displacement_t& local) const {
+      return body_position (body) +
+             quantity_cast<isq::position_vector> (
+               turned (b3Body_GetRotation (body), local));
+    }
+
+    meters_t altitude () const {
+      meters_t least = 1e30f * u::m;
+      for (const displacement_t& end : heli_rig::skid_ends) {
+        const position_t p = where (end);
+        least = std::min (least, height_of (p) - ground_under (surface, p));
       }
       return least;
     }
 
-    State standing (const Vec3& at, const Vec3& heading) const {
+    State standing (const position_t& at, const Vec3& heading) const {
       const b3Quat q = level_rotation (heading);
       const std::array<float, 4> rotation = array_of (q);
-      float highest = -1e30f;
-      for (const auto& end : heli_rig::skid_ends) {
-        const Vec3 under =
-          at + rotated (rotation, Vec3 (end[0], end[1], end[2]));
-        highest = std::max (highest, ground (under));
+      meters_t highest = -1e30f * u::m;
+      for (const displacement_t& end : heli_rig::skid_ends) {
+        const position_t under =
+          at + quantity_cast<isq::position_vector> (
+                 displacement (rotated (rotation, displacement_value (end))));
+        highest = std::max (highest, ground_under (surface, under));
       }
-      Vec3 centre = at;
-      centre[1] = highest + 0.03f;
+      Vec3 centre = position_value (at);
+      centre[1] = meters_value (highest + 0.03f * u::m);
       State s = kept;
       s.body = { centre, rotation, Vec3 (), Vec3 () };
       patch.origin_for (centre, s.ground_column, s.ground_row);
@@ -214,7 +234,7 @@ namespace moppe::mov {
       return s;
     }
 
-    void place (const Vec3& at, const Vec3& heading) {
+    void place (const position_t& at, const Vec3& heading) {
       const State s = standing (at, heading);
       if (B3_IS_NULL (world)) {
         build (s);
@@ -230,163 +250,217 @@ namespace moppe::mov {
 
     void step (seconds_t dt, meters_t water_level) {
       using namespace heli_rig;
+      using angular_acceleration_t =
+        quantity<isq::angular_acceleration[u::rad / pow<2> (u::s)], Vec3>;
       patch.recentre (world, trunks, from_b3 (b3Body_GetPosition (body)));
 
       const seconds_t step = dt;
-      const auto share = [] (auto q) { return q.numerical_value_in (one); };
-      const float was = scalar_value (kept.rotor);
-      const float rotor = kept.parked
-                            ? std::max (0.0f, was - share (step / spool_down))
-                            : std::min (1.0f, was + share (step / spool_up));
-      kept.rotor = rotor * one;
+      const proportion_t was = kept.rotor;
+      const proportion_t rotor =
+        kept.parked
+          ? std::max (none, was - quantity_cast<proportion> (step / spool_down))
+          : std::min (whole, was + quantity_cast<proportion> (step / spool_up));
+      kept.rotor = rotor;
       kept.rotor_angle =
-        std::remainder (radians_value (kept.rotor_angle) +
-                          share (rotor * 2.0f * pi * rotor_rate * step),
-                        2.0f * pi) *
+        std::remainder (
+          radians_value (kept.rotor_angle) +
+            (rotor * 2.0f * PI * rotor_rate * step).numerical_value_in (one),
+          2.0f * PI) *
         u::rad;
       kept.tail_angle =
-        std::remainder (radians_value (kept.tail_angle) +
-                          share (rotor * 2.0f * pi * tail_rate * step),
-                        2.0f * pi) *
+        std::remainder (
+          radians_value (kept.tail_angle) +
+            (rotor * 2.0f * PI * tail_rate * step).numerical_value_in (one),
+          2.0f * PI) *
         u::rad;
 
-      const Vec3 up = axis (Vec3 (0, 1, 0));
-      const Vec3 v = from_b3 (b3Body_GetLinearVelocity (body));
-      const Vec3 w = from_b3 (b3Body_GetAngularVelocity (body));
-      const float height = altitude ();
-      kept.grounded = height < 0.12f;
+      const direction_t local_up = unit_direction (Vec3 (0, 1, 0));
+      const direction_t up = facing (local_up);
+      const velocity_t v = linear_velocity (body);
+      const angular_velocity_t w = angular_velocity (body);
+      const meters_t height = altitude ();
+      kept.grounded = height < 0.12f * u::m;
 
-      const float drive =
-        kept.parked ? 0.0f
-                    : std::clamp (scalar_value (kept.drive), -1.0f, 1.0f);
-      const float turn =
-        kept.parked ? 0.0f : std::clamp (scalar_value (kept.turn), -1.0f, 1.0f);
-      const float lift =
-        kept.parked ? 0.0f : std::clamp (scalar_value (kept.lift), -1.0f, 1.0f);
-      const float authority = rotor * rotor;
+      constexpr control_signal_t let_go = 0.0f * control_signal[one];
+      constexpr control_signal_t full = 1.0f * control_signal[one];
+      constexpr control_signal_t nudge = 0.05f * control_signal[one];
+      const control_signal_t drive =
+        kept.parked ? let_go : std::clamp (kept.drive, -full, full);
+      const control_signal_t turn =
+        kept.parked ? let_go : std::clamp (kept.turn, -full, full);
+      const control_signal_t lift =
+        kept.parked ? let_go : std::clamp (kept.lift, -full, full);
+      const proportion_t authority = quantity_cast<proportion> (rotor * rotor);
 
       // The way it heads, level.
-      Vec3 ahead = axis (Vec3 (0, 0, 1));
-      ahead[1] = 0.0f;
-      ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
-      Vec3 across = v;
-      across[1] = 0.0f;
-      const float speed = length (across);
-      const speed_t ground_speed = speed * u::m / u::s;
+      Vec3 heading = direction_value (facing (unit_direction (Vec3 (0, 0, 1))));
+      heading[1] = 0.0f;
+      const direction_t ahead = unit_direction (
+        length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1));
+      velocity_t across = v;
+      velocity_value (across)[1] = 0.0f;
+      const speed_t speed = magnitude_of (across);
+      const speed_t ground_speed = speed;
 
       // Sitting on its skids with nothing asked of it, it stays sat.
-      const bool sitting = kept.grounded && lift <= 0.05f &&
-                           std::abs (drive) < 0.05f && std::abs (turn) < 0.05f;
+      const bool sitting = kept.grounded && lift <= nudge &&
+                           abs (drive) < nudge && abs (turn) < nudge;
       const newtons_t weight = heli_rig::mass * standard_gravity;
-      const auto newtons = [] (newtons_t f) {
-        return f.numerical_value_in (u::N);
-      };
-      Vec3 thrust_force;
-      Vec3 angular;
+      force_t thrust_force;
+      angular_acceleration_t angular;
       if (sitting || kept.parked) {
-        thrust_force = up * newtons (0.25f * weight * authority);
+        thrust_force = quantity_cast<isq::force> (
+          up *
+          newtons_t (quantity_cast<isq::force> (0.25f * weight * authority)));
       } else {
         // Climb or descend as asked, or hold the height; slow for the
         // touchdown; keep clear of the ground ahead when not descending.
-        speed_t climb = lift > 0.0f ? lift * climb_rate : lift * descent_rate;
-        if (lift < 0.0f)
+        speed_t climb =
+          lift > let_go
+            ? speed_t (quantity_cast<isq::speed> (lift * climb_rate))
+            : speed_t (quantity_cast<isq::speed> (lift * descent_rate));
+        if (lift < let_go)
           climb = std::max (
-            climb,
-            speed_t (-(0.6f * u::m / u::s + 0.5f / u::s * (height * u::m))));
-        if (lift >= 0.0f) {
-          const Vec3 at = from_b3 (b3Body_GetPosition (body));
-          float terrain = ground (at);
-          for (const float seconds : { 1.0f, 2.0f, 3.5f })
-            terrain = std::max (terrain, ground (at + across * seconds));
+            climb, speed_t (-(0.6f * u::m / u::s + 0.5f / u::s * height)));
+        if (lift >= let_go) {
+          const position_t at = body_position (body);
+          meters_t terrain = ground_under (surface, at);
+          for (const seconds_t ahead_by :
+               { 1.0f * u::s, 2.0f * u::s, 3.5f * u::s })
+            terrain =
+              std::max (terrain,
+                        ground_under (surface,
+                                      at + quantity_cast<isq::position_vector> (
+                                             across * ahead_by)));
           const meters_t wanted =
             taxi_height + clearance_per_speed * ground_speed +
-            kept.load_hang * std::clamp (speed / 6.0f, 0.0f, 1.0f);
-          const meters_t clear = (at[1] - terrain) * u::m;
+            meters_t (quantity_cast<isq::length> (
+              kept.load_hang * std::clamp (quantity_cast<proportion> (
+                                             speed / (6.0f * u::m / u::s)),
+                                           none,
+                                           whole)));
+          const meters_t clear = height_of (at) - terrain;
           if (clear < wanted)
             climb = std::max (climb, speed_t ((wanted - clear) * 1.5f / u::s));
         }
-        const metres_per_second_squared_t rise =
-          std::clamp (metres_per_second_squared_t (
-                        climb_gain * (climb - v[1] * u::m / u::s)),
-                      -5.0f * u::m / pow<2> (u::s),
-                      7.0f * u::m / pow<2> (u::s));
+        const speed_t climbing = velocity_value (v)[1] * u::m / u::s;
+        const metres_per_second_squared_t rise = std::clamp (
+          metres_per_second_squared_t (climb_gain * (climb - climbing)),
+          -5.0f * u::m / pow<2> (u::s),
+          7.0f * u::m / pow<2> (u::s));
 
         // Lean toward the speed asked for: a coordinated turn falls out
         // of the heading turning away from the way it is going.
         const speed_t target =
-          drive > 0.0f ? drive * top_speed : drive * back_speed;
-        // The level acceleration asked for, metres a second squared.
-        Vec3 push = (ahead * target.numerical_value_in (u::m / u::s) - across) *
-                    speed_gain.numerical_value_in (one / u::s);
-        const float most =
-          standard_gravity.numerical_value_in (u::m / pow<2> (u::s)) *
-          std::tan (radians_value (max_tilt));
-        if (length (push) > most)
-          push = normalized (push) * most;
+          drive > let_go
+            ? speed_t (quantity_cast<isq::speed> (drive * top_speed))
+            : speed_t (quantity_cast<isq::speed> (drive * back_speed));
+        // The level acceleration asked for.
+        acceleration_t push = quantity_cast<isq::acceleration> (
+          (quantity_cast<isq::velocity> (ahead * target) - across) *
+          speed_gain);
+        const metres_per_second_squared_t most =
+          standard_gravity * std::tan (radians_value (max_tilt));
+        if (magnitude_of (push) > most)
+          push = quantity_cast<isq::acceleration> (way_of (push) * most);
         // The rotor gives its own weight and the climb asked for, and
         // leans for the speed asked for, against what hangs under it.
-        const Vec3 pull = force_value (kept.load_pull);
-        const float m = heli_rig::mass.numerical_value_in (u::kg);
-        const float hold = std::max (newtons (weight) - pull[1], 0.0f);
-        Vec3 level = Vec3 (push[0] * m - pull[0], 0.0f, push[2] * m - pull[2]);
-        const float reach = std::tan (radians_value (max_tilt) * 1.3f) * hold;
-        if (length (level) > reach)
-          level = normalized (level) * reach;
-        const float thrust = std::clamp (
-          newtons (hold * u::N + heli_rig::mass * rise) /
-            std::max (up[1], 0.5f),
-          0.0f,
-          newtons (thrust_to_weight * weight + length (pull) * u::N) *
-            authority);
-        thrust_force = up * thrust;
-        const Vec3 wanted_up = hold > 1.0f
-                                 ? normalized (Vec3 (level[0], hold, level[2]))
-                                 : Vec3 (0, 1, 0);
-        const float omega = 2.0f * pi * attitude_hertz;
-        const Vec3 spin_about_up = up * dot (w, up);
-        const Vec3 tilt_rate = w - spin_about_up;
-        angular = cross (up, wanted_up) * (omega * omega) -
-                  tilt_rate * (2.0f * attitude_damping * omega);
+        const force_t& pull = kept.load_pull;
+        const newtons_t hold = std::max (weight - force_value (pull)[1] * u::N,
+                                         newtons_t (0.0f * u::N));
+        force_t level =
+          quantity_cast<isq::force> (push * heli_rig::mass) - pull;
+        level.numerical_value_ref_in (u::N)[1] = 0.0f;
+        const newtons_t reach =
+          std::tan (radians_value (max_tilt) * 1.3f) * hold;
+        if (magnitude_of (level) > reach)
+          level = quantity_cast<isq::force> (way_of (level) * reach);
+        const newtons_t thrust =
+          std::clamp (newtons_t ((hold + heli_rig::mass * rise) /
+                                 std::max (direction_value (up)[1], 0.5f)),
+                      0.0f * u::N,
+                      newtons_t (quantity_cast<isq::force> (
+                        (quantity_cast<isq::force> (thrust_to_weight * weight) +
+                         magnitude_of (pull)) *
+                        authority)));
+        thrust_force = quantity_cast<isq::force> (up * thrust);
+        const Vec3& levelled = force_value (level);
+        const direction_t wanted_up =
+          hold > 1.0f * u::N
+            ? unit_direction (normalized (
+                Vec3 (levelled[0], newtons_value (hold), levelled[2])))
+            : local_up;
+        const per_second_t omega = 2.0f * PI * attitude_hertz;
+        const angular_velocity_t spin_about_up =
+          quantity_cast<isq::angular_velocity> (up * dot (w, up));
+        const angular_velocity_t tilt_rate = w - spin_about_up;
+        angular =
+          angular_acceleration_t (quantity_cast<isq::angular_acceleration> (
+            cross (up, wanted_up) * (omega * omega) * u::rad)) -
+          angular_acceleration_t (quantity_cast<isq::angular_acceleration> (
+            tilt_rate * (2.0f * attitude_damping * omega)));
         // Turns quickest at a hover, and no quicker at speed than the
         // tilt can carry it round.
-        const float rate =
-          std::clamp (1.2f * most / std::max (speed, 1.0f), 0.35f, yaw_rate);
-        angular = angular + up * (yaw_gain * (-turn * rate - dot (w, up)));
-        angular = angular * authority;
+        const radians_per_second_t rate = std::clamp (
+          radians_per_second_t (1.2f * most /
+                                std::max (speed, 1.0f * u::m / u::s) * u::rad),
+          0.35f * u::rad / u::s,
+          yaw_rate);
+        const radians_per_second_t yawing =
+          quantity_cast<isq::angular_velocity> (dot (w, up));
+        angular =
+          angular +
+          quantity_cast<isq::angular_acceleration> (
+            up * (yaw_gain *
+                  (radians_per_second_t (
+                     quantity_cast<isq::angular_velocity> (-turn * rate)) -
+                   yawing)));
+        angular =
+          quantity_cast<isq::angular_acceleration> (angular * authority);
       }
 
       // The air's drag, and the water's up to the cabin's floor.
-      const float wet = std::clamp (
-        (meters_value (water_level) - point (Vec3 (0, 0.6f, 0))[1]) / 0.8f,
-        0.0f,
-        1.0f);
-      const auto resistance = air_drag * (length (v) * u::m / u::s) +
-                              water_drag * wet * heli_rig::mass;
-      const Vec3 drag = v * (-resistance).numerical_value_in (u::kg / u::s);
-      b3Body_ApplyForceToCenter (body, to_b3 (thrust_force + drag), true);
-      if (length2 (angular) > 0.0f)
+      const proportion_t wet = std::clamp (
+        quantity_cast<proportion> (
+          (water_level - height_of (where (displacement (Vec3 (0, 0.6f, 0))))) /
+          (0.8f * u::m)),
+        none,
+        whole);
+      const quantity<u::kg / u::s, float> resistance =
+        air_drag * magnitude_of (v) +
+        quantity<u::kg / u::s, float> (
+          water_drag * quantity_cast<mp_units::dimensionless> (wet) *
+          heli_rig::mass);
+      const force_t drag = quantity_cast<isq::force> (v * -resistance);
+      apply_force_to_centre (body, thrust_force + drag);
+      const Vec3& spin =
+        angular.numerical_value_ref_in (u::rad / pow<2> (u::s));
+      if (length2 (spin) > 0.0f)
         b3Body_ApplyTorque (
           body,
-          torque_for (b3Body_GetRotation (body), angular, heli_rig::inertia),
+          torque_for (b3Body_GetRotation (body), spin, heli_rig::inertia),
           true);
 
       b3World_Step (world, seconds_value (dt), substeps);
 
       // Left on its side or back, it is set on its skids again.
-      const Vec3 moving = from_b3 (b3Body_GetLinearVelocity (body));
-      const Vec3 turning = from_b3 (b3Body_GetAngularVelocity (body));
-      const float upright = axis (Vec3 (0, 1, 0))[1];
-      kept.overturned = upright < 0.3f && length2 (moving) < 4.0f
+      const velocity_t moving = linear_velocity (body);
+      const angular_velocity_t turning = angular_velocity (body);
+      const auto squared = [] (auto q) { return q * q; };
+      kept.overturned = direction_value (facing (local_up))[1] < 0.3f &&
+                            dot (moving, moving) < squared (2.0f * u::m / u::s)
                           ? kept.overturned + dt
                           : seconds_t {};
       if (kept.overturned > 2.5f * u::s) {
-        place (point (Vec3 ()), axis (Vec3 (0, 0, 1)));
+        place (where (displacement (Vec3 ())), axis (Vec3 (0, 0, 1)));
         return;
       }
 
       // Parked, its rotor stopped, and still: it stays where it is.
-      const bool quiet = length2 (moving) < 0.08f * 0.08f &&
-                         length2 (turning) < 0.08f * 0.08f && kept.grounded;
+      const bool quiet =
+        dot (moving, moving) < squared (0.08f * u::m / u::s) &&
+        dot (turning, turning) < squared (0.08f * u::rad / u::s) &&
+        kept.grounded;
       kept.still = kept.parked && kept.rotor <= proportion_t {} && quiet
                      ? kept.still + dt
                      : seconds_t {};
@@ -397,7 +471,7 @@ namespace moppe::mov {
 
   Helicopter::Helicopter (const map::SurfaceGeometry& surface)
       : m_impl (std::make_unique<Impl> (surface)) {
-    m_impl->place (Vec3 (), Vec3 (0, 0, 1));
+    m_impl->place (moppe::position (Vec3 ()), Vec3 (0, 0, 1));
   }
 
   Helicopter::~Helicopter () = default;
@@ -411,7 +485,7 @@ namespace moppe::mov {
   }
 
   void Helicopter::place (const Vec3& at, const Vec3& heading) {
-    m_impl->place (at, heading);
+    m_impl->place (moppe::position (at), heading);
   }
 
   void Helicopter::set_trunks (const TrunkField* trunks) {
@@ -499,7 +573,7 @@ namespace moppe::mov {
   }
 
   meters_t Helicopter::altitude () const {
-    return m_impl->altitude () * u::m;
+    return m_impl->altitude ();
   }
 
   proportion_t Helicopter::rotor () const {

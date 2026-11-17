@@ -642,7 +642,7 @@ namespace moppe::game {
                                  std::optional<Vec3> avoid) const {
     const Vec3 centre = lot.spawn;
     const float water = lot.ground.world.water_level.numerical_value_in (u::m);
-    const float reach = mov::Helicopter::rotor_radius + 2.5f;
+    const float reach = meters_value (mov::Helicopter::rotor_radius) + 2.5f;
     std::optional<Vec3> best;
     float best_score = 1e30f;
     for (float r = 220.0f; r <= 600.0f; r += 6.0f) {
