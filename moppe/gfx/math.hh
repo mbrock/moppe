@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <iostream>
 #include <numbers>
+#include <tuple>
 #include <type_traits>
 
 namespace moppe {
@@ -64,6 +65,17 @@ namespace moppe {
   using probability_t = quantity<probability[one], float>;
   using control_signal_t = quantity<control_signal[one], float>;
   using noise_signal_t = quantity<noise_signal[one], float>;
+  using grade_t = quantity<grade[one], float>;
+  using blend_weight_t = quantity<blend_weight[one], float>;
+  using scale_factor_t = quantity<scale_factor[one], float>;
+  using froude_number_t = quantity<froude_number[one], float>;
+
+  // Angles with a role (moppe/quantities.hh).
+  using heading_t = quantity<heading[si::radian], float>;
+  using inclination_t = quantity<inclination[si::radian], float>;
+
+  // Ages and spans of the world's history.
+  using age_t = quantity<age[astronomy::Julian_year], float>;
 
   // The inverse time constant of exponential decay (ISQ calls the
   // quantity a damping coefficient).  Every 1 - exp (-k * dt)
@@ -410,6 +422,147 @@ namespace moppe {
     return (1.0f - alpha) * from + alpha * to;
   }
 
+  // The horizontal plane's two lanes: x, then z (the world's y is up).
+  // The map, the torus, and everything planned on the ground live here, so
+  // a place that has no height of its own says so by its type. Lanewise
+  // arithmetic is exact IEEE and the reductions are written out in a fixed
+  // order, as Vec3's are: `magnitude` is sqrt (x * x + z * z), the same
+  // bits as the hand-written sum it replaces, and `hypot` is
+  // cr::hypot (x, z), for code that measured that way.
+  class Vec2 {
+  public:
+    using value_type = float;
+    static constexpr std::integral_constant<std::size_t, 2> extent {};
+
+    constexpr Vec2 () = default;
+    constexpr Vec2 (float x, float z) : m_x (x), m_z (z) {}
+
+    constexpr float x () const {
+      return m_x;
+    }
+    constexpr float z () const {
+      return m_z;
+    }
+
+    constexpr float operator[] (std::size_t index) const {
+      return index == 0 ? m_x : m_z;
+    }
+    constexpr float& operator[] (std::size_t index) {
+      return index == 0 ? m_x : m_z;
+    }
+
+    // The tuple protocol, through which mp-units names each lane's axis.
+    template <std::size_t Index>
+    constexpr float get () const {
+      static_assert (Index < 2);
+      return Index == 0 ? m_x : m_z;
+    }
+
+    float magnitude () const {
+      return std::sqrt (scalar_product (*this, *this));
+    }
+
+    Vec2 unit () const {
+      return *this / magnitude ();
+    }
+
+    constexpr Vec2& operator+= (const Vec2& other) {
+      m_x += other.m_x;
+      m_z += other.m_z;
+      return *this;
+    }
+    constexpr Vec2& operator-= (const Vec2& other) {
+      m_x -= other.m_x;
+      m_z -= other.m_z;
+      return *this;
+    }
+    constexpr Vec2& operator*= (float scale) {
+      m_x *= scale;
+      m_z *= scale;
+      return *this;
+    }
+    constexpr Vec2& operator/= (float scale) {
+      m_x /= scale;
+      m_z /= scale;
+      return *this;
+    }
+
+    friend constexpr Vec2 operator- (const Vec2& value) {
+      return { -value.m_x, -value.m_z };
+    }
+    friend constexpr Vec2 operator+ (Vec2 left, const Vec2& right) {
+      return left += right;
+    }
+    friend constexpr Vec2 operator- (Vec2 left, const Vec2& right) {
+      return left -= right;
+    }
+    friend constexpr Vec2 operator* (Vec2 value, float scale) {
+      return value *= scale;
+    }
+    friend constexpr Vec2 operator* (float scale, Vec2 value) {
+      return value *= scale;
+    }
+    friend constexpr Vec2 operator/ (Vec2 value, float scale) {
+      return value /= scale;
+    }
+    friend constexpr bool operator== (const Vec2&, const Vec2&) = default;
+
+    friend constexpr float scalar_product (const Vec2& left,
+                                           const Vec2& right) {
+      return left.m_x * right.m_x + left.m_z * right.m_z;
+    }
+
+    friend std::ostream& operator<< (std::ostream& stream, const Vec2& value) {
+      return stream << '[' << value.m_x << ", " << value.m_z << ']';
+    }
+
+  private:
+    float m_x = 0.0f;
+    float m_z = 0.0f;
+  };
+
+}
+
+// Before any quantity over a Vec2 is formed: mp-units reads a vector's
+// length from the tuple protocol once, when it first meets the type.
+template <>
+struct std::tuple_size<moppe::Vec2> : std::integral_constant<std::size_t, 2> {};
+
+template <std::size_t Index>
+struct std::tuple_element<Index, moppe::Vec2> {
+  using type = float;
+};
+
+namespace moppe {
+  inline float length (const Vec2& value) {
+    return value.magnitude ();
+  }
+
+  inline float length2 (const Vec2& value) {
+    return scalar_product (value, value);
+  }
+
+  inline Vec2 normalized (const Vec2& value) {
+    return value.unit ();
+  }
+
+  inline float dot (const Vec2& left, const Vec2& right) {
+    return scalar_product (left, right);
+  }
+
+  inline float hypot (const Vec2& value) {
+    return cr::hypot (value.x (), value.z ());
+  }
+
+  // The horizontal part of a 3-vector, and a 3-vector at height y.
+  inline Vec2 plan (const Vec3& value) {
+    return { value[0], value[2] };
+  }
+
+  inline Vec3 lift (const Vec2& value, float y = 0.0f) {
+    return Vec3 (value.x (), y, value.z ());
+  }
+
   template <Quantity Q1, Quantity Q2>
   auto dot (const Q1& left, const Q2& right) {
     return scalar_product (left.numerical_value_in (Q1::unit),
@@ -633,6 +786,158 @@ namespace moppe {
 
   inline Vec3& velocity_value (velocity_t& value) {
     return value.numerical_value_ref_in (si::metre / si::second);
+  }
+
+  using angular_velocity_t =
+    quantity<isq::angular_velocity[si::radian / si::second], Vec3>;
+
+  // Which way, as a unit vector: a typed direction says it is not a place
+  // or a distance. `direction_of` normalizes; `along` walks a distance
+  // that way. Local direction arithmetic can stay on Vec3 inside a
+  // function; signatures and members carry the type.
+  using direction_t = quantity<direction[one], Vec3>;
+
+  inline direction_t unit_direction (const Vec3& unit) {
+    return unit * direction[one];
+  }
+
+  inline const Vec3& direction_value (const direction_t& value) {
+    return value.numerical_value_ref_in (one);
+  }
+
+  inline direction_t direction_of (const displacement_t& value) {
+    return unit_direction (normalized (value.numerical_value_in (si::metre)));
+  }
+
+  inline displacement_t along (const direction_t& way, meters_t distance) {
+    return displacement (direction_value (way) *
+                         distance.numerical_value_in (si::metre));
+  }
+
+  // ---- The plan: the horizontal plane, x and z ----
+  //
+  // Where something stands on the map, with no height of its own: a road's
+  // centreline, a place's footprint, an animal's grazing ground. A plan
+  // position lifted to an elevation is a 3-D position (`at_height`); a 3-D
+  // position seen from above is a plan position (`plan`). The world's
+  // period, the torus's extent, is a plan extent (moppe/terrain/torus.hh).
+  //
+  // The point is measured as a horizontal displacement from the world's
+  // origin, so a plan displacement moves it and two of them subtract to
+  // one, with no quantity_cast (position_t, older, needs one to
+  // isq::position_vector). A 3-D displacement does not move it: take its
+  // plan () first. The lanes are named axes (moppe/quantities.hh):
+  // `const auto [x, z] = d;` gives an x_displacement_t and a
+  // z_displacement_t, which do not mix.
+  using plan_position_t =
+    quantity_point<horizontal_displacement[si::metre],
+                   default_point_origin (horizontal_displacement[si::metre]),
+                   Vec2>;
+  using plan_displacement_t =
+    quantity<horizontal_displacement[si::metre], Vec2>;
+  using x_displacement_t = quantity<x_displacement[si::metre], float>;
+  using z_displacement_t = quantity<z_displacement[si::metre], float>;
+  using plan_extent_t = quantity<spatial_extent[si::metre], Vec2>;
+  using plan_velocity_t = quantity<isq::velocity[si::metre / si::second], Vec2>;
+  using plan_direction_t = quantity<direction[one], Vec2>;
+
+  inline plan_position_t plan_position (const Vec2& metres) {
+    return plan_position_t (metres * horizontal_displacement[si::metre]);
+  }
+
+  inline plan_position_t plan_position (float x_m, float z_m) {
+    return plan_position (Vec2 (x_m, z_m));
+  }
+
+  inline plan_position_t plan_position (meters_t x, meters_t z) {
+    return plan_position (x.numerical_value_in (si::metre),
+                          z.numerical_value_in (si::metre));
+  }
+
+  inline plan_displacement_t plan_displacement (const Vec2& metres) {
+    return metres * horizontal_displacement[si::metre];
+  }
+
+  inline plan_displacement_t plan_displacement (meters_t x, meters_t z) {
+    return plan_displacement (Vec2 (x.numerical_value_in (si::metre),
+                                    z.numerical_value_in (si::metre)));
+  }
+
+  inline plan_extent_t plan_extent (meters_t x, meters_t z) {
+    return Vec2 (x.numerical_value_in (si::metre),
+                 z.numerical_value_in (si::metre)) *
+           spatial_extent[si::metre];
+  }
+
+  inline plan_direction_t plan_unit_direction (const Vec2& unit) {
+    return unit * direction[one];
+  }
+
+  // The metres behind a plan value, for the boundary into float code.
+  inline const Vec2& plan_value (const plan_position_t& value) {
+    return value.quantity_ref_from (value.point_origin)
+      .numerical_value_ref_in (si::metre);
+  }
+
+  inline Vec2& plan_value (plan_position_t& value) {
+    return value.quantity_ref_from (value.point_origin)
+      .numerical_value_ref_in (si::metre);
+  }
+
+  inline const Vec2& plan_value (const plan_displacement_t& value) {
+    return value.numerical_value_ref_in (si::metre);
+  }
+
+  inline const Vec2& plan_value (const plan_extent_t& value) {
+    return value.numerical_value_ref_in (si::metre);
+  }
+
+  inline const Vec2& plan_value (const plan_direction_t& value) {
+    return value.numerical_value_ref_in (one);
+  }
+
+  // Each lane as a length: east-west x and north-south z.
+  inline meters_t x_of (const plan_position_t& at) {
+    return plan_value (at).x () * si::metre;
+  }
+  inline meters_t z_of (const plan_position_t& at) {
+    return plan_value (at).z () * si::metre;
+  }
+  inline meters_t x_of (const plan_displacement_t& d) {
+    return plan_value (d).x () * si::metre;
+  }
+  inline meters_t z_of (const plan_displacement_t& d) {
+    return plan_value (d).z () * si::metre;
+  }
+
+  // How far, as a length: sqrt (x * x + z * z), or cr::hypot (x, z) where
+  // the code being typed measured that way (the two round differently).
+  inline meters_t length (const plan_displacement_t& d) {
+    return length (plan_value (d)) * si::metre;
+  }
+  inline meters_t hypot (const plan_displacement_t& d) {
+    return hypot (plan_value (d)) * si::metre;
+  }
+
+  inline plan_direction_t direction_of (const plan_displacement_t& d) {
+    return plan_unit_direction (normalized (plan_value (d)));
+  }
+
+  inline plan_displacement_t along (const plan_direction_t& way,
+                                    meters_t distance) {
+    return plan_displacement (plan_value (way) *
+                              distance.numerical_value_in (si::metre));
+  }
+
+  // Seen from above, and lifted back to a height.
+  inline plan_position_t plan (const position_t& at) {
+    return plan_position (plan (position_value (at)));
+  }
+  inline plan_displacement_t plan (const displacement_t& d) {
+    return plan_displacement (plan (d.numerical_value_in (si::metre)));
+  }
+  inline position_t at_height (const plan_position_t& at, meters_t y) {
+    return position (lift (plan_value (at), y.numerical_value_in (si::metre)));
   }
 }
 

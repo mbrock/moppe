@@ -5,58 +5,65 @@
 #include <cmath>
 
 namespace moppe::game {
-  float WorldGround::period_x () const {
-    return surface ().domain ().period_x ().numerical_value_in (u::m);
+  plan_extent_t WorldGround::period () const {
+    const terrain::TerrainDomain& domain = surface ().domain ();
+    return plan_extent (domain.period_x (), domain.period_z ());
   }
 
-  float WorldGround::period_z () const {
-    return surface ().domain ().period_z ().numerical_value_in (u::m);
+  terrain::SurfaceElevation
+  WorldGround::elevation (const plan_position_t& at) const {
+    return spatial::sample<terrain::surface_elevation> (
+      surface (), at_height (at, 0.0f * u::m));
   }
 
-  float WorldGround::height (const Vec3& at) const {
-    return terrain::surface_elevation_value (
-      spatial::sample<terrain::surface_elevation> (
-        surface (), moppe::position (Vec3 (at[0], 0.0f, at[2]))));
+  terrain::SurfaceElevation
+  WorldGround::still_water (const plan_position_t& at) const {
+    return terrain::surface_elevation_point (still_water_at (
+      world, surface (), &generated.water_surface (), lift (plan_value (at))));
   }
 
-  float WorldGround::still_level (const Vec3& at) const {
-    return still_water_at (world, surface (), &generated.water_surface (), at)
-      .numerical_value_in (u::m);
-  }
-
-  bool WorldGround::open (const Vec3& at, float room, float relief) const {
-    const float h = height (at);
-    float low = h, high = h;
+  bool WorldGround::open (const plan_position_t& at,
+                          meters_t room,
+                          meters_t relief) const {
+    const terrain::SurfaceElevation h = elevation (at);
+    terrain::SurfaceElevation low = h, high = h;
     for (int i = 0; i < 12; ++i) {
       const float b = 6.2831853f * i / 12.0f;
-      const Vec3 p = at + Vec3 (std::cos (b), 0.0f, std::sin (b)) * room;
-      const float g = height (p);
-      if (still_level (p) > g - 0.6f)
+      const plan_position_t p =
+        at +
+        along (plan_unit_direction (Vec2 (std::cos (b), std::sin (b))), room);
+      const terrain::SurfaceElevation g = elevation (p);
+      if (still_water (p) > g - 0.6f * u::m)
         return false;
       low = std::min (low, g);
       high = std::max (high, g);
     }
     if (high - low > relief)
       return false;
-    for (const mov::Trunk& trunk : trunks.gather (at, room + 2.0f)) {
-      const float dx = trunk.root[0] - at[0];
-      const float dz = trunk.root[2] - at[2];
-      const float clear = room + trunk.radius;
-      if (dx * dx + dz * dz < clear * clear)
+    const Vec2& centre = plan_value (at);
+    for (const mov::Trunk& trunk :
+         trunks.gather (lift (centre), meters_value (room) + 2.0f)) {
+      const plan_displacement_t apart = plan_position (plan (trunk.root)) - at;
+      const meters_t clear = room + trunk.radius * u::m;
+      if (length2 (plan_value (apart)) <
+          meters_value (clear) * meters_value (clear))
         return false;
     }
     return true;
   }
 
-  Vec3 WorldGround::open_near (const Vec3& want,
-                               float room,
-                               float relief,
-                               float search) const {
-    for (float r = 0.0f; r <= search; r += 1.5f) {
-      const int around = std::max (1, static_cast<int> (6.2831853f * r / 1.5f));
+  plan_position_t WorldGround::open_near (const plan_position_t& want,
+                                          meters_t room,
+                                          meters_t relief,
+                                          meters_t search) const {
+    for (meters_t r = 0.0f * u::m; r <= search; r += 1.5f * u::m) {
+      const int around =
+        std::max (1, static_cast<int> (6.2831853f * meters_value (r) / 1.5f));
       for (int k = 0; k < around; ++k) {
         const float a = 6.2831853f * k / around;
-        const Vec3 at = want + Vec3 (std::cos (a), 0.0f, std::sin (a)) * r;
+        const plan_position_t at =
+          want +
+          along (plan_unit_direction (Vec2 (std::cos (a), std::sin (a))), r);
         if (open (at, room, relief))
           return at;
       }
@@ -64,14 +71,17 @@ namespace moppe::game {
     return want;
   }
 
-  bool WorldGround::on_road (const Vec3& at, float reach, bool decks) const {
+  bool WorldGround::on_road (const plan_position_t& at,
+                             meters_t reach,
+                             bool decks) const {
     const terrain::RoadSurface& roads = generated.road_surface ();
-    const terrain::RoadSample road = roads.nearest (at[0], at[2]);
+    const Vec2& p = plan_value (at);
+    const terrain::RoadSample road = roads.nearest (p.x (), p.z ());
     const terrain::RoadFormation& formation = roads.formation ();
     return road.found && road.kind == terrain::Road::Kind::Road &&
            (decks || !road.bridge) &&
            std::abs (road.across) <
-             formation.half_width + formation.shoulder + reach;
+             formation.half_width + formation.shoulder + meters_value (reach);
   }
 
   Vec3 WorldGround::trail_cell (terrain::CellIndex cell) const {

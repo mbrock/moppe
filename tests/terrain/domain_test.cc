@@ -45,3 +45,44 @@ MOPPE_TEST (every_site_shifted_by_nothing_is_itself) {
 MOPPE_TEST (continuous_coordinates_rounding_to_a_full_lap_wrap_to_zero) {
   MOPPE_CHECK_NEAR (terrain::wrap_coordinate (-0.00001f, 2048.0f), 0.0f, 0.0f);
 }
+
+namespace {
+  template <typename A, typename B>
+  concept addable = requires (A a, B b) { a + b; };
+  template <typename To, typename... From>
+  concept composes = requires (From... from) { To { from... }; };
+}
+
+// The plan's lanes are distinct kinds: x and z offsets never mix, and a
+// displacement does not build from its axes in the wrong order, nor does a
+// 3-D displacement move a plan point.
+static_assert (!addable<x_displacement_t, z_displacement_t>);
+static_assert (
+  composes<plan_displacement_t, x_displacement_t, z_displacement_t>);
+static_assert (
+  !composes<plan_displacement_t, z_displacement_t, x_displacement_t>);
+static_assert (addable<plan_position_t, plan_displacement_t>);
+static_assert (!addable<plan_position_t, displacement_t>);
+
+MOPPE_TEST (typed_torus_offsets_cross_each_seam_by_its_own_period) {
+  // Unequal periods, so a swapped lane gives a different answer.
+  const plan_extent_t period = plan_extent (1000.0f * u::m, 2000.0f * u::m);
+  const plan_displacement_t way = terrain::torus_offset (
+    plan_position (995.0f, 1990.0f), plan_position (5.0f, 10.0f), period);
+  MOPPE_CHECK (plan_value (way) == Vec2 (10.0f, 20.0f));
+  const auto [across, down] = way;
+  MOPPE_CHECK (across == 10.0f * x_displacement[u::m]);
+  MOPPE_CHECK (down == 20.0f * z_displacement[u::m]);
+
+  const plan_position_t moved =
+    terrain::wrap (plan_position (995.0f, 1990.0f) + way, period);
+  MOPPE_CHECK (plan_value (moved) == Vec2 (5.0f, 10.0f));
+
+  // A point in space comes to the copy nearest the reference in plan and
+  // keeps its height.
+  const position_t near =
+    terrain::nearest_image (position (Vec3 (10.0f, 42.0f, 30.0f)),
+                            position (Vec3 (990.0f, 0.0f, 1980.0f)),
+                            period);
+  MOPPE_CHECK (position_value (near) == Vec3 (1010.0f, 42.0f, 2030.0f));
+}

@@ -66,6 +66,65 @@ namespace moppe {
   QUANTITY_SPEC (proportion, mp_units::dimensionless, mp_units::non_negative);
   QUANTITY_SPEC (probability, mp_units::dimensionless, mp_units::non_negative);
 
+  // ---- Kinds of one ----
+  //
+  // A number without a unit still has a meaning, and two meanings must not
+  // be added because their dimensions agree. Each of these is its own kind
+  // (subkind): a grade never becomes a blend weight or a scale without an
+  // explicit quantity_cast, and a plain `x * mp_units::one` has to be named
+  // (`x * grade[one]`) before it becomes one. Coefficients the ISQ already
+  // defines are used from there rather than declared again:
+  // isq::drag_coefficient, isq::static_friction_coefficient,
+  // isq::kinetic_friction_factor, isq::rolling_resistance_factor,
+  // isq::mechanical_efficiency, isq::rotation (turns counted), and
+  // isq::phase_angle. Angles are already kinds of their own: radians are
+  // isq::angular_measure, never plain one (docs/typed-quantities.md).
+
+  // Rise over run along a path: a road's or a trail's climb, a channel's
+  // fall. Signed, unlike terrain::terrain_slope, the ground's steepness.
+  QUANTITY_SPEC (grade,
+                 mp_units::dimensionless,
+                 mp_units::isq::height / mp_units::isq::length,
+                 mp_units::subkind);
+  // How far a blend has gone from one state toward another: a lerp's
+  // weight, a smoothing step, a crossfade. Not a share of anything.
+  QUANTITY_SPEC (blend_weight,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  // A size or a strength relative to a reference: a mesh's scale, a gain,
+  // a multiplier on a tuned value. May exceed one.
+  QUANTITY_SPEC (scale_factor,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  // Flow speed over the speed of a shallow-water wave: below one a river
+  // is tranquil, above it rapid.
+  QUANTITY_SPEC (froude_number,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  // Which way, and nothing of how far: a unit-length vector. A normal, a
+  // forward, an axis; the plan's version is a unit Vec2.
+  QUANTITY_SPEC (direction,
+                 mp_units::dimensionless,
+                 mp_units::quantity_tensor_order::vector,
+                 mp_units::subkind);
+
+  // ---- Angles ----
+  //
+  // Which way something faces round the world's up axis, and how far it
+  // leans or looks above the level. Both are angular measures, so either
+  // converts to a plain radian quantity, but neither becomes the other.
+  QUANTITY_SPEC (heading, mp_units::isq::angular_measure);
+  QUANTITY_SPEC (inclination, mp_units::isq::angular_measure);
+
+  // ---- History ----
+
+  // How long ago something happened, or how long it has stood: a road's
+  // founding, a stand's last fire. Counted in Julian years.
+  QUANTITY_SPEC (age, mp_units::isq::duration);
+
   // ---- Soaring ----
   //
   // Soaring quantities are kept distinct even where their dimensions match
@@ -88,7 +147,24 @@ namespace moppe {
   // character and length dimension of ISQ displacement, but is not a
   // displacement undergone by an object.
   QUANTITY_SPEC (spatial_extent, mp_units::isq::displacement);
+
+  // A displacement in the horizontal plane, and its two axes. Each axis is
+  // its own kind (subkind), so an x offset and a z offset never add or
+  // compare, and building a plan displacement from them in the wrong order
+  // does not compile: `auto [x, z] = d;` and `{ x_displacement (..),
+  // z_displacement (..) }` (moppe/gfx/math.hh, plan_displacement_t).
+  QUANTITY_SPEC (horizontal_displacement, mp_units::isq::displacement);
+  QUANTITY_SPEC (x_displacement,
+                 mp_units::isq::displacement,
+                 mp_units::subkind);
+  QUANTITY_SPEC (z_displacement,
+                 mp_units::isq::displacement,
+                 mp_units::subkind);
 }
+
+template <>
+struct mp_units::component_vectors<moppe::horizontal_displacement>
+    : mp_units::vector_axes<moppe::x_displacement, moppe::z_displacement> {};
 
 namespace moppe::terrain {
   // ---- Counted entities ----

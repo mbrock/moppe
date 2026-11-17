@@ -13,6 +13,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <ranges>
 #include <span>
@@ -164,6 +165,24 @@ namespace moppe::terrain {
   inline float surface_elevation_value (SurfaceElevation value) {
     return value.delta_from_zero ().numerical_value_in (u::m);
   }
+
+  // A plan position lifted onto the ground, or onto any level.
+  inline position_t at_elevation (const plan_position_t& at,
+                                  SurfaceElevation level) {
+    return at_height (at, surface_elevation_value (level) * u::m);
+  }
+
+  // ---- Fields over the plan ----
+  //
+  // What a reading of the world answers at each horizontal point, passed
+  // to whatever plans on it (places, animals, the camp, the walk scripts):
+  // the ground's elevation, the still water's, how fast the water runs.
+  // These replace std::function<float (float x, float z)>; build one from
+  // WorldGround (elevation_field ()), and pass it rather than a float
+  // callback.
+  template <typename Value>
+  using PlanField = std::function<Value (plan_position_t)>;
+  using ElevationField = PlanField<SurfaceElevation>;
 
   // The metre numbers behind a run of elevation points, viewed in place.
   // The point's representation is bitwise its metre value -- the identity
