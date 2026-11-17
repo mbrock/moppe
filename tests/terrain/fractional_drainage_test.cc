@@ -40,7 +40,8 @@ namespace {
 
   FractionalDrainage analyze_plane (std::span<const float> heights) {
     const ElevationMap terrain = make_elevation_map (plane_grid (), heights);
-    const FloodField flood = analyze_standing_water (terrain, -1000.0f);
+    const FloodField flood = analyze_standing_water (
+      terrain, surface_elevation_point (-1000.0f * u::m));
     return analyze_fractional_drainage (flood, census_lakes (flood));
   }
 }
@@ -174,7 +175,8 @@ MOPPE_TEST (channel_memory_can_select_an_aligned_downhill_route) {
       10.0f - 0.9f * static_cast<float> (center_y - y);
 
   const ElevationMap terrain = make_elevation_map (grid, heights);
-  const FloodField flood = analyze_standing_water (terrain, -1000.0f);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (-1000.0f * u::m));
   const LakeCensus census = census_lakes (flood);
   const FractionalDrainage memoryless =
     analyze_fractional_drainage (flood, census);

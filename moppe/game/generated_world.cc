@@ -36,7 +36,7 @@ namespace moppe::game {
 
     report (HydrologyStage::StandingWater);
     terrain::FloodField standing_water = terrain::analyze_standing_water (
-      geometry, (recipe.water_datum ()).numerical_value_in (moppe::u::m));
+      geometry, terrain::surface_elevation_point (recipe.water_datum ()));
 
     report (HydrologyStage::Lakes);
     terrain::LakeCensus lakes = terrain::census_lakes (standing_water);

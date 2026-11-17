@@ -1545,8 +1545,8 @@ namespace moppe::terrain {
                                  std::span<const SurfaceElevation> elevations,
                                  const TrailFormation& parameters) {
     const DrainageGraph drainage = analyze_drainage (domain, elevations);
-    const FloodField flood = analyze_standing_water (
-      domain, elevations, surface_elevation_value (parameters.sea_level));
+    const FloodField flood =
+      analyze_standing_water (domain, elevations, parameters.sea_level);
     return analyze_trail_network (
       domain, elevations, parameters, drainage, flood);
   }
@@ -1570,8 +1570,8 @@ namespace moppe::terrain {
                                     .row = static_cast<std::size_t> (y) })];
 
     const DrainageGraph drainage = analyze_drainage (grid, elevations);
-    const FloodField flood = analyze_standing_water (
-      grid, elevations, surface_elevation_value (parameters.sea_level));
+    const FloodField flood =
+      analyze_standing_water (grid, elevations, parameters.sea_level);
     TrailNetwork network =
       analyze_trail_network (grid, elevations, parameters, drainage, flood);
 

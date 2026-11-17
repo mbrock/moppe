@@ -79,7 +79,8 @@ namespace {
 
 MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
   const ElevationMap terrain = lake_country ();
-  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
   const DrainageGraph drainage = analyze_drainage (terrain);
   // Two patches of mire straddle the trailhead's way north and south,
   // leaving narrow dry ground either side.
@@ -194,7 +195,8 @@ namespace {
 
 MOPPE_TEST (built_roads_hold_their_grade_and_meet_where_they_join) {
   const ElevationMap terrain = ridge_country ();
-  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
   const DrainageGraph drainage = analyze_drainage (terrain);
   RoadNetwork network;
   // Over the ridge, west to east, and a branch leaving it on the ridge's
@@ -326,7 +328,8 @@ namespace {
 // river, and every body on the road drives over the deck.
 MOPPE_TEST (roads_bridge_the_rivers_they_cross) {
   const ElevationMap terrain = valley_country ();
-  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
   const DrainageGraph drainage = analyze_drainage (terrain);
   const std::size_t floor = 50 * side + 50;
   const float river =
@@ -386,7 +389,8 @@ MOPPE_TEST (roads_bridge_the_rivers_they_cross) {
 // planks, where the deck's riders would meet it.
 MOPPE_TEST (a_bridge_span_is_cut_clear_of_the_ground_beneath) {
   const ElevationMap terrain = valley_country (6.0f);
-  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
   const DrainageGraph drainage = analyze_drainage (terrain);
   const float river =
     drainage.contributing_area_at (CellIndex { 50 * side + 50 })
@@ -431,7 +435,8 @@ MOPPE_TEST (a_bridge_span_is_cut_clear_of_the_ground_beneath) {
 // the ground is left for the water to pass under.
 MOPPE_TEST (roads_cross_small_streams_on_embankments_over_culverts) {
   const ElevationMap terrain = valley_country ();
-  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
   const DrainageGraph drainage = analyze_drainage (terrain);
   const std::size_t floor = 50 * side + 50;
   const float stream =
@@ -517,7 +522,8 @@ MOPPE_TEST (road_surface_keeps_its_height_round_a_bend) {
 // along it, level with its end, and is no road past it.
 MOPPE_TEST (roads_end_in_turning_places_and_no_further_on) {
   const ElevationMap terrain = ridge_country ();
-  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
   const DrainageGraph drainage = analyze_drainage (terrain);
   RoadNetwork network;
   Road over { .kind = Road::Kind::Road };
@@ -599,7 +605,8 @@ namespace {
 // freeboard over the water beside it.
 MOPPE_TEST (a_road_into_water_ends_on_the_bank_above_it) {
   const ElevationMap terrain = pond_country ();
-  const FloodField flood = analyze_standing_water (terrain, sea_level);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
   MOPPE_CHECK (flood.water_depth_m (50 * 100 + 42) > 4.0f);
   const DrainageGraph drainage = analyze_drainage (terrain);
   RoadNetwork network;
