@@ -1,6 +1,7 @@
 #include <moppe/terrain/roads.hh>
 
 #include <moppe/correct_math.hh>
+#include <moppe/gfx/signal.hh>
 #include <moppe/parallel.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/river.hh>
@@ -32,6 +33,10 @@ namespace moppe::terrain {
     bool finite (SurfaceElevation height) {
       return std::isfinite (surface_elevation_value (height));
     }
+
+    // Overloads moppe::lerp rather than hiding it: unity builds put this
+    // file before others in moppe::terrain that call the general one.
+    using moppe::lerp;
 
     SurfaceElevation
     lerp (SurfaceElevation from, SurfaceElevation to, blend_weight_t t) {
