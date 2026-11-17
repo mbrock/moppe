@@ -93,8 +93,8 @@ namespace moppe::game {
                   const direction_t& along,
                   const direction_t& back,
                   scale_factor_t scale,
-                  float wriggle,
-                  float cooked = 0.0f);
+                  wriggle_t wriggle,
+                  quantity<doneness[one], float> cooked = 0.0f * doneness[one]);
 }
 
 #endif

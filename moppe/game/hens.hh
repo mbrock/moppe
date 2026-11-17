@@ -169,7 +169,7 @@ namespace moppe::game {
   void draw_fried_egg (render::DrawList& dl,
                        const position_t& at,
                        radians_t yaw,
-                       float cooked,
+                       quantity<doneness[one], float> cooked,
                        std::uint32_t seed);
 
   // The eggs in the nest boxes near `camera`.
