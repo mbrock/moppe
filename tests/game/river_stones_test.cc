@@ -156,25 +156,31 @@ namespace {
 
 MOPPE_TEST (bed_competence_is_shields_with_a_threshold_rising_on_steep_beds) {
   // A brook 0.3 m deep falling one in ten: theta_c = 0.15 * 0.1^0.25.
-  MOPPE_CHECK_NEAR (
-    game::bed_competence (0.3f * u::m, 0.1f).numerical_value_in (u::m),
-    0.3f * 0.1f / (1.65f * 0.15f * 0.5623413f),
-    1e-4f);
+  MOPPE_CHECK_NEAR (game::bed_competence (0.3f * u::m, 0.1f * grade[one])
+                      .numerical_value_in (u::m),
+                    0.3f * 0.1f / (1.65f * 0.15f * 0.5623413f),
+                    1e-4f);
   // A river 2 m deep falling one in a thousand: theta_c holds at 0.03.
-  MOPPE_CHECK_NEAR (
-    game::bed_competence (2.0f * u::m, 0.001f).numerical_value_in (u::m),
-    2.0f * 0.001f / (1.65f * 0.03f),
-    1e-5f);
-  MOPPE_CHECK_NEAR (
-    game::bed_competence (1.0f * u::m, 0.0f).numerical_value_in (u::m),
-    0.0f,
-    0.0f);
+  MOPPE_CHECK_NEAR (game::bed_competence (2.0f * u::m, 0.001f * grade[one])
+                      .numerical_value_in (u::m),
+                    2.0f * 0.001f / (1.65f * 0.03f),
+                    1e-5f);
+  MOPPE_CHECK_NEAR (game::bed_competence (1.0f * u::m, 0.0f * grade[one])
+                      .numerical_value_in (u::m),
+                    0.0f,
+                    0.0f);
   // Sand is fine, cobbles coarse, and halfway between on the logarithmic
   // scale lies their geometric mean.
-  MOPPE_CHECK_NEAR (game::bed_fineness (0.002f * u::m), 1.0f, 1e-5f);
-  MOPPE_CHECK_NEAR (game::bed_fineness (0.064f * u::m), 0.0f, 1e-5f);
-  MOPPE_CHECK_NEAR (game::bed_fineness (0.0113137f * u::m), 0.5f, 1e-3f);
-  MOPPE_CHECK_NEAR (game::bed_fineness (0.5f * u::m), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    game::bed_fineness (0.002f * u::m).numerical_value_in (one), 1.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (
+    game::bed_fineness (0.064f * u::m).numerical_value_in (one), 0.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (
+    game::bed_fineness (0.0113137f * u::m).numerical_value_in (one),
+    0.5f,
+    1e-3f);
+  MOPPE_CHECK_NEAR (
+    game::bed_fineness (0.5f * u::m).numerical_value_in (one), 0.0f, 0.0f);
 }
 
 MOPPE_TEST (steep_brooks_keep_their_stones_and_slow_rivers_lay_none) {

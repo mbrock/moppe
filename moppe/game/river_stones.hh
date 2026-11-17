@@ -8,6 +8,9 @@
 #include <vector>
 
 namespace moppe::game {
+  using BedFineness = quantity<terrain::bed_grain_fineness[one], float>;
+  using StrandHeight = quantity<terrain::strand_height[one], float>;
+
   // The coarsest grain a river's flood rolls along its bed: Shields'
   // criterion, which sets the bed's shear stress rho g d S against a grain's
   // submerged weight theta_c (rho_s - rho) g D, for rock in water
@@ -18,12 +21,13 @@ namespace moppe::game {
   // deep falling one in ten moves stones a hand across and leaves the
   // boulders it cannot, while a lowland river two metres deep falling one in
   // a thousand moves nothing coarser than fine gravel.
-  [[nodiscard]] meters_t bed_competence (meters_t depth, float slope) noexcept;
+  [[nodiscard]] meters_t bed_competence (meters_t depth,
+                                         grade_t slope) noexcept;
 
   // How fine the bed is that a flood of that competence leaves, from 0 for
   // cobbles and coarser (64 mm) to 1 for sand (2 mm and finer), on the
   // logarithmic scale grain sizes are graded on.
-  [[nodiscard]] float bed_fineness (meters_t competence) noexcept;
+  [[nodiscard]] BedFineness bed_fineness (meters_t competence) noexcept;
 
   // The same reading from the painted water sheet at one lattice cell: its
   // depth over the ground, raised to the spate's that sorted the bed, and
@@ -40,11 +44,11 @@ namespace moppe::game {
     // How fine it lies (bed_fineness): under the water by the competence
     // there, on a strand by that of the water nearest. Negative where no
     // river laid the ground.
-    std::vector<float> fineness;
+    std::vector<BedFineness> fineness;
     // How far up a strand a cell stands, from 0 at the water's edge to 1
     // at the spate's; negative off the strands. The low strand is bare
     // stone and sand, and plants take hold the higher it lies.
-    std::vector<float> strand;
+    std::vector<StrandHeight> strand;
   };
 
   [[nodiscard]] RiverBedReading
