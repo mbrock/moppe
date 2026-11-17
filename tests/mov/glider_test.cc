@@ -271,13 +271,14 @@ MOPPE_TEST (a_pilot_alone_lands_running) {
     game::advance_game_session (
       world, surface, session, game::InputFrame {}, glider_test_step);
   MOPPE_CHECK (session.logic ().m_doing == game::Doing::on_foot ());
-  const Vec3 v = session.walker ().velocity ();
+  const Vec3 v = velocity_value (session.walker ().velocity ());
   MOPPE_CHECK (std::hypot (v[0], v[2]) > 6.0f);
   // And the feet bring it to a stand.
   for (int i = 0; i < 120; ++i)
     game::advance_game_session (
       world, surface, session, game::InputFrame {}, glider_test_step);
   MOPPE_CHECK (session.walker ().grounded ());
-  MOPPE_CHECK (length (session.walker ().velocity ()) < 0.1f);
-  MOPPE_CHECK_NEAR (session.walker ().position ()[1], 10.0f, 0.01f);
+  MOPPE_CHECK (session.walker ().velocity ().magnitude () < 0.1f * u::m / u::s);
+  MOPPE_CHECK_NEAR (
+    position_value (session.walker ().position ())[1], 10.0f, 0.01f);
 }

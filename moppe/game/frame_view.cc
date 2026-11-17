@@ -200,12 +200,12 @@ namespace moppe::game {
     return {
       .position = position_value (body.position) +
                   Vec3 (0, body.step_offset.numerical_value_in (u::m), 0),
-      .heading = state.facing,
+      .heading = direction_value (state.facing),
       .look_aside = radians_value (state.lag),
       .turn_speed = state.turn_speed.numerical_value_in (u::rad / u::s),
       .velocity = velocity,
-      .ground_normal = body.ground_normal,
-      .stride_phase = state.stride_phase,
+      .ground_normal = direction_value (body.ground_normal),
+      .stride_phase = state.stride_phase.numerical_value_in (one),
       .stride_speed = state.stride_speed.numerical_value_in (u::m / u::s),
       .grounded = body.grounded,
       .airborne_seconds = seconds_value (body.airborne_time),
@@ -332,10 +332,11 @@ namespace moppe::game {
             spatial::sample<terrain::surface_elevation> (*input.water, where))
         : input.world.water_level.numerical_value_in (u::m);
     const float local_water =
-      still_water +
-      meters_value (water_waves_at (
-                      input.surface, input.water, camera, result.lighting.time)
-                      .height);
+      still_water + meters_value (water_waves_at (input.surface,
+                                                  input.water,
+                                                  position (camera),
+                                                  result.lighting.time)
+                                    .height);
     if (local_water > ground)
       result.camera_water_level = local_water;
 

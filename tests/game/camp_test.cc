@@ -11,17 +11,17 @@ using namespace moppe::game;
 namespace {
   // A birch: tall, a hand's breadth through, bare to well above the head.
   mov::Trunk camp_test_birch (float x, float z, float ground = 10.0f) {
-    return { .root = Vec3 (x, ground, z),
-             .axis = Vec3 (0, 1, 0),
-             .height = 12.0f,
-             .radius = 0.12f,
-             .clear = 6.0f };
+    return { .root = position (Vec3 (x, ground, z)),
+             .axis = unit_direction (Vec3 (0, 1, 0)),
+             .height = 12.0f * u::m,
+             .radius = 0.12f * u::m,
+             .clear = 6.0f * u::m };
   }
 
   // A spruce of the same size keeps its boughs to the ground.
   mov::Trunk camp_test_spruce (float x, float z) {
     mov::Trunk spruce = camp_test_birch (x, z);
-    spruce.clear = 0.8f;
+    spruce.clear = 0.8f * u::m;
     return spruce;
   }
 
@@ -70,8 +70,8 @@ MOPPE_TEST (unfit_trees_carry_no_hammock) {
     { camp_test_spruce (100.0f, 100.0f), camp_test_birch (104.0f, 100.0f) }));
   // A sapling will not hold.
   mov::Trunk sapling = camp_test_birch (104.0f, 100.0f);
-  sapling.height = 3.0f;
-  sapling.radius = 0.03f;
+  sapling.height = 3.0f * u::m;
+  sapling.radius = 0.03f * u::m;
   MOPPE_CHECK (!hangs ({ camp_test_birch (100.0f, 100.0f), sapling }));
   // A third tree stands between them.
   MOPPE_CHECK (!hangs ({ camp_test_birch (100.0f, 100.0f),

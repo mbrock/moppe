@@ -11,7 +11,7 @@ namespace moppe::mov {
   // What a body on foot asks of the ground this step: a horizontal velocity
   // to reach and whether jump was pressed.
   struct CharacterIntent {
-    Vec3 wish_velocity;
+    velocity_t wish_velocity {};
     bool jump = false;
   };
 
@@ -26,7 +26,7 @@ namespace moppe::mov {
     struct State {
       position_t position {}; // the soles of the feet
       velocity_t velocity {};
-      Vec3 ground_normal { 0, 1, 0 };
+      direction_t ground_normal = unit_direction (Vec3 (0, 1, 0));
       bool grounded = true;
       // Walking off an edge leaves a moment in which jump still works; a
       // press just before landing is remembered until the feet touch.
@@ -44,7 +44,17 @@ namespace moppe::mov {
     static constexpr meters_t height = 1.8f * u::m;
     static constexpr meters_t step_height = 0.45f * u::m;
     // Steeper ground than this cannot be stood on: the body slides off it.
-    static constexpr float walkable_normal_y = 0.64f; // ~50 degrees
+    // The share of a unit normal that points up, the cosine of the slope.
+    static constexpr proportion_t walkable_normal_y =
+      0.64f * proportion[one]; // ~50 degrees
+    static bool walkable (const direction_t& normal) {
+      return direction_value (normal)[1] >=
+             walkable_normal_y.numerical_value_in (one);
+    }
+    static bool too_steep (const direction_t& normal) {
+      return direction_value (normal)[1] <
+             walkable_normal_y.numerical_value_in (one);
+    }
     static constexpr metres_per_second_squared_t gravity =
       15.0f * u::m / pow<2> (u::s);
     static constexpr speed_t jump_speed = 5.4f * u::m / u::s;
@@ -66,11 +76,11 @@ namespace moppe::mov {
       m_state = state;
     }
 
-    const Vec3& position () const {
-      return position_value (m_state.position);
+    const position_t& position () const {
+      return m_state.position;
     }
-    const Vec3& velocity () const {
-      return velocity_value (m_state.velocity);
+    const velocity_t& velocity () const {
+      return m_state.velocity;
     }
     bool grounded () const {
       return m_state.grounded;
@@ -80,15 +90,15 @@ namespace moppe::mov {
     struct Support {
       bool found = false;
       meters_t height {};
-      Vec3 normal { 0, 1, 0 };
+      direction_t normal = unit_direction (Vec3 (0, 1, 0));
     };
 
-    Support probe (const Vec3& feet,
+    Support probe (const position_t& feet,
                    meters_t reach_down,
                    const map::SurfaceGeometry& surface,
                    const TrunkField* obstacles) const;
-    void slide (Vec3& feet,
-                const Vec3& delta,
+    void slide (position_t& feet,
+                const displacement_t& delta,
                 bool grounded,
                 const map::SurfaceGeometry& surface,
                 const TrunkField* obstacles);

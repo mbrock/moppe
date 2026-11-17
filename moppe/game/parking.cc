@@ -228,7 +228,7 @@ namespace moppe::game {
     const float sea = lot.ground.world.water_level.numerical_value_in (u::m);
     const auto level_at = [&] (const Vec3& at) {
       return still_water_at (
-               lot.ground.world, lot.ground.surface (), &sheets, at)
+               lot.ground.world, lot.ground.surface (), &sheets, position (at))
         .numerical_value_in (u::m);
     };
     const auto depth_at = [&] (const Vec3& at) {
@@ -321,7 +321,7 @@ namespace moppe::game {
       ahead = length2 (ahead) > 1e-6f ? normalized (ahead) : Vec3 (0, 0, 1);
       Vec3 stand = tractor.position () + ahead * 3.0f;
       stand[1] = ground.height (stand) + 0.1f;
-      session.walker ().spawn (moppe::position (stand), ahead);
+      session.walker ().spawn (moppe::position (stand), unit_direction (ahead));
     } else if (script == "bump") {
       Vec3 across = tractor.left ();
       across[1] = 0.0f;
@@ -329,11 +329,13 @@ namespace moppe::game {
       session.jeep ().place (tractor.position () + across * 18.0f, -across);
       Vec3 stand = session.jeep ().point (Vec3 (1.75f, 0.0f, -0.1f));
       stand[1] = ground.height (stand) + 0.1f;
-      session.walker ().spawn (moppe::position (stand), -across);
+      session.walker ().spawn (moppe::position (stand),
+                               unit_direction (-across));
     } else {
       return;
     }
-    session.logic ().m_fp_eye = session.walker ().eye_position ();
+    session.logic ().m_fp_eye =
+      position_value (session.walker ().eye_position ());
     session.settle_camera (ground.surface ());
     std::cerr << "moppe: walk: " << script << " beside the tractor at "
               << tractor.position ()[0] << ", " << tractor.position ()[2]
@@ -684,10 +686,11 @@ namespace moppe::game {
         if (score >= best_score)
           continue;
         bool clear = true;
-        for (const mov::Trunk& trunk : lot.trunks.gather (at, reach + 1.0f)) {
-          const float dx = trunk.root[0] - at[0];
-          const float dz = trunk.root[2] - at[2];
-          const float room = reach + trunk.radius;
+        for (const mov::Trunk& trunk :
+             lot.trunks.gather (position (at), (reach + 1.0f) * u::m)) {
+          const float dx = position_value (trunk.root)[0] - at[0];
+          const float dz = position_value (trunk.root)[2] - at[2];
+          const float room = reach + meters_value (trunk.radius);
           if (dx * dx + dz * dz < room * room) {
             clear = false;
             break;

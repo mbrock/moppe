@@ -147,7 +147,7 @@ namespace moppe::mov {
     if (!trunks)
       return;
     const std::vector<Trunk> nearby =
-      trunks->gather (centre (), m_params.trunk_reach);
+      trunks->gather (position (centre ()), m_params.trunk_reach * u::m);
     if (nearby.empty ())
       return;
     obstacles ();
@@ -158,9 +158,9 @@ namespace moppe::mov {
     obstacle.filter.maskBits = m_params.obstacle_mask;
     for (const Trunk& trunk : nearby) {
       b3Capsule capsule;
-      capsule.center1 = to_b3 (trunk.root + trunk.axis * trunk.radius);
-      capsule.center2 = to_b3 (trunk.root + trunk.axis * trunk.height);
-      capsule.radius = trunk.radius;
+      capsule.center1 = to_b3 (position_value (trunk.point (trunk.radius)));
+      capsule.center2 = to_b3 (position_value (trunk.point (trunk.height)));
+      capsule.radius = meters_value (trunk.radius);
       b3CreateCapsuleShape (m_obstacles, &obstacle, &capsule);
     }
   }

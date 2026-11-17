@@ -441,7 +441,7 @@ namespace moppe::game {
                        const GroundHeight& ground) {
     std::vector<ScanFind> finds = scan_mushrooms (mushrooms, feet);
     const std::vector<mov::Trunk> near =
-      trunks.gather (feet, scan_reach + 6.0f);
+      trunks.gather (position (feet), (scan_reach + 6.0f) * u::m);
     const std::vector<ScanFind> trees =
       scan_hammocks (hammock_sites_near (near, feet, scan_reach, ground));
     finds.insert (finds.end (), trees.begin (), trees.end ());

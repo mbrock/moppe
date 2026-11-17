@@ -590,10 +590,11 @@ namespace moppe::game {
         out[1] = 0.0f;
         session.walker ().spawn (
           moppe::position (bus_door (pose) + Vec3 (0, 0.2f, 0)),
-          normalized (out));
+          unit_direction (normalized (out)));
         session.set_mode (Doing::on_foot ());
         session.logic ().m_bus_alight = false;
-        session.logic ().m_fp_eye = session.walker ().eye_position ();
+        session.logic ().m_fp_eye =
+          position_value (session.walker ().eye_position ());
       }
     }
   }

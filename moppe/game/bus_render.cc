@@ -144,19 +144,19 @@ namespace moppe::game {
     using namespace bus_render_parts;
     std::vector<mov::Trunk> colliders;
     for (const BusStop& stop : line.stops ()) {
-      colliders.push_back ({ .root = stop.sign + Vec3 (0, -0.2f, 0),
-                             .axis = up,
-                             .height = 2.8f,
-                             .radius = 0.12f });
+      colliders.push_back ({ .root = position (stop.sign + Vec3 (0, -0.2f, 0)),
+                             .axis = unit_direction (up),
+                             .height = 2.8f * u::m,
+                             .radius = 0.12f * u::m });
       if (!stop.shelter)
         continue;
       const Mat4 frame = facing_road (*stop.shelter, stop.forward);
       const auto post = [&] (float x, float z) {
         colliders.push_back (
-          { .root = frame.transform_point (Vec3 (x, -0.3f, z)),
-            .axis = up,
-            .height = 2.6f,
-            .radius = 0.3f });
+          { .root = position (frame.transform_point (Vec3 (x, -0.3f, z))),
+            .axis = unit_direction (up),
+            .height = 2.6f * u::m,
+            .radius = 0.3f * u::m });
       };
       for (float x = -shelter_half_width + 0.3f; x <= shelter_half_width;
            x += 0.6f)

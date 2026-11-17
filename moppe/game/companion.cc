@@ -1022,7 +1022,7 @@ namespace moppe::game {
                      const CompanionSnapshot* companion) {
     if (!companion || session.logic ().m_doing != Doing::on_foot ())
       return std::nullopt;
-    const Vec3 feet = session.walker ().position ();
+    const Vec3 feet = position_value (session.walker ().position ());
     // Anything of one's own nearer wins.
     float nearest = 1e30f;
     for_each_machine (session.fleet (), [&] (Machine, const auto& body) {

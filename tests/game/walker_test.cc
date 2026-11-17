@@ -38,6 +38,14 @@ namespace {
 
   constexpr float walker_test_step = 1.0f / 120.0f;
 
+  control_signal_t sig (float value) {
+    return value * control_signal[one];
+  }
+
+  direction_t aim (float x, float y, float z) {
+    return unit_direction (Vec3 (x, y, z));
+  }
+
   void walk_for (game::Walker& walker,
                  float seconds,
                  const map::SurfaceGeometry& surface,
@@ -57,8 +65,8 @@ MOPPE_TEST (walker_walks_and_runs_on_the_ground_deterministically) {
 
   const auto run = [&] (bool sprint) {
     game::Walker walker;
-    walker.spawn (position (Vec3 (20, 15, 64)), Vec3 (1, 0, 0));
-    walker.set_walk (1.0f);
+    walker.spawn (position (Vec3 (20, 15, 64)), aim (1, 0, 0));
+    walker.set_walk (sig (1.0f));
     walker.set_run (sprint);
     walk_for (walker, 2.0f, surface, world);
     return walker.state ();
@@ -88,16 +96,19 @@ MOPPE_TEST (walker_slides_around_a_trunk_instead_of_sticking) {
     walker_test_ground ([] (float, float) { return 5.0f; });
   const game::WorldParams world = walker_test_world ();
   mov::TrunkField trunks;
-  trunks.set_trunks (
-    { { Vec3 (30, 5, 64), Vec3 (0, 1, 0), 10.0f, 0.4f } }, 0.0f, 0.0f);
-  trunks.focus (Vec3 (30, 5, 64));
+  trunks.set_trunks ({ { position (Vec3 (30, 5, 64)),
+                         aim (0, 1, 0),
+                         10.0f * u::m,
+                         0.4f * u::m } },
+                     plan_extent (0.0f * u::m, 0.0f * u::m));
+  trunks.focus (position (Vec3 (30, 5, 64)));
 
   // Straight at it: stopped at the bark, never inside it.
   game::Walker blocked;
-  blocked.spawn (position (Vec3 (24, 5, 64)), Vec3 (1, 0, 0));
-  blocked.set_walk (1.0f);
+  blocked.spawn (position (Vec3 (24, 5, 64)), aim (1, 0, 0));
+  blocked.set_walk (sig (1.0f));
   walk_for (blocked, 3.0f, surface, world, &trunks);
-  const Vec3 stopped = blocked.position ();
+  const Vec3 stopped = position_value (blocked.position ());
   MOPPE_CHECK (stopped[0] <
                30.0f - 0.4f - meters_value (mov::Character::radius) + 0.01f);
   MOPPE_CHECK (stopped[0] >
@@ -108,10 +119,10 @@ MOPPE_TEST (walker_slides_around_a_trunk_instead_of_sticking) {
 
   // A glancing line slides around the trunk and carries on past it.
   game::Walker glancing;
-  glancing.spawn (position (Vec3 (24, 5, 64.3f)), Vec3 (1, 0, 0));
-  glancing.set_walk (1.0f);
+  glancing.spawn (position (Vec3 (24, 5, 64.3f)), aim (1, 0, 0));
+  glancing.set_walk (sig (1.0f));
   walk_for (glancing, 3.0f, surface, world, &trunks);
-  const Vec3 past = glancing.position ();
+  const Vec3 past = position_value (glancing.position ());
   MOPPE_CHECK (past[0] > 32.0f);
   MOPPE_CHECK (std::abs (past[2] - 64.0f) >
                0.4f + meters_value (mov::Character::radius) - 0.01f);
@@ -123,14 +134,15 @@ MOPPE_TEST (walker_jump_arc_lands_and_coyote_time_forgives_a_late_press) {
   const game::WorldParams world = walker_test_world ();
 
   game::Walker walker;
-  walker.spawn (position (Vec3 (40, 5, 64)), Vec3 (1, 0, 0));
+  walker.spawn (position (Vec3 (40, 5, 64)), aim (1, 0, 0));
   walk_for (walker, 0.1f, surface, world);
   walker.jump ();
   float apex = 0.0f;
   int airborne_steps = 0;
   for (int i = 0; i < 240; ++i) {
     walker.update (seconds (walker_test_step), surface, world);
-    apex = std::max<float> (apex, walker.position ()[1] - 5.0f);
+    apex =
+      std::max<float> (apex, position_value (walker.position ())[1] - 5.0f);
     if (!walker.grounded ())
       ++airborne_steps;
   }
@@ -140,7 +152,7 @@ MOPPE_TEST (walker_jump_arc_lands_and_coyote_time_forgives_a_late_press) {
   MOPPE_CHECK_NEAR (apex, v * v / (2.0f * g), 0.03f);
   MOPPE_CHECK_NEAR (airborne_steps * walker_test_step, 2.0f * v / g, 0.03f);
   MOPPE_CHECK (walker.grounded ());
-  MOPPE_CHECK_NEAR (walker.position ()[1], 5.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (position_value (walker.position ())[1], 5.0f, 1e-4f);
   MOPPE_CHECK_NEAR (
     walker.state ().body.landing_speed.numerical_value_in (u::m / u::s),
     v,
@@ -151,8 +163,8 @@ MOPPE_TEST (walker_jump_arc_lands_and_coyote_time_forgives_a_late_press) {
   const map::SurfaceGeometry ledge = walker_test_ground (
     [] (float x, float) { return x < 50.0f ? 7.0f : 5.0f; });
   game::Walker late;
-  late.spawn (position (Vec3 (46, 7, 64)), Vec3 (1, 0, 0));
-  late.set_walk (1.0f);
+  late.spawn (position (Vec3 (46, 7, 64)), aim (1, 0, 0));
+  late.set_walk (sig (1.0f));
   int guard = 0;
   while (late.grounded () && guard++ < 600)
     late.update (seconds (walker_test_step), ledge, world);
@@ -160,7 +172,7 @@ MOPPE_TEST (walker_jump_arc_lands_and_coyote_time_forgives_a_late_press) {
   walk_for (late, 0.06f, ledge, world);
   late.jump ();
   late.update (seconds (walker_test_step), ledge, world);
-  MOPPE_CHECK (late.velocity ()[1] > 0.9f * v);
+  MOPPE_CHECK (velocity_value (late.velocity ())[1] > 0.9f * v);
 }
 
 MOPPE_TEST (walker_steps_onto_low_rocks_and_is_stopped_by_tall_ones) {
@@ -170,28 +182,29 @@ MOPPE_TEST (walker_steps_onto_low_rocks_and_is_stopped_by_tall_ones) {
   // Buried vertical capsules like the boulder colliders: one whose top is
   // a shin high, one at chest height.
   const auto rock = [] (float x, float top, float radius) {
-    return mov::Trunk {
-      Vec3 (x, top - 2.0f - radius, 64), Vec3 (0, 1, 0), 2.0f, radius
-    };
+    return mov::Trunk { position (Vec3 (x, top - 2.0f - radius, 64)),
+                        aim (0, 1, 0),
+                        2.0f * u::m,
+                        radius * u::m };
   };
   mov::TrunkField rocks;
-  rocks.set_trunks (
-    { rock (30, 5.3f, 0.8f), rock (40, 6.3f, 0.8f) }, 0.0f, 0.0f);
-  rocks.focus (Vec3 (35, 5, 64));
+  rocks.set_trunks ({ rock (30, 5.3f, 0.8f), rock (40, 6.3f, 0.8f) },
+                    plan_extent (0.0f * u::m, 0.0f * u::m));
+  rocks.focus (position (Vec3 (35, 5, 64)));
 
   game::Walker walker;
-  walker.spawn (position (Vec3 (26, 5, 64)), Vec3 (1, 0, 0));
-  walker.set_walk (1.0f);
+  walker.spawn (position (Vec3 (26, 5, 64)), aim (1, 0, 0));
+  walker.set_walk (sig (1.0f));
   float highest = 0.0f;
   for (int i = 0; i < 600; ++i) {
     walker.update (seconds (walker_test_step), surface, world, &rocks);
-    highest = std::max<float> (highest, walker.position ()[1]);
+    highest = std::max<float> (highest, position_value (walker.position ())[1]);
   }
   // Up and over the low rock, then held at the tall one's flank.
   MOPPE_CHECK_NEAR (highest, 5.3f, 0.05f);
-  MOPPE_CHECK (walker.position ()[0] > 31.0f);
-  MOPPE_CHECK (walker.position ()[0] < 40.0f - 0.8f);
-  MOPPE_CHECK_NEAR (walker.position ()[1], 5.0f, 1e-3f);
+  MOPPE_CHECK (position_value (walker.position ())[0] > 31.0f);
+  MOPPE_CHECK (position_value (walker.position ())[0] < 40.0f - 0.8f);
+  MOPPE_CHECK_NEAR (position_value (walker.position ())[1], 5.0f, 1e-3f);
 }
 
 MOPPE_TEST (walker_cannot_climb_a_bank_too_steep_to_stand_on) {
@@ -200,12 +213,12 @@ MOPPE_TEST (walker_cannot_climb_a_bank_too_steep_to_stand_on) {
     [] (float x, float) { return 5.0f + std::max (0.0f, x - 40.0f) * 2.75f; });
   const game::WorldParams world = walker_test_world ();
   game::Walker walker;
-  walker.spawn (position (Vec3 (35, 5, 64)), Vec3 (1, 0, 0));
-  walker.set_walk (1.0f);
+  walker.spawn (position (Vec3 (35, 5, 64)), aim (1, 0, 0));
+  walker.set_walk (sig (1.0f));
   walk_for (walker, 4.0f, surface, world);
-  MOPPE_CHECK (walker.position ()[1] <
+  MOPPE_CHECK (position_value (walker.position ())[1] <
                5.0f + meters_value (mov::Character::step_height));
-  MOPPE_CHECK (walker.position ()[0] < 40.5f);
+  MOPPE_CHECK (position_value (walker.position ())[0] < 40.5f);
 }
 
 MOPPE_TEST (walker_checkpoint_resumes_the_same_walk) {
@@ -215,17 +228,22 @@ MOPPE_TEST (walker_checkpoint_resumes_the_same_walk) {
     });
   const game::WorldParams world = walker_test_world ();
   mov::TrunkField trunks;
-  trunks.set_trunks ({ { Vec3 (52, 0, 61), Vec3 (0, 1, 0), 20.0f, 0.35f },
-                       { Vec3 (60, 0, 63.5f), Vec3 (0, 1, 0), 20.0f, 0.5f } },
-                     0.0f,
-                     0.0f);
-  trunks.focus (Vec3 (55, 8, 62));
+  trunks.set_trunks ({ { position (Vec3 (52, 0, 61)),
+                         aim (0, 1, 0),
+                         20.0f * u::m,
+                         0.35f * u::m },
+                       { position (Vec3 (60, 0, 63.5f)),
+                         aim (0, 1, 0),
+                         20.0f * u::m,
+                         0.5f * u::m } },
+                     plan_extent (0.0f * u::m, 0.0f * u::m));
+  trunks.focus (position (Vec3 (55, 8, 62)));
 
   const auto drive = [&] (game::Walker& walker, int from, int to) {
     for (int i = from; i < to; ++i) {
-      walker.set_walk (1.0f);
+      walker.set_walk (sig (1.0f));
       walker.set_run (i > 120);
-      walker.set_strafe (i % 200 < 100 ? 0.3f : -0.2f);
+      walker.set_strafe (sig (i % 200 < 100 ? 0.3f : -0.2f));
       walker.turn_by ((i % 90 < 45 ? 0.004f : -0.003f) * u::rad);
       if (i % 150 == 30)
         walker.jump ();
@@ -234,19 +252,21 @@ MOPPE_TEST (walker_checkpoint_resumes_the_same_walk) {
   };
 
   game::Walker live;
-  live.spawn (position (Vec3 (45, 12, 62)), Vec3 (1, 0, 0.1f));
+  live.spawn (position (Vec3 (45, 12, 62)), aim (1, 0, 0.1f));
   drive (live, 0, 200);
   const game::Walker::State checkpoint = live.state ();
   drive (live, 200, 600);
 
   game::Walker resumed;
-  resumed.spawn (position (Vec3 (0, 0, 0)), Vec3 (0, 0, 1));
+  resumed.spawn (position (Vec3 (0, 0, 0)), aim (0, 0, 1));
   resumed.restore (checkpoint);
   drive (resumed, 200, 600);
 
-  const Vec3 a = live.position (), b = resumed.position ();
+  const Vec3 a = position_value (live.position ()),
+             b = position_value (resumed.position ());
   MOPPE_CHECK (a[0] == b[0] && a[1] == b[1] && a[2] == b[2]);
-  const Vec3 va = live.velocity (), vb = resumed.velocity ();
+  const Vec3 va = velocity_value (live.velocity ()),
+             vb = velocity_value (resumed.velocity ());
   MOPPE_CHECK (va[0] == vb[0] && va[1] == vb[1] && va[2] == vb[2]);
   MOPPE_CHECK (live.stride_phase () == resumed.stride_phase ());
   MOPPE_CHECK (live.grounded () == resumed.grounded ());
@@ -261,12 +281,14 @@ MOPPE_TEST (avatar_plants_its_stance_foot_while_walking) {
     walker_test_ground ([] (float, float) { return 5.0f; });
   const game::WorldParams world = walker_test_world ();
   game::Walker walker;
-  walker.spawn (position (Vec3 (20, 5, 64)), Vec3 (1, 0, 0));
-  walker.set_walk (1.0f);
+  walker.spawn (position (Vec3 (20, 5, 64)), aim (1, 0, 0));
+  walker.set_walk (sig (1.0f));
   walk_for (walker, 2.0f, surface, world);
   // Advance until the left foot is early in its stance.
   int guard = 0;
-  while (std::fmod (walker.stride_phase (), 1.0f) > 0.05f && guard++ < 400)
+  while (std::fmod (walker.stride_phase ().numerical_value_in (one), 1.0f) >
+           0.05f &&
+         guard++ < 400)
     walker.update (seconds (walker_test_step), surface, world);
   const game::AvatarSkeleton before =
     game::pose_avatar (game::walker_pose (walker), 0.0f);
@@ -287,11 +309,14 @@ MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
   const map::SurfaceGeometry surface =
     walker_test_ground ([] (float, float) { return 5.0f; });
   const game::WorldParams world = walker_test_world ();
-  const auto yaw = [] (const Vec3& v) { return std::atan2 (v[0], v[2]); };
+  const auto yaw = [] (const direction_t& d) {
+    const Vec3& v = direction_value (d);
+    return std::atan2 (v[0], v[2]);
+  };
 
   // Standing, a glance aside turns the head, not the body.
   game::Walker walker;
-  walker.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
+  walker.spawn (position (Vec3 (40, 5, 64)), aim (0, 0, 1));
   walker.turn_by ((0.8f) * u::rad);
   walk_for (walker, 1.0f, surface, world);
   MOPPE_CHECK_NEAR (yaw (walker.facing ()), 0.0f, 1e-4f);
@@ -300,20 +325,23 @@ MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
   // after it, on the spot, until the body faces it -- but not at once.
   walker.turn_by ((1.4f) * u::rad);
   walk_for (walker, 0.1f, surface, world);
-  const float early =
-    std::abs (game::yaw_between (walker.facing (), walker.heading ()));
+  const float early = radians_value (
+    abs (game::yaw_between (walker.facing (), walker.heading ())));
   MOPPE_CHECK (early > 1.5f);
   MOPPE_CHECK (
     std::abs (walker.turn_speed ().numerical_value_in (u::rad / u::s)) > 0.5f);
   walk_for (walker, 2.0f, surface, world);
   MOPPE_CHECK_NEAR (
-    game::yaw_between (walker.facing (), walker.heading ()), 0.0f, 0.05f);
-  MOPPE_CHECK (length (walker.position () - Vec3 (40, 5, 64)) < 0.05f);
+    radians_value (game::yaw_between (walker.facing (), walker.heading ())),
+    0.0f,
+    0.05f);
+  MOPPE_CHECK (length (position_value (walker.position ()) - Vec3 (40, 5, 64)) <
+               0.05f);
 
   // A look spun twice round in a moment: the body keeps stepping round
   // the way the look went rather than snapping or turning back.
   game::Walker spun;
-  spun.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
+  spun.spawn (position (Vec3 (40, 5, 64)), aim (0, 0, 1));
   for (int i = 0; i < 60; ++i) {
     spun.turn_by ((4.0f * PI / 60.0f) * u::rad);
     spun.update (seconds (walker_test_step), surface, world);
@@ -333,19 +361,21 @@ MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {
   // Walking, the body comes round briskly but not instantly, and the
   // walker still goes where it looks.
   game::Walker going;
-  going.spawn (position (Vec3 (40, 5, 64)), Vec3 (0, 0, 1));
-  going.set_walk (1.0f);
+  going.spawn (position (Vec3 (40, 5, 64)), aim (0, 0, 1));
+  going.set_walk (sig (1.0f));
   walk_for (going, 1.0f, surface, world);
   going.turn_by ((1.5f) * u::rad);
   going.update (seconds (walker_test_step), surface, world);
   MOPPE_CHECK (std::abs (going.turn_speed ().numerical_value_in (
                  u::rad / u::s)) <= 6.0f + 1e-3f);
-  MOPPE_CHECK (
-    std::abs (game::yaw_between (going.facing (), going.heading ())) > 1.3f);
+  MOPPE_CHECK (abs (game::yaw_between (going.facing (), going.heading ())) >
+               1.3f * u::rad);
   walk_for (going, 1.0f, surface, world);
   MOPPE_CHECK_NEAR (
-    game::yaw_between (going.facing (), going.heading ()), 0.0f, 0.02f);
-  const Vec3 v = going.velocity ();
-  MOPPE_CHECK (dot (Vec3 (v[0], 0, v[2]), going.heading ()) >
+    radians_value (game::yaw_between (going.facing (), going.heading ())),
+    0.0f,
+    0.02f);
+  const Vec3 v = velocity_value (going.velocity ());
+  MOPPE_CHECK (dot (Vec3 (v[0], 0, v[2]), direction_value (going.heading ())) >
                0.9f * length (Vec3 (v[0], 0, v[2])));
 }

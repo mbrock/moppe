@@ -124,7 +124,8 @@ namespace moppe::game {
     // the stride phase counts while it is down -- so it stays put.
     const float duty =
       mix (0.62f - 0.03f * std::min (speed, 3.2f), 0.23f, running);
-    const float rate = gait_rate (speed, turn);
+    const float rate = per_second_value (
+      gait_rate (speed * (u::m / u::s), turn * u::rad / u::s));
     const float per_cycle = rate > 1e-4f ? 1.0f / rate : 0.0f;
     const float stance = duty * speed * per_cycle * moving;
     const float stance_turn = duty * turn * per_cycle * gait;
@@ -180,13 +181,14 @@ namespace moppe::game {
         heel_up = gait * mix (0.75f, 1.2f, running) *
                   (1.0f - ease (0.0f, mix (0.45f, 0.6f, running), u));
       }
-      Vec3 base = feet + yawed (travel * along + r * (side * track), yaw);
+      Vec3 base =
+        feet + yawed (travel * along + r * (side * track), yaw * u::rad);
       base[1] = ground (base);
       k.ankle[i] =
         base + up * (size::ankle_height + raise + 0.14f * std::sin (heel_up) +
                      0.05f * std::sin (toe_up));
       pitch[i] = toe_up - heel_up;
-      sole_way[i] = yawed (f, yaw);
+      sole_way[i] = yawed (f, yaw * u::rad);
     }
 
     // The pelvis turns forward on the side of the swinging leg, drops a
@@ -200,8 +202,8 @@ namespace moppe::game {
     const float bank =
       std::clamp (0.55f * std::atan (speed * turn / 9.81f), -0.3f, 0.3f) *
       (walker.grounded ? 1.0f : 0.5f);
-    const Vec3 hip_ahead = yawed (f, hip_turn);
-    const Vec3 hip_side = yawed (r, hip_turn);
+    const Vec3 hip_ahead = yawed (f, hip_turn * u::rad);
+    const Vec3 hip_side = yawed (r, hip_turn * u::rad);
     k.up =
       normalized (up + hip_ahead * hip_tilt + hip_side * (bank - hip_drop));
     k.right = normalized (cross (k.up, hip_ahead));
@@ -283,9 +285,10 @@ namespace moppe::game {
     const float twist =
       -moving * mix (0.12f, 0.20f, running) * std::cos (PI2 * phase) +
       chest_aside;
-    const Vec3 turned = yawed (f, twist);
-    k.chest_up = normalized (up + turned * std::tan (lean) +
-                             yawed (r, twist) * (bank + 0.3f * hip_drop));
+    const Vec3 turned = yawed (f, twist * u::rad);
+    k.chest_up =
+      normalized (up + turned * std::tan (lean) +
+                  yawed (r, twist * u::rad) * (bank + 0.3f * hip_drop));
     const Vec3 chest_right = normalized (cross (k.chest_up, turned));
     k.chest_forward = cross (chest_right, k.chest_up);
     k.waist = pelvis + k.up * 0.10f;
@@ -296,7 +299,7 @@ namespace moppe::game {
     // stride and follows the walker's gaze.
     const float nod =
       std::clamp (walker.look_pitch * 0.6f, -0.5f, 0.45f) - lean * 0.6f;
-    const Vec3 gaze = yawed (f, head_aside + chest_aside);
+    const Vec3 gaze = yawed (f, (head_aside + chest_aside) * u::rad);
     k.head_forward = gaze * std::cos (nod) + up * std::sin (nod);
     k.head_up = up * std::cos (nod) - gaze * std::sin (nod);
     k.head = k.neck + k.head_up * 0.15f + k.head_forward * 0.015f;

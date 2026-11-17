@@ -253,14 +253,15 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
                   camera_state.position_velocity);
 
   game::Walker walker;
-  walker.spawn (position (Vec3 (3, 4, 5)), Vec3 (1, 0, 0));
+  walker.spawn (position (Vec3 (3, 4, 5)), unit_direction (Vec3 (1, 0, 0)));
   walker.set_turn (0.4f);
   walker.set_walk (0.8f);
   const game::Walker::State walker_state = walker.state ();
-  walker.spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
+  walker.spawn (position (Vec3 (30, 40, 50)), unit_direction (Vec3 (0, 0, -1)));
   walker.restore (walker_state);
   check_position (walker.state ().body.position, walker_state.body.position);
-  check_vector (walker.state ().heading, walker_state.heading);
+  check_vector (direction_value (walker.state ().heading),
+                direction_value (walker_state.heading));
   MOPPE_CHECK_NEAR (scalar_value (walker.state ().turn),
                     scalar_value (walker_state.turn),
                     1e-6f);
@@ -538,7 +539,8 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.glider ().launch (
     position (Vec3 (80, 70, 80)), velocity (Vec3 (8, 1, 14)), Vec3 (0, 0, 1));
   session.glider ().set_turn (0.6f);
-  session.walker ().spawn (position (Vec3 (3, 4, 5)), Vec3 (1, 0, 0));
+  session.walker ().spawn (position (Vec3 (3, 4, 5)),
+                           unit_direction (Vec3 (1, 0, 0)));
   session.camera ().place (Vec3 (8, 9, 10), Vec3 (9, 9, 10));
   session.stars ().generate (surface, world, 4);
   session.dust ().emit (position (Vec3 (1, 2, 3)),
@@ -551,7 +553,8 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   session.logic ().m_score = 900;
   session.bike ().set_thrust (-1.0f);
   session.glider ().set_turn (-1.0f);
-  session.walker ().spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
+  session.walker ().spawn (position (Vec3 (30, 40, 50)),
+                           unit_direction (Vec3 (0, 0, -1)));
   session.camera ().place (Vec3 (100, 100, 100), Vec3 ());
   session.stars ().update (
     saved.stars.stars[0].position, 0.0f, (1.0f / 60.0f) * u::s);
@@ -769,7 +772,8 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   session.start_on_foot ();
   // Away from the bike and the jeep, a few steps from the helicopter.
   session.helicopter ().place (Vec3 (180, 0, 180), Vec3 (0, 0, 1));
-  session.walker ().spawn (position (Vec3 (178, 10.1f, 180)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (178, 10.1f, 180)),
+                           unit_direction (Vec3 (0, 0, 1)));
   MOPPE_CHECK (session.mount_within_reach () == game::Machine::helicopter);
   MOPPE_CHECK (session.mount_within_reach () != game::Machine::jeep);
   run ({ .toggle_mount = true }, 0.1f);
@@ -790,7 +794,7 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   MOPPE_CHECK (session.helicopter ().grounded ());
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
-  MOPPE_CHECK (session.walker ().position ()[1] < 12.0f);
+  MOPPE_CHECK (position_value (session.walker ().position ())[1] < 12.0f);
 }
 
 MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
@@ -822,7 +826,8 @@ MOPPE_TEST (the_helicopter_hooks_the_machine_it_hovers_over) {
   session.helicopter ().place (Vec3 (128, 0, 128), Vec3 (0, 0, 1));
   // The heaviest machine, standing well off to one side of the hook.
   session.tractor ().place (Vec3 (122, 0, 129), Vec3 (1, 0, 0));
-  session.walker ().spawn (position (Vec3 (126, 10.1f, 128)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (126, 10.1f, 128)),
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing ==
                game::Doing::driving (game::Machine::helicopter));
@@ -894,7 +899,8 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
   session.start_on_foot ();
   // Away from everything else, a couple of steps from the tractor.
   session.tractor ().place (Vec3 (60, 0, 180), Vec3 (0, 0, 1));
-  session.walker ().spawn (position (Vec3 (62, 10.1f, 180)), Vec3 (0, 0, 1));
+  session.walker ().spawn (position (Vec3 (62, 10.1f, 180)),
+                           unit_direction (Vec3 (0, 0, 1)));
   MOPPE_CHECK (session.mount_within_reach () == game::Machine::tractor);
   MOPPE_CHECK (session.mount_within_reach () != game::Machine::jeep);
   MOPPE_CHECK (session.mount_within_reach () != game::Machine::helicopter);
@@ -911,8 +917,8 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
   MOPPE_CHECK (length (session.tractor ().velocity ()) < 0.5f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
-  const Vec3 apart =
-    session.walker ().position () - session.tractor ().position ();
+  const Vec3 apart = position_value (session.walker ().position ()) -
+                     session.tractor ().position ();
   MOPPE_CHECK (length (apart) < 3.0f);
 }
 
@@ -944,7 +950,7 @@ MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   // Away from everything else, beside the driver's door.
   session.caddy ().place (Vec3 (190, 0, 60), Vec3 (0, 0, 1));
   session.walker ().spawn (position (Vec3 (191.6f, 10.1f, 60.3f)),
-                           Vec3 (0, 0, 1));
+                           unit_direction (Vec3 (0, 0, 1)));
   MOPPE_CHECK (session.mount_within_reach () == game::Machine::caddy);
   MOPPE_CHECK (session.mount_within_reach () != game::Machine::jeep);
   MOPPE_CHECK (session.mount_within_reach () != game::Machine::tractor);
@@ -961,7 +967,8 @@ MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   MOPPE_CHECK (length (session.caddy ().velocity ()) < 0.5f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
-  const Vec3 out = session.walker ().position () - session.caddy ().position ();
+  const Vec3 out = position_value (session.walker ().position ()) -
+                   session.caddy ().position ();
   MOPPE_CHECK (length (out) < 3.0f);
   MOPPE_CHECK (dot (out, session.caddy ().left ()) > 0.8f);
 }
@@ -1002,7 +1009,7 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   bike.reset (Vec3 (
     60, 10.0f + meters_value (mov::mountain_bike_rig.ride_height ()), 40));
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 40.0f)),
-                           Vec3 (0, 0, 1));
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({}, 0.5f);
   MOPPE_CHECK (session.mount_within_reach () == game::Machine::mountain_bike);
   run ({ .toggle_mount = true }, 0.1f);
@@ -1027,8 +1034,8 @@ MOPPE_TEST (the_mountain_bike_is_ridden_skidded_round_and_got_off) {
   // F gets off beside it, and it stays where it was left.
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
-  MOPPE_CHECK (length (session.walker ().position () - bike.position ()) <
-               2.0f);
+  MOPPE_CHECK (length (position_value (session.walker ().position ()) -
+                       bike.position ()) < 2.0f);
   const Vec3 left = bike.position ();
   run ({}, 3.0f);
   MOPPE_CHECK (length (bike.position () - left) < 0.3f);
@@ -1067,11 +1074,11 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   bike.reset (
     Vec3 (60, 10.0f + meters_value (mov::long_john_rig.ride_height ()), 40));
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 42.2f)),
-                           Vec3 (0, 0, 1));
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({}, 0.5f);
   MOPPE_CHECK (session.mount_within_reach () != game::Machine::long_john);
   session.walker ().spawn (position (Vec3 (61.0f, 10.1f, 39.2f)),
-                           Vec3 (0, 0, 1));
+                           unit_direction (Vec3 (0, 0, 1)));
   run ({}, 0.5f);
   MOPPE_CHECK (session.mount_within_reach () == game::Machine::long_john);
   run ({ .toggle_mount = true }, 0.1f);
@@ -1091,8 +1098,8 @@ MOPPE_TEST (the_long_john_is_ridden_from_its_saddle_and_got_off) {
   MOPPE_CHECK (session.subject_speed_kmh () < 1.0f);
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
-  MOPPE_CHECK (length (session.walker ().position () - bike.position ()) <
-               2.0f);
+  MOPPE_CHECK (length (position_value (session.walker ().position ()) -
+                       bike.position ()) < 2.0f);
   const Vec3 left = bike.position ();
   run ({}, 3.0f);
   MOPPE_CHECK (length (bike.position () - left) < 0.3f);
@@ -1179,7 +1186,7 @@ MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
   session.walker ().spawn (
     position (
       Vec3 (line (30.0f) - 2.2f * way[2], 10.1f, 30.0f + 2.2f * way[0])),
-    way);
+    unit_direction (way));
   game::advance_game_session (
     world, surface, session, game::InputFrame { .toggle_mount = true }, step);
   MOPPE_CHECK (session.logic ().m_doing ==

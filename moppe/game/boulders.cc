@@ -480,10 +480,10 @@ namespace moppe::game {
       const float girth = (site.solid ? 0.95f : 0.8f) * radius;
       const float upper = centre[1] + boulder_squash * radius - girth;
       const float lower = upper - 0.6f * radius;
-      return { .root = Vec3 (centre[0], lower - girth, centre[2]),
-               .axis = Vec3 (0.0f, 1.0f, 0.0f),
-               .height = upper - lower + girth,
-               .radius = girth };
+      return { .root = position (Vec3 (centre[0], lower - girth, centre[2])),
+               .axis = unit_direction (Vec3 (0.0f, 1.0f, 0.0f)),
+               .height = (upper - lower + girth) * u::m,
+               .radius = girth * u::m };
     }
   }
 

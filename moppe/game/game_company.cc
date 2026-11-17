@@ -26,8 +26,9 @@ namespace moppe {
       heading =
         length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1);
       const Vec3 side (heading[2], 0, -heading[0]);
-      const bool beside = length2 (session ().walker ().position () -
-                                   bike.position ()) < 6.0f * 6.0f;
+      const bool beside =
+        length2 (position_value (session ().walker ().position ()) -
+                 bike.position ()) < 6.0f * 6.0f;
       // Far enough that this jeep, parked beyond the bike, clears
       // theirs.
       Vec3 place = bike.position () - side * 7.0f;
@@ -52,8 +53,8 @@ namespace moppe {
       if (!beside)
         return;
       session ().walker ().spawn (moppe::position (place + side * 1.8f),
-                                  heading);
-      logic ().m_fp_eye = session ().walker ().eye_position ();
+                                  unit_direction (heading));
+      logic ().m_fp_eye = position_value (session ().walker ().eye_position ());
       m_opening.reaim (session (), surface ());
     }
 

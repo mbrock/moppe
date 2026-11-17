@@ -84,7 +84,7 @@ namespace moppe::game {
       placed,
       [&ground] (const Vec3& near) -> std::optional<Vec3> {
         const std::vector<mov::Trunk> trunks =
-          ground.trunks.gather (near, 90.0f);
+          ground.trunks.gather (position (near), 90.0f * u::m);
         const std::optional<HammockSite> site =
           nearest_hammock_site (trunks, near, ground.reader (), 0.6f);
         if (!site)
@@ -182,13 +182,13 @@ namespace moppe::game {
       .clear =
         [ground] (const Vec3& at, float radius) {
           const mov::TrunkContact contact =
-            ground.trunks.collide (at + Vec3 (0, radius + 0.2f, 0),
-                                   at + Vec3 (0, radius + 0.8f, 0),
-                                   radius);
+            ground.trunks.collide (position (at + Vec3 (0, radius + 0.2f, 0)),
+                                   position (at + Vec3 (0, radius + 0.8f, 0)),
+                                   radius * u::m);
           Vec3 out = at;
           if (contact.hit) {
-            out[0] += contact.push[0];
-            out[2] += contact.push[2];
+            out[0] += displacement_value (contact.push)[0];
+            out[2] += displacement_value (contact.push)[2];
           }
           return out;
         },

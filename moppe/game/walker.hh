@@ -19,36 +19,45 @@ namespace moppe {
     // each foot for the same distance, so the feet never skate. A run
     // lengthens its stride faster than a walk does, so that it is not a
     // walk played quickly.
-    inline float stride_cycle_length (float speed) {
-      return 1.3f + 0.27f * speed + 0.14f * std::max (0.0f, speed - 3.6f);
+    inline meters_t stride_cycle_length (speed_t speed) {
+      constexpr speed_t still = 0.0f * (u::m / u::s);
+      return 1.3f * u::m + 0.27f * u::s * speed +
+             0.14f * u::s * std::max (still, speed - 3.6f * (u::m / u::s));
     }
 
     // Turning on the spot, each gait cycle swings the body round this
-    // much, radians: two steps of some forty-five degrees.
-    inline constexpr float turn_cycle_angle = 1.6f;
+    // much: two steps of some forty-five degrees.
+    inline constexpr radians_t turn_cycle_angle = 1.6f * u::rad;
 
-    // Gait cycles a second at ground speed `speed` (m/s) while the body
-    // turns at `turn` (rad/s). Under way the ground sets the pace; nearly
-    // still, the turn steps the feet round instead.
-    inline float gait_rate (float speed, float turn) {
-      const float still = 1.0f - std::clamp (speed / 0.9f, 0.0f, 1.0f);
+    // Gait cycles a second at ground speed `speed` while the body turns at
+    // `turn`. Under way the ground sets the pace; nearly still, the turn
+    // steps the feet round instead.
+    inline per_second_t gait_rate (speed_t speed, radians_per_second_t turn) {
+      const proportion_t still =
+        (1.0f -
+         std::clamp ((speed / (0.9f * (u::m / u::s))).numerical_value_in (one),
+                     0.0f,
+                     1.0f)) *
+        proportion[one];
       return speed / stride_cycle_length (speed) +
-             std::abs (turn) / turn_cycle_angle * still;
+             abs (turn) / turn_cycle_angle * still.numerical_value_in (one);
     }
 
-    // `v` turned about the vertical by `angle` radians, positive toward
-    // its right (cross (up, v)).
-    inline Vec3 yawed (const Vec3& v, float angle) {
+    // `v` turned about the vertical by `angle`, positive toward its right
+    // (cross (up, v)).
+    inline Vec3 yawed (const Vec3& v, radians_t angle) {
       const Vec3 side (v[2], 0.0f, -v[0]);
-      return Vec3 (v[0], 0.0f, v[2]) * std::cos (angle) +
-             side * std::sin (angle) + Vec3 (0.0f, v[1], 0.0f);
+      return Vec3 (v[0], 0.0f, v[2]) * std::cos (radians_value (angle)) +
+             side * std::sin (radians_value (angle)) + Vec3 (0.0f, v[1], 0.0f);
     }
 
     // The level angle from `from` round to `to`, positive to the right.
-    inline float yaw_between (const Vec3& from, const Vec3& to) {
-      const float across = from[2] * to[0] - from[0] * to[2];
-      const float along = from[0] * to[0] + from[2] * to[2];
-      return std::atan2 (across, along);
+    inline radians_t yaw_between (const direction_t& from,
+                                  const direction_t& to) {
+      const Vec3& a = direction_value (from);
+      const Vec3& b = direction_value (to);
+      return std::atan2 (a[2] * b[0] - a[0] * b[2], a[0] * b[0] + a[2] * b[2]) *
+             u::rad;
     }
 
     // The surface of the still water standing or running at a place: a
@@ -58,13 +67,13 @@ namespace moppe {
     meters_t still_water_at (const WorldParams& world,
                              const map::SurfaceGeometry& surface,
                              const terrain::WaterSheets* water,
-                             const Vec3& at);
+                             const position_t& at);
 
     // The waves at a place at `time` (the game's total time), as the water
     // program draws them: the sea's, a lake's barely, a river's none.
     terrain::SeaWaves water_waves_at (const map::SurfaceGeometry& surface,
                                       const terrain::WaterSheets* water,
-                                      const Vec3& at,
+                                      const position_t& at,
                                       double time);
 
     // The water's surface at a place at `time`: the still water with its
@@ -72,7 +81,7 @@ namespace moppe {
     meters_t water_surface_at (const WorldParams& world,
                                const map::SurfaceGeometry& surface,
                                const terrain::WaterSheets* water,
-                               const Vec3& at,
+                               const position_t& at,
                                double time);
 
     // How fast a body wades through water `depth` deep, at most:
@@ -92,7 +101,7 @@ namespace moppe {
 
       struct State {
         mov::Character::State body {};
-        Vec3 heading { 0, 0, 1 };
+        direction_t heading = unit_direction (Vec3 (0, 0, 1));
         control_signal_t turn {};
         control_signal_t walk {};
         control_signal_t strafe {};
@@ -100,14 +109,14 @@ namespace moppe {
         bool jump_request {};
         // Fraction of the current gait cycle; the left foot strikes at
         // zero and the right at one half.
-        float stride_phase {};
+        proportion_t stride_phase {};
         // Ground speed over the last step, as the feet saw it.
         speed_t stride_speed {};
         // The way the body faces, which comes round after `heading`, how
         // fast it turned over the last step (positive to the right),
         // whether it is stepping round on the spot, and how far it has
         // still to come round, counted the way the look went.
-        Vec3 facing { 0, 0, 1 };
+        direction_t facing = unit_direction (Vec3 (0, 0, 1));
         radians_per_second_t turn_speed {};
         bool turning {};
         radians_t lag {};
@@ -118,10 +127,11 @@ namespace moppe {
       State state () const;
       void restore (const State& state);
 
-      void spawn (position_t pos, const Vec3& heading);
+      void spawn (position_t pos, const direction_t& heading);
       // Let go of something moving: the body keeps that motion until its
       // feet have braked it.
-      void spawn (position_t pos, const Vec3& heading, velocity_t velocity);
+      void
+      spawn (position_t pos, const direction_t& heading, velocity_t velocity);
 
       void set_turn (control_signal_t t) {
         m_turn = t;
@@ -139,7 +149,8 @@ namespace moppe {
       // walker cannot walk out further than `longest` from it, measured
       // level, nor in nearer than `shortest`, and is drawn back if they
       // are.
-      void tether (const Vec3& anchor, meters_t shortest, meters_t longest) {
+      void
+      tether (const position_t& anchor, meters_t shortest, meters_t longest) {
         m_tether = anchor;
         m_tether_shortest = shortest;
         m_tether_longest = longest;
@@ -164,24 +175,24 @@ namespace moppe {
                    const terrain::WaterSheets* water = nullptr,
                    double time = 0.0);
 
-      Vec3 position () const {
+      position_t position () const {
         return m_body.position ();
       }
       position_t physical_position () const {
         return m_body.state ().position;
       }
-      Vec3 velocity () const {
+      velocity_t velocity () const {
         return m_body.velocity ();
       }
       // Where the walker looks and walks: the camera's way.
-      Vec3 heading () const {
+      direction_t heading () const {
         return m_heading;
       }
       // Where the body faces. Under way it comes round after the heading
       // at a pace a body can turn at; standing, the head and chest look
       // round first, and only a look further aside than they can twist
       // steps the feet round on the spot.
-      Vec3 facing () const {
+      direction_t facing () const {
         return m_facing;
       }
       radians_per_second_t turn_speed () const {
@@ -190,7 +201,7 @@ namespace moppe {
       bool grounded () const {
         return m_body.grounded ();
       }
-      float stride_phase () const {
+      proportion_t stride_phase () const {
         return m_phase;
       }
 
@@ -198,21 +209,21 @@ namespace moppe {
       meters_t landing_dip () const;
       // The first-person eye: head height, eased over steps, dipped by
       // landings, and bobbing gently with each footfall.
-      Vec3 eye_position () const;
+      position_t eye_position () const;
 
     private:
       mov::Character m_body;
-      Vec3 m_heading;
+      direction_t m_heading;
       control_signal_t m_turn, m_walk, m_strafe;
       bool m_run;
       bool m_jump_request;
-      float m_phase;
+      proportion_t m_phase;
       speed_t m_stride_speed;
-      Vec3 m_facing;
+      direction_t m_facing;
       radians_per_second_t m_turn_speed {};
       bool m_turning = false;
       radians_t m_lag {};
-      Vec3 m_tether;
+      position_t m_tether;
       meters_t m_tether_shortest {};
       meters_t m_tether_longest {};
       bool m_tethered = false;
