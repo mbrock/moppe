@@ -390,7 +390,7 @@ namespace moppe::game {
         input.light_fire = press (m_state.supper_since + 4.2f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
         input.use = press (7.5f + m_state.supper_since) > 0.0f ||
-                              press (19.0f + m_state.supper_since) > 0.0f;
+                    press (19.0f + m_state.supper_since) > 0.0f;
         return input;
       }
       input.look_pitch = std::clamp (
@@ -399,9 +399,8 @@ namespace moppe::game {
         m_state.fish_rest = t;
       const float age =
         seconds_between (s.session.logic ().m_total_time, line.since);
-      input.use =
-        (!line_out (line) && t - m_state.fish_rest > 1.5f) ||
-        (line.phase == Line::Phase::biting && age > 0.4f);
+      input.use = (!line_out (line) && t - m_state.fish_rest > 1.5f) ||
+                  (line.phase == Line::Phase::biting && age > 0.4f);
       return input;
     }
     if (script == "boat-fish") {
@@ -425,8 +424,8 @@ namespace moppe::game {
           line.phase == Line::Phase::waiting && age > 3.0f)
         m_state.boat_fish_off = t;
       input.use = (!line_out (line) && t - m_state.fish_rest > 1.5f &&
-                             game::boat_drifting (s.session, s.around)) ||
-                            (line.phase == Line::Phase::biting && age > 0.4f);
+                   game::boat_drifting (s.session, s.around)) ||
+                  (line.phase == Line::Phase::biting && age > 0.4f);
       return input;
     }
     // The mount key is a toggle, taken once a press.
@@ -475,7 +474,7 @@ namespace moppe::game {
         input.light_fire = press (m_state.supper_since + 0.8f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
         input.use = press (4.0f + m_state.supper_since) > 0.0f ||
-                              press (15.5f + m_state.supper_since) > 0.0f;
+                    press (15.5f + m_state.supper_since) > 0.0f;
         return input;
       }
       if (s.session.logic ().m_basket.eggs < 3 && m_state.egg_leg == 0) {
@@ -531,7 +530,7 @@ namespace moppe::game {
         input.light_fire = press (m_state.supper_since + 3.2f) > 0.0f &&
                            !s.session.logic ().m_camp.fire;
         input.use = press (6.5f + m_state.supper_since) > 0.0f ||
-                              press (18.0f + m_state.supper_since) > 0.0f;
+                    press (18.0f + m_state.supper_since) > 0.0f;
         return input;
       }
       // Walk to the nearest mushroom, turning toward it, and pick it
