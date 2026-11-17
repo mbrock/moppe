@@ -27,7 +27,8 @@ namespace moppe {
         smoothstep (0.50f, 0.70f, read (map::erosion_exposure));
       const float wet = smoothstep (0.45f, 0.80f, read (map::surface_moisture));
       GroundCover ground;
-      ground.leaves = m_forest.litter_at (at);
+      ground.leaves =
+        m_forest.litter_at (plan_position (plan (at))).numerical_value_in (one);
       const float loose = std::max (tread, bare);
       ground.dust = (0.2f + 0.8f * loose) * (1.0f - 0.6f * wet) *
                     (1.0f - 0.7f * ground.leaves);

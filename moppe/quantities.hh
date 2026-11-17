@@ -386,6 +386,12 @@ namespace moppe::game {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+  // Leaf area over the ground area it covers: the canopy's, or the fallen
+  // leaves' on the forest floor.
+  QUANTITY_SPEC (leaf_area_index,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
 }
 
 #endif
