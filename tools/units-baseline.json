@@ -34,12 +34,12 @@
       "escapes": 212
     },
     "Foundations (math & units)": {
-      "share": 36.0,
+      "share": 36.2,
       "files": 9,
-      "typed": 98,
-      "raw_float": 76,
+      "typed": 100,
+      "raw_float": 78,
       "raw_vector": 98,
-      "escapes": 53
+      "escapes": 54
     },
     "Game logic": {
       "share": 15.0,
@@ -50,12 +50,12 @@
       "escapes": 330
     },
     "HUD & map": {
-      "share": 75.1,
+      "share": 81.0,
       "files": 8,
-      "typed": 623,
-      "raw_float": 189,
+      "typed": 675,
+      "raw_float": 140,
       "raw_vector": 18,
-      "escapes": 213
+      "escapes": 215
     },
     "Places & camp": {
       "share": 89.1,
@@ -66,10 +66,10 @@
       "escapes": 508
     },
     "Platform game interface": {
-      "share": 88.8,
+      "share": 89.7,
       "files": 4,
-      "typed": 71,
-      "raw_float": 9,
+      "typed": 70,
+      "raw_float": 8,
       "raw_vector": 0,
       "escapes": 7
     },

@@ -12,12 +12,7 @@ namespace moppe::game {
     using terrain::ElevationChange;
     using terrain::SurfaceElevation;
 
-    // The number behind a ratio of two like quantities, or a number
-    // already plain (the sheet's pixels and the lattice's cells).
-    float ratio (float value) {
-      return value;
-    }
-
+    // The number behind a ratio of two like quantities.
     template <Quantity Q>
     float ratio (Q value) {
       return value.numerical_value_in (one);
@@ -25,6 +20,18 @@ namespace moppe::game {
 
     float saturate (float value) {
       return std::clamp (value, 0.0f, 1.0f);
+    }
+
+    // How much of a pixel a stroke covers, from how far its edge reaches
+    // past the pixel's centre.
+    float coverage (pixels_t reach) {
+      return saturate (pixels_value (reach));
+    }
+
+    // How many of the sheet's pixels a ratio of like lengths comes to.
+    template <Quantity Q>
+    pixels_t pixels (Q value) {
+      return ratio (value) * u::px;
     }
 
     blend_weight_t weight (float value) {
@@ -154,40 +161,46 @@ namespace moppe::game {
       // A stroke from a to b in pixels, tapering between two half widths.
       // With a dash length, `along` is how far down the line a lies, and
       // the stroke shows only on the dashes.
-      void stroke (float ax,
-                   float ay,
-                   float bx,
-                   float by,
-                   float half_a,
-                   float half_b,
-                   float along = 0.0f,
-                   float dash = 0.0f,
-                   float gap = 0.0f) {
-        const float reach = std::max (half_a, half_b) + 1.0f;
-        const int x0 =
-          static_cast<int> (std::floor (std::min (ax, bx) - reach));
-        const int x1 = static_cast<int> (std::ceil (std::max (ax, bx) + reach));
-        const int y0 =
-          static_cast<int> (std::floor (std::min (ay, by) - reach));
-        const int y1 = static_cast<int> (std::ceil (std::max (ay, by) + reach));
-        const float dx = bx - ax;
-        const float dy = by - ay;
-        const float length2 = dx * dx + dy * dy;
-        const float length = std::sqrt (length2);
+      void stroke (pixels_t ax,
+                   pixels_t ay,
+                   pixels_t bx,
+                   pixels_t by,
+                   pixels_t half_a,
+                   pixels_t half_b,
+                   pixels_t along = 0.0f * u::px,
+                   pixels_t dash = 0.0f * u::px,
+                   pixels_t gap = 0.0f * u::px) {
+        constexpr pixels_t none = 0.0f * u::px, half_pixel = 0.5f * u::px;
+        const pixels_t reach = std::max (half_a, half_b) + 1.0f * u::px;
+        // The pixels' indices are the raster's own integers.
+        const auto index = [] (pixels_t at, float (*round) (float)) {
+          return static_cast<int> (round (pixels_value (at)));
+        };
+        const int x0 = index (std::min (ax, bx) - reach, std::floor);
+        const int x1 = index (std::max (ax, bx) + reach, std::ceil);
+        const int y0 = index (std::min (ay, by) - reach, std::floor);
+        const int y1 = index (std::max (ay, by) + reach, std::ceil);
+        const pixels_t dx = bx - ax;
+        const pixels_t dy = by - ay;
+        const auto length2 = dx * dx + dy * dy;
+        const pixels_t length = sqrt (length2);
         for (int y = y0; y <= y1; ++y)
           for (int x = x0; x <= x1; ++x) {
-            const float px = static_cast<float> (x) + 0.5f - ax;
-            const float py = static_cast<float> (y) + 0.5f - ay;
-            const float t =
-              length2 > 0.0f ? saturate ((px * dx + py * dy) / length2) : 0.0f;
-            const float ox = px - t * dx;
-            const float oy = py - t * dy;
-            const float half = half_a + (half_b - half_a) * t;
+            const pixels_t px =
+              static_cast<float> (x) * u::px + half_pixel - ax;
+            const pixels_t py =
+              static_cast<float> (y) * u::px + half_pixel - ay;
+            const float t = length2 > 0.0f * (u::px * u::px)
+                              ? saturate (ratio ((px * dx + py * dy) / length2))
+                              : 0.0f;
+            const pixels_t ox = px - t * dx;
+            const pixels_t oy = py - t * dy;
+            const pixels_t half = half_a + (half_b - half_a) * t;
             float covered =
-              saturate (half + 0.5f - std::sqrt (ox * ox + oy * oy));
-            if (dash > 0.0f) {
-              const float phase = std::fmod (along + t * length, dash + gap);
-              covered *= saturate (std::min (phase, dash - phase) + 0.5f);
+              coverage (half + half_pixel - sqrt (ox * ox + oy * oy));
+            if (dash > none) {
+              const pixels_t phase = fmod (along + t * length, dash + gap);
+              covered *= coverage (std::min (phase, dash - phase) + half_pixel);
             }
             if (covered <= 0.0f)
               continue;
@@ -337,9 +350,9 @@ namespace moppe::game {
     const meters_t metres_x = period_x / static_cast<float> (size);
     const meters_t metres_z = period_z / static_cast<float> (size);
     const meters_t metres = 0.5f * (metres_x + metres_z);
-    const float pen = static_cast<float> (size) / 2048.0f;
-    const auto across = [&] (meters_t x) { return ratio (x / metres_x); };
-    const auto down = [&] (meters_t z) { return ratio (z / metres_z); };
+    const pixels_t pen = static_cast<float> (size) / 2048.0f * u::px;
+    const auto across = [&] (meters_t x) { return pixels (x / metres_x); };
+    const auto down = [&] (meters_t z) { return pixels (z / metres_z); };
 
     // Rivers, broader the more country they drain.
     Ink river_layer (size);
@@ -374,15 +387,15 @@ namespace moppe::game {
     Ink trail_layer (size);
     {
       const auto& points = trails.alignment.points;
-      float along = 0.0f;
+      pixels_t along = 0.0f * u::px;
       for (std::size_t i = 0; i < points.size () && points.size () > 1; ++i) {
         const plan_position_t& a = points[i];
         const plan_position_t& b = points[(i + 1) % points.size ()];
         const plan_displacement_t a_to_b = wrap_delta (b - a, period);
-        const float ax = across (x_of (a));
-        const float az = down (z_of (a));
-        const float bx = ax + across (x_of (a_to_b));
-        const float bz = az + down (z_of (a_to_b));
+        const pixels_t ax = across (x_of (a));
+        const pixels_t az = down (z_of (a));
+        const pixels_t bx = ax + across (x_of (a_to_b));
+        const pixels_t bz = az + down (z_of (a_to_b));
         trail_layer.stroke (ax,
                             az,
                             bx,
@@ -392,7 +405,7 @@ namespace moppe::game {
                             along,
                             9.0f * pen,
                             5.0f * pen);
-        along += std::hypot (bx - ax, bz - az);
+        along += hypot (bx - ax, bz - az);
       }
     }
 
@@ -407,12 +420,12 @@ namespace moppe::game {
     Ink sanctuary_layer (size);
     Ink sightline_layer (size);
     for (const terrain::Road& road : roads.roads) {
-      float along = 0.0f;
+      pixels_t along = 0.0f * u::px;
       for (std::size_t i = 0; i + 1 < road.points.size (); ++i) {
-        const float ax = across (x_of (road.points[i]));
-        const float az = down (z_of (road.points[i]));
-        const float bx = across (x_of (road.points[i + 1]));
-        const float bz = down (z_of (road.points[i + 1]));
+        const pixels_t ax = across (x_of (road.points[i]));
+        const pixels_t az = down (z_of (road.points[i]));
+        const pixels_t bx = across (x_of (road.points[i + 1]));
+        const pixels_t bz = down (z_of (road.points[i + 1]));
         // A way no longer used is drawn in broken line, as maps show
         // an old road gone back to the country.
         const bool abandoned = road.abandoned > age_t {};
@@ -450,7 +463,7 @@ namespace moppe::game {
                                  3.5f * pen,
                                  4.5f * pen);
         }
-        along += std::hypot (bx - ax, bz - az);
+        along += hypot (bx - ax, bz - az);
       }
     }
     for (const auto& [a, b] : roads.sightlines) {
@@ -458,23 +471,30 @@ namespace moppe::game {
       const terrain::RoadPlace& two = roads.places[b];
       const plan_displacement_t one_to_two =
         wrap_delta (two.at - one.at, period);
-      const float ax = across (x_of (one.at));
-      const float az = down (z_of (one.at));
-      const float bx = ax + across (x_of (one_to_two));
-      const float bz = az + down (z_of (one_to_two));
-      sightline_layer.stroke (
-        ax, az, bx, bz, 1.0f * pen, 1.0f * pen, 0.0f, 10.0f * pen, 8.0f * pen);
+      const pixels_t ax = across (x_of (one.at));
+      const pixels_t az = down (z_of (one.at));
+      const pixels_t bx = ax + across (x_of (one_to_two));
+      const pixels_t bz = az + down (z_of (one_to_two));
+      sightline_layer.stroke (ax,
+                              az,
+                              bx,
+                              bz,
+                              1.0f * pen,
+                              1.0f * pen,
+                              0.0f * u::px,
+                              10.0f * pen,
+                              8.0f * pen);
     }
     for (const terrain::RoadPlace& place : roads.places) {
       if (place.kind != terrain::RoadPlace::Kind::Sanctuary)
         continue;
-      const float cx = across (x_of (place.at));
-      const float cz = down (z_of (place.at));
-      const float r = 12.0f * pen;
-      const float top_x = cx, top_z = cz - r;
-      const float left_x = cx - 0.87f * r, left_z = cz + 0.5f * r;
-      const float right_x = cx + 0.87f * r, right_z = cz + 0.5f * r;
-      const float w = 2.0f * pen;
+      const pixels_t cx = across (x_of (place.at));
+      const pixels_t cz = down (z_of (place.at));
+      const pixels_t r = 12.0f * pen;
+      const pixels_t top_x = cx, top_z = cz - r;
+      const pixels_t left_x = cx - 0.87f * r, left_z = cz + 0.5f * r;
+      const pixels_t right_x = cx + 0.87f * r, right_z = cz + 0.5f * r;
+      const pixels_t w = 2.0f * pen;
       sanctuary_layer.stroke (top_x, top_z, left_x, left_z, w, w);
       sanctuary_layer.stroke (left_x, left_z, right_x, right_z, w, w);
       sanctuary_layer.stroke (right_x, right_z, top_x, top_z, w, w);
@@ -563,20 +583,20 @@ namespace moppe::game {
             const auto line = [&] (ElevationChange value,
                                    ElevationChange every,
                                    terrain::slope_t gradient,
-                                   float half_width) {
+                                   pixels_t half_width) {
               const float t = ratio (value / every);
               const ElevationChange off =
                 std::fabs (t - std::round (t)) * every;
-              return saturate (
-                half_width + 0.5f -
-                ratio (off / std::max<ElevationChange> (gradient * metres,
-                                                        1e-4f * u::m)));
+              return coverage (
+                half_width + 0.5f * u::px -
+                pixels (off / std::max<ElevationChange> (gradient * metres,
+                                                         1e-4f * u::m)));
             };
             // Lines that would run together are let go, the fine ones
             // first. How far apart they run, in pixels:
             const terrain::slope_t steepness =
               std::max (slope, 0.004f * terrain::terrain_slope[one]);
-            const float between = ratio (interval / (steepness * metres));
+            const pixels_t between = pixels (interval / (steepness * metres));
 
             const SurfaceElevation water_level =
               elevation (level.sample (gx, gz));
@@ -597,9 +617,9 @@ namespace moppe::game {
             // Dry ground carries the sheet at its own height, so water is
             // what stands a hand's breadth over it. How far the pixel is
             // into the water from the shore, in pixels:
-            const float shore_px =
-              ratio ((depth - 0.06f * u::m) / (depth_slope * metres));
-            const blend_weight_t wet = weight (saturate (0.5f + shore_px));
+            const pixels_t shore =
+              pixels ((depth - 0.06f * u::m) / (depth_slope * metres));
+            const blend_weight_t wet = weight (coverage (0.5f * u::px + shore));
 
             if (wet < 1.0f * blend_weight[one] && above > 0.5f * interval) {
               const blend_weight_t fine =
@@ -626,10 +646,11 @@ namespace moppe::game {
                          line (depth, 2.0f * interval, steepness, 0.35f * pen) *
                          smooth (3.0f * pen, 6.0f * pen, 2.0f * between));
               color = mix (color, wash, wet);
-              color = mix (color,
-                           shore_ink,
-                           weight (0.85f * saturate (0.55f * pen + 0.5f -
-                                                     std::fabs (shore_px))));
+              color =
+                mix (color,
+                     shore_ink,
+                     weight (0.85f * coverage (0.55f * pen + 0.5f * u::px -
+                                               abs (shore))));
             }
 
             color = mix (color,
@@ -640,9 +661,9 @@ namespace moppe::game {
             const auto grid = [&] (meters_t along, meters_t metres_per_pixel) {
               const float t = ratio (along / (1000.0f * u::m));
               return weight (
-                saturate (0.25f * pen + 0.5f -
-                          ratio (std::fabs (t - std::round (t)) * 1000.0f *
-                                 u::m / metres_per_pixel)));
+                coverage (0.25f * pen + 0.5f * u::px -
+                          pixels (std::fabs (t - std::round (t)) * 1000.0f *
+                                  u::m / metres_per_pixel)));
             };
             color = mix (
               color,
