@@ -569,8 +569,8 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
 
   MOPPE_CHECK (restored.logic.m_total_time == saved.logic.m_total_time);
   MOPPE_CHECK (restored.logic.m_score == saved.logic.m_score);
-  MOPPE_CHECK_NEAR (scalar_value (restored.vehicle.thrust),
-                    scalar_value (saved.vehicle.thrust),
+  MOPPE_CHECK_NEAR (scalar_value (restored.fleet.bike.thrust),
+                    scalar_value (saved.fleet.bike.thrust),
                     1e-6f);
   check_position (restored.glider.position, saved.glider.position);
   check_vector (restored.glider.heading, saved.glider.heading);
@@ -581,8 +581,8 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   MOPPE_CHECK (restored.dust.emissions.size () == saved.dust.emissions.size ());
   MOPPE_CHECK (replayed.logic.m_total_time == saved.logic.m_total_time);
   MOPPE_CHECK (replayed.logic.m_score == saved.logic.m_score);
-  MOPPE_CHECK_NEAR (scalar_value (replayed.vehicle.thrust),
-                    scalar_value (saved.vehicle.thrust),
+  MOPPE_CHECK_NEAR (scalar_value (replayed.fleet.bike.thrust),
+                    scalar_value (saved.fleet.bike.thrust),
                     1e-6f);
   check_position (replayed.glider.position, saved.glider.position);
   check_position (replayed.walker.body.position, saved.walker.body.position);
@@ -647,8 +647,9 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
 
   // This must be more than a checkpoint round trip: the recorded keyboard
   // tape drove and steered the bike, while its Tab edge changed the camera.
-  MOPPE_CHECK (length2 (position_value (live_state.vehicle.position) -
-                        position_value (checkpoint.vehicle.position)) > 1.0f);
+  MOPPE_CHECK (length2 (position_value (live_state.fleet.bike.position) -
+                        position_value (checkpoint.fleet.bike.position)) >
+               1.0f);
   MOPPE_CHECK (live_state.logic.m_doing ==
                game::Doing::driving (game::Machine::bike));
   MOPPE_CHECK (live_state.logic.m_cam_mode == game::CAM_FRONT);
@@ -667,9 +668,9 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   MOPPE_CHECK_NEAR (
     replayed.logic.m_odometer, live_state.logic.m_odometer, 1e-6f);
   MOPPE_CHECK_NEAR (replayed.logic.m_fov_k, live_state.logic.m_fov_k, 1e-6f);
-  check_position (replayed.vehicle.position, live_state.vehicle.position);
-  check_velocity (replayed.vehicle.velocity, live_state.vehicle.velocity);
-  check_vector (replayed.vehicle.heading, live_state.vehicle.heading);
+  check_position (replayed.fleet.bike.position, live_state.fleet.bike.position);
+  check_velocity (replayed.fleet.bike.velocity, live_state.fleet.bike.velocity);
+  check_vector (replayed.fleet.bike.heading, live_state.fleet.bike.heading);
   check_position (replayed.camera.position, live_state.camera.position);
   check_position (replayed.camera.target, live_state.camera.target);
   check_velocity (replayed.camera.position_velocity,

@@ -8,6 +8,7 @@
 #include <moppe/game/doing.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/fishing_state.hh>
+#include <moppe/game/fleet.hh>
 #include <moppe/game/hens.hh>
 #include <moppe/game/machine_controls.hh>
 #include <moppe/game/rescue.hh>
@@ -135,20 +136,12 @@ namespace moppe::game {
   // restored.
   struct GameState {
     GameLogicState logic;
-    mov::Vehicle::State vehicle;
+    FleetState fleet;
     mov::Glider::State glider;
     Walker::State walker;
     ChaseCamera::State camera;
     Stars::State stars;
     Dust::State dust;
-    mov::Car::State jeep;
-    mov::Helicopter::State helicopter;
-    mov::Tractor::State tractor;
-    mov::Car::State caddy;
-    mov::Vehicle::State mountain_bike;
-    mov::Boat::State boat;
-    mov::Vehicle::State long_john;
-    mov::JetSki::State jet_ski;
     Animals::State animals;
     Hens::State hens;
   };

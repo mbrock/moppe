@@ -1015,41 +1015,32 @@ namespace moppe::game {
   }
 
   GameSession::State GameSession::state () const {
-    return { m_logic,
-             m_fleet.bike.state (),
-             m_glider.state (),
-             m_walker.state (),
-             m_camera.state (),
-             m_stars.state (),
-             m_dust.state (),
-             m_fleet.jeep.state (),
-             m_fleet.helicopter.state (),
-             m_fleet.tractor.state (),
-             m_fleet.caddy.state (),
-             m_fleet.mountain_bike.state (),
-             m_fleet.boat.state (),
-             m_fleet.long_john.state (),
-             m_fleet.jet_ski.state (),
-             m_animals.state (),
-             m_hens.state () };
+    State state { .logic = m_logic,
+                  .glider = m_glider.state (),
+                  .walker = m_walker.state (),
+                  .camera = m_camera.state (),
+                  .stars = m_stars.state (),
+                  .dust = m_dust.state (),
+                  .animals = m_animals.state (),
+                  .hens = m_hens.state () };
+    for_each_machine_across (
+      [] (Machine, const auto& body, auto& kept) { kept = body.state (); },
+      m_fleet,
+      state.fleet);
+    return state;
   }
 
   void GameSession::restore (const State& state) {
     m_logic = state.logic;
-    m_fleet.bike.restore (state.vehicle);
+    for_each_machine_across (
+      [] (Machine, auto& body, const auto& kept) { body.restore (kept); },
+      m_fleet,
+      state.fleet);
     m_glider.restore (state.glider);
     m_walker.restore (state.walker);
     m_camera.restore (state.camera);
     m_stars.restore (state.stars);
     m_dust.restore (state.dust);
-    m_fleet.jeep.restore (state.jeep);
-    m_fleet.helicopter.restore (state.helicopter);
-    m_fleet.tractor.restore (state.tractor);
-    m_fleet.caddy.restore (state.caddy);
-    m_fleet.mountain_bike.restore (state.mountain_bike);
-    m_fleet.boat.restore (state.boat);
-    m_fleet.long_john.restore (state.long_john);
-    m_fleet.jet_ski.restore (state.jet_ski);
     m_animals.restore (state.animals);
     m_hens.restore (state.hens);
   }

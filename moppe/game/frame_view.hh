@@ -72,6 +72,8 @@ namespace moppe::game {
     float wheel_spin_radians = 0.0f;
     // Drawn at this share of its size.
     float scale = 1.0f;
+    // How it moves: someone riding along moves with it.
+    Vec3 velocity {};
   };
 
   // The helicopter's line and its load's bridle as drawn
@@ -126,6 +128,8 @@ namespace moppe::game {
     float tilt_radians = 0.0f;
     float propeller_radians = 0.0f;
     float rpm = 0.0f;
+    // How it moves: someone riding along moves with it.
+    Vec3 velocity {};
   };
 
   // The jet ski as drawn: its origin (on the keel under the front of
@@ -139,7 +143,41 @@ namespace moppe::game {
     float steer_radians = 0.0f;
     float lean_radians = 0.0f;
     float rpm = 0.0f;
+    // How it moves.
+    Vec3 velocity {};
   };
+
+  // What a frame shows of each kind of machine, and of the fleet
+  // (game/fleet.hh).
+  template <class Body>
+  struct pose_of;
+  template <>
+  struct pose_of<mov::Vehicle> {
+    using type = VehiclePose;
+  };
+  template <>
+  struct pose_of<mov::Car> {
+    using type = CarPose;
+  };
+  template <>
+  struct pose_of<mov::Helicopter> {
+    using type = HelicopterPose;
+  };
+  template <>
+  struct pose_of<mov::Tractor> {
+    using type = TractorPose;
+  };
+  template <>
+  struct pose_of<mov::Boat> {
+    using type = BoatPose;
+  };
+  template <>
+  struct pose_of<mov::JetSki> {
+    using type = JetSkiPose;
+  };
+  template <class Body>
+  using PoseOf = typename pose_of<Body>::type;
+  using FleetPoses = FleetOf<PoseOf>;
 
   struct GliderPose {
     Vec3 position {};
@@ -173,15 +211,7 @@ namespace moppe::game {
   };
 
   struct FrameActors {
-    VehiclePose bike {};
-    VehiclePose mountain_bike {};
-    VehiclePose long_john {};
-    CarPose jeep {};
-    HelicopterPose helicopter {};
-    TractorPose tractor {};
-    CarPose caddy {};
-    BoatPose boat {};
-    JetSkiPose jet_ski {};
+    FleetPoses fleet {};
     // Fishing from the boat: the rod in the helmsman's right hand.
     std::optional<RodPose> helm_rod;
     // The bike and the jeep ride in the Caddy, its hardtop off and its
@@ -363,12 +393,14 @@ namespace moppe::game {
                              DisplayColor& specular);
   DisplayColor horizon_color_for (float sun_height);
 
-  VehiclePose vehicle_pose (const mov::Vehicle& vehicle);
-  CarPose car_pose (const mov::Car& car);
-  HelicopterPose helicopter_pose (const mov::Helicopter& helicopter);
-  TractorPose tractor_pose (const mov::Tractor& tractor);
-  BoatPose boat_pose (const mov::Boat& boat);
-  JetSkiPose jet_ski_pose (const mov::JetSki& ski);
+  VehiclePose pose (const mov::Vehicle& vehicle);
+  CarPose pose (const mov::Car& car);
+  HelicopterPose pose (const mov::Helicopter& helicopter);
+  TractorPose pose (const mov::Tractor& tractor);
+  BoatPose pose (const mov::Boat& boat);
+  JetSkiPose pose (const mov::JetSki& ski);
+  // Every machine's.
+  FleetPoses poses (const Fleet& fleet);
   // The bike and the jeep as they ride in the Caddy (game/sling.hh).
   GliderPose glider_pose (const mov::Glider& glider);
   WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);

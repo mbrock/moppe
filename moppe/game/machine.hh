@@ -75,8 +75,10 @@ namespace moppe::game {
     SeatView view;
     // How wide a path through the undergrowth it parts.
     meters_t undergrowth_parting {};
-    // How high over it its waymark stands (heads_up.cc).
+    // How high over it its waymark stands, and the waymark over the
+    // other player driving it (heads_up.cc).
     meters_t mark_height {};
+    meters_t driver_mark {};
     std::span<const Bumper> bumpers;
     // Where its weight is centred.
     Vec3 centre;

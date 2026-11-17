@@ -143,6 +143,7 @@ namespace moppe::game {
                   .nearest = 3.0f * u::m },
         .undergrowth_parting = 1.8f * u::m,
         .mark_height = 2.4f * u::m,
+        .driver_mark = 0.8f * u::m,
         .bumpers = tractor_bumpers,
         .centre = Vec3 (0.0f, 0.78f, -0.15f),
         // The front axle's beam, or the drawbar under the seat.
@@ -171,6 +172,7 @@ namespace moppe::game {
                   .nearest = 3.6f * u::m },
         .undergrowth_parting = 1.6f * u::m,
         .mark_height = 2.0f * u::m,
+        .driver_mark = 1.0f * u::m,
         .bumpers = caddy_bumpers,
         .centre = Vec3 (0.0f, 0.24f, 0.30f),
         .front_tie = Vec3 (0.0f, 0.25f, 2.06f),
@@ -200,6 +202,7 @@ namespace moppe::game {
         // The downwash flattens the grass under it.
         .undergrowth_parting = 4.0f * u::m,
         .mark_height = 3.4f * u::m,
+        .driver_mark = 1.0f * u::m,
         .bumpers = helicopter_bumpers,
         .centre = Vec3 (0.0f, 1.15f, 0.05f),
         .front_tie = Vec3 (0.0f, 0.3f, 1.6f),
@@ -223,6 +226,7 @@ namespace moppe::game {
                   .elevation = 15.0f * u::deg },
         .undergrowth_parting = 0.6f * u::m,
         .mark_height = 1.5f * u::m,
+        .driver_mark = 1.4f * u::m,
         .bumpers = mountain_bike_bumpers,
         .centre = Vec3 (0.0f, 0.55f, 0.0f),
         // The head tube, or the seat post.
@@ -248,6 +252,7 @@ namespace moppe::game {
                   .nearest = 3.0f * u::m,
                   .elevation = 16.0f * u::deg },
         .mark_height = 1.4f * u::m,
+        .driver_mark = 1.2f * u::m,
         .bumpers = boat_bumpers,
         .centre = Vec3 (0.0f, 0.2f, 0.15f),
         // The carrying handle on the bow, or the transom's top.
@@ -279,6 +284,7 @@ namespace moppe::game {
                   .elevation = 15.0f * u::deg },
         .undergrowth_parting = 0.8f * u::m,
         .mark_height = 1.5f * u::m,
+        .driver_mark = 1.4f * u::m,
         .bumpers = long_john_bumpers,
         .centre = Vec3 (0.0f, 0.2f, -0.2f),
         // The front bulkhead, or the seat post.
@@ -305,6 +311,7 @@ namespace moppe::game {
                   .nearest = 2.8f * u::m,
                   .elevation = 15.0f * u::deg },
         .mark_height = 1.6f * u::m,
+        .driver_mark = 1.3f * u::m,
         .bumpers = jet_ski_bumpers,
         .centre = Vec3 (0.0f, 0.24f, -0.12f),
         // The eye in the stem, or the grab handle behind the saddle.

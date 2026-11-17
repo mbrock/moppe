@@ -40,27 +40,9 @@ namespace moppe::game {
     double day_hours = 0.0;
 
     Doing mode = Doing::on_foot ();
-    VehiclePose bike {};
-    // Their jeep, wherever it stands, and how it is moving: someone
-    // riding along in it moves with it.
-    CarPose jeep {};
-    Vec3 jeep_velocity {};
-    // Their helicopter, wherever it stands or flies.
-    HelicopterPose helicopter {};
-    // Their tractor, and them at its wheel when they drive it.
-    TractorPose tractor {};
-    // Their Caddy, likewise.
-    CarPose caddy {};
-    // Their mountainbike, and them on it when they ride it.
-    VehiclePose mountain_bike {};
-    // Their Long John, likewise.
-    VehiclePose long_john {};
-    // Their boat, and them at its helm when they take it out.
-    BoatPose boat {};
-    Vec3 boat_velocity {};
-    // Their jet ski, and them astride it when they ride it.
-    JetSkiPose jet_ski {};
-    Vec3 jet_ski_velocity {};
+    // Their machines, wherever they stand, and them on or in the one
+    // they drive.
+    FleetPoses fleet {};
     // Riding along: on the fore seat of the other player's
     // boat rather than beside them in their jeep.
     bool in_boat = false;

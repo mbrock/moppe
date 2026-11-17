@@ -18,7 +18,7 @@ namespace {
     snapshot.world = world_tag ("play-2048-123");
     snapshot.day_hours = 9.25;
     snapshot.mode = Doing::on_foot ();
-    snapshot.bike.position = Vec3 (10, 20, 30);
+    snapshot.fleet.bike.position = Vec3 (10, 20, 30);
     WalkerPose walker;
     walker.position = Vec3 (x, 20, 30);
     walker.stride_phase = 0.9f;
@@ -33,7 +33,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.walker->heading = Vec3 (1, 0, 0);
   sent.walker->grounded = false;
   sent.walker->look_pitch = -0.3f;
-  sent.bike.wheel_spin_radians = 123.0f;
+  sent.fleet.bike.wheel_spin_radians = 123.0f;
   sent.hung = true;
   sent.hammock.strap[0] = Vec3 (1, 2, 3);
   sent.hammock.strap[1] = Vec3 (5, 2, 3);
@@ -52,17 +52,17 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.pick_count = 40;
   sent.picks_from = 38;
   sent.picks = { 1001, 1002 };
-  sent.boat.position = Vec3 (40, 0, 9);
-  sent.boat_velocity = Vec3 (0, 0, 6.5f);
+  sent.fleet.boat.position = Vec3 (40, 0, 9);
+  sent.fleet.boat.velocity = Vec3 (0, 0, 6.5f);
   sent.in_boat = true;
-  sent.jet_ski.position = Vec3 (60, 0.1f, -14);
-  sent.jet_ski.steer_radians = -0.3f;
-  sent.jet_ski.lean_radians = 0.25f;
-  sent.jet_ski_velocity = Vec3 (-15, 0, 2);
-  sent.tractor.trailer_position = Vec3 (-20, 3, 8);
-  sent.tractor.trailer_forward = Vec3 (0.6f, 0, 0.8f);
-  sent.tractor.trailer_wheel_drop = { 0.02f, -0.04f };
-  sent.tractor.trailer_spin_radians = 1.5f;
+  sent.fleet.jet_ski.position = Vec3 (60, 0.1f, -14);
+  sent.fleet.jet_ski.steer_radians = -0.3f;
+  sent.fleet.jet_ski.lean_radians = 0.25f;
+  sent.fleet.jet_ski.velocity = Vec3 (-15, 0, 2);
+  sent.fleet.tractor.trailer_position = Vec3 (-20, 3, 8);
+  sent.fleet.tractor.trailer_forward = Vec3 (0.6f, 0, 0.8f);
+  sent.fleet.tractor.trailer_wheel_drop = { 0.02f, -0.04f };
+  sent.fleet.tractor.trailer_spin_radians = 1.5f;
 
   const std::optional<CompanionSnapshot> got = decode (encode (sent));
   MOPPE_CHECK (got.has_value ());
@@ -75,7 +75,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (got->walker->heading[0], 1.0f, 1e-6f);
   MOPPE_CHECK (!got->walker->grounded);
   MOPPE_CHECK_NEAR (got->walker->look_pitch, -0.3f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->bike.wheel_spin_radians, 123.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.bike.wheel_spin_radians, 123.0f, 1e-6f);
   MOPPE_CHECK (got->hung && got->lying_down ());
   MOPPE_CHECK_NEAR (got->hammock.strap[1][0], 5.0f, 1e-6f);
   MOPPE_CHECK_NEAR (got->hammock.girth[1], 0.2f, 1e-6f);
@@ -88,17 +88,17 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (got->pan_place[0], 3.3f, 1e-6f);
   MOPPE_CHECK (got->pick_count == 40 && got->picks_from == 38);
   MOPPE_CHECK (got->picks == sent.picks);
-  MOPPE_CHECK_NEAR (got->boat.position[0], 40.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->boat_velocity[2], 6.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.boat.position[0], 40.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.boat.velocity[2], 6.5f, 1e-6f);
   MOPPE_CHECK (got->in_boat);
-  MOPPE_CHECK_NEAR (got->jet_ski.position[2], -14.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->jet_ski.steer_radians, -0.3f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->jet_ski.lean_radians, 0.25f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->jet_ski_velocity[0], -15.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->tractor.trailer_position[0], -20.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->tractor.trailer_forward[0], 0.6f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->tractor.trailer_wheel_drop[1], -0.04f, 1e-6f);
-  MOPPE_CHECK_NEAR (got->tractor.trailer_spin_radians, 1.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.jet_ski.position[2], -14.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.jet_ski.steer_radians, -0.3f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.jet_ski.lean_radians, 0.25f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.jet_ski.velocity[0], -15.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.tractor.trailer_position[0], -20.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.tractor.trailer_forward[0], 0.6f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.tractor.trailer_wheel_drop[1], -0.04f, 1e-6f);
+  MOPPE_CHECK_NEAR (got->fleet.tractor.trailer_spin_radians, 1.5f, 1e-6f);
 }
 
 MOPPE_TEST (a_damaged_companion_snapshot_is_refused) {
@@ -116,7 +116,7 @@ MOPPE_TEST (a_damaged_companion_snapshot_is_refused) {
   MOPPE_CHECK (!decode (other));
   // A position that is not a number.
   CompanionSnapshot broken = companion_test_walker (1.0f, 1.0);
-  broken.bike.position = Vec3 (std::nanf (""), 0, 0);
+  broken.fleet.bike.position = Vec3 (std::nanf (""), 0, 0);
   MOPPE_CHECK (!decode (encode (broken)));
 }
 

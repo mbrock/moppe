@@ -140,9 +140,9 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
   const game::GameState after = fixture.running ().state ();
 
   check_logic_reading (after.logic, before.logic);
-  frame_view_check_vector (position_value (after.vehicle.position),
-                           position_value (before.vehicle.position));
-  frame_view_check_vector (after.vehicle.heading, before.vehicle.heading);
+  frame_view_check_vector (position_value (after.fleet.bike.position),
+                           position_value (before.fleet.bike.position));
+  frame_view_check_vector (after.fleet.bike.heading, before.fleet.bike.heading);
   frame_view_check_vector (position_value (after.camera.position),
                            position_value (before.camera.position));
   frame_view_check_vector (position_value (after.camera.target),
@@ -232,7 +232,7 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
   const game::FrameView frozen =
     game::compose_frame_view (gameplay_input (fixture));
   MOPPE_CHECK (frozen.actors.walker.has_value ());
-  const Vec3 bike_position = frozen.actors.bike.position;
+  const Vec3 bike_position = frozen.actors.fleet.bike.position;
   const Vec3 walker_position = frozen.actors.walker->position;
 
   session.bike ().reset (Vec3 (112, 11.2f, 48));
@@ -240,9 +240,10 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
   const game::FrameView changed =
     game::compose_frame_view (gameplay_input (fixture));
 
-  frame_view_check_vector (frozen.actors.bike.position, bike_position);
+  frame_view_check_vector (frozen.actors.fleet.bike.position, bike_position);
   frame_view_check_vector (frozen.actors.walker->position, walker_position);
-  MOPPE_CHECK (length2 (changed.actors.bike.position - bike_position) > 1.0f);
+  MOPPE_CHECK (length2 (changed.actors.fleet.bike.position - bike_position) >
+               1.0f);
   MOPPE_CHECK (length2 (changed.actors.walker->position - walker_position) >
                1.0f);
 

@@ -10,7 +10,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 15;
+    constexpr std::uint8_t wire_version = 16;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -205,32 +205,332 @@ namespace moppe::game {
              p2 * (3 * s2 - 2 * s3) + m2 * (s3 - s2);
     }
 
-    // Where something is partway from `a` to `b`: on the curve that
-    // passes each of them the way its neighbours lie, so that it does
-    // not turn a corner at every snapshot; and beyond them, straight on.
-    // `place` finds the thing in a snapshot, or nothing where it has
-    // none.
-    template <typename Place>
-    Vec3 travel (const CompanionSnapshot* before,
-                 const CompanionSnapshot& a,
-                 const CompanionSnapshot& b,
-                 const CompanionSnapshot* after,
-                 float t,
-                 Place place) {
-      const Vec3& p1 = *place (a);
-      const Vec3& p2 = *place (b);
-      const double span = b.sent - a.sent;
+    // Each machine's pose on the wire, in the fleet's order. A
+    // pedalled bike sends its crank where the motocross sends its lean,
+    // throttle, and jets.
+    void put (Writer& out, Machine machine, const VehiclePose& bike) {
+      out.put (bike.position);
+      out.put (bike.render_orientation);
+      out.put (bike.render_normal);
+      out.put (bike.rear_wheel_drop);
+      out.put (bike.front_wheel_drop);
+      out.put (bike.wheel_spin_radians);
+      out.put (bike.fork_radians);
+      if (machine_kind (machine).pedalled) {
+        out.put (bike.crank_radians);
+        return;
+      }
+      out.put (bike.lean_radians);
+      out.put (bike.thrust);
+      out.put (bike.boost_level);
+      out.put (bike.boost_drive);
+      out.put (bike.rider_lean);
+    }
+
+    void put (Writer& out, Machine, const CarPose& car) {
+      out.put (car.position);
+      out.put (car.forward);
+      out.put (car.up);
+      for (const float drop : car.wheel_drop)
+        out.put (drop);
+      out.put (car.steer_radians);
+      out.put (car.wheel_spin_radians);
+      out.put (car.velocity);
+    }
+
+    void put (Writer& out, Machine, const HelicopterPose& heli) {
+      out.put (heli.position);
+      out.put (heli.forward);
+      out.put (heli.up);
+      out.put (heli.rotor_radians);
+      out.put (heli.tail_radians);
+    }
+
+    void put (Writer& out, Machine, const TractorPose& tractor) {
+      out.put (tractor.position);
+      out.put (tractor.forward);
+      out.put (tractor.up);
+      for (const float drop : tractor.wheel_drop)
+        out.put (drop);
+      out.put (tractor.steer_radians);
+      out.put (tractor.front_spin_radians);
+      out.put (tractor.rear_spin_radians);
+      out.put (tractor.trailer_position);
+      out.put (tractor.trailer_forward);
+      out.put (tractor.trailer_up);
+      for (const float drop : tractor.trailer_wheel_drop)
+        out.put (drop);
+      out.put (tractor.trailer_spin_radians);
+    }
+
+    void put (Writer& out, Machine, const BoatPose& boat) {
+      out.put (boat.position);
+      out.put (boat.forward);
+      out.put (boat.up);
+      out.put (boat.swing_radians);
+      out.put (boat.tilt_radians);
+      out.put (boat.propeller_radians);
+      out.put (boat.rpm);
+      out.put (boat.velocity);
+    }
+
+    void put (Writer& out, Machine, const JetSkiPose& ski) {
+      out.put (ski.position);
+      out.put (ski.forward);
+      out.put (ski.up);
+      out.put (ski.steer_radians);
+      out.put (ski.lean_radians);
+      out.put (ski.rpm);
+      out.put (ski.velocity);
+    }
+
+    void get (Reader& in, Machine machine, VehiclePose& bike) {
+      bike.position = in.point ();
+      bike.render_orientation = in.direction (Vec3 (0, 0, 1));
+      bike.render_normal = in.direction (Vec3 (0, 1, 0));
+      bike.rear_wheel_drop = in.number ();
+      bike.front_wheel_drop = in.number ();
+      bike.wheel_spin_radians = in.number ();
+      bike.fork_radians = in.number ();
+      if (machine_kind (machine).pedalled) {
+        bike.rear_wheel_drop = std::clamp (bike.rear_wheel_drop, -0.2f, 0.2f);
+        bike.front_wheel_drop = std::clamp (bike.front_wheel_drop, -0.2f, 0.2f);
+        bike.crank_radians = in.number ();
+        return;
+      }
+      bike.lean_radians = in.number ();
+      bike.thrust = in.number ();
+      bike.boost_level = in.number ();
+      bike.boost_drive = in.number ();
+      bike.rider_lean = in.number ();
+    }
+
+    void get (Reader& in, Machine, CarPose& car) {
+      car.position = in.point ();
+      car.forward = in.direction (Vec3 (0, 0, 1));
+      car.up = in.direction (Vec3 (0, 1, 0));
+      for (float& drop : car.wheel_drop)
+        drop = std::clamp (in.number (), -0.5f, 0.5f);
+      car.steer_radians = in.number ();
+      car.wheel_spin_radians = in.number ();
+      car.velocity = in.point ();
+    }
+
+    void get (Reader& in, Machine, HelicopterPose& heli) {
+      heli.position = in.point ();
+      heli.forward = in.direction (Vec3 (0, 0, 1));
+      heli.up = in.direction (Vec3 (0, 1, 0));
+      heli.rotor_radians = in.number ();
+      heli.tail_radians = in.number ();
+    }
+
+    void get (Reader& in, Machine, TractorPose& tractor) {
+      tractor.position = in.point ();
+      tractor.forward = in.direction (Vec3 (0, 0, 1));
+      tractor.up = in.direction (Vec3 (0, 1, 0));
+      for (float& drop : tractor.wheel_drop)
+        drop = std::clamp (in.number (), -0.5f, 0.5f);
+      tractor.steer_radians = in.number ();
+      tractor.front_spin_radians = in.number ();
+      tractor.rear_spin_radians = in.number ();
+      tractor.trailer_position = in.point ();
+      tractor.trailer_forward = in.direction (Vec3 (0, 0, 1));
+      tractor.trailer_up = in.direction (Vec3 (0, 1, 0));
+      for (float& drop : tractor.trailer_wheel_drop)
+        drop = std::clamp (in.number (), -0.5f, 0.5f);
+      tractor.trailer_spin_radians = in.number ();
+    }
+
+    void get (Reader& in, Machine, BoatPose& boat) {
+      boat.position = in.point ();
+      boat.forward = in.direction (Vec3 (0, 0, 1));
+      boat.up = in.direction (Vec3 (0, 1, 0));
+      boat.swing_radians = in.number ();
+      boat.tilt_radians = in.number ();
+      boat.propeller_radians = in.number ();
+      boat.rpm = in.number ();
+      boat.velocity = in.point ();
+    }
+
+    void get (Reader& in, Machine, JetSkiPose& ski) {
+      ski.position = in.point ();
+      ski.forward = in.direction (Vec3 (0, 0, 1));
+      ski.up = in.direction (Vec3 (0, 1, 0));
+      ski.steer_radians = in.number ();
+      ski.lean_radians = in.number ();
+      ski.rpm = in.number ();
+      ski.velocity = in.point ();
+    }
+
+    // When a blend falls, between snapshots `a` and `b` (at `t` from
+    // zero to one), and the snapshots either side of them, if any.
+    struct Moments {
+      const CompanionSnapshot* before;
+      const CompanionSnapshot& a;
+      const CompanionSnapshot& b;
+      const CompanionSnapshot* after;
+      float t;
+      // `t` held between the two.
+      float within;
+    };
+
+    // Where something is partway from `p1` to `p2`: on the curve that
+    // passes each of them the way its neighbours `p0` and `p3` lie (when
+    // there are any), so that it does not turn a corner at every
+    // snapshot; and beyond them, straight on.
+    Vec3 travel (const Moments& w,
+                 const Vec3* p0,
+                 const Vec3& p1,
+                 const Vec3& p2,
+                 const Vec3* p3) {
+      const float t = w.t;
+      const double span = w.b.sent - w.a.sent;
       if (t <= 0.0f || t >= 1.0f || !(span > 0.0))
         return mix (p1, p2, t);
       Vec3 m1 = p2 - p1;
       Vec3 m2 = m1;
-      if (const Vec3* p0 = before ? place (*before) : nullptr;
-          p0 && before->sent < a.sent && !leapt (*p0, p1))
-        m1 = (p2 - *p0) * static_cast<float> (span / (b.sent - before->sent));
-      if (const Vec3* p3 = after ? place (*after) : nullptr;
-          p3 && after->sent > b.sent && !leapt (p2, *p3))
-        m2 = (*p3 - p1) * static_cast<float> (span / (after->sent - a.sent));
+      if (p0 && w.before->sent < w.a.sent && !leapt (*p0, p1))
+        m1 =
+          (p2 - *p0) * static_cast<float> (span / (w.b.sent - w.before->sent));
+      if (p3 && w.after->sent > w.b.sent && !leapt (p2, *p3))
+        m2 =
+          (*p3 - p1) * static_cast<float> (span / (w.after->sent - w.a.sent));
       return curve (p1, p2, m1, m2, t);
+    }
+
+    // A pose blended from `p1` to `p2`, knowing `p0` and `p3` either
+    // side when the moments have them. Only what travels or turns is
+    // carried on past `p2`; the rest holds as last told.
+    template <class Pose>
+    struct Around {
+      const Pose* p0;
+      const Pose& p1;
+      const Pose& p2;
+      const Pose* p3;
+
+      Vec3 travel (const Moments& w, Vec3 Pose::* place) const {
+        return game::travel (w,
+                             p0 ? &(p0->*place) : nullptr,
+                             p1.*place,
+                             p2.*place,
+                             p3 ? &(p3->*place) : nullptr);
+      }
+    };
+
+    void mix (Machine machine,
+              VehiclePose& out,
+              const Around<VehiclePose>& by,
+              const Moments& w) {
+      const VehiclePose& from = by.p1;
+      const VehiclePose& to = by.p2;
+      out.position = by.travel (w, &VehiclePose::position);
+      out.render_orientation =
+        mix_direction (from.render_orientation, to.render_orientation, w.t);
+      out.render_normal =
+        mix_direction (from.render_normal, to.render_normal, w.t);
+      out.rear_wheel_drop =
+        mix (from.rear_wheel_drop, to.rear_wheel_drop, w.within);
+      out.front_wheel_drop =
+        mix (from.front_wheel_drop, to.front_wheel_drop, w.within);
+      out.fork_radians = mix (from.fork_radians, to.fork_radians, w.within);
+      if (machine_kind (machine).pedalled) {
+        out.wheel_spin_radians =
+          mix_angle (from.wheel_spin_radians, to.wheel_spin_radians, w.t);
+        out.crank_radians =
+          mix_angle (from.crank_radians, to.crank_radians, w.t);
+        return;
+      }
+      out.lean_radians = mix (from.lean_radians, to.lean_radians, w.within);
+      out.wheel_spin_radians =
+        mix (from.wheel_spin_radians, to.wheel_spin_radians, w.t);
+      out.rider_lean = mix (from.rider_lean, to.rider_lean, w.within);
+    }
+
+    void
+    mix (Machine, CarPose& out, const Around<CarPose>& by, const Moments& w) {
+      const CarPose& from = by.p1;
+      const CarPose& to = by.p2;
+      out.position = by.travel (w, &CarPose::position);
+      out.forward = mix_direction (from.forward, to.forward, w.t);
+      out.up = mix_direction (from.up, to.up, w.t);
+      for (std::size_t i = 0; i < out.wheel_drop.size (); ++i)
+        out.wheel_drop[i] =
+          mix (from.wheel_drop[i], to.wheel_drop[i], w.within);
+      out.steer_radians = mix (from.steer_radians, to.steer_radians, w.within);
+      out.wheel_spin_radians =
+        mix_angle (from.wheel_spin_radians, to.wheel_spin_radians, w.t);
+      out.velocity = mix (from.velocity, to.velocity, w.within);
+    }
+
+    void mix (Machine,
+              HelicopterPose& out,
+              const Around<HelicopterPose>& by,
+              const Moments& w) {
+      const HelicopterPose& from = by.p1;
+      const HelicopterPose& to = by.p2;
+      out.position = by.travel (w, &HelicopterPose::position);
+      out.forward = mix_direction (from.forward, to.forward, w.t);
+      out.up = mix_direction (from.up, to.up, w.t);
+      out.rotor_radians = mix_angle (from.rotor_radians, to.rotor_radians, w.t);
+      out.tail_radians = mix_angle (from.tail_radians, to.tail_radians, w.t);
+    }
+
+    void mix (Machine,
+              TractorPose& out,
+              const Around<TractorPose>& by,
+              const Moments& w) {
+      const TractorPose& from = by.p1;
+      const TractorPose& to = by.p2;
+      out.position = by.travel (w, &TractorPose::position);
+      out.forward = mix_direction (from.forward, to.forward, w.t);
+      out.up = mix_direction (from.up, to.up, w.t);
+      for (std::size_t i = 0; i < out.wheel_drop.size (); ++i)
+        out.wheel_drop[i] =
+          mix (from.wheel_drop[i], to.wheel_drop[i], w.within);
+      out.steer_radians = mix (from.steer_radians, to.steer_radians, w.within);
+      out.front_spin_radians =
+        mix_angle (from.front_spin_radians, to.front_spin_radians, w.t);
+      out.rear_spin_radians =
+        mix_angle (from.rear_spin_radians, to.rear_spin_radians, w.t);
+      out.trailer_position = by.travel (w, &TractorPose::trailer_position);
+      out.trailer_forward =
+        mix_direction (from.trailer_forward, to.trailer_forward, w.t);
+      out.trailer_up = mix_direction (from.trailer_up, to.trailer_up, w.t);
+      for (std::size_t i = 0; i < out.trailer_wheel_drop.size (); ++i)
+        out.trailer_wheel_drop[i] =
+          mix (from.trailer_wheel_drop[i], to.trailer_wheel_drop[i], w.within);
+      out.trailer_spin_radians =
+        mix_angle (from.trailer_spin_radians, to.trailer_spin_radians, w.t);
+    }
+
+    void
+    mix (Machine, BoatPose& out, const Around<BoatPose>& by, const Moments& w) {
+      const BoatPose& from = by.p1;
+      const BoatPose& to = by.p2;
+      out.position = by.travel (w, &BoatPose::position);
+      out.forward = mix_direction (from.forward, to.forward, w.t);
+      out.up = mix_direction (from.up, to.up, w.t);
+      out.swing_radians = mix (from.swing_radians, to.swing_radians, w.within);
+      out.tilt_radians = mix (from.tilt_radians, to.tilt_radians, w.within);
+      out.propeller_radians =
+        mix_angle (from.propeller_radians, to.propeller_radians, w.t);
+      out.rpm = mix (from.rpm, to.rpm, w.within);
+      out.velocity = mix (from.velocity, to.velocity, w.within);
+    }
+
+    void mix (Machine,
+              JetSkiPose& out,
+              const Around<JetSkiPose>& by,
+              const Moments& w) {
+      const JetSkiPose& from = by.p1;
+      const JetSkiPose& to = by.p2;
+      out.position = by.travel (w, &JetSkiPose::position);
+      out.forward = mix_direction (from.forward, to.forward, w.t);
+      out.up = mix_direction (from.up, to.up, w.t);
+      out.steer_radians = mix (from.steer_radians, to.steer_radians, w.within);
+      out.lean_radians = mix (from.lean_radians, to.lean_radians, w.within);
+      out.rpm = mix (from.rpm, to.rpm, w.within);
+      out.velocity = mix (from.velocity, to.velocity, w.within);
     }
   }
 
@@ -289,91 +589,9 @@ namespace moppe::game {
       flags |= riding_in_boat;
     out.put (flags);
 
-    const VehiclePose& bike = snapshot.bike;
-    out.put (bike.position);
-    out.put (bike.render_orientation);
-    out.put (bike.render_normal);
-    out.put (bike.rear_wheel_drop);
-    out.put (bike.front_wheel_drop);
-    out.put (bike.lean_radians);
-    out.put (bike.wheel_spin_radians);
-    out.put (bike.fork_radians);
-    out.put (bike.thrust);
-    out.put (bike.boost_level);
-    out.put (bike.boost_drive);
-    out.put (bike.rider_lean);
-
-    const CarPose& jeep = snapshot.jeep;
-    out.put (jeep.position);
-    out.put (jeep.forward);
-    out.put (jeep.up);
-    for (const float drop : jeep.wheel_drop)
-      out.put (drop);
-    out.put (jeep.steer_radians);
-    out.put (jeep.wheel_spin_radians);
-    out.put (snapshot.jeep_velocity);
-
-    const HelicopterPose& heli = snapshot.helicopter;
-    out.put (heli.position);
-    out.put (heli.forward);
-    out.put (heli.up);
-    out.put (heli.rotor_radians);
-    out.put (heli.tail_radians);
-
-    const TractorPose& tractor = snapshot.tractor;
-    out.put (tractor.position);
-    out.put (tractor.forward);
-    out.put (tractor.up);
-    for (const float drop : tractor.wheel_drop)
-      out.put (drop);
-    out.put (tractor.steer_radians);
-    out.put (tractor.front_spin_radians);
-    out.put (tractor.rear_spin_radians);
-    out.put (tractor.trailer_position);
-    out.put (tractor.trailer_forward);
-    out.put (tractor.trailer_up);
-    for (const float drop : tractor.trailer_wheel_drop)
-      out.put (drop);
-    out.put (tractor.trailer_spin_radians);
-
-    for (const VehiclePose* pedalled :
-         { &snapshot.mountain_bike, &snapshot.long_john }) {
-      const VehiclePose& mtb = *pedalled;
-      out.put (mtb.position);
-      out.put (mtb.render_orientation);
-      out.put (mtb.render_normal);
-      out.put (mtb.rear_wheel_drop);
-      out.put (mtb.front_wheel_drop);
-      out.put (mtb.wheel_spin_radians);
-      out.put (mtb.fork_radians);
-      out.put (mtb.crank_radians);
-    }
-
-    const CarPose& caddy = snapshot.caddy;
-    out.put (caddy.position);
-    out.put (caddy.forward);
-    out.put (caddy.up);
-    for (const float drop : caddy.wheel_drop)
-      out.put (drop);
-    out.put (caddy.steer_radians);
-    out.put (caddy.wheel_spin_radians);
-    const BoatPose& boat = snapshot.boat;
-    out.put (boat.position);
-    out.put (boat.forward);
-    out.put (boat.up);
-    out.put (boat.swing_radians);
-    out.put (boat.tilt_radians);
-    out.put (boat.propeller_radians);
-    out.put (boat.rpm);
-    out.put (snapshot.boat_velocity);
-    const JetSkiPose& ski = snapshot.jet_ski;
-    out.put (ski.position);
-    out.put (ski.forward);
-    out.put (ski.up);
-    out.put (ski.steer_radians);
-    out.put (ski.lean_radians);
-    out.put (ski.rpm);
-    out.put (snapshot.jet_ski_velocity);
+    for_each_machine (snapshot.fleet, [&] (Machine m, const auto& pose) {
+      put (out, m, pose);
+    });
 
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
@@ -449,91 +667,8 @@ namespace moppe::game {
     snapshot.mode = *mode;
     const std::uint8_t flags = in.get<std::uint8_t> ();
 
-    VehiclePose& bike = snapshot.bike;
-    bike.position = in.point ();
-    bike.render_orientation = in.direction (Vec3 (0, 0, 1));
-    bike.render_normal = in.direction (Vec3 (0, 1, 0));
-    bike.rear_wheel_drop = in.number ();
-    bike.front_wheel_drop = in.number ();
-    bike.lean_radians = in.number ();
-    bike.wheel_spin_radians = in.number ();
-    bike.fork_radians = in.number ();
-    bike.thrust = in.number ();
-    bike.boost_level = in.number ();
-    bike.boost_drive = in.number ();
-    bike.rider_lean = in.number ();
-
-    CarPose& jeep = snapshot.jeep;
-    jeep.position = in.point ();
-    jeep.forward = in.direction (Vec3 (0, 0, 1));
-    jeep.up = in.direction (Vec3 (0, 1, 0));
-    for (float& drop : jeep.wheel_drop)
-      drop = std::clamp (in.number (), -0.5f, 0.5f);
-    jeep.steer_radians = in.number ();
-    jeep.wheel_spin_radians = in.number ();
-    snapshot.jeep_velocity = in.point ();
-
-    HelicopterPose& heli = snapshot.helicopter;
-    heli.position = in.point ();
-    heli.forward = in.direction (Vec3 (0, 0, 1));
-    heli.up = in.direction (Vec3 (0, 1, 0));
-    heli.rotor_radians = in.number ();
-    heli.tail_radians = in.number ();
-
-    TractorPose& tractor = snapshot.tractor;
-    tractor.position = in.point ();
-    tractor.forward = in.direction (Vec3 (0, 0, 1));
-    tractor.up = in.direction (Vec3 (0, 1, 0));
-    for (float& drop : tractor.wheel_drop)
-      drop = std::clamp (in.number (), -0.5f, 0.5f);
-    tractor.steer_radians = in.number ();
-    tractor.front_spin_radians = in.number ();
-    tractor.rear_spin_radians = in.number ();
-    tractor.trailer_position = in.point ();
-    tractor.trailer_forward = in.direction (Vec3 (0, 0, 1));
-    tractor.trailer_up = in.direction (Vec3 (0, 1, 0));
-    for (float& drop : tractor.trailer_wheel_drop)
-      drop = std::clamp (in.number (), -0.5f, 0.5f);
-    tractor.trailer_spin_radians = in.number ();
-
-    for (VehiclePose* pedalled :
-         { &snapshot.mountain_bike, &snapshot.long_john }) {
-      VehiclePose& mtb = *pedalled;
-      mtb.position = in.point ();
-      mtb.render_orientation = in.direction (Vec3 (0, 0, 1));
-      mtb.render_normal = in.direction (Vec3 (0, 1, 0));
-      mtb.rear_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
-      mtb.front_wheel_drop = std::clamp (in.number (), -0.2f, 0.2f);
-      mtb.wheel_spin_radians = in.number ();
-      mtb.fork_radians = in.number ();
-      mtb.crank_radians = in.number ();
-    }
-
-    CarPose& caddy = snapshot.caddy;
-    caddy.position = in.point ();
-    caddy.forward = in.direction (Vec3 (0, 0, 1));
-    caddy.up = in.direction (Vec3 (0, 1, 0));
-    for (float& drop : caddy.wheel_drop)
-      drop = std::clamp (in.number (), -0.5f, 0.5f);
-    caddy.steer_radians = in.number ();
-    caddy.wheel_spin_radians = in.number ();
-    BoatPose& boat = snapshot.boat;
-    boat.position = in.point ();
-    boat.forward = in.direction (Vec3 (0, 0, 1));
-    boat.up = in.direction (Vec3 (0, 1, 0));
-    boat.swing_radians = in.number ();
-    boat.tilt_radians = in.number ();
-    boat.propeller_radians = in.number ();
-    boat.rpm = in.number ();
-    snapshot.boat_velocity = in.point ();
-    JetSkiPose& ski = snapshot.jet_ski;
-    ski.position = in.point ();
-    ski.forward = in.direction (Vec3 (0, 0, 1));
-    ski.up = in.direction (Vec3 (0, 1, 0));
-    ski.steer_radians = in.number ();
-    ski.lean_radians = in.number ();
-    ski.rpm = in.number ();
-    snapshot.jet_ski_velocity = in.point ();
+    for_each_machine (snapshot.fleet,
+                      [&] (Machine m, auto& pose) { get (in, m, pose); });
     snapshot.in_boat = (flags & riding_in_boat) != 0;
 
     if (flags & has_glider) {
@@ -620,174 +755,40 @@ namespace moppe::game {
                            const CompanionSnapshot* after,
                            float t) {
     CompanionSnapshot result = b;
-    if (leapt (a.bike.position, b.bike.position))
+    if (leapt (a.fleet.bike.position, b.fleet.bike.position))
       return result;
-    // Only what travels or turns is carried on past `b`; the rest
-    // holds as last told.
-    const float within = std::clamp (t, 0.0f, 1.0f);
-
-    VehiclePose& bike = result.bike;
-    bike.position =
-      travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-        return &each.bike.position;
-      });
-    bike.render_orientation =
-      mix_direction (a.bike.render_orientation, b.bike.render_orientation, t);
-    bike.render_normal =
-      mix_direction (a.bike.render_normal, b.bike.render_normal, t);
-    bike.rear_wheel_drop =
-      mix (a.bike.rear_wheel_drop, b.bike.rear_wheel_drop, within);
-    bike.front_wheel_drop =
-      mix (a.bike.front_wheel_drop, b.bike.front_wheel_drop, within);
-    bike.lean_radians = mix (a.bike.lean_radians, b.bike.lean_radians, within);
-    bike.wheel_spin_radians =
-      mix (a.bike.wheel_spin_radians, b.bike.wheel_spin_radians, t);
-    bike.fork_radians = mix (a.bike.fork_radians, b.bike.fork_radians, within);
-    bike.rider_lean = mix (a.bike.rider_lean, b.bike.rider_lean, within);
-
-    if (!leapt (a.jeep.position, b.jeep.position)) {
-      CarPose& jeep = result.jeep;
-      jeep.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.jeep.position;
-        });
-      jeep.forward = mix_direction (a.jeep.forward, b.jeep.forward, t);
-      jeep.up = mix_direction (a.jeep.up, b.jeep.up, t);
-      for (std::size_t i = 0; i < jeep.wheel_drop.size (); ++i)
-        jeep.wheel_drop[i] =
-          mix (a.jeep.wheel_drop[i], b.jeep.wheel_drop[i], within);
-      jeep.steer_radians =
-        mix (a.jeep.steer_radians, b.jeep.steer_radians, within);
-      jeep.wheel_spin_radians =
-        mix_angle (a.jeep.wheel_spin_radians, b.jeep.wheel_spin_radians, t);
-      result.jeep_velocity = mix (a.jeep_velocity, b.jeep_velocity, within);
-    }
-    for (VehiclePose CompanionSnapshot::* pedalled :
-         { &CompanionSnapshot::mountain_bike, &CompanionSnapshot::long_john }) {
-      const VehiclePose& from = a.*pedalled;
-      const VehiclePose& to = b.*pedalled;
-      if (leapt (from.position, to.position))
-        continue;
-      VehiclePose& mtb = result.*pedalled;
-      mtb.position = travel (
-        before, a, b, after, t, [pedalled] (const CompanionSnapshot& each) {
-          return &(each.*pedalled).position;
-        });
-      mtb.render_orientation =
-        mix_direction (from.render_orientation, to.render_orientation, t);
-      mtb.render_normal =
-        mix_direction (from.render_normal, to.render_normal, t);
-      mtb.rear_wheel_drop =
-        mix (from.rear_wheel_drop, to.rear_wheel_drop, within);
-      mtb.front_wheel_drop =
-        mix (from.front_wheel_drop, to.front_wheel_drop, within);
-      mtb.wheel_spin_radians =
-        mix_angle (from.wheel_spin_radians, to.wheel_spin_radians, t);
-      mtb.fork_radians = mix (from.fork_radians, to.fork_radians, within);
-      mtb.crank_radians = mix_angle (from.crank_radians, to.crank_radians, t);
-    }
-    if (!leapt (a.caddy.position, b.caddy.position)) {
-      CarPose& caddy = result.caddy;
-      caddy.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.caddy.position;
-        });
-      caddy.forward = mix_direction (a.caddy.forward, b.caddy.forward, t);
-      caddy.up = mix_direction (a.caddy.up, b.caddy.up, t);
-      for (std::size_t i = 0; i < caddy.wheel_drop.size (); ++i)
-        caddy.wheel_drop[i] =
-          mix (a.caddy.wheel_drop[i], b.caddy.wheel_drop[i], within);
-      caddy.steer_radians =
-        mix (a.caddy.steer_radians, b.caddy.steer_radians, within);
-      caddy.wheel_spin_radians =
-        mix_angle (a.caddy.wheel_spin_radians, b.caddy.wheel_spin_radians, t);
-    }
-    if (!leapt (a.boat.position, b.boat.position)) {
-      BoatPose& boat = result.boat;
-      boat.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.boat.position;
-        });
-      boat.forward = mix_direction (a.boat.forward, b.boat.forward, t);
-      boat.up = mix_direction (a.boat.up, b.boat.up, t);
-      boat.swing_radians =
-        mix (a.boat.swing_radians, b.boat.swing_radians, within);
-      boat.tilt_radians =
-        mix (a.boat.tilt_radians, b.boat.tilt_radians, within);
-      boat.propeller_radians =
-        mix_angle (a.boat.propeller_radians, b.boat.propeller_radians, t);
-      boat.rpm = mix (a.boat.rpm, b.boat.rpm, within);
-      result.boat_velocity = mix (a.boat_velocity, b.boat_velocity, within);
-    }
-    if (!leapt (a.jet_ski.position, b.jet_ski.position)) {
-      JetSkiPose& ski = result.jet_ski;
-      ski.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.jet_ski.position;
-        });
-      ski.forward = mix_direction (a.jet_ski.forward, b.jet_ski.forward, t);
-      ski.up = mix_direction (a.jet_ski.up, b.jet_ski.up, t);
-      ski.steer_radians =
-        mix (a.jet_ski.steer_radians, b.jet_ski.steer_radians, within);
-      ski.lean_radians =
-        mix (a.jet_ski.lean_radians, b.jet_ski.lean_radians, within);
-      ski.rpm = mix (a.jet_ski.rpm, b.jet_ski.rpm, within);
-      result.jet_ski_velocity =
-        mix (a.jet_ski_velocity, b.jet_ski_velocity, within);
-    }
-    if (!leapt (a.helicopter.position, b.helicopter.position)) {
-      HelicopterPose& heli = result.helicopter;
-      heli.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.helicopter.position;
-        });
-      heli.forward =
-        mix_direction (a.helicopter.forward, b.helicopter.forward, t);
-      heli.up = mix_direction (a.helicopter.up, b.helicopter.up, t);
-      heli.rotor_radians =
-        mix_angle (a.helicopter.rotor_radians, b.helicopter.rotor_radians, t);
-      heli.tail_radians =
-        mix_angle (a.helicopter.tail_radians, b.helicopter.tail_radians, t);
-    }
-    if (!leapt (a.tractor.position, b.tractor.position)) {
-      TractorPose& tractor = result.tractor;
-      tractor.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.tractor.position;
-        });
-      tractor.forward = mix_direction (a.tractor.forward, b.tractor.forward, t);
-      tractor.up = mix_direction (a.tractor.up, b.tractor.up, t);
-      for (std::size_t i = 0; i < tractor.wheel_drop.size (); ++i)
-        tractor.wheel_drop[i] =
-          mix (a.tractor.wheel_drop[i], b.tractor.wheel_drop[i], within);
-      tractor.steer_radians =
-        mix (a.tractor.steer_radians, b.tractor.steer_radians, within);
-      tractor.front_spin_radians = mix_angle (
-        a.tractor.front_spin_radians, b.tractor.front_spin_radians, t);
-      tractor.rear_spin_radians =
-        mix_angle (a.tractor.rear_spin_radians, b.tractor.rear_spin_radians, t);
-      tractor.trailer_position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return &each.tractor.trailer_position;
-        });
-      tractor.trailer_forward =
-        mix_direction (a.tractor.trailer_forward, b.tractor.trailer_forward, t);
-      tractor.trailer_up =
-        mix_direction (a.tractor.trailer_up, b.tractor.trailer_up, t);
-      for (std::size_t i = 0; i < tractor.trailer_wheel_drop.size (); ++i)
-        tractor.trailer_wheel_drop[i] = mix (a.tractor.trailer_wheel_drop[i],
-                                             b.tractor.trailer_wheel_drop[i],
-                                             within);
-      tractor.trailer_spin_radians = mix_angle (
-        a.tractor.trailer_spin_radians, b.tractor.trailer_spin_radians, t);
-    }
+    const Moments w { before, a, b, after, t, std::clamp (t, 0.0f, 1.0f) };
+    const float within = w.within;
+    // Each machine moves on unless it has leapt.
+    for_each_machine_across (
+      [&] (Machine m,
+           auto& out,
+           const auto& p0,
+           const auto& p1,
+           const auto& p2,
+           const auto& p3) {
+        if (leapt (p1.position, p2.position))
+          return;
+        mix (m,
+             out,
+             Around<std::remove_cvref_t<decltype (out)>> {
+               before ? &p0 : nullptr, p1, p2, after ? &p3 : nullptr },
+             w);
+      },
+      result.fleet,
+      (before ? *before : a).fleet,
+      a.fleet,
+      b.fleet,
+      (after ? *after : b).fleet);
     if (a.glider && b.glider &&
         !leapt (a.glider->position, b.glider->position)) {
       GliderPose& glider = *result.glider;
       glider.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return each.glider ? &each.glider->position : nullptr;
-        });
+        travel (w,
+                before && before->glider ? &before->glider->position : nullptr,
+                a.glider->position,
+                b.glider->position,
+                after && after->glider ? &after->glider->position : nullptr);
       glider.heading = mix_direction (a.glider->heading, b.glider->heading, t);
       glider.bank_radians =
         mix (a.glider->bank_radians, b.glider->bank_radians, within);
@@ -796,9 +797,11 @@ namespace moppe::game {
         !leapt (a.walker->position, b.walker->position)) {
       WalkerPose& walker = *result.walker;
       walker.position =
-        travel (before, a, b, after, t, [] (const CompanionSnapshot& each) {
-          return each.walker ? &each.walker->position : nullptr;
-        });
+        travel (w,
+                before && before->walker ? &before->walker->position : nullptr,
+                a.walker->position,
+                b.walker->position,
+                after && after->walker ? &after->walker->position : nullptr);
       walker.heading = mix_direction (a.walker->heading, b.walker->heading, t);
       walker.ground_normal =
         mix_direction (a.walker->ground_normal, b.walker->ground_normal, t);
@@ -914,8 +917,8 @@ namespace moppe::game {
     CompanionSnapshot seen = look (m_snapshots.size (), m_play);
     const auto places = [] (CompanionSnapshot& each) {
       return std::array<Vec3*, 4> {
-        &each.bike.position,
-        &each.jeep.position,
+        &each.fleet.bike.position,
+        &each.fleet.jeep.position,
         each.walker ? &each.walker->position : nullptr,
         each.glider ? &each.glider->position : nullptr
       };

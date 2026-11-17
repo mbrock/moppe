@@ -95,33 +95,25 @@ namespace moppe::game {
     std::unreachable ();
   }
 
+  // Calls fn (machine, member of each fleet...) for each machine, in
+  // the fleet's order: fleets worn alike or not, side by side.
+  template <class F, class... Fleets>
+  void for_each_machine_across (F&& fn, Fleets&... fleets) {
+    fn (Machine::bike, fleets.bike...);
+    fn (Machine::mountain_bike, fleets.mountain_bike...);
+    fn (Machine::long_john, fleets.long_john...);
+    fn (Machine::jeep, fleets.jeep...);
+    fn (Machine::helicopter, fleets.helicopter...);
+    fn (Machine::tractor, fleets.tractor...);
+    fn (Machine::caddy, fleets.caddy...);
+    fn (Machine::boat, fleets.boat...);
+    fn (Machine::jet_ski, fleets.jet_ski...);
+  }
+
   // Calls fn (machine, member) for each machine, in the fleet's order.
   template <class Fleetish, class F>
   void for_each_machine (Fleetish& fleet, F&& fn) {
-    fn (Machine::bike, fleet.bike);
-    fn (Machine::mountain_bike, fleet.mountain_bike);
-    fn (Machine::long_john, fleet.long_john);
-    fn (Machine::jeep, fleet.jeep);
-    fn (Machine::helicopter, fleet.helicopter);
-    fn (Machine::tractor, fleet.tractor);
-    fn (Machine::caddy, fleet.caddy);
-    fn (Machine::boat, fleet.boat);
-    fn (Machine::jet_ski, fleet.jet_ski);
-  }
-
-  // Calls fn (machine, ours, theirs) for each machine of two fleets
-  // worn alike or not, in the fleet's order.
-  template <class A, class B, class F>
-  void for_each_machine (A& a, B& b, F&& fn) {
-    fn (Machine::bike, a.bike, b.bike);
-    fn (Machine::mountain_bike, a.mountain_bike, b.mountain_bike);
-    fn (Machine::long_john, a.long_john, b.long_john);
-    fn (Machine::jeep, a.jeep, b.jeep);
-    fn (Machine::helicopter, a.helicopter, b.helicopter);
-    fn (Machine::tractor, a.tractor, b.tractor);
-    fn (Machine::caddy, a.caddy, b.caddy);
-    fn (Machine::boat, a.boat, b.boat);
-    fn (Machine::jet_ski, a.jet_ski, b.jet_ski);
+    for_each_machine_across (fn, fleet);
   }
 }
 

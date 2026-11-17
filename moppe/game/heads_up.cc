@@ -13,6 +13,27 @@
 #include <moppe/profile.hh>
 
 namespace moppe::game {
+  namespace {
+    // Where the other player is: on foot, in the air, or in the machine
+    // they drive, and, `over_driver`, as high over it as they sit.
+    Vec3 whereabouts (const CompanionSnapshot& theirs, bool over_driver) {
+      if (theirs.walker)
+        return theirs.walker->position;
+      if (theirs.glider)
+        return theirs.glider->position;
+      const Machine machine =
+        driven_machine (theirs.mode).value_or (Machine::bike);
+      const Vec3 at =
+        visit (theirs.fleet, machine, [] (Machine, const auto& pose) -> Vec3 {
+          return pose.position;
+        });
+      if (!over_driver)
+        return at;
+      return at +
+             Vec3 (0, meters_value (machine_kind (machine).driver_mark), 0);
+    }
+  }
+
   void HeadsUp::draw_trail_map (const HudWorld& w,
                                 render::DrawList& dl,
                                 int width_pts,
@@ -397,27 +418,7 @@ namespace moppe::game {
     if (w.company.companion && mode != Doing::riding_along () &&
         w.company.companion->mode != Doing::riding_along ()) {
       const CompanionSnapshot& theirs = *w.company.companion;
-      Vec3 at = theirs.bike.position;
-      if (theirs.walker)
-        at = theirs.walker->position;
-      else if (theirs.glider)
-        at = theirs.glider->position;
-      else if (theirs.mode == Doing::driving (Machine::jeep))
-        at = theirs.jeep.position;
-      else if (theirs.mode == Doing::driving (Machine::helicopter))
-        at = theirs.helicopter.position + Vec3 (0, 1.0f, 0);
-      else if (theirs.mode == Doing::driving (Machine::tractor))
-        at = theirs.tractor.position + Vec3 (0, 0.8f, 0);
-      else if (theirs.mode == Doing::driving (Machine::caddy))
-        at = theirs.caddy.position + Vec3 (0, 1.0f, 0);
-      else if (theirs.mode == Doing::driving (Machine::mountain_bike))
-        at = theirs.mountain_bike.position + Vec3 (0, 1.4f, 0);
-      else if (theirs.mode == Doing::driving (Machine::long_john))
-        at = theirs.long_john.position + Vec3 (0, 1.4f, 0);
-      else if (theirs.mode == Doing::driving (Machine::boat))
-        at = theirs.boat.position + Vec3 (0, 1.2f, 0);
-      else if (theirs.mode == Doing::driving (Machine::jet_ski))
-        at = theirs.jet_ski.position + Vec3 (0, 1.3f, 0);
+      const Vec3 at = whereabouts (theirs, true);
       // In the colour of the jacket they wear.
       DisplayColor jacket = pale;
       for (std::size_t c = 0; c < figure::colours.size (); ++c)
@@ -586,27 +587,7 @@ namespace moppe::game {
     if (w.company.companion && mode != Doing::riding_along () &&
         w.company.companion->mode != Doing::riding_along ()) {
       const CompanionSnapshot& theirs = *w.company.companion;
-      Vec3 at = theirs.bike.position;
-      if (theirs.walker)
-        at = theirs.walker->position;
-      else if (theirs.glider)
-        at = theirs.glider->position;
-      else if (theirs.mode == Doing::driving (Machine::jeep))
-        at = theirs.jeep.position;
-      else if (theirs.mode == Doing::driving (Machine::helicopter))
-        at = theirs.helicopter.position;
-      else if (theirs.mode == Doing::driving (Machine::tractor))
-        at = theirs.tractor.position;
-      else if (theirs.mode == Doing::driving (Machine::caddy))
-        at = theirs.caddy.position;
-      else if (theirs.mode == Doing::driving (Machine::mountain_bike))
-        at = theirs.mountain_bike.position;
-      else if (theirs.mode == Doing::driving (Machine::long_john))
-        at = theirs.long_john.position;
-      else if (theirs.mode == Doing::driving (Machine::boat))
-        at = theirs.boat.position;
-      else if (theirs.mode == Doing::driving (Machine::jet_ski))
-        at = theirs.jet_ski.position;
+      const Vec3 at = whereabouts (theirs, false);
       DisplayColor jacket = dark;
       for (std::size_t c = 0; c < figure::colours.size (); ++c)
         if (std::string_view (figure::colour_names[c]) == "jacket")

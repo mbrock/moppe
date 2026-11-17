@@ -87,7 +87,7 @@ namespace moppe::game {
       mix_display (night_horizon, day_horizon, daylight), warm_horizon, warmth);
   }
 
-  VehiclePose vehicle_pose (const mov::Vehicle& vehicle) {
+  VehiclePose pose (const mov::Vehicle& vehicle) {
     return {
       .position = vehicle.render_position (),
       .render_orientation = vehicle.render_orientation (),
@@ -104,7 +104,7 @@ namespace moppe::game {
     };
   }
 
-  CarPose car_pose (const mov::Car& car) {
+  CarPose pose (const mov::Car& car) {
     return {
       .position = car.position (),
       .forward = car.forward (),
@@ -115,10 +115,11 @@ namespace moppe::game {
                       meters_value (car.wheel_drop (3)) },
       .steer_radians = radians_value (car.steer ()),
       .wheel_spin_radians = radians_value (car.wheel_spin ()),
+      .velocity = car.velocity (),
     };
   }
 
-  BoatPose boat_pose (const mov::Boat& boat) {
+  BoatPose pose (const mov::Boat& boat) {
     return {
       .position = boat.position (),
       .forward = boat.forward (),
@@ -127,10 +128,11 @@ namespace moppe::game {
       .tilt_radians = radians_value (boat.tilt ()),
       .propeller_radians = radians_value (boat.propeller_angle ()),
       .rpm = scalar_value (boat.rpm ()),
+      .velocity = boat.velocity (),
     };
   }
 
-  JetSkiPose jet_ski_pose (const mov::JetSki& ski) {
+  JetSkiPose pose (const mov::JetSki& ski) {
     return {
       .position = ski.position (),
       .forward = ski.forward (),
@@ -138,10 +140,11 @@ namespace moppe::game {
       .steer_radians = radians_value (ski.steer ()),
       .lean_radians = radians_value (ski.lean ()),
       .rpm = scalar_value (ski.rpm ()),
+      .velocity = ski.velocity (),
     };
   }
 
-  TractorPose tractor_pose (const mov::Tractor& tractor) {
+  TractorPose pose (const mov::Tractor& tractor) {
     return {
       .position = tractor.position (),
       .forward = tractor.forward (),
@@ -162,7 +165,7 @@ namespace moppe::game {
     };
   }
 
-  HelicopterPose helicopter_pose (const mov::Helicopter& helicopter) {
+  HelicopterPose pose (const mov::Helicopter& helicopter) {
     return {
       .position = helicopter.position (),
       .forward = helicopter.forward (),
@@ -170,6 +173,15 @@ namespace moppe::game {
       .rotor_radians = radians_value (helicopter.rotor_angle ()),
       .tail_radians = radians_value (helicopter.tail_angle ()),
     };
+  }
+
+  FleetPoses poses (const Fleet& fleet) {
+    FleetPoses result;
+    for_each_machine_across (
+      [] (Machine, auto& out, const auto& body) { out = pose (body); },
+      result,
+      fleet);
+    return result;
   }
 
   GliderPose glider_pose (const mov::Glider& glider) {
@@ -334,15 +346,7 @@ namespace moppe::game {
       .lens_flare = input.graphics.lens_flare,
     };
 
-    result.actors.bike = vehicle_pose (input.session.bike ());
-    result.actors.mountain_bike = vehicle_pose (input.session.mountain_bike ());
-    result.actors.long_john = vehicle_pose (input.session.long_john ());
-    result.actors.jeep = car_pose (input.session.jeep ());
-    result.actors.helicopter = helicopter_pose (input.session.helicopter ());
-    result.actors.tractor = tractor_pose (input.session.tractor ());
-    result.actors.boat = boat_pose (input.session.boat ());
-    result.actors.jet_ski = jet_ski_pose (input.session.jet_ski ());
-    result.actors.caddy = car_pose (input.session.caddy ());
+    result.actors.fleet = poses (input.session.fleet ());
     if (logic.m_sling.hooked) {
       const Machine load = logic.m_sling.load;
       const MachineBody body = input.session.machine_body (load);

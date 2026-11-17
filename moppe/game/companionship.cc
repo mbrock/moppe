@@ -30,7 +30,7 @@ namespace moppe::game {
   }
 
   Vec3 Companionship::jeep_seat (const CompanionSnapshot& theirs) {
-    const CarPose& jeep = theirs.jeep;
+    const CarPose& jeep = theirs.fleet.jeep;
     const Vec3 left = normalized (cross (jeep.up, jeep.forward));
     return jeep.position - left * mov::jeep_rig.seat[0] +
            jeep.up * mov::jeep_rig.seat[1] +
@@ -38,7 +38,7 @@ namespace moppe::game {
   }
 
   Vec3 Companionship::boat_seat (const CompanionSnapshot& theirs) {
-    const BoatPose& boat = theirs.boat;
+    const BoatPose& boat = theirs.fleet.boat;
     const Vec3 left = normalized (cross (boat.up, boat.forward));
     return boat.position + left * mov::Boat::fore[0] +
            boat.up * mov::Boat::fore[1] + boat.forward * mov::Boat::fore[2];
@@ -67,19 +67,8 @@ namespace moppe::game {
     mine.day_hours =
       day_turning ? hours_since_midnight (state.m_day_hours) : -1.0;
     mine.mode = state.m_doing;
-    mine.bike = vehicle_pose (session.bike ());
-    mine.jeep = car_pose (session.jeep ());
-    mine.jeep_velocity = session.jeep ().velocity ();
-    mine.helicopter = helicopter_pose (session.helicopter ());
-    mine.tractor = tractor_pose (session.tractor ());
-    mine.caddy = car_pose (session.caddy ());
-    mine.mountain_bike = vehicle_pose (session.mountain_bike ());
-    mine.long_john = vehicle_pose (session.long_john ());
-    mine.boat = boat_pose (session.boat ());
-    mine.boat_velocity = session.boat ().velocity ();
+    mine.fleet = poses (session.fleet ());
     mine.in_boat = state.m_doing == Doing::riding_along () && state.m_seat_boat;
-    mine.jet_ski = jet_ski_pose (session.jet_ski ());
-    mine.jet_ski_velocity = session.jet_ski ().velocity ();
     if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
     if (state.m_doing == Doing::on_foot ())
@@ -138,7 +127,7 @@ namespace moppe::game {
       std::min ({ length2 (feet - session.jeep ().position ()),
                   length2 (feet - session.bike ().position ()),
                   length2 (feet - session.boat ().position ()) });
-    const float jeep = length2 (feet - companion->jeep.position);
+    const float jeep = length2 (feet - companion->fleet.jeep.position);
     float boat = 1e30f;
     if (companion->mode == Doing::driving (Machine::boat))
       boat = length2 (feet - Companionship::boat_seat (*companion));
@@ -191,15 +180,15 @@ namespace moppe::game {
       return;
     if (state.m_seat_boat) {
       state.m_seat_position = Companionship::boat_seat (*companion);
-      state.m_seat_heading = companion->boat.forward;
-      state.m_seat_up = companion->boat.up;
-      state.m_seat_velocity = companion->boat_velocity;
+      state.m_seat_heading = companion->fleet.boat.forward;
+      state.m_seat_up = companion->fleet.boat.up;
+      state.m_seat_velocity = companion->fleet.boat.velocity;
       return;
     }
     state.m_seat_position = Companionship::jeep_seat (*companion);
-    state.m_seat_heading = companion->jeep.forward;
-    state.m_seat_up = companion->jeep.up;
-    state.m_seat_velocity = companion->jeep_velocity;
+    state.m_seat_heading = companion->fleet.jeep.forward;
+    state.m_seat_up = companion->fleet.jeep.up;
+    state.m_seat_velocity = companion->fleet.jeep.velocity;
   }
 
   void Companionship::meet_strangers (const GameSession& session,
@@ -211,74 +200,48 @@ namespace moppe::game {
       return;
     }
     const CompanionSnapshot& theirs = *companion;
-    const auto stranger = [&] (Machine machine,
-                               const Vec3& position,
-                               const Vec3& forward,
-                               const Vec3& up) {
+    // In Machine's order, as find_bumps meets them.
+    for (int i = 0; i < machine_count; ++i) {
+      const Machine machine = static_cast<Machine> (i);
       MachineBody body;
       body.machine = machine;
-      body.position = position;
-      body.forward = forward;
-      body.up = up;
+      visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
+        body.position = pose.position;
+        if constexpr (requires { pose.render_orientation; }) {
+          body.forward = pose.render_orientation;
+          body.up = pose.render_normal;
+        } else {
+          body.forward = pose.forward;
+          body.up = pose.up;
+        }
+        if constexpr (requires { pose.trailer_position; }) {
+          body.towing = true;
+          body.towed_position = pose.trailer_position;
+          body.towed_forward = pose.trailer_forward;
+          body.towed_up = pose.trailer_up;
+          body.towed_mass = session.tractor ().trailer_mass ();
+        }
+      });
       body.mass = session.machine_body (machine).mass;
       body.ours = false;
-      if (machine == Machine::tractor) {
-        body.towing = true;
-        body.towed_position = theirs.tractor.trailer_position;
-        body.towed_forward = theirs.tractor.trailer_forward;
-        body.towed_up = theirs.tractor.trailer_up;
-        body.towed_mass = session.tractor ().trailer_mass ();
-      }
-      const std::size_t i = static_cast<std::size_t> (machine);
       if (strangers_were && elapsed > 0.0f) {
-        const Vec3 moved = position - (*strangers_were)[i];
+        const Vec3 moved = body.position - (*strangers_were)[i];
         if (length2 (moved) < 25.0f)
           body.velocity = moved * (1.0f / elapsed);
       }
       strangers.push_back (body);
-    };
-    stranger (Machine::bike,
-              theirs.bike.position,
-              theirs.bike.render_orientation,
-              theirs.bike.render_normal);
-    stranger (
-      Machine::jeep, theirs.jeep.position, theirs.jeep.forward, theirs.jeep.up);
-    stranger (Machine::tractor,
-              theirs.tractor.position,
-              theirs.tractor.forward,
-              theirs.tractor.up);
-    stranger (Machine::caddy,
-              theirs.caddy.position,
-              theirs.caddy.forward,
-              theirs.caddy.up);
-    stranger (Machine::helicopter,
-              theirs.helicopter.position,
-              theirs.helicopter.forward,
-              theirs.helicopter.up);
-    stranger (Machine::mountain_bike,
-              theirs.mountain_bike.position,
-              theirs.mountain_bike.render_orientation,
-              theirs.mountain_bike.render_normal);
-    stranger (
-      Machine::boat, theirs.boat.position, theirs.boat.forward, theirs.boat.up);
-    stranger (Machine::long_john,
-              theirs.long_john.position,
-              theirs.long_john.render_orientation,
-              theirs.long_john.render_normal);
-    stranger (Machine::jet_ski,
-              theirs.jet_ski.position,
-              theirs.jet_ski.forward,
-              theirs.jet_ski.up);
+    }
     std::array<Vec3, machine_count> were;
     for (const MachineBody& body : strangers)
       were[static_cast<std::size_t> (body.machine)] = body.position;
     strangers_were = were;
+    // What says how it moves is believed over what was seen to.
     strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
-      theirs.jeep_velocity;
+      theirs.fleet.jeep.velocity;
     strangers[static_cast<std::size_t> (Machine::boat)].velocity =
-      theirs.boat_velocity;
+      theirs.fleet.boat.velocity;
     strangers[static_cast<std::size_t> (Machine::jet_ski)].velocity =
-      theirs.jet_ski_velocity;
+      theirs.fleet.jet_ski.velocity;
   }
 
   std::optional<CompanionSnapshot>
@@ -374,18 +337,18 @@ namespace moppe::game {
     if (!companion)
       return;
     const CompanionSnapshot& theirs = *companion;
-    blob.draw (dl, surface, theirs.bike.position, 2.2f);
+    blob.draw (dl, surface, theirs.fleet.bike.position, 2.2f);
     render_vehicle (r,
                     dl,
-                    theirs.bike,
+                    theirs.fleet.bike,
                     theirs.mode == Doing::driving (Machine::bike),
                     0x3000,
                     their_outfit ());
-    blob.draw (dl, surface, theirs.jeep.position, 3.4f);
+    blob.draw (dl, surface, theirs.fleet.jeep.position, 3.4f);
     // This player beside them, unless seeing through their own eyes.
     render_jeep (r,
                  dl,
-                 theirs.jeep,
+                 theirs.fleet.jeep,
                  { .driver = theirs.mode == Doing::driving (Machine::jeep),
                    .passenger = logic.m_doing == Doing::riding_along () &&
                                 !logic.m_seat_boat &&
@@ -393,27 +356,27 @@ namespace moppe::game {
                    .driver_outfit = their_outfit (),
                    .passenger_outfit = outfit },
                  0x6000);
-    blob.draw (dl, surface, theirs.helicopter.position, 4.5f);
-    render_helicopter (r, theirs.helicopter, 0x7000);
-    blob.draw (dl, surface, theirs.tractor.position, 2.8f);
-    blob.draw (dl, surface, theirs.tractor.trailer_position, 2.4f);
+    blob.draw (dl, surface, theirs.fleet.helicopter.position, 4.5f);
+    render_helicopter (r, theirs.fleet.helicopter, 0x7000);
+    blob.draw (dl, surface, theirs.fleet.tractor.position, 2.8f);
+    blob.draw (dl, surface, theirs.fleet.tractor.trailer_position, 2.4f);
     render_tractor (r,
                     dl,
-                    theirs.tractor,
+                    theirs.fleet.tractor,
                     theirs.mode == Doing::driving (Machine::tractor)
                       ? std::optional<Outfit> (their_outfit ())
                       : std::nullopt,
                     0x9000);
-    blob.draw (dl, surface, theirs.caddy.position, 3.6f);
+    blob.draw (dl, surface, theirs.fleet.caddy.position, 3.6f);
     render_caddy (r,
                   dl,
-                  theirs.caddy,
+                  theirs.fleet.caddy,
                   { .driver = theirs.mode == Doing::driving (Machine::caddy),
                     .driver_outfit = their_outfit () },
                   0xB000);
     render_boat (r,
                  dl,
-                 theirs.boat,
+                 theirs.fleet.boat,
                  theirs.mode == Doing::driving (Machine::boat)
                    ? std::optional<Outfit> (their_outfit ())
                    : std::nullopt,
@@ -424,25 +387,25 @@ namespace moppe::game {
                      logic.m_cam_mode != CAM_HELMET
                    ? std::optional<Outfit> (outfit)
                    : std::nullopt);
-    blob.draw (dl, surface, theirs.mountain_bike.position, 1.3f);
+    blob.draw (dl, surface, theirs.fleet.mountain_bike.position, 1.3f);
     render_mountain_bike (r,
                           dl,
-                          theirs.mountain_bike,
+                          theirs.fleet.mountain_bike,
                           theirs.mode == Doing::driving (Machine::mountain_bike)
                             ? std::optional<Outfit> (their_outfit ())
                             : std::nullopt,
                           0xE000);
-    blob.draw (dl, surface, theirs.long_john.position, 2.0f);
+    blob.draw (dl, surface, theirs.fleet.long_john.position, 2.0f);
     render_long_john (r,
                       dl,
-                      theirs.long_john,
+                      theirs.fleet.long_john,
                       theirs.mode == Doing::driving (Machine::long_john)
                         ? std::optional<Outfit> (their_outfit ())
                         : std::nullopt,
                       0xE100);
     render_jet_ski (r,
                     dl,
-                    theirs.jet_ski,
+                    theirs.fleet.jet_ski,
                     theirs.mode == Doing::driving (Machine::jet_ski)
                       ? std::optional<Outfit> (their_outfit ())
                       : std::nullopt,
