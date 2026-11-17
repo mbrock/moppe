@@ -189,8 +189,9 @@ namespace moppe {
           // where the pitch is heading a moment on.
           const mov::Vehicle& bike = session ().bike ();
           const float pitch = radians_value (bike.pitch ());
-          const float rate = dt > 0.0f ? (pitch - m_demo_pitch) / dt : 0.0f;
-          m_demo_pitch = pitch;
+          const float rate =
+            dt > 0.0f ? (pitch - m_walk.demo_pitch) / dt : 0.0f;
+          m_walk.demo_pitch = pitch;
           const float ahead = pitch + 0.4f * rate;
           const bool up = std::fmod (total_time, 12.0f) > 3.0f;
           input = {
@@ -415,8 +416,8 @@ namespace moppe {
                                : 0.0f,
         .reveal_player = m_opening.active () && !m_opening.shot ().settle,
         .capture_field_of_view =
-          m_film_fov && !cinematic && !m_opening.active ()
-            ? std::optional<degrees_t> (*m_film_fov * u::deg)
+          m_capture_camera.film_fov && !cinematic && !m_opening.active ()
+            ? std::optional<degrees_t> (*m_capture_camera.film_fov * u::deg)
             : std::nullopt,
         .sky = m_sky,
         .water = &generated_world ().water_surface (),

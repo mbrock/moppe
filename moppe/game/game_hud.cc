@@ -143,16 +143,17 @@ namespace moppe {
       if (since < 5.0f) {
         const std::string name = fish_name (creel.last.kind);
         if (creel.last_lost) {
-          m_catch_note = "It got away.";
+          m_prompts.catch_note = "It got away.";
         } else {
           const bool vowel =
             std::string_view ("aeiou").find (name[0]) != std::string::npos;
-          m_catch_note = (vowel ? "An " : "A ") + name + ", " +
-                         std::to_string (static_cast<int> (std::lround (
-                           100.0f * meters_value (creel.last.length)))) +
-                         " cm!";
+          m_prompts.catch_note =
+            (vowel ? "An " : "A ") + name + ", " +
+            std::to_string (static_cast<int> (
+              std::lround (100.0f * meters_value (creel.last.length)))) +
+            " cm!";
         }
-        state.catch_note = m_catch_note.c_str ();
+        state.catch_note = m_prompts.catch_note.c_str ();
         state.catch_age_s = since;
       }
       if (!angler ())
@@ -205,36 +206,37 @@ namespace moppe {
         else if (meal.starts_with ("an "))
           meal = meal.substr (3);
         const bool one = !camp.ate_fish && camp.ate_count + camp.ate_eggs == 1;
-        m_meal_note =
+        m_prompts.meal_note =
           camp.ate_cooked > 1.4f
             ? "Burnt to a cinder. Still, it is supper."
             : (one ? "A fried " : "Fried ") + meal + " by the fire. Lovely.";
-        state.meal = m_meal_note.c_str ();
+        state.meal = m_prompts.meal_note.c_str ();
         state.meal_age_s =
           seconds_between (logic ().m_total_time, camp.ate_time);
       }
       // What Space and F do here, and what can be done about the camp
       // without a prompt for it (HudState::thumb).
-      if (logic ().m_mode != m_thumb_mode) {
-        m_thumb_mode = logic ().m_mode;
-        m_thumb_from = logic ().m_total_time;
+      if (logic ().m_mode != m_prompts.thumb_mode) {
+        m_prompts.thumb_mode = logic ().m_mode;
+        m_prompts.thumb_from = logic ().m_total_time;
       }
       // The bike's jets and the boat's tied-back governor are prompted
       // for a while after getting on, until they have been tried once.
       const bool afloat = logic ().m_mode == M_BOAT;
       const bool boosts = logic ().m_mode == M_BIKE || afloat;
       if (boosts && logic ().m_boost_input > 0.1f)
-        m_boost_tried[afloat] = true;
+        m_prompts.boost_tried[afloat] = true;
       state.thumb_hint =
-        boosts && !m_boost_tried[afloat] &&
-        logic ().m_total_time - m_thumb_from < 15.0 * si::second;
+        boosts && !m_prompts.boost_tried[afloat] &&
+        logic ().m_total_time - m_prompts.thumb_from < 15.0 * si::second;
       // The wheelie is prompted once the jets' prompt is done with, for
       // half a minute after getting on, until one has been ridden.
       if (logic ().m_mode == M_BIKE && session ().bike ().wheeling ())
-        m_wheelie_tried = true;
+        m_prompts.wheelie_tried = true;
       state.wheelie_hint =
-        logic ().m_mode == M_BIKE && !state.thumb_hint && !m_wheelie_tried &&
-        logic ().m_total_time - m_thumb_from < 45.0 * si::second;
+        logic ().m_mode == M_BIKE && !state.thumb_hint &&
+        !m_prompts.wheelie_tried &&
+        logic ().m_total_time - m_prompts.thumb_from < 45.0 * si::second;
       switch (logic ().m_mode) {
       case M_FOOT:
         if (!camp.resting) {

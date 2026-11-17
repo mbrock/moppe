@@ -125,12 +125,12 @@ namespace moppe {
             if (g.dry (at[0], at[2]))
               stand = { at, middle };
           }
-          m_watched = static_cast<std::size_t> (
+          m_capture_camera.watched = static_cast<std::size_t> (
             best - session ().animals ().animals ().data ());
           if (stand) {
             const Vec3 in = normalized (Vec3 (
               middle[0] - stand->first[0], 0.0f, middle[2] - stand->first[2]));
-            m_watch_side = Vec3 (in[2], 0.0f, -in[0]);
+            m_capture_camera.watch_side = Vec3 (in[2], 0.0f, -in[0]);
           }
         }
       } else if (script == "barn" || script == "byre" || script == "eggs" ||
@@ -153,7 +153,7 @@ namespace moppe {
             }
         if (nearest) {
           const Mat4 frame = building_frame (*nearest);
-          m_script_barn = frame;
+          m_walk.barn = frame;
           const auto at = [&] (float x, float z) {
             return frame.transform_point (Vec3 (x, 0.0f, z));
           };
@@ -196,14 +196,14 @@ namespace moppe {
       const std::vector<mov::Trunk> near =
         m_trunk_field.gather (m_spawn_position, 700.0f);
       // Under open sky, so there are stars to lie and look at.
-      m_camp_script.site =
+      m_walk.camp.site =
         nearest_hammock_site (near, m_spawn_position, ground_reader (), 60.0f);
-      if (!m_camp_script.site) {
+      if (!m_walk.camp.site) {
         std::cerr << "moppe: camp script: no two trees near the spawn "
                      "would take a hammock\n";
         return;
       }
-      const HammockSite& site = *m_camp_script.site;
+      const HammockSite& site = *m_walk.camp.site;
       const Vec3 middle = hammock_middle (site);
       const Vec3 across = hammock_across (site);
       // How near the nearest trunk stands to the walk in from a side.
@@ -219,8 +219,8 @@ namespace moppe {
         }
         return least;
       };
-      m_camp_script.side = clearance (1.0f) >= clearance (-1.0f) ? 1.0f : -1.0f;
-      Vec3 stand = middle + across * (m_camp_script.side * 8.5f) +
+      m_walk.camp.side = clearance (1.0f) >= clearance (-1.0f) ? 1.0f : -1.0f;
+      Vec3 stand = middle + across * (m_walk.camp.side * 8.5f) +
                    hammock_along (site) * 1.5f;
       stand[1] = ground_height (stand) + 0.1f;
       Vec3 facing = middle - stand;
@@ -236,13 +236,13 @@ namespace moppe {
     InputFrame MoppeGame::camp_script (seconds_t interval) {
       const float dt = seconds_value (interval);
       InputFrame input;
-      CampScript& script = m_camp_script;
+      WalkScriptState::Camp& script = m_walk.camp;
       if (!script.site)
         return input;
       const HammockSite& site = *script.site;
       const Walker& walker = session ().walker ();
       const Vec3 feet = walker.position ();
-      const float t = m_walk_script_time;
+      const float t = m_walk.time;
       const float waited = t - script.since;
       const auto next = [&] {
         ++script.step;
@@ -335,8 +335,8 @@ namespace moppe {
     InputFrame MoppeGame::scripted_walk (std::string_view script,
                                          seconds_t interval) {
       const float dt = seconds_value (interval);
-      const float t = m_walk_script_time;
-      m_walk_script_time += dt;
+      const float t = m_walk.time;
+      m_walk.time += dt;
       InputFrame input;
       const auto press = [t, dt] (float at) {
         return t >= at && t < at + 0.1f + dt ? 1.0f : 0.0f;
@@ -365,28 +365,28 @@ namespace moppe {
         // Cast, strike at the take, and cast again; with two fish in
         // the creel, turn from the water, light a fire, fry one, and eat.
         const Line& line = logic ().m_fishing.line;
-        if (m_supper_since < 0.0f && logic ().m_fishing.creel.kept () >= 2 &&
-            !line_out (line))
-          m_supper_since = t;
-        if (m_supper_since >= 0.0f) {
-          const float since = t - m_supper_since;
+        if (m_walk.supper_since < 0.0f &&
+            logic ().m_fishing.creel.kept () >= 2 && !line_out (line))
+          m_walk.supper_since = t;
+        if (m_walk.supper_since >= 0.0f) {
+          const float since = t - m_walk.supper_since;
           input.look_yaw = since < 1.2f ? PI / 1.2f * dt : 0.0f;
           input.drive = since > 1.2f && since < 3.4f ? 1.0f : 0.0f;
           input.look_pitch =
             std::clamp (-0.55f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
           input.light_fire =
-            press (m_supper_since + 4.2f) > 0.0f && !logic ().m_camp.fire;
-          input.deploy_glider = press (7.5f + m_supper_since) > 0.0f ||
-                                press (19.0f + m_supper_since) > 0.0f;
+            press (m_walk.supper_since + 4.2f) > 0.0f && !logic ().m_camp.fire;
+          input.deploy_glider = press (7.5f + m_walk.supper_since) > 0.0f ||
+                                press (19.0f + m_walk.supper_since) > 0.0f;
           return input;
         }
         input.look_pitch =
           std::clamp (-0.2f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
         if (line_out (line))
-          m_fish_script_rest = t;
+          m_walk.fish_rest = t;
         const float age = seconds_between (logic ().m_total_time, line.since);
         input.deploy_glider =
-          (!line_out (line) && t - m_fish_script_rest > 1.5f) ||
+          (!line_out (line) && t - m_walk.fish_rest > 1.5f) ||
           (line.phase == Line::Phase::biting && age > 0.4f);
         return input;
       }
@@ -396,7 +396,7 @@ namespace moppe {
         // Then cast again and open the throttle, which winds it in.
         const Line& line = logic ().m_fishing.line;
         const float age = seconds_between (logic ().m_total_time, line.since);
-        if (t < 5.0f || m_boat_fish_off >= 0.0f) {
+        if (t < 5.0f || m_walk.boat_fish_off >= 0.0f) {
           input.drive = 1.0f;
           return input;
         }
@@ -405,12 +405,12 @@ namespace moppe {
         input.look_pitch =
           std::clamp (0.3f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
         if (line_out (line))
-          m_fish_script_rest = t;
+          m_walk.fish_rest = t;
         if (logic ().m_fishing.creel.kept () >= 2 &&
             line.phase == Line::Phase::waiting && age > 3.0f)
-          m_boat_fish_off = t;
+          m_walk.boat_fish_off = t;
         input.deploy_glider =
-          (!line_out (line) && t - m_fish_script_rest > 1.5f &&
+          (!line_out (line) && t - m_walk.fish_rest > 1.5f &&
            boat_drifting ()) ||
           (line.phase == Line::Phase::biting && age > 0.4f);
         return input;
@@ -435,7 +435,7 @@ namespace moppe {
         input.boost = (t > 4.2f && t < 5.5f) || t > 11.0f ? 1.0f : 0.0f;
         return input;
       }
-      if (script == "eggs" && m_script_barn) {
+      if (script == "eggs" && m_walk.barn) {
         // Take three eggs from the nest boxes, walk out through the
         // doors and down the ramp into the yard, light a fire there,
         // fry them, and eat.
@@ -457,16 +457,16 @@ namespace moppe {
           input.drive = ahead > 0.7f ? pace : 0.0f;
           return distance;
         };
-        if (m_supper_since >= 0.0f) {
+        if (m_walk.supper_since >= 0.0f) {
           input.look_pitch =
             std::clamp (-0.55f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
           input.light_fire =
-            press (m_supper_since + 0.8f) > 0.0f && !logic ().m_camp.fire;
-          input.deploy_glider = press (4.0f + m_supper_since) > 0.0f ||
-                                press (15.5f + m_supper_since) > 0.0f;
+            press (m_walk.supper_since + 0.8f) > 0.0f && !logic ().m_camp.fire;
+          input.deploy_glider = press (4.0f + m_walk.supper_since) > 0.0f ||
+                                press (15.5f + m_walk.supper_since) > 0.0f;
           return input;
         }
-        if (logic ().m_basket.eggs < 3 && m_egg_script_leg == 0) {
+        if (logic ().m_basket.eggs < 3 && m_walk.egg_leg == 0) {
           input.look_pitch =
             std::clamp (-0.5f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
           // To the nearest box with an egg in it, and into it.
@@ -492,41 +492,42 @@ namespace moppe {
           return input;
         }
         // Out through the doors, down the ramp, and into the yard.
-        const Mat4& barn = *m_script_barn;
+        const Mat4& barn = *m_walk.barn;
         const Vec3 legs[3] = { barn.transform_point (Vec3 (-1.0f, 0, 2.6f)),
                                barn.transform_point (Vec3 (0.0f, 0, 7.0f)),
                                barn.transform_point (Vec3 (2.5f, 0, 9.5f)) };
-        if (m_egg_script_leg == 0)
-          m_egg_script_leg = 1;
+        if (m_walk.egg_leg == 0)
+          m_walk.egg_leg = 1;
         input.look_pitch =
           std::clamp (-0.2f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
-        if (steer (legs[m_egg_script_leg - 1], 0.6f) < 0.6f &&
-            ++m_egg_script_leg > 3)
-          m_supper_since = t;
+        if (steer (legs[m_walk.egg_leg - 1], 0.6f) < 0.6f &&
+            ++m_walk.egg_leg > 3)
+          m_walk.supper_since = t;
         return input;
       }
       if (script == "forage" || script == "supper") {
         // "supper" forages three mushrooms, walks a few steps on,
         // lights a fire, fries them, and eats.
-        if (script == "supper" && m_supper_since < 0.0f &&
+        if (script == "supper" && m_walk.supper_since < 0.0f &&
             logic ().m_basket.total () >= 3)
-          m_supper_since = t;
-        if (m_supper_since >= 0.0f) {
-          const float since = t - m_supper_since;
+          m_walk.supper_since = t;
+        if (m_walk.supper_since >= 0.0f) {
+          const float since = t - m_walk.supper_since;
           input.drive = since < 2.5f ? 1.0f : 0.0f;
           input.look_pitch =
             std::clamp (-0.55f - logic ().m_look_pitch, -1.0f * dt, 1.0f * dt);
           input.light_fire =
-            press (m_supper_since + 3.2f) > 0.0f && !logic ().m_camp.fire;
-          input.deploy_glider = press (6.5f + m_supper_since) > 0.0f ||
-                                press (18.0f + m_supper_since) > 0.0f;
+            press (m_walk.supper_since + 3.2f) > 0.0f && !logic ().m_camp.fire;
+          input.deploy_glider = press (6.5f + m_walk.supper_since) > 0.0f ||
+                                press (18.0f + m_walk.supper_since) > 0.0f;
           return input;
         }
         // Walk to the nearest mushroom, turning toward it, and pick it
         // once within reach; poisonous ones are left after one try.
         const Walker& walker = session ().walker ();
         const Vec3 feet = walker.position ();
-        const auto target = m_mushrooms.nearest (feet, 60.0f, m_forage_refused);
+        const auto target =
+          m_mushrooms.nearest (feet, 60.0f, m_walk.forage_refused);
         if (target) {
           Vec3 toward = m_mushrooms.site (*target).base - feet;
           toward[1] = 0.0f;
@@ -552,7 +553,7 @@ namespace moppe {
           if (reachable && beat < dt + 1e-4f) {
             input.deploy_glider = true;
             if (!mushroom_edible (m_mushrooms.site (*target).kind))
-              m_forage_refused.push_back (*target);
+              m_walk.forage_refused.push_back (*target);
           }
         }
         return input;

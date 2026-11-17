@@ -27,6 +27,7 @@
 #include <moppe/game/caddy_render.hh>
 #include <moppe/game/cairn.hh>
 #include <moppe/game/camp.hh>
+#include <moppe/game/capture_scripts.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/companionship.hh>
@@ -797,13 +798,6 @@ namespace moppe {
       // boat autopilot follows, and the next point of it ahead.
       std::vector<Vec3> m_boat_route;
       std::size_t m_boat_route_at = 0;
-      // The boat's film camera: how long it has run, the subject and its
-      // heading as eased, the fly-by's stand, and its lens (degrees).
-      float m_film_time = 0.0f;
-      Vec3 m_film_at;
-      Vec3 m_film_heading;
-      Vec3 m_film_stand;
-      std::optional<float> m_film_fov;
       Vec3 m_home_base_position;
       render::DrawList m_home_base_marker;
       // Each road place's name (place_names.hh), and the fingerposts.
@@ -818,14 +812,6 @@ namespace moppe {
       render::TextList m_scan_text;
       std::unique_ptr<render::Font> m_sign_font;
       bool m_skip_cinematic_requested = false;
-      // Whose Space was last prompted (HudState::thumb_hint), since when,
-      // and whether the bike's and the boat's boosts have been tried.
-      mutable int m_thumb_mode = -1;
-      mutable play_time_t m_thumb_from = play_time (0.0);
-      mutable bool m_boost_tried[2] = { false, false };
-      mutable bool m_wheelie_tried = false;
-      // MOPPE_DEMO=wheelie's last reading of the bike's pitch.
-      float m_demo_pitch = 0.0f;
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
       std::vector<OpeningShot> m_opening_shots;
@@ -845,52 +831,28 @@ namespace moppe {
       // The barns' nest boxes (the eggs in them are the logic's m_nests;
       // the animals and the poultry are the session's).
       std::vector<Nest> m_nest_sites;
-      // MOPPE_WALK=animals: the animal the walk began by, and the capture
-      // camera's side of it and its eased aim.
-      std::optional<std::size_t> m_watched;
-      Vec3 m_watch_side { 1, 0, 0 };
-      std::optional<Vec3> m_watch_target;
       PlacesLandscape m_places_landscape;
       MushroomPatch m_mushrooms;
-      // The poisonous mushrooms the foraging script has left be.
-      std::vector<std::uint32_t> m_forage_refused;
       // Scratch for the basket's contents as drawn.
       std::vector<MushroomSite> m_basket_contents;
       // The other player, when there is one.
       Companionship m_company;
       // Scratch for a pan's contents as drawn, and the last meal's note.
       std::vector<MushroomSite> m_pan_contents;
-      mutable std::string m_meal_note;
-      mutable std::string m_catch_note;
       // The boats' wakes, ours and the other player's, and their list.
       BoatWake m_boat_wake;
       BoatWake m_their_wake;
       BoatWake m_jet_ski_wake;
       BoatWake m_their_jet_ski_wake;
       render::DrawList m_wake_dl;
-      // MOPPE_WALK=fish: when the line last came in.
-      float m_fish_script_rest = 1.0f;
-      // MOPPE_WALK=boat-fish: when it got under way again.
-      float m_boat_fish_off = -1.0f;
       OpeningArrival m_opening_arrival;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
-      float m_walk_script_time = 0.0f;
-      // MOPPE_WALK=supper: when the foraging was done.
-      float m_supper_since = -1.0f;
-      // MOPPE_WALK=barn|byre|eggs: the barn's frame, and how far through
-      // the way out of it the egg gatherer has come.
-      std::optional<Mat4> m_script_barn;
-      int m_egg_script_leg = 0;
-      // MOPPE_WALK=camp: the trees it camps between, the side it walks in
-      // from, and how far through its steps it is.
-      struct CampScript {
-        std::optional<HammockSite> site;
-        float side = 1.0f;
-        int step = 0;
-        float since = 0.0f;
-      };
-      CampScript m_camp_script;
+      // The automated captures' walk scripts and cameras.
+      WalkScriptState m_walk;
+      CaptureCameraState m_capture_camera;
+      // What the HUD's prompts remember from frame to frame.
+      mutable HudPrompts m_prompts;
       Hud m_hud;
       render::TextList m_hud_text;
 

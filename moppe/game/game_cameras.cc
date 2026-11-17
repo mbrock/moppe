@@ -225,21 +225,25 @@ namespace moppe {
         const char* value = moppe::environment ("MOPPE_ANIMAL_CAMERA");
         return value ? static_cast<float> (::atof (value)) : 0.0f;
       }();
-      if (distance <= 0.0f || !m_watched ||
-          *m_watched >= session ().animals ().animals ().size ())
+      if (distance <= 0.0f || !m_capture_camera.watched ||
+          *m_capture_camera.watched >= session ().animals ().animals ().size ())
         return;
-      const Animal& a = session ().animals ().animals ()[*m_watched];
+      const Animal& a =
+        session ().animals ().animals ()[*m_capture_camera.watched];
       const float height = 0.7f * meters_value (traits (a.species).length);
       const Vec3 target = a.position + Vec3 (0.0f, height, 0.0f);
       // Eased, so that the view glides after it.
       const float ease = 1.0f - std::exp (-1.5f * dt);
-      m_watch_target = m_watch_target
-                         ? *m_watch_target + (target - *m_watch_target) * ease
-                         : target;
-      Vec3 eye = *m_watch_target + m_watch_side * distance +
+      m_capture_camera.watch_target =
+        m_capture_camera.watch_target
+          ? *m_capture_camera.watch_target +
+              (target - *m_capture_camera.watch_target) * ease
+          : target;
+      Vec3 eye = *m_capture_camera.watch_target +
+                 m_capture_camera.watch_side * distance +
                  Vec3 (0.0f, 0.25f * distance, 0.0f);
       eye[1] = std::max<float> (eye[1], ground_height (eye) + 1.2f);
-      session ().camera ().place (eye, *m_watch_target);
+      session ().camera ().place (eye, *m_capture_camera.watch_target);
     }
 
     void MoppeGame::ride_capture_camera (seconds_t interval) {
@@ -248,7 +252,7 @@ namespace moppe {
         const char* name = moppe::environment ("MOPPE_RIDE_CAMERA");
         return std::string_view (name ? name : "");
       }();
-      m_film_fov.reset ();
+      m_capture_camera.film_fov.reset ();
       if (logic ().m_mode == M_BOAT && boat_film_camera (view, interval))
         return;
       // Flying, it is the machine on the line it stands beside.
@@ -331,19 +335,20 @@ namespace moppe {
       heading = normalized (heading);
       // The subject eased, so the waves' heave and the hull's yawing
       // do not shake a camera that is meant to be flown.
-      const bool fresh = m_film_time <= 0.0f;
+      const bool fresh = m_capture_camera.film_time <= 0.0f;
       const auto ease = [dt] (float rate) {
         return 1.0f - std::exp (-rate * dt);
       };
       if (fresh) {
-        m_film_at = at;
-        m_film_heading = heading;
+        m_capture_camera.film_at = at;
+        m_capture_camera.film_heading = heading;
       }
-      m_film_at += (at - m_film_at) * ease (5.0f);
-      m_film_heading =
-        normalized (m_film_heading + (heading - m_film_heading) * ease (0.9f));
-      m_film_time += dt;
-      const Vec3 h = m_film_heading;
+      m_capture_camera.film_at += (at - m_capture_camera.film_at) * ease (5.0f);
+      m_capture_camera.film_heading =
+        normalized (m_capture_camera.film_heading +
+                    (heading - m_capture_camera.film_heading) * ease (0.9f));
+      m_capture_camera.film_time += dt;
+      const Vec3 h = m_capture_camera.film_heading;
       const Vec3 r (h[2], 0.0f, -h[0]);
       const auto around = [&] (float a) {
         return -h * std::cos (a) - r * std::sin (a);
@@ -353,26 +358,29 @@ namespace moppe {
       float fov = 55.0f;
       bool clear = true;
       if (view == "drone") {
-        eye = m_film_at + around (angle) * 26.0f + up * 13.0f;
-        look = m_film_at + h * 8.0f;
+        eye = m_capture_camera.film_at + around (angle) * 26.0f + up * 13.0f;
+        look = m_capture_camera.film_at + h * 8.0f;
         fov = 48.0f;
       } else if (view == "aerial") {
-        eye = m_film_at + around (angle) * 75.0f + up * 48.0f;
-        look = m_film_at + h * 6.0f;
+        eye = m_capture_camera.film_at + around (angle) * 75.0f + up * 48.0f;
+        look = m_capture_camera.film_at + h * 6.0f;
         fov = 30.0f;
       } else if (view == "orbit") {
-        eye =
-          m_film_at + around (angle + 0.25f * m_film_time) * 15.0f + up * 3.5f;
-        look = m_film_at;
+        eye = m_capture_camera.film_at +
+              around (angle + 0.25f * m_capture_camera.film_time) * 15.0f +
+              up * 3.5f;
+        look = m_capture_camera.film_at;
         fov = 50.0f;
       } else if (view == "top") {
-        eye = m_film_at + up * 30.0f - h * 3.0f;
-        look = m_film_at + h * 2.0f;
+        eye = m_capture_camera.film_at + up * 30.0f - h * 3.0f;
+        look = m_capture_camera.film_at + h * 2.0f;
         fov = 40.0f;
       } else if (view == "fpv") {
-        const float sway = 0.35f * std::sin (0.45f * m_film_time);
-        eye = m_film_at + around (angle + sway) * 5.0f + up * 1.0f;
-        look = m_film_at + h * 14.0f + up * 0.3f;
+        const float sway =
+          0.35f * std::sin (0.45f * m_capture_camera.film_time);
+        eye =
+          m_capture_camera.film_at + around (angle + sway) * 5.0f + up * 1.0f;
+        look = m_capture_camera.film_at + h * 14.0f + up * 0.3f;
         fov = 84.0f;
       } else if (view == "hull") {
         eye = boat.point (Vec3 (-1.35f, 0.45f, 1.3f));
@@ -386,17 +394,19 @@ namespace moppe {
         clear = false;
       } else if (view == "flyby") {
         // A new stand whenever it has gone by and well off.
-        const Vec3 off = m_film_stand - at;
+        const Vec3 off = m_capture_camera.film_stand - at;
         if (fresh || (length (off) > 65.0f && dot (off, h) < 0.0f)) {
           const float side = std::sin (angle) >= 0.0f ? 1.0f : -1.0f;
-          m_film_stand = at + heading * 45.0f + r * (side * 8.0f);
-          m_film_stand[1] = std::max (boat_depth_at (m_film_stand) +
-                                        ground_height (m_film_stand),
-                                      ground_height (m_film_stand)) +
-                            1.1f;
+          m_capture_camera.film_stand =
+            at + heading * 45.0f + r * (side * 8.0f);
+          m_capture_camera.film_stand[1] =
+            std::max (boat_depth_at (m_capture_camera.film_stand) +
+                        ground_height (m_capture_camera.film_stand),
+                      ground_height (m_capture_camera.film_stand)) +
+            1.1f;
         }
         // A long lens that keeps the boat the same size as it nears.
-        eye = m_film_stand;
+        eye = m_capture_camera.film_stand;
         look = at;
         fov =
           std::clamp (2.0f * std::atan (5.0f / length (at - eye)) * 180.0f / PI,
@@ -405,7 +415,7 @@ namespace moppe {
       } else if (view == "helm") {
         // The helmsman's eyes, through play's own camera.
         logic ().m_cam_mode = CAM_HELMET;
-        m_film_fov = 75.0f;
+        m_capture_camera.film_fov = 75.0f;
         return true;
       } else {
         return false;
@@ -413,7 +423,7 @@ namespace moppe {
       session ().camera ().place (eye, look);
       if (clear)
         session ().camera ().keep_above (surface ());
-      m_film_fov = fov;
+      m_capture_camera.film_fov = fov;
       return true;
     }
   }

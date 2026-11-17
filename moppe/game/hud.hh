@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_HUD_HH
 #define MOPPE_GAME_HUD_HH
 
+#include <moppe/game/game_clock.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/platform/input.hh>
 #include <moppe/render/draw.hh>
@@ -21,6 +22,19 @@ namespace moppe {
   namespace game {
     // Game state consumed by the overlay.  Hud::draw clamps normalized
     // inputs before deriving geometry.
+    // What the HUD's readings remember from frame to frame: whose Space
+    // was last prompted (HudState::thumb_hint), since when, and whether
+    // the bike's and the boat's boosts and the wheelie have been tried;
+    // and the last meal's and catch's notes, which the state points into.
+    struct HudPrompts {
+      int thumb_mode = -1;
+      play_time_t thumb_from = play_time (0.0);
+      bool boost_tried[2] = { false, false };
+      bool wheelie_tried = false;
+      std::string meal_note;
+      std::string catch_note;
+    };
+
     struct HudState {
       // length(bike().velocity()) * 3.6f; ignored while on_foot.
       float speed_kmh;
