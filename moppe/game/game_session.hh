@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_GAME_SESSION_HH
 #define MOPPE_GAME_GAME_SESSION_HH
 
+#include <moppe/game/fleet.hh>
 #include <moppe/game/game_state.hh>
 #include <moppe/game/input_frame.hh>
 #include <moppe/game/world.hh>
@@ -55,78 +56,86 @@ namespace moppe::game {
       return m_logic;
     }
 
+    // Every machine this player has (game/fleet.hh).
+    Fleet& fleet () noexcept {
+      return m_fleet;
+    }
+    const Fleet& fleet () const noexcept {
+      return m_fleet;
+    }
+
     mov::Vehicle& bike () noexcept {
-      return m_bike;
+      return m_fleet.bike;
     }
     const mov::Vehicle& bike () const noexcept {
-      return m_bike;
+      return m_fleet.bike;
     }
 
     mov::Vehicle& mountain_bike () noexcept {
-      return m_mountain_bike;
+      return m_fleet.mountain_bike;
     }
     const mov::Vehicle& mountain_bike () const noexcept {
-      return m_mountain_bike;
+      return m_fleet.mountain_bike;
     }
     mov::Vehicle& long_john () noexcept {
-      return m_long_john;
+      return m_fleet.long_john;
     }
     const mov::Vehicle& long_john () const noexcept {
-      return m_long_john;
+      return m_fleet.long_john;
     }
     // The bike being ridden, the motocross, the mountainbike, or the Long
     // John, or the motocross when none is.
     mov::Vehicle& ridden_bike () noexcept {
-      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike
-             : m_logic.m_mode == M_LONG_JOHN   ? m_long_john
-                                               : m_bike;
+      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_fleet.mountain_bike
+             : m_logic.m_mode == M_LONG_JOHN   ? m_fleet.long_john
+                                               : m_fleet.bike;
     }
     const mov::Vehicle& ridden_bike () const noexcept {
-      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_mountain_bike
-             : m_logic.m_mode == M_LONG_JOHN   ? m_long_john
-                                               : m_bike;
+      return m_logic.m_mode == M_MOUNTAIN_BIKE ? m_fleet.mountain_bike
+             : m_logic.m_mode == M_LONG_JOHN   ? m_fleet.long_john
+                                               : m_fleet.bike;
     }
 
     mov::Car& jeep () noexcept {
-      return m_jeep;
+      return m_fleet.jeep;
     }
     const mov::Car& jeep () const noexcept {
-      return m_jeep;
+      return m_fleet.jeep;
     }
 
     mov::Helicopter& helicopter () noexcept {
-      return m_helicopter;
+      return m_fleet.helicopter;
     }
     const mov::Helicopter& helicopter () const noexcept {
-      return m_helicopter;
+      return m_fleet.helicopter;
     }
 
     mov::Tractor& tractor () noexcept {
-      return m_tractor;
+      return m_fleet.tractor;
     }
     const mov::Tractor& tractor () const noexcept {
-      return m_tractor;
+      return m_fleet.tractor;
     }
 
     mov::Car& caddy () noexcept {
-      return m_caddy;
+      return m_fleet.caddy;
     }
     const mov::Car& caddy () const noexcept {
-      return m_caddy;
+      return m_fleet.caddy;
     }
 
     mov::Boat& boat () noexcept {
-      return m_boat;
+      return m_fleet.boat;
     }
     const mov::Boat& boat () const noexcept {
-      return m_boat;
+      return m_fleet.boat;
     }
 
     mov::JetSki& jet_ski () noexcept {
-      return m_jet_ski;
+      return m_fleet.jet_ski;
     }
     const mov::JetSki& jet_ski () const noexcept {
-      return m_jet_ski;
+      return m_fleet.jet_ski;
     }
 
     mov::Glider& glider () noexcept {
@@ -266,16 +275,8 @@ namespace moppe::game {
     float m_room_period_x = 0.0f;
     float m_room_period_z = 0.0f;
     GameLogicState m_logic;
-    mov::Vehicle m_bike;
+    Fleet m_fleet;
     mov::Glider m_glider;
-    mov::Car m_jeep;
-    mov::Helicopter m_helicopter;
-    mov::Tractor m_tractor;
-    mov::Car m_caddy;
-    mov::Vehicle m_mountain_bike;
-    mov::Boat m_boat;
-    mov::Vehicle m_long_john;
-    mov::JetSki m_jet_ski;
     Vec3 m_boat_landing {};
     Walker m_walker;
     ChaseCamera m_camera;

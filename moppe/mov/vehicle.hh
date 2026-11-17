@@ -260,6 +260,20 @@ namespace moppe {
       Vec3 orientation () const {
         return m_rigid->forward ();
       }
+      // Its frame, named as every other machine names it.
+      Vec3 forward () const {
+        return orientation ();
+      }
+      Vec3 up () const {
+        return render_normal ();
+      }
+      // A point given in its frame (x to the left, y up, z forward).
+      Vec3 point (const Vec3& local) const {
+        const Vec3 u = up ();
+        const Vec3 f = forward ();
+        const Vec3 left = normalized (cross (u, f));
+        return position () + left * local[0] + u * local[1] + f * local[2];
+      }
       Vec3 velocity () const {
         return m_rigid->velocity ();
       }
