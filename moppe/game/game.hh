@@ -85,10 +85,7 @@ namespace moppe {
         return generated_world ().surface ();
       }
 
-      void pointer_move (platform::view_points_t,
-                         platform::view_points_t,
-                         platform::view_points_t dx,
-                         platform::view_points_t dy) override;
+      void pointer_move (points_t, points_t, points_t dx, points_t dy) override;
 
       // The trodden trail tread is loose dirt; bare eroded faces are soil;
       // turf holds most of its dust and throws up clods of itself, and

@@ -145,16 +145,8 @@ namespace moppe {
   QUANTITY_SPEC (heading, mp_units::isq::angular_measure);
   QUANTITY_SPEC (inclination, mp_units::isq::angular_measure);
 
-  // ---- The screen ----
+  // ---- Pointers ----
   //
-  // Lengths on the screen, in the points the hosts and the HUD lay things
-  // out in: a dimension of their own, so a pointer's travel is never taken
-  // for metres in the world. The unit, the point, is the platform's
-  // (platform/platform.hh).
-  inline constexpr struct dim_view_length final
-      : mp_units::base_dimension<"Lv"> {
-  } dim_view_length;
-  QUANTITY_SPEC (view_length, dim_view_length);
   // How far a pointer's wheel was turned, in its steps or the fraction of
   // one a touchpad gives.
   QUANTITY_SPEC (wheel_travel, mp_units::dimensionless, mp_units::subkind);
@@ -204,7 +196,8 @@ namespace moppe {
   // ---- The screen ----
   //
   // Lengths on the display in its logical points, which the HUD and the
-  // map sheet lay out in and the host maps to pixels. They have their own
+  // map sheet lay out in, a pointer and the safe insets are measured in,
+  // and the host maps to pixels. They have their own
   // dimension: a point on the glass is no length in the world and never
   // converts to a metre.
   inline constexpr struct dim_display_length final
@@ -214,6 +207,17 @@ namespace moppe {
   inline constexpr struct display_point final
       : mp_units::named_unit<"pt", mp_units::kind_of<display_length>> {
   } display_point;
+  // Lengths in a raster's own pixels: an image being drawn or read, such
+  // as the map sheet's line work. Another dimension again, since how many
+  // pixels a point covers is the host's render scale at run time, a
+  // quantity in px/pt, never a fixed conversion.
+  inline constexpr struct dim_raster_length final
+      : mp_units::base_dimension<"Px"> {
+  } dim_raster_length;
+  QUANTITY_SPEC (raster_length, dim_raster_length);
+  inline constexpr struct pixel final
+      : mp_units::named_unit<"px", mp_units::kind_of<raster_length>> {
+  } pixel;
 
   // How solid something drawn is, from unseen (0) to opaque (1): a fade's
   // level, a colour's alpha.

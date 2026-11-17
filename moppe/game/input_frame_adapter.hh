@@ -26,9 +26,9 @@ namespace moppe::game {
     }
 
     // Pointer movement in points becomes head turn in radians.
-    void look (platform::view_points_t dx, platform::view_points_t dy) {
-      m_look_yaw += 0.0035f * dx.numerical_value_in (platform::view_point);
-      m_look_pitch -= 0.0035f * dy.numerical_value_in (platform::view_point);
+    void look (points_t dx, points_t dy) {
+      m_look_yaw += 0.0035f * dx.numerical_value_in (display_point);
+      m_look_pitch -= 0.0035f * dy.numerical_value_in (display_point);
     }
 
     void key (platform::Key key, bool down) {

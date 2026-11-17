@@ -45,10 +45,8 @@ namespace moppe {
       }
     }
 
-    void MoppeGame::pointer_move (platform::view_points_t,
-                                  platform::view_points_t,
-                                  platform::view_points_t dx,
-                                  platform::view_points_t dy) {
+    void
+    MoppeGame::pointer_move (points_t, points_t, points_t dx, points_t dy) {
       if (m_ready && !m_pointer_free)
         m_live_input.look (dx, dy);
     }

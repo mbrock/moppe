@@ -877,8 +877,8 @@ namespace moppe::game {
     dl.clear ();
     text.clear ();
     const platform::Insets safe_insets = platform::safe_insets ();
-    dl.translate (safe_insets.left.numerical_value_in (platform::view_point),
-                  safe_insets.top.numerical_value_in (platform::view_point),
+    dl.translate (safe_insets.left.numerical_value_in (display_point),
+                  safe_insets.top.numerical_value_in (display_point),
                   0);
     map.draw (dl,
               text,
@@ -981,8 +981,8 @@ namespace moppe::game {
     dl.clear ();
     text.clear ();
     const platform::Insets safe_insets = platform::safe_insets ();
-    const auto in_points = [] (platform::view_points_t length) {
-      return length.numerical_value_in (platform::view_point);
+    const auto in_points = [] (points_t length) {
+      return length.numerical_value_in (display_point);
     };
     dl.translate (in_points (safe_insets.left), in_points (safe_insets.top), 0);
     const int hud_width =

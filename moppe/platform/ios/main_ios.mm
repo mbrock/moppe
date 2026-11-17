@@ -226,11 +226,11 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
     } else if (t == m_look_touch && g_game) {
       // Dragging on the right turns the head, as the mouse does on a Mac.
       const CGPoint p = [t locationInView:self];
-      using moppe::platform::view_points;
-      g_game->pointer_move (view_points (p.x),
-                            view_points (p.y),
-                            view_points (1.4f * (p.x - m_look_last.x)),
-                            view_points (1.4f * (p.y - m_look_last.y)));
+      using moppe::display_points;
+      g_game->pointer_move (display_points (p.x),
+                            display_points (p.y),
+                            display_points (1.4f * (p.x - m_look_last.x)),
+                            display_points (1.4f * (p.y - m_look_last.y)));
       m_look_last = p;
     }
   }
@@ -413,10 +413,10 @@ namespace moppe {
       if (!g_window)
         return r;
       const UIEdgeInsets si = g_window.safeAreaInsets;
-      r.left = view_points ((float)si.left);
-      r.top = view_points ((float)si.top);
-      r.right = view_points ((float)si.right);
-      r.bottom = view_points ((float)si.bottom);
+      r.left = display_points ((float)si.left);
+      r.top = display_points ((float)si.top);
+      r.right = display_points ((float)si.right);
+      r.bottom = display_points ((float)si.bottom);
       return r;
     }
   }

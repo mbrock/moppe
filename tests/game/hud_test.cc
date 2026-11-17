@@ -7,6 +7,19 @@
 using namespace moppe;
 
 namespace {
+  template <typename A, typename B>
+  concept addable = requires (A a, B b) { a + b; };
+}
+
+// Points on the screen, pixels in a raster, and metres in the world are
+// three dimensions: none adds to another, and the host's pointer readings
+// are the HUD's points.
+static_assert (!addable<points_t, pixels_t>);
+static_assert (!addable<points_t, meters_t>);
+static_assert (!addable<pixels_t, meters_t>);
+static_assert (addable<points_t, decltype (display_points (1.0f))>);
+
+namespace {
   using Mark = game::HudState::Waymark;
 
   Mark at (unsigned who, float x, float y, bool in_view = true) {

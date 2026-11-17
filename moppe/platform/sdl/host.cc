@@ -199,9 +199,7 @@ namespace {
     std::set<Key> keys;
     std::set<PointerButton> buttons;
 
-    void release (Game& game,
-                  moppe::platform::view_points_t x,
-                  moppe::platform::view_points_t y) {
+    void release (Game& game, moppe::points_t x, moppe::points_t y) {
       for (Key k : keys)
         game.key (k, false);
       keys.clear ();
@@ -244,10 +242,10 @@ moppe_touch_stick (float steer, float drive, int held) {
 EMSCRIPTEN_KEEPALIVE void
 moppe_touch_look (float x, float y, float dx, float dy) {
   if (touched_game)
-    touched_game->pointer_move (moppe::platform::view_points (x),
-                                moppe::platform::view_points (y),
-                                moppe::platform::view_points (dx),
-                                moppe::platform::view_points (dy));
+    touched_game->pointer_move (moppe::display_points (x),
+                                moppe::display_points (y),
+                                moppe::display_points (dx),
+                                moppe::display_points (dy));
 }
 }
 #endif
@@ -412,8 +410,8 @@ namespace moppe::platform {
       void remember_pointer (float x, float y) {
         const render::Viewport view = m_renderer->viewport_pixels ();
         const float scale = m_renderer->scale_factor ();
-        m_pointer_x = view_points (x - float (view.x) / scale);
-        m_pointer_y = view_points (y - float (view.y) / scale);
+        m_pointer_x = display_points (x - float (view.x) / scale);
+        m_pointer_y = display_points (y - float (view.y) / scale);
       }
 
       void display_changed () {
@@ -474,8 +472,8 @@ namespace moppe::platform {
           remember_pointer (event.motion.x, event.motion.y);
           m_game.pointer_move (m_pointer_x,
                                m_pointer_y,
-                               view_points (event.motion.xrel),
-                               view_points (event.motion.yrel));
+                               display_points (event.motion.xrel),
+                               display_points (event.motion.yrel));
           break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP: {
@@ -535,7 +533,7 @@ namespace moppe::platform {
       Pad m_pad;
       Held m_held;
       std::unique_ptr<RemoteControl> m_remote;
-      view_points_t m_pointer_x {}, m_pointer_y {};
+      points_t m_pointer_x {}, m_pointer_y {};
       FrameClock m_frame_clock;
       bool m_announced_display = false;
       std::chrono::steady_clock::time_point m_start, m_last, m_report_start;

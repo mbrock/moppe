@@ -280,8 +280,9 @@ namespace moppe::platform {
       float dx = 0, dy = 0;
       words >> dx >> dy;
       later (at, [this, dx, dy] {
-        constexpr view_points_t origin {};
-        m_game.pointer_move (origin, origin, dx * view_point, dy * view_point);
+        constexpr points_t origin {};
+        m_game.pointer_move (
+          origin, origin, dx * display_point, dy * display_point);
       });
     } else {
       std::cerr << "moppe: remote cannot " << line << std::endl;

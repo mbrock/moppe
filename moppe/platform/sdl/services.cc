@@ -263,10 +263,10 @@ namespace moppe::platform {
       return float (EM_ASM_DOUBLE (
         { return (Module['moppeInsets'] || [ 0, 0, 0, 0 ])[$0]; }, side));
     };
-    return { view_points (inset (0)),
-             view_points (inset (1)),
-             view_points (inset (2)),
-             view_points (inset (3)) };
+    return { display_points (inset (0)),
+             display_points (inset (1)),
+             display_points (inset (2)),
+             display_points (inset (3)) };
 #else
     return {};
 #endif

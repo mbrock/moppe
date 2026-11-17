@@ -114,7 +114,7 @@ MOPPE_TEST (input_frame_adapter_turns_the_head_at_the_stick_rate) {
   MOPPE_CHECK_NEAR (
     frame.look_pitch, -0.25f * game::InputFrameAdapter::look_pitch_rate, 1e-6f);
   // The mouse adds to it within the same frame.
-  input.look (platform::view_points (10.0f), platform::view_points (0.0f));
+  input.look (display_points (10.0f), display_points (0.0f));
   frame = input.take_frame (0.0f);
   MOPPE_CHECK_NEAR (frame.look_yaw, 0.035f, 1e-6f);
   input.controls ({});

@@ -184,10 +184,10 @@ namespace moppe::platform {
     if (!g_window)
       return result;
     const UIEdgeInsets insets = g_window.safeAreaInsets;
-    result.left = view_points ((float)insets.left);
-    result.top = view_points ((float)insets.top);
-    result.right = view_points ((float)insets.right);
-    result.bottom = view_points ((float)insets.bottom);
+    result.left = display_points ((float)insets.left);
+    result.top = display_points ((float)insets.top);
+    result.right = display_points ((float)insets.right);
+    result.bottom = display_points ((float)insets.bottom);
     return result;
   }
 }

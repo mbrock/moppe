@@ -81,6 +81,11 @@ namespace moppe {
   namespace u {
     inline constexpr auto pt = display_point;
   }
+  // Lengths in a raster's pixels (moppe/quantities.hh): 1.5f * u::px.
+  using pixels_t = quantity<pixel, float>;
+  namespace u {
+    inline constexpr auto px = pixel;
+  }
 
   // Angles with a role (moppe/quantities.hh).
   using heading_t = quantity<heading[si::radian], float>;
@@ -125,8 +130,15 @@ namespace moppe {
   inline float meters_value (meters_t q) {
     return q.numerical_value_in (si::metre);
   }
+  // A host's reading in points, as a length on the screen.
+  inline points_t display_points (float value) {
+    return value * display_point;
+  }
   inline float points_value (points_t q) {
     return q.numerical_value_in (display_point);
+  }
+  inline float pixels_value (pixels_t q) {
+    return q.numerical_value_in (pixel);
   }
   inline float opacity_value (opacity_t q) {
     return q.numerical_value_in (one);

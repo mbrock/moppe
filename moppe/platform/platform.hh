@@ -10,20 +10,11 @@
 
 namespace moppe {
   namespace platform {
-    // A point on the screen, the length hosts and the HUD lay things out
-    // in (y down): what pointer coordinates, a drag, and the safe insets
-    // are measured in.
-    inline constexpr struct view_point final
-        : mp_units::named_unit<"pt", mp_units::kind_of<view_length>> {
-    } view_point;
-    using view_points_t = mp_units::quantity<view_point, float>;
+    // Pointer coordinates, a drag, and the safe insets are lengths on the
+    // screen in display points (y down): points_t, the HUD's own unit
+    // (moppe/gfx/math.hh).
     using wheel_travel_t =
       mp_units::quantity<wheel_travel[mp_units::one], float>;
-
-    // A host's reading in points, as a length on the screen.
-    inline view_points_t view_points (float points) {
-      return points * view_point;
-    }
 
     // The host's monotonic clock: seconds since some moment before the
     // game started, never the wall's time of day.
@@ -123,26 +114,22 @@ namespace moppe {
       virtual void controls (const ControlState& state) {
         (void)state;
       }
-      virtual void pointer_move (view_points_t x,
-                                 view_points_t y,
-                                 view_points_t dx,
-                                 view_points_t dy) {
+      virtual void
+      pointer_move (points_t x, points_t y, points_t dx, points_t dy) {
         (void)x;
         (void)y;
         (void)dx;
         (void)dy;
       }
-      virtual void pointer_button (PointerButton button,
-                                   bool down,
-                                   view_points_t x,
-                                   view_points_t y) {
+      virtual void
+      pointer_button (PointerButton button, bool down, points_t x, points_t y) {
         (void)button;
         (void)down;
         (void)x;
         (void)y;
       }
       virtual void
-      pointer_scroll (view_points_t x, view_points_t y, wheel_travel_t delta) {
+      pointer_scroll (points_t x, points_t y, wheel_travel_t delta) {
         (void)x;
         (void)y;
         (void)delta;
@@ -195,7 +182,7 @@ namespace moppe {
     // Screen areas covered by notches / home indicators, in points.
     // Zero on macOS.  The HUD and touch zones stay inside these.
     struct Insets {
-      view_points_t left {}, top {}, right {}, bottom {};
+      points_t left {}, top {}, right {}, bottom {};
     };
     Insets safe_insets ();
 
