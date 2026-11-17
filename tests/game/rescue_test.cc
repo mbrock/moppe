@@ -406,7 +406,7 @@ MOPPE_TEST (the_jeep_bumps_the_tractor_out_of_its_way) {
     position_value (session.tractor ().position ()) - tractor_was;
   MOPPE_CHECK (std::hypot (shoved[0], shoved[2]) > 0.3f);
   MOPPE_CHECK (direction_value (session.tractor ().up ())[1] > 0.99f);
-  MOPPE_CHECK (session.tractor ().trailer_up ()[1] > 0.99f);
+  MOPPE_CHECK (direction_value (session.tractor ().trailer_up ())[1] > 0.99f);
 }
 
 MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
@@ -420,12 +420,13 @@ MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
   // The tractor faces +x, so its trailer stands some 3.7 m toward -x.
   session.tractor ().place (position (Vec3 (100, 0, 170)),
                             unit_direction (Vec3 (1, 0, 0)));
-  const Vec3 bed = session.tractor ().trailer_position ();
+  const Vec3 bed = position_value (session.tractor ().trailer_position ());
   session.jeep ().place (position (Vec3 (bed[0], 0, 150)),
                          unit_direction (Vec3 (0, 0, 1)));
   run ({}, 1.0f);
   const Vec3 tractor_was = position_value (session.tractor ().position ());
-  const Vec3 trailer_was = session.tractor ().trailer_position ();
+  const Vec3 trailer_was =
+    position_value (session.tractor ().trailer_position ());
   session.walker ().spawn (position (Vec3 (bed[0] + 2, 10.1f, 150)),
                            unit_direction (Vec3 (0, 0, 1)));
   run ({ .toggle_mount = true }, 0.1f);
@@ -438,17 +439,17 @@ MOPPE_TEST (the_jeep_bumps_the_trailer_aside) {
   for (int i = 0; i < 4 * 60; ++i) {
     run ({ .drive = 1.0f * control_signal[one] }, 1.0f / 60.0f);
     Vec3 apart = position_value (session.jeep ().position ()) -
-                 session.tractor ().trailer_position ();
+                 position_value (session.tractor ().trailer_position ());
     apart[1] = 0.0f;
     nearest = std::min (nearest, length (apart));
   }
   run ({}, 2.0f);
   const Vec3 trailer_shoved =
-    session.tractor ().trailer_position () - trailer_was;
+    position_value (session.tractor ().trailer_position ()) - trailer_was;
   const Vec3 tractor_shoved =
     position_value (session.tractor ().position ()) - tractor_was;
   MOPPE_CHECK (nearest > 1.2f);
   MOPPE_CHECK (trailer_shoved[2] > 0.3f);
   MOPPE_CHECK (trailer_shoved[2] > tractor_shoved[2]);
-  MOPPE_CHECK (session.tractor ().trailer_up ()[1] > 0.99f);
+  MOPPE_CHECK (direction_value (session.tractor ().trailer_up ())[1] > 0.99f);
 }

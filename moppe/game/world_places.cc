@@ -66,12 +66,12 @@ namespace moppe::game {
           barn ? barn_inside_half_z - 0.1f * u::m : 2.38f * u::m;
         const meters_t floor = barn ? 0.3f * u::m : 0.6f * u::m;
         const meters_t ceiling = barn ? 3.4f * u::m : 2.96f * u::m;
-        rooms.push_back ({ .centre = position_value (b.at),
-                           .x = Vec3 (f[2], 0.0f, -f[0]),
-                           .half_x = meters_value (half_x),
-                           .half_z = meters_value (half_z),
-                           .floor = meters_value (floor),
-                           .ceiling = meters_value (ceiling) });
+        rooms.push_back ({ .centre = b.at,
+                           .x = unit_direction (Vec3 (f[2], 0.0f, -f[0])),
+                           .half_x = half_x,
+                           .half_z = half_z,
+                           .floor = floor,
+                           .ceiling = ceiling });
       }
     session.set_rooms (std::move (rooms), layout.period);
     session.logic ().m_their_beacons.assign (session.logic ().m_beacons.size (),

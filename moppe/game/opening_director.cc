@@ -160,16 +160,17 @@ namespace moppe::game {
     m_arrival = reel && reel->arrival ? *reel->arrival : OpeningArrival {};
     const OpeningShot last = arrival (session, world.surface ());
     m_shots.push_back (last);
-    const Vec3 start = session.camera ().position ();
+    const Vec3 start = position_value (session.camera ().position ());
     std::cerr << "moppe: opening: the player starts at "
-              << format_opening_shot ("start",
-                                      start,
-                                      session.camera ().forward (),
-                                      last.fov_deg,
-                                      static_cast<float> (seconds_into_play (
-                                        session.logic ().m_total_time)) *
-                                        u::s,
-                                      sky.sun_height)
+              << format_opening_shot (
+                   "start",
+                   start,
+                   direction_value (session.camera ().forward ()),
+                   last.fov_deg,
+                   static_cast<float> (
+                     seconds_into_play (session.logic ().m_total_time)) *
+                     u::s,
+                   sky.sun_height)
               << '\n';
     seconds_t duration = 0.0f * u::s;
     for (const OpeningShot& shot : m_shots)
@@ -188,7 +189,7 @@ namespace moppe::game {
                             ? 70.0f * u::deg
                             : CHASE_FIELD_OF_VIEW;
     return arrival_shot (
-      m_arrival, position (camera.position ()), camera.forward (), fov);
+      m_arrival, camera.position (), direction_value (camera.forward ()), fov);
   }
 
   void OpeningDirector::start (GameSession& session,

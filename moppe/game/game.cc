@@ -258,8 +258,8 @@ namespace moppe {
     FrameViewInput MoppeGame::frame_view_input (float aspect) const {
       FrameSceneMode scene = FrameSceneMode::Gameplay;
       FrameCameraReading camera = {
-        .position = position (session ().camera ().position ()),
-        .forward = unit_direction (session ().camera ().forward ()),
+        .position = session ().camera ().position (),
+        .forward = session ().camera ().forward (),
         .view = session ().camera ().view_matrix (),
         .field_of_view = 70.0f * u::deg,
       };

@@ -820,12 +820,12 @@ namespace moppe::game {
       const AnimalGround& ground = *around.animal_ground;
       session.animals ().step (ground,
                                presences,
-                               moppe::position (session.camera ().position ()),
+                               session.camera ().position (),
                                700.0f * u::m,
                                interval);
       session.hens ().step (ground,
                             presences,
-                            moppe::position (session.camera ().position ()),
+                            session.camera ().position (),
                             160.0f * u::m,
                             static_cast<float> (std::fmod (
                               hours_since_midnight (logic.m_day_hours), 24.0)) *
