@@ -48,6 +48,11 @@ namespace moppe::game {
         probability_t chance () {
           return unit () * probability[one];
         }
+        // A roll that comes up within `share` of the rolls: whether a
+        // piece is among the ruined share that has gone.
+        bool within (proportion_t share) {
+          return unit () * proportion[one] < share;
+        }
 
       private:
         std::uint32_t m_state;
@@ -427,7 +432,8 @@ namespace moppe::game {
         s.kept = years_value (left) <= 0.0f;
         s.ruin = ruin_after (left);
         s.hearth = terrain::at_elevation (
-          plan (top), under + platform_height * (whole - 0.5f * s.ruin));
+          plan (top),
+          under + meters_t (platform_height * (whole - 0.5f * s.ruin)));
         return s;
       }
 
@@ -730,7 +736,8 @@ namespace moppe::game {
           const map::ForestCover trees = g.forest
                                            ? g.forest (moppe::plan (at))
                                            : 0.0f * map::forest_cover[one];
-          candidates.push_back ({ at, rough + 1.5f * trees * u::m + penalty });
+          candidates.push_back (
+            { at, rough + meters_t (1.5f * trees * u::m) + penalty });
         };
         // Beside the cart roads, old and new, and the footpaths in use.
         for (const terrain::Road& road : network.roads) {
@@ -1162,7 +1169,7 @@ namespace moppe::game {
         }
         // The planks.
         for (meters_t d = 0.1f * u::m; d < jetty.length; d += 0.21f * u::m) {
-          if (random.chance () < jetty.decay * 0.45f)
+          if (random.within (jetty.decay * 0.45f))
             continue;
           // Tilted by a level offset to the unit up.
           const direction_t across = unit_direction (
@@ -1283,7 +1290,7 @@ namespace moppe::game {
                               seed * 7u + (side > 0 ? 1u : 2u),
                               lifted (at, g.ground (plan (at)) - 0.15f * u::m),
                               0.36f * u::m,
-                              1.25f * u::m * (whole - 0.4f * s.ruin),
+                              meters_t (1.25f * u::m * (whole - 0.4f * s.ruin)),
                               gate,
                               Vec3 ());
           }
@@ -1335,7 +1342,7 @@ namespace moppe::game {
             const terrain::SurfaceElevation from =
               k == 0 ? std::min (bottom, ground - 0.1f * u::m) : bottom;
             if (top - 0.22f * u::m * (2 - k) < ground - 0.05f * u::m ||
-                random.chance () < s.ruin * (0.15f + 0.2f * k))
+                random.within (s.ruin * (0.15f + 0.2f * k)))
               continue;
             build_fieldstone (
               dl,
@@ -1356,12 +1363,12 @@ namespace moppe::game {
           for (int i = 0; i < count; ++i) {
             const radians_t a =
               tau * (i + random.between (-0.1f, 0.1f)) / count;
-            if (random.chance () < 0.6f * s.ruin)
+            if (random.within (0.6f * s.ruin))
               continue;
             const position_t at =
               ahead (ahead (middle, bearing (a), ring * (R * 0.55f)),
                      bearing (random.between (0.0f * u::rad, tau)),
-                     0.25f * u::m * s.ruin);
+                     meters_t (0.25f * u::m * s.ruin));
             build_fieldstone (
               dl,
               seed * 29u + ring * 61u + i,
@@ -1441,7 +1448,7 @@ namespace moppe::game {
         for (meters_t d = R + 0.6f * u::m; d < s.wall_radius + 14.0f * u::m;
              d += 0.85f * u::m) {
           if (d > s.wall_radius + 2.0f * u::m &&
-              random.chance () < 0.25f * proportion[one] + s.ruin * 0.3f)
+              random.within (0.25f * proportion[one] + s.ruin * 0.3f))
             continue;
           for (const meters_t w : { -0.38f * u::m, 0.38f * u::m }) {
             if (random.chance () < 0.15f * probability[one])

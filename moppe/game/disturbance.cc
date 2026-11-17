@@ -242,7 +242,8 @@ namespace moppe::game {
                 0.0f,
                 1.0f) *
               proportion[one];
-            const meters_t ex = px - t * sx, ez = pz - t * sz;
+            const meters_t ex = px - meters_t (t * sx),
+                           ez = pz - meters_t (t * sz);
             const meters_t metres = sqrt (ex * ex + ez * ez);
             if (metres >= edge)
               continue;
@@ -287,8 +288,9 @@ namespace moppe::game {
            ++attempt) {
         const std::uint32_t draw = lattice_hash (identity, attempt, 0x51a7e1U);
         const std::size_t i = draw % count;
-        const probability_t odds =
-          quantity_cast<probability> (fuel[i] * fuel[i]);
+        // A cell catches with the square of its fuel.
+        const probability_t odds = quantity_cast<probability> (
+          quantity_cast<dimensionless> (fuel[i] * fuel[i]));
         if (!wet_cell[i] && hash_lane (draw, 1) * probability[one] < odds)
           origin = i;
       }

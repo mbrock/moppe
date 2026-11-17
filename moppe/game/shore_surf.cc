@@ -155,7 +155,8 @@ namespace moppe::game {
         std::clamp (proportion_t ((value - low) / (high - low)),
                     0.0f * proportion[one],
                     1.0f * proportion[one]);
-      return t * t * (3.0f - 2.0f * t);
+      return quantity_cast<proportion> (
+        t * t * (3.0f - 2.0f * t.numerical_value_in (one)));
     }
 
     // Signed one-sided differences, with a one-sided continuation at a
@@ -305,10 +306,11 @@ namespace moppe::game {
         mask =
           rise < terrain::ElevationChange::zero ()
             ? 0.0f * proportion[one]
-            : (whole - surf_ramp (4.0f * u::m, 24.0f * u::m, reach[i])) *
+            : quantity_cast<proportion> (
+                (whole - surf_ramp (4.0f * u::m, 24.0f * u::m, reach[i])) *
                 (whole - surf_ramp (0.2f * terrain::surface_elevation[u::m],
                                     1.25f * terrain::surface_elevation[u::m],
-                                    rise));
+                                    rise)));
       }
       if (!(mask > 0.0f * proportion[one]))
         continue;
@@ -325,9 +327,10 @@ namespace moppe::game {
         continue;
       // Only cancellation loses coherence. A depth/speed change alone must
       // not be mistaken for a collision, especially at the first wet cell.
-      mask = mask * surf_ramp (0.35f * proportion[one],
-                               0.9f * proportion[one],
-                               proportion_t (gradient / total));
+      mask = quantity_cast<proportion> (
+        mask * surf_ramp (0.35f * proportion[one],
+                          0.9f * proportion[one],
+                          proportion_t (gradient / total)));
       sample[2] = (-gx / gradient * mask).numerical_value_in (one);
       sample[3] = (-gz / gradient * mask).numerical_value_in (one);
     }
