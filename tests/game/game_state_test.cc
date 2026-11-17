@@ -211,9 +211,12 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   // The rigid bike's chassis keeps moving through each step, so the measured
   // whip carries a few milliradians of honest flight attitude.
   MOPPE_CHECK_NEAR (
-    std::abs (session.logic ().m_jump_spin_radians), 1.5707963f, 0.01f);
-  MOPPE_CHECK_NEAR (
-    session.logic ().m_jump_peak_spin_radians, 1.5707963f, 0.01f);
+    std::abs (radians_value (session.logic ().m_jump_spin_radians)),
+    1.5707963f,
+    0.01f);
+  MOPPE_CHECK_NEAR (radians_value (session.logic ().m_jump_peak_spin_radians),
+                    1.5707963f,
+                    0.01f);
 
   flight = session.bike ().state ();
   flight.velocity = velocity (Vec3 (0, 0, 15));
@@ -222,9 +225,12 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
   game::advance_game_session (
     world, surface, session, game::InputFrame {}, step);
   MOPPE_CHECK_NEAR (
-    std::abs (session.logic ().m_jump_spin_radians), 0.0f, 0.01f);
-  MOPPE_CHECK_NEAR (
-    session.logic ().m_jump_peak_spin_radians, 1.5707963f, 0.01f);
+    std::abs (radians_value (session.logic ().m_jump_spin_radians)),
+    0.0f,
+    0.01f);
+  MOPPE_CHECK_NEAR (radians_value (session.logic ().m_jump_peak_spin_radians),
+                    1.5707963f,
+                    0.01f);
 
   flight = session.bike ().state ();
   flight.position = position (
@@ -237,7 +243,10 @@ MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
     world, surface, session, game::InputFrame {}, seconds (0.1f));
 
   MOPPE_CHECK (session.logic ().m_landed_clean);
-  MOPPE_CHECK_NEAR (session.logic ().m_landed_spin_degrees, 90.0f, 1.0f);
+  MOPPE_CHECK_NEAR (
+    session.logic ().m_landed_spin_degrees.numerical_value_in (u::deg),
+    90.0f,
+    1.0f);
   MOPPE_CHECK (session.logic ().m_landed_points > 350);
   MOPPE_CHECK (session.logic ().m_score == session.logic ().m_landed_points);
   MOPPE_CHECK (session.bike ().boost_charge () > 0.3f * proportion[one]);
@@ -679,9 +688,12 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   MOPPE_CHECK (replayed.logic.m_doing == live_state.logic.m_doing);
   MOPPE_CHECK (replayed.logic.m_cam_mode == live_state.logic.m_cam_mode);
   MOPPE_CHECK (replayed.logic.m_day_hours == live_state.logic.m_day_hours);
-  MOPPE_CHECK_NEAR (
-    replayed.logic.m_odometer, live_state.logic.m_odometer, 1e-6f);
-  MOPPE_CHECK_NEAR (replayed.logic.m_fov_k, live_state.logic.m_fov_k, 1e-6f);
+  MOPPE_CHECK_NEAR (replayed.logic.m_odometer.numerical_value_in (u::m),
+                    live_state.logic.m_odometer.numerical_value_in (u::m),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (replayed.logic.m_fov_k.numerical_value_in (one),
+                    live_state.logic.m_fov_k.numerical_value_in (one),
+                    1e-6f);
   check_position (replayed.fleet.bike.position, live_state.fleet.bike.position);
   check_velocity (replayed.fleet.bike.velocity, live_state.fleet.bike.velocity);
   check_vector (direction_value (replayed.fleet.bike.heading),
@@ -1141,11 +1153,12 @@ MOPPE_TEST (a_road_steers_a_rider_who_lets_the_bars_be_along_it) {
   terrain::RoadNetwork network;
   terrain::Road road { .kind = terrain::Road::Kind::Road };
   for (float z = 10.0f; z <= 310.0f; z += 4.0f) {
-    road.points.push_back ({ 160.0f, z });
-    road.heights.push_back (10.0f);
+    road.points.push_back (plan_position (160.0f, z));
+    road.heights.push_back (terrain::surface_elevation_point (10.0f * u::m));
   }
   network.roads = { road };
-  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  const terrain::RoadSurface roads (network,
+                                    plan_extent (320.0f * u::m, 320.0f * u::m));
   mov::attach_roads (surface, &roads);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (320, 20, 320));
@@ -1167,8 +1180,8 @@ MOPPE_TEST (a_road_steers_a_rider_who_lets_the_bars_be_along_it) {
   }
   mov::attach_roads (surface, nullptr);
   MOPPE_CHECK (session.subject_position ()[2] > 200.0f);
-  MOPPE_CHECK (widest <
-               roads.formation ().half_width + roads.formation ().shoulder);
+  MOPPE_CHECK (widest < meters_value (roads.formation ().half_width +
+                                      roads.formation ().shoulder));
 }
 
 // The road holds a car through its bends too: the Caddy, flat out with the
@@ -1189,11 +1202,12 @@ MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
   terrain::RoadNetwork network;
   terrain::Road road { .kind = terrain::Road::Kind::Road };
   for (float z = 10.0f; z <= 310.0f; z += 2.0f) {
-    road.points.push_back ({ line (z), z });
-    road.heights.push_back (10.0f);
+    road.points.push_back (plan_position (line (z), z));
+    road.heights.push_back (terrain::surface_elevation_point (10.0f * u::m));
   }
   network.roads = { road };
-  const terrain::RoadSurface roads (network, 320.0f, 320.0f);
+  const terrain::RoadSurface roads (network,
+                                    plan_extent (320.0f * u::m, 320.0f * u::m));
   mov::attach_roads (surface, &roads);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (320, 20, 320));
@@ -1218,12 +1232,14 @@ MOPPE_TEST (a_winding_road_keeps_a_flat_out_car_through_its_bends) {
     game::advance_game_session (
       world, surface, session, game::InputFrame { .drive = 1.0f }, step);
     const Vec3 at = session.subject_position ();
-    widest = std::max (widest, std::abs (roads.nearest (at[0], at[2]).across));
+    widest = std::max (widest,
+                       std::abs (meters_value (
+                         roads.nearest (plan_position (at[0], at[2])).across)));
     fastest = std::max (fastest, session.subject_speed_kmh ());
   }
   mov::attach_roads (surface, nullptr);
   MOPPE_CHECK (session.subject_position ()[2] > 290.0f);
   MOPPE_CHECK (fastest > 30.0f);
-  MOPPE_CHECK (widest <
-               roads.formation ().half_width + roads.formation ().shoulder);
+  MOPPE_CHECK (widest < meters_value (roads.formation ().half_width +
+                                      roads.formation ().shoulder));
 }

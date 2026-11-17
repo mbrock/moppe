@@ -17,11 +17,49 @@ namespace moppe::game {
     using render::TextAlign;
     using render::TextStyle;
 
+    // How many points of the sheet a metre of the country takes.
+    using points_per_metre_t = quantity<display_point / si::metre, float>;
+
     constexpr DisplayColor map_paper { 0.955f, 0.940f, 0.895f };
     constexpr DisplayColor map_ink { 0.105f, 0.100f, 0.095f };
     constexpr DisplayColor height_ink { 0.130f, 0.085f, 0.050f };
+    constexpr DisplayColor sheet_white { 1.0f, 1.0f, 1.0f };
 
-    float sheet_delta (float delta, float period) {
+    const opacity_t solid = 1.0f * opacity[one];
+
+    // North on the sheet, which is up.
+    const plan_direction_t north_way = plan_unit_direction (Vec2 (0.0f, -1.0f));
+
+    float ratio (auto value) {
+      return value.numerical_value_in (one);
+    }
+
+    points_t floor_points (points_t value) {
+      return std::floor (points_value (value)) * u::pt;
+    }
+
+    void set_ink (render::DrawList& dl, DisplayColor colour, opacity_t alpha) {
+      dl.color (colour, opacity_value (alpha));
+    }
+
+    void vertex (render::DrawList& dl, points_t x, points_t y) {
+      dl.vertex (points_value (x), points_value (y));
+    }
+
+    void line (render::DrawList& dl,
+               points_t x0,
+               points_t y0,
+               points_t x1,
+               points_t y1,
+               points_t width) {
+      dl.line (points_value (x0),
+               points_value (y0),
+               points_value (x1),
+               points_value (y1),
+               points_value (width));
+    }
+
+    meters_t sheet_delta (meters_t delta, meters_t period) {
       if (delta > 0.5f * period)
         delta -= period;
       if (delta < -0.5f * period)
@@ -29,54 +67,72 @@ namespace moppe::game {
       return delta;
     }
 
-    void box (render::DrawList& dl, float x0, float y0, float x1, float y1) {
+    void box (render::DrawList& dl,
+              points_t x0,
+              points_t y0,
+              points_t x1,
+              points_t y1) {
       dl.begin (render::Prim::Quads);
-      dl.vertex (x0, y0);
-      dl.vertex (x1, y0);
-      dl.vertex (x1, y1);
-      dl.vertex (x0, y1);
+      vertex (dl, x0, y0);
+      vertex (dl, x1, y0);
+      vertex (dl, x1, y1);
+      vertex (dl, x0, y1);
       dl.end ();
     }
 
-    void disc (render::DrawList& dl, float x, float y, float radius) {
+    void disc (render::DrawList& dl, points_t x, points_t y, points_t radius) {
       const int sides = 16;
       dl.begin (render::Prim::Triangles);
       for (int side = 0; side < sides; ++side) {
-        const float a =
-          2.0f * std::numbers::pi_v<float> * static_cast<float> (side) / sides;
-        const float b = 2.0f * std::numbers::pi_v<float> *
-                        static_cast<float> (side + 1) / sides;
-        dl.vertex (x, y);
-        dl.vertex (x + radius * std::cos (a), y + radius * std::sin (a));
-        dl.vertex (x + radius * std::cos (b), y + radius * std::sin (b));
+        const radians_t a = 2.0f * std::numbers::pi_v<float> *
+                            static_cast<float> (side) / sides * u::rad;
+        const radians_t b = 2.0f * std::numbers::pi_v<float> *
+                            static_cast<float> (side + 1) / sides * u::rad;
+        vertex (dl, x, y);
+        vertex (dl,
+                x + radius * std::cos (radians_value (a)),
+                y + radius * std::sin (radians_value (a)));
+        vertex (dl,
+                x + radius * std::cos (radians_value (b)),
+                y + radius * std::sin (radians_value (b)));
       }
       dl.end ();
     }
 
-    // An arrowhead at (x, y) pointing along (dx, dy), a unit vector on
-    // the screen.
-    void arrow (
-      render::DrawList& dl, float x, float y, float dx, float dy, float size) {
+    // An arrowhead at (x, y) pointing `way`, the sheet's plan seen from
+    // above: x to the right and z down the screen.
+    void arrow (render::DrawList& dl,
+                points_t x,
+                points_t y,
+                const plan_direction_t& way,
+                points_t size) {
+      const float dx = plan_value (way).x (), dy = plan_value (way).z ();
       const float sx = -dy, sy = dx;
       dl.begin (render::Prim::Triangles);
-      dl.vertex (x + dx * size, y + dy * size);
-      dl.vertex (x - dx * 0.62f * size + sx * 0.62f * size,
-                 y - dy * 0.62f * size + sy * 0.62f * size);
-      dl.vertex (x - dx * 0.25f * size, y - dy * 0.25f * size);
-      dl.vertex (x + dx * size, y + dy * size);
-      dl.vertex (x - dx * 0.25f * size, y - dy * 0.25f * size);
-      dl.vertex (x - dx * 0.62f * size - sx * 0.62f * size,
-                 y - dy * 0.62f * size - sy * 0.62f * size);
+      vertex (dl, x + dx * size, y + dy * size);
+      vertex (dl,
+              x - dx * 0.62f * size + sx * 0.62f * size,
+              y - dy * 0.62f * size + sy * 0.62f * size);
+      vertex (dl, x - dx * 0.25f * size, y - dy * 0.25f * size);
+      vertex (dl, x + dx * size, y + dy * size);
+      vertex (dl, x - dx * 0.25f * size, y - dy * 0.25f * size);
+      vertex (dl,
+              x - dx * 0.62f * size - sx * 0.62f * size,
+              y - dy * 0.62f * size - sy * 0.62f * size);
       dl.end ();
     }
 
-    TextStyle style (float size, DisplayColor colour, float tracking = 0.0f) {
+    // Lettering `size` points to the em, with `tracking` of an em after
+    // every glyph.
+    TextStyle style (points_t size,
+                     DisplayColor colour,
+                     proportion_t tracking = 0.0f * proportion[one]) {
       TextStyle s;
-      s.size = size;
+      s.size = points_value (size);
       s.red = colour.red;
       s.green = colour.green;
       s.blue = colour.blue;
-      s.tracking = tracking;
+      s.tracking = tracking.numerical_value_in (one);
       return s;
     }
 
@@ -84,22 +140,23 @@ namespace moppe::game {
     // does not run through the letters.
     void label (render::TextList& text,
                 const render::Font& font,
-                float x,
-                float y,
+                points_t x,
+                points_t y,
                 const std::string& words,
                 const TextStyle& set,
                 TextAlign align = TextAlign::Left) {
+      const opacity_t glow_alpha = 0.85f * opacity[one];
       TextStyle glow = set;
       glow.red = map_paper.red;
       glow.green = map_paper.green;
       glow.blue = map_paper.blue;
-      glow.alpha = 0.85f;
+      glow.alpha = opacity_value (glow_alpha);
       glow.softness = 5.0f;
-      font.draw (text, x, y, words, glow, align);
-      font.draw (text, x, y, words, set, align);
+      font.draw (text, points_value (x), points_value (y), words, glow, align);
+      font.draw (text, points_value (x), points_value (y), words, set, align);
     }
 
-    using Box = std::array<float, 4>; // left, top, right, bottom
+    using Box = std::array<points_t, 4>; // left, top, right, bottom
     using Mark = MapSheet::Mark;
 
     // Which marks matter most: their symbols are drawn over the others',
@@ -122,120 +179,165 @@ namespace moppe::game {
     }
 
     // A mark's symbol at (x, y), `s` times its size on the sheet.
-    void
-    symbol (render::DrawList& dl, const Mark& mark, float x, float y, float s) {
-      Vec3 way (mark.heading[0], 0.0f, mark.heading[2]);
+    void symbol (render::DrawList& dl,
+                 const Mark& mark,
+                 points_t x,
+                 points_t y,
+                 scale_factor_t s) {
+      // A point of the symbol at its size on the sheet.
+      const points_t unit = s.numerical_value_in (one) * u::pt;
+      const Vec3& heading = direction_value (mark.heading);
+      Vec3 way (heading[0], 0.0f, heading[2]);
       way = length2 (way) > 1e-6f ? normalized (way) : Vec3 (0, 0, -1);
+      const plan_direction_t facing = plan_unit_direction (plan (way));
       const float dx = way[0], dy = way[2];
       switch (mark.kind) {
       case Mark::Kind::Walker:
       case Mark::Kind::Companion: {
-        const float size = (mark.kind == Mark::Kind::Walker ? 11.0f : 9.0f) * s;
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        arrow (
-          dl, x - dx * 0.8f * s, y - dy * 0.8f * s, dx, dy, size + 4.0f * s);
-        dl.color (mark.colour, 1.0f);
-        arrow (dl, x, y, dx, dy, size);
+        const points_t size =
+          (mark.kind == Mark::Kind::Walker ? 11.0f : 9.0f) * unit;
+        set_ink (dl, sheet_white, solid);
+        arrow (dl,
+               x - dx * 0.8f * unit,
+               y - dy * 0.8f * unit,
+               facing,
+               size + 4.0f * unit);
+        set_ink (dl, mark.colour, solid);
+        arrow (dl, x, y, facing, size);
         break;
       }
       case Mark::Kind::Bike:
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        disc (dl, x, y, 5.2f * s);
-        dl.color (mark.colour, 1.0f);
-        disc (dl, x, y, 3.6f * s);
+        set_ink (dl, sheet_white, solid);
+        disc (dl, x, y, 5.2f * unit);
+        set_ink (dl, mark.colour, solid);
+        disc (dl, x, y, 3.6f * unit);
         break;
       case Mark::Kind::Jeep:
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        box (dl, x - 5.2f * s, y - 5.2f * s, x + 5.2f * s, y + 5.2f * s);
-        dl.color (mark.colour, 1.0f);
-        box (dl, x - 3.6f * s, y - 3.6f * s, x + 3.6f * s, y + 3.6f * s);
+        set_ink (dl, sheet_white, solid);
+        box (dl,
+             x - 5.2f * unit,
+             y - 5.2f * unit,
+             x + 5.2f * unit,
+             y + 5.2f * unit);
+        set_ink (dl, mark.colour, solid);
+        box (dl,
+             x - 3.6f * unit,
+             y - 3.6f * unit,
+             x + 3.6f * unit,
+             y + 3.6f * unit);
         break;
       case Mark::Kind::Bus: {
         // A bus seen from above, along the way it goes.
         const float sx = -dy, sy = dx;
-        const auto oblong = [&] (float half_long, float half_wide) {
+        const auto oblong = [&] (points_t half_long, points_t half_wide) {
           dl.begin (render::Prim::Quads);
-          dl.vertex (x + dx * half_long + sx * half_wide,
-                     y + dy * half_long + sy * half_wide);
-          dl.vertex (x + dx * half_long - sx * half_wide,
-                     y + dy * half_long - sy * half_wide);
-          dl.vertex (x - dx * half_long - sx * half_wide,
-                     y - dy * half_long - sy * half_wide);
-          dl.vertex (x - dx * half_long + sx * half_wide,
-                     y - dy * half_long + sy * half_wide);
+          vertex (dl,
+                  x + dx * half_long + sx * half_wide,
+                  y + dy * half_long + sy * half_wide);
+          vertex (dl,
+                  x + dx * half_long - sx * half_wide,
+                  y + dy * half_long - sy * half_wide);
+          vertex (dl,
+                  x - dx * half_long - sx * half_wide,
+                  y - dy * half_long - sy * half_wide);
+          vertex (dl,
+                  x - dx * half_long + sx * half_wide,
+                  y - dy * half_long + sy * half_wide);
           dl.end ();
         };
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        oblong (7.4f * s, 4.2f * s);
-        dl.color (mark.colour, 1.0f);
-        oblong (6.0f * s, 2.8f * s);
-        dl.color (0.92f, 0.87f, 0.72f, 1.0f);
-        oblong (6.0f * s, 0.8f * s);
+        set_ink (dl, sheet_white, solid);
+        oblong (7.4f * unit, 4.2f * unit);
+        set_ink (dl, mark.colour, solid);
+        oblong (6.0f * unit, 2.8f * unit);
+        set_ink (dl, DisplayColor (0.92f, 0.87f, 0.72f), solid);
+        oblong (6.0f * unit, 0.8f * unit);
         break;
       }
       case Mark::Kind::BusStop:
         // A hållplats's yellow plate with its green edge.
-        dl.color (0.06f, 0.42f, 0.22f, 1.0f);
-        box (dl, x - 3.0f * s, y - 3.0f * s, x + 3.0f * s, y + 3.0f * s);
-        dl.color (0.97f, 0.80f, 0.12f, 1.0f);
-        box (dl, x - 1.9f * s, y - 1.9f * s, x + 1.9f * s, y + 1.9f * s);
+        set_ink (dl, DisplayColor (0.06f, 0.42f, 0.22f), solid);
+        box (dl,
+             x - 3.0f * unit,
+             y - 3.0f * unit,
+             x + 3.0f * unit,
+             y + 3.0f * unit);
+        set_ink (dl, DisplayColor (0.97f, 0.80f, 0.12f), solid);
+        box (dl,
+             x - 1.9f * unit,
+             y - 1.9f * unit,
+             x + 1.9f * unit,
+             y + 1.9f * unit);
         break;
       case Mark::Kind::Camp:
-        dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-        arrow (dl, x, y + 1.0f * s, 0.0f, -1.0f, 9.5f * s);
-        dl.color (mark.colour, 1.0f);
-        arrow (dl, x, y + 0.4f * s, 0.0f, -1.0f, 6.5f * s);
+        set_ink (dl, sheet_white, solid);
+        arrow (dl, x, y + 1.0f * unit, north_way, 9.5f * unit);
+        set_ink (dl, mark.colour, solid);
+        arrow (dl, x, y + 0.4f * unit, north_way, 6.5f * unit);
         break;
       case Mark::Kind::Place:
         switch (mark.place) {
         case terrain::RoadPlace::Kind::Trailhead:
-          dl.color (mark.colour, 1.0f);
-          disc (dl, x, y, 5.0f * s);
-          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-          disc (dl, x, y, 3.2f * s);
+          set_ink (dl, mark.colour, solid);
+          disc (dl, x, y, 5.0f * unit);
+          set_ink (dl, sheet_white, solid);
+          disc (dl, x, y, 3.2f * unit);
           break;
         case terrain::RoadPlace::Kind::Landing:
           // An anchor's ring and stock, as charts mark a landing place.
-          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-          disc (dl, x, y, 6.2f * s);
-          dl.color (mark.colour, 1.0f);
-          disc (dl, x, y, 4.8f * s);
-          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-          dl.line (x, y - 3.2f * s, x, y + 3.0f * s, 1.1f * s);
-          dl.line (
-            x - 2.4f * s, y - 1.6f * s, x + 2.4f * s, y - 1.6f * s, 1.1f * s);
-          dl.line (x - 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
-          dl.line (x + 2.6f * s, y + 1.6f * s, x, y + 3.0f * s, 1.0f * s);
+          set_ink (dl, sheet_white, solid);
+          disc (dl, x, y, 6.2f * unit);
+          set_ink (dl, mark.colour, solid);
+          disc (dl, x, y, 4.8f * unit);
+          set_ink (dl, sheet_white, solid);
+          line (dl, x, y - 3.2f * unit, x, y + 3.0f * unit, 1.1f * unit);
+          line (dl,
+                x - 2.4f * unit,
+                y - 1.6f * unit,
+                x + 2.4f * unit,
+                y - 1.6f * unit,
+                1.1f * unit);
+          line (dl,
+                x - 2.6f * unit,
+                y + 1.6f * unit,
+                x,
+                y + 3.0f * unit,
+                1.0f * unit);
+          line (dl,
+                x + 2.6f * unit,
+                y + 1.6f * unit,
+                x,
+                y + 3.0f * unit,
+                1.0f * unit);
           break;
         case terrain::RoadPlace::Kind::LakeOutlet:
           // A mill wheel: a ring with spokes.
-          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-          disc (dl, x, y, 5.6f * s);
-          dl.color (mark.colour, 1.0f);
-          disc (dl, x, y, 4.3f * s);
-          dl.color (1.0f, 1.0f, 1.0f, 1.0f);
-          disc (dl, x, y, 1.3f * s);
-          dl.line (x - 3.4f * s, y, x + 3.4f * s, y, 0.9f * s);
-          dl.line (x, y - 3.4f * s, x, y + 3.4f * s, 0.9f * s);
+          set_ink (dl, sheet_white, solid);
+          disc (dl, x, y, 5.6f * unit);
+          set_ink (dl, mark.colour, solid);
+          disc (dl, x, y, 4.3f * unit);
+          set_ink (dl, sheet_white, solid);
+          disc (dl, x, y, 1.3f * unit);
+          line (dl, x - 3.4f * unit, y, x + 3.4f * unit, y, 0.9f * unit);
+          line (dl, x, y - 3.4f * unit, x, y + 3.4f * unit, 0.9f * unit);
           break;
         case terrain::RoadPlace::Kind::Sanctuary:
           // The sheet already carries its triangle; a dot of fire in it.
           // In a list, where there is no triangle, the triangle too.
-          if (s < 1.0f) {
-            dl.color (mark.colour, 1.0f);
-            arrow (dl, x, y + 2.0f, 0.0f, -1.0f, 8.0f * s);
+          if (s < 1.0f * scale_factor[one]) {
+            set_ink (dl, mark.colour, solid);
+            arrow (dl, x, y + 2.0f * u::pt, north_way, 8.0f * unit);
           }
-          dl.color (mark.colour, 1.0f);
-          disc (dl, x, y, 2.4f * s);
+          set_ink (dl, mark.colour, solid);
+          disc (dl, x, y, 2.4f * unit);
           break;
         }
         break;
       }
     }
 
-    std::string distance_words (float metres) {
-      if (metres >= 1000.0f) {
-        const float km = metres / 1000.0f;
+    std::string distance_words (meters_t metres) {
+      if (metres >= 1000.0f * u::m) {
+        const float km = ratio (metres / (1000.0f * u::m));
         return (km == std::floor (km)
                   ? std::to_string (static_cast<int> (km))
                   : std::to_string (static_cast<int> (km)) + "." +
@@ -243,7 +345,7 @@ namespace moppe::game {
                         static_cast<int> (std::lround (km * 10.0f)) % 10)) +
                " km";
       }
-      return std::to_string (static_cast<int> (metres)) + " m";
+      return std::to_string (static_cast<int> (meters_value (metres))) + " m";
     }
   }
 
@@ -271,51 +373,56 @@ namespace moppe::game {
                        const render::Font* font,
                        std::span<const Mark> marks,
                        const std::string& title,
-                       int width_pts,
-                       int height_pts) const {
-    if (!open () || !m_texture || m_sheet.period_x_m <= 0.0f)
+                       points_t width,
+                       points_t height) const {
+    const meters_t period_x = plan_value (m_sheet.period).x () * u::m;
+    const meters_t period_z = plan_value (m_sheet.period).z () * u::m;
+    if (!open () || !m_texture || period_x <= 0.0f * u::m)
       return;
-    const float width = static_cast<float> (width_pts);
-    const float height = static_cast<float> (height_pts);
-    const float margin = 12.0f;
-    const float pad = 26.0f;
-    const float footer = 56.0f;
-    const float side = std::floor (std::min (
+    const points_t margin = 12.0f * u::pt;
+    const points_t pad = 26.0f * u::pt;
+    const points_t footer = 56.0f * u::pt;
+    const points_t side = floor_points (std::min (
       width - 2.0f * (margin + pad), height - 2.0f * margin - pad - footer));
-    if (side < 120.0f)
+    if (side < 120.0f * u::pt)
       return;
-    const float paper_x = std::floor (0.5f * (width - side) - pad);
-    const float paper_y = std::floor (0.5f * (height - (side + pad + footer)));
-    const float map_x = paper_x + pad;
-    const float map_y = paper_y + pad;
+    const points_t paper_x = floor_points (0.5f * (width - side) - pad);
+    const points_t paper_y =
+      floor_points (0.5f * (height - (side + pad + footer)));
+    const points_t map_x = paper_x + pad;
+    const points_t map_y = paper_y + pad;
 
     // The stretch of country in view. It is square on the ground, as the
     // world is.
-    const float period_x = m_sheet.period_x_m;
-    const float period_z = m_sheet.period_z_m;
     const bool near = m_view == View::Near && !marks.empty ();
-    const float span = near ? std::min (period_x, 1800.0f) : period_x;
-    const float span_z = span * period_z / period_x;
-    const float west = near ? marks.front ().position[0] - 0.5f * span : 0.0f;
-    const float north =
-      near ? marks.front ().position[2] - 0.5f * span_z : 0.0f;
-    const float scale = side / span;
+    const meters_t span = near ? std::min (period_x, 1800.0f * u::m) : period_x;
+    const meters_t span_z = span * period_z / period_x;
+    const plan_position_t middle = marks.empty ()
+                                     ? plan_position (0.0f, 0.0f)
+                                     : plan (marks.front ().position);
+    const meters_t west = near ? x_of (middle) - 0.5f * span : 0.0f * u::m;
+    const meters_t north = near ? z_of (middle) - 0.5f * span_z : 0.0f * u::m;
+    const points_per_metre_t scale = side / span;
+    const meters_t kilometre = 1000.0f * u::m;
 
     // Where a place in the world falls on the sheet, if it does.
-    const auto place = [&] (const Vec3& at, float& x, float& y) {
-      float dx, dz;
-      if (near) {
-        dx = sheet_delta (at[0] - (west + 0.5f * span), period_x) + 0.5f * span;
-        dz = sheet_delta (at[2] - (north + 0.5f * span_z), period_z) +
-             0.5f * span_z;
-      } else {
-        dx = at[0] - period_x * std::floor (at[0] / period_x);
-        dz = at[2] - period_z * std::floor (at[2] / period_z);
-      }
-      x = map_x + dx * scale;
-      y = map_y + dz * scale;
-      return dx >= 0.0f && dx <= span && dz >= 0.0f && dz <= span_z;
-    };
+    const auto place =
+      [&] (const plan_position_t& at, points_t& x, points_t& y) {
+        meters_t dx, dz;
+        if (near) {
+          dx = sheet_delta (x_of (at) - (west + 0.5f * span), period_x) +
+               0.5f * span;
+          dz = sheet_delta (z_of (at) - (north + 0.5f * span_z), period_z) +
+               0.5f * span_z;
+        } else {
+          dx = x_of (at) - period_x * std::floor (ratio (x_of (at) / period_x));
+          dz = z_of (at) - period_z * std::floor (ratio (z_of (at) / period_z));
+        }
+        x = map_x + dx * scale;
+        y = map_y + dz * scale;
+        return dx >= 0.0f * u::m && dx <= span && dz >= 0.0f * u::m &&
+               dz <= span_z;
+      };
 
     render::DrawState state;
     state.blend = true;
@@ -327,15 +434,20 @@ namespace moppe::game {
     dl.fogged (false);
 
     // The country dims behind the sheet, which casts a little shadow.
-    dl.color (0.0f, 0.0f, 0.0f, 0.42f);
-    box (dl, -64.0f, -64.0f, width + 64.0f, height + 64.0f);
-    dl.color (0.0f, 0.0f, 0.0f, 0.30f);
+    const DisplayColor black { 0.0f, 0.0f, 0.0f };
+    set_ink (dl, black, 0.42f * opacity[one]);
     box (dl,
-         paper_x + 3.0f,
-         paper_y + 4.0f,
-         paper_x + side + 2.0f * pad + 3.0f,
-         paper_y + side + pad + footer + 4.0f);
-    dl.color (map_paper, 1.0f);
+         -64.0f * u::pt,
+         -64.0f * u::pt,
+         width + 64.0f * u::pt,
+         height + 64.0f * u::pt);
+    set_ink (dl, black, 0.30f * opacity[one]);
+    box (dl,
+         paper_x + 3.0f * u::pt,
+         paper_y + 4.0f * u::pt,
+         paper_x + side + 2.0f * pad + 3.0f * u::pt,
+         paper_y + side + pad + footer + 4.0f * u::pt);
+    set_ink (dl, map_paper, solid);
     box (dl,
          paper_x,
          paper_y,
@@ -343,10 +455,13 @@ namespace moppe::game {
          paper_y + side + pad + footer);
 
     // The painted sheet. It tiles, so the near view may cross its edge.
-    dl.color (1.0f, 1.0f, 1.0f, 1.0f);
+    // Its texture coordinates count laps of the world.
+    set_ink (dl, sheet_white, solid);
     dl.set_texture (m_texture.get ());
-    const float u0 = west / period_x, u1 = (west + span) / period_x;
-    const float v0 = north / period_z, v1 = (north + span_z) / period_z;
+    const float u0 = ratio (west / period_x),
+                u1 = ratio ((west + span) / period_x);
+    const float v0 = ratio (north / period_z),
+                v1 = ratio ((north + span_z) / period_z);
     // One quad to each copy of the picture in view, since the sampler
     // does not repeat it.
     dl.begin (render::Prim::Quads);
@@ -358,62 +473,66 @@ namespace moppe::game {
         const float vb = std::min (v1, tile_v + 1.0f);
         if (ub <= ua || vb <= va)
           continue;
-        const float xa = map_x + (ua - u0) / (u1 - u0) * side;
-        const float xb = map_x + (ub - u0) / (u1 - u0) * side;
-        const float ya = map_y + (va - v0) / (v1 - v0) * side;
-        const float yb = map_y + (vb - v0) / (v1 - v0) * side;
+        const points_t xa = map_x + (ua - u0) / (u1 - u0) * side;
+        const points_t xb = map_x + (ub - u0) / (u1 - u0) * side;
+        const points_t ya = map_y + (va - v0) / (v1 - v0) * side;
+        const points_t yb = map_y + (vb - v0) / (v1 - v0) * side;
         dl.uv (ua - tile_u, va - tile_v);
-        dl.vertex (xa, ya);
+        vertex (dl, xa, ya);
         dl.uv (ub - tile_u, va - tile_v);
-        dl.vertex (xb, ya);
+        vertex (dl, xb, ya);
         dl.uv (ub - tile_u, vb - tile_v);
-        dl.vertex (xb, yb);
+        vertex (dl, xb, yb);
         dl.uv (ua - tile_u, vb - tile_v);
-        dl.vertex (xa, yb);
+        vertex (dl, xa, yb);
       }
     dl.end ();
     dl.set_texture (nullptr);
 
     // The neatline, and a tick where each kilometre line meets it.
-    dl.color (map_ink, 1.0f);
-    dl.line (map_x, map_y, map_x + side, map_y, 1.2f);
-    dl.line (map_x + side, map_y, map_x + side, map_y + side, 1.2f);
-    dl.line (map_x + side, map_y + side, map_x, map_y + side, 1.2f);
-    dl.line (map_x, map_y + side, map_x, map_y, 1.2f);
-    const int across_km =
-      std::max (1, static_cast<int> (std::lround (period_x / 1000.0f)));
-    const int down_km =
-      std::max (1, static_cast<int> (std::lround (period_z / 1000.0f)));
-    const TextStyle figure = style (9.5f, map_ink);
-    for (int k = static_cast<int> (std::ceil (west / 1000.0f));
-         static_cast<float> (k) * 1000.0f <= west + span;
+    const points_t neat = 1.2f * u::pt;
+    const points_t hair = 1.0f * u::pt;
+    const points_t tick = 4.0f * u::pt;
+    set_ink (dl, map_ink, solid);
+    line (dl, map_x, map_y, map_x + side, map_y, neat);
+    line (dl, map_x + side, map_y, map_x + side, map_y + side, neat);
+    line (dl, map_x + side, map_y + side, map_x, map_y + side, neat);
+    line (dl, map_x, map_y + side, map_x, map_y, neat);
+    const int across_km = std::max (
+      1, static_cast<int> (std::lround (ratio (period_x / kilometre))));
+    const int down_km = std::max (
+      1, static_cast<int> (std::lround (ratio (period_z / kilometre))));
+    const TextStyle figure = style (9.5f * u::pt, map_ink);
+    for (int k = static_cast<int> (std::ceil (ratio (west / kilometre)));
+         static_cast<float> (k) * 1000.0f * u::m <= west + span;
          ++k) {
-      const float x = map_x + (static_cast<float> (k) * 1000.0f - west) * scale;
-      if (x < map_x + 8.0f || x > map_x + side - 8.0f)
+      const points_t x =
+        map_x + (static_cast<float> (k) * 1000.0f * u::m - west) * scale;
+      if (x < map_x + 8.0f * u::pt || x > map_x + side - 8.0f * u::pt)
         continue;
-      dl.line (x, map_y - 4.0f, x, map_y, 1.0f);
-      dl.line (x, map_y + side, x, map_y + side + 4.0f, 1.0f);
+      line (dl, x, map_y - tick, x, map_y, hair);
+      line (dl, x, map_y + side, x, map_y + side + tick, hair);
       if (font)
         font->draw (text,
-                    x,
-                    map_y - 8.0f,
+                    points_value (x),
+                    points_value (map_y - 8.0f * u::pt),
                     std::to_string (((k % across_km) + across_km) % across_km),
                     figure,
                     TextAlign::Center);
     }
-    for (int k = static_cast<int> (std::ceil (north / 1000.0f));
-         static_cast<float> (k) * 1000.0f <= north + span_z;
+    for (int k = static_cast<int> (std::ceil (ratio (north / kilometre)));
+         static_cast<float> (k) * 1000.0f * u::m <= north + span_z;
          ++k) {
-      const float y =
-        map_y + (static_cast<float> (k) * 1000.0f - north) * scale;
-      if (y < map_y + 8.0f || y > map_y + side - 8.0f)
+      const points_t y =
+        map_y + (static_cast<float> (k) * 1000.0f * u::m - north) * scale;
+      if (y < map_y + 8.0f * u::pt || y > map_y + side - 8.0f * u::pt)
         continue;
-      dl.line (map_x - 4.0f, y, map_x, y, 1.0f);
-      dl.line (map_x + side, y, map_x + side + 4.0f, y, 1.0f);
+      line (dl, map_x - tick, y, map_x, y, hair);
+      line (dl, map_x + side, y, map_x + side + tick, y, hair);
       if (font)
         font->draw (text,
-                    map_x - 8.0f,
-                    y + 3.4f,
+                    points_value (map_x - 8.0f * u::pt),
+                    points_value (y + 3.4f * u::pt),
                     std::to_string (((k % down_km) + down_km) % down_km),
                     figure,
                     TextAlign::Right);
@@ -421,41 +540,45 @@ namespace moppe::game {
 
     // Tops: a dot now, their heights later, where the names leave room.
     struct Top {
-      float x, y;
+      points_t x, y;
       std::string words;
     };
     std::vector<Top> tops;
     for (const ReliefMap::Summit& top : m_sheet.summits) {
-      float x, y;
-      if (!place (Vec3 (top.x_m, 0.0f, top.z_m), x, y) ||
-          x > map_x + side - 30.0f || y < map_y + 10.0f ||
-          y > map_y + side - 6.0f)
+      points_t x, y;
+      if (!place (top.position, x, y) || x > map_x + side - 30.0f * u::pt ||
+          y < map_y + 10.0f * u::pt || y > map_y + side - 6.0f * u::pt)
         continue;
-      dl.color (height_ink, 1.0f);
-      disc (dl, x, y, 1.6f);
-      const int metres = static_cast<int> (std::lround (top.height_m));
+      set_ink (dl, height_ink, solid);
+      disc (dl, x, y, 1.6f * u::pt);
+      const int metres = static_cast<int> (
+        std::lround (top.above_sea.numerical_value_in (u::m)));
       tops.push_back ({ x, y, std::to_string (metres) });
     }
 
     // What is on the sheet, the most important drawn last so that
     // nothing covers it; each symbol is kept as a box in points.
     struct Placed {
-      float x, y;
+      points_t x, y;
       const Mark* mark;
     };
     std::vector<Placed> placed;
     for (const Mark& mark : marks) {
-      float x, y;
-      if (place (mark.position, x, y))
+      points_t x, y;
+      if (place (plan (mark.position), x, y))
         placed.push_back ({ x, y, &mark });
     }
     std::ranges::stable_sort (placed, std::greater<> {}, [] (const Placed& p) {
       return rank (*p.mark);
     });
+    const points_t symbol_half = 7.0f * u::pt;
     std::vector<Box> symbols;
     for (const Placed& p : placed) {
-      symbol (dl, *p.mark, p.x, p.y, 1.0f);
-      symbols.push_back ({ p.x - 7.0f, p.y - 7.0f, p.x + 7.0f, p.y + 7.0f });
+      symbol (dl, *p.mark, p.x, p.y, 1.0f * scale_factor[one]);
+      symbols.push_back ({ p.x - symbol_half,
+                           p.y - symbol_half,
+                           p.x + symbol_half,
+                           p.y + symbol_half });
     }
     if (!font)
       return;
@@ -481,8 +604,8 @@ namespace moppe::game {
       for (std::size_t i = 0; i < placed.size (); ++i)
         for (std::size_t j = i + 1; j < placed.size (); ++j)
           if (named (*placed[i].mark) && named (*placed[j].mark) &&
-              std::hypot (placed[i].x - placed[j].x,
-                          placed[i].y - placed[j].y) < 10.0f)
+              hypot (placed[i].x - placed[j].x, placed[i].y - placed[j].y) <
+                10.0f * u::pt)
             of[root (j)] = root (i);
       std::vector<std::size_t> slot (placed.size (), SIZE_MAX);
       // Most important first: each group, and the groups in turn, from
@@ -508,46 +631,56 @@ namespace moppe::game {
       // Places are named in the water's blue, sanctuaries in their own
       // ink.
       return mark.named ()
-               ? style (11.0f,
+               ? style (11.0f * u::pt,
                         mark.place == terrain::RoadPlace::Kind::Sanctuary
                           ? mark.colour
                           : DisplayColor (0.04f, 0.18f, 0.42f),
-                        0.04f)
-               : style (10.5f, map_ink, 0.02f);
+                        0.04f * proportion[one])
+               : style (10.5f * u::pt, map_ink, 0.02f * proportion[one]);
     };
     const auto meets = [] (const Box& a, const Box& b) {
       return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
     };
+    const points_t inset = 2.0f * u::pt;
     const Box sheet {
-      map_x + 2.0f, map_y + 2.0f, map_x + side - 2.0f, map_y + side - 2.0f
+      map_x + inset, map_y + inset, map_x + side - inset, map_y + side - inset
     };
+    const points_t edge = 1.0f * u::pt;
+    // Placing a label is scored by what it covers; the cheapest wins.
+    const float nowhere = 1e9f;
     std::vector<Box> set;
     for (const auto& group : groups) {
       const bool list = group.size () > 1;
-      const float line = 12.5f;
-      const float indent = list ? 12.0f : 0.0f;
-      float w = 0.0f;
+      const points_t line_height = 12.5f * u::pt;
+      const points_t indent = list ? 12.0f * u::pt : 0.0f * u::pt;
+      points_t w = 0.0f * u::pt;
       for (std::size_t i : group)
         w = std::max (
-          w, font->measure (placed[i].mark->name, words_of (*placed[i].mark)));
+          w,
+          font->measure (placed[i].mark->name, words_of (*placed[i].mark)) *
+            u::pt);
       w += indent;
-      const float h = line * static_cast<float> (group.size ()) - 1.0f;
-      Box around { 1e9f, 1e9f, -1e9f, -1e9f };
+      const points_t h =
+        line_height * static_cast<float> (group.size ()) - 1.0f * u::pt;
+      const points_t far = 1e9f * u::pt;
+      const points_t reach = 5.0f * u::pt;
+      Box around { far, far, -far, -far };
       for (std::size_t i : group)
-        around = { std::min (around[0], placed[i].x - 5.0f),
-                   std::min (around[1], placed[i].y - 5.0f),
-                   std::max (around[2], placed[i].x + 5.0f),
-                   std::max (around[3], placed[i].y + 5.0f) };
-      const float cx = 0.5f * (around[0] + around[2]);
-      const float cy = 0.5f * (around[1] + around[3]);
+        around = { std::min (around[0], placed[i].x - reach),
+                   std::min (around[1], placed[i].y - reach),
+                   std::max (around[2], placed[i].x + reach),
+                   std::max (around[3], placed[i].y + reach) };
+      const points_t cx = 0.5f * (around[0] + around[2]);
+      const points_t cy = 0.5f * (around[1] + around[3]);
 
-      float cost = 1e9f;
+      float cost = nowhere;
       Box best {};
       int ring_used = 0;
       for (int ring = 0; ring < 3; ++ring) {
-        const float d = 3.0f + 16.0f * ring;
-        const float c = 0.7f * d + 1.0f;
-        const std::array<std::pair<float, float>, 8> corners { {
+        const points_t d =
+          3.0f * u::pt + 16.0f * static_cast<float> (ring) * u::pt;
+        const points_t c = 0.7f * d + 1.0f * u::pt;
+        const std::array<std::pair<points_t, points_t>, 8> corners { {
           { around[2] + d, cy - 0.5f * h },
           { around[0] - d - w, cy - 0.5f * h },
           { around[2] + c, around[1] - c - h },
@@ -560,7 +693,7 @@ namespace moppe::game {
         for (std::size_t k = 0; k < corners.size (); ++k) {
           const auto [left, top] = corners[k];
           const Box box {
-            left - 1.0f, top - 1.0f, left + w + 1.0f, top + h + 1.0f
+            left - edge, top - edge, left + w + edge, top + h + edge
           };
           if (box[0] < sheet[0] || box[2] > sheet[2] || box[1] < sheet[1] ||
               box[3] > sheet[3])
@@ -574,9 +707,11 @@ namespace moppe::game {
             if (meets (box, other))
               here += 1000.0f;
           for (const Top& top : tops)
-            if (meets (
-                  box,
-                  { top.x - 2.0f, top.y - 2.0f, top.x + 24.0f, top.y + 5.0f }))
+            if (meets (box,
+                       { top.x - 2.0f * u::pt,
+                         top.y - 2.0f * u::pt,
+                         top.x + 24.0f * u::pt,
+                         top.y + 5.0f * u::pt }))
               here += 30.0f;
           if (here < cost) {
             cost = here;
@@ -585,7 +720,7 @@ namespace moppe::game {
           }
         }
       }
-      if (cost >= 1e9f ||
+      if (cost >= nowhere ||
           (cost >= 1000.0f && rank (*placed[group.front ()].mark) >= 4))
         continue;
       set.push_back (best);
@@ -593,48 +728,56 @@ namespace moppe::game {
       if (ring_used > 0) {
         // The leader: from the edge of the marks to the nearest point of
         // the label.
-        const float lx = std::clamp (cx, best[0], best[2]);
-        const float ly = std::clamp (cy, best[1], best[3]);
-        const float dx = lx - cx, dy = ly - cy;
-        const float n = std::max (1e-3f, std::hypot (dx, dy));
-        const float r =
-          0.5f * std::max (around[2] - around[0], around[3] - around[1]) + 1.5f;
-        dl.color (map_paper, 0.8f);
-        dl.line (cx + dx / n * r, cy + dy / n * r, lx, ly, 2.4f);
-        dl.color (map_ink, 0.75f);
-        dl.line (cx + dx / n * r, cy + dy / n * r, lx, ly, 0.8f);
+        const points_t lx = std::clamp (cx, best[0], best[2]);
+        const points_t ly = std::clamp (cy, best[1], best[3]);
+        const points_t dx = lx - cx, dy = ly - cy;
+        const points_t n = std::max (1e-3f * u::pt, hypot (dx, dy));
+        const points_t r =
+          0.5f * std::max (around[2] - around[0], around[3] - around[1]) +
+          1.5f * u::pt;
+        set_ink (dl, map_paper, 0.8f * opacity[one]);
+        line (dl, cx + dx / n * r, cy + dy / n * r, lx, ly, 2.4f * u::pt);
+        set_ink (dl, map_ink, 0.75f * opacity[one]);
+        line (dl, cx + dx / n * r, cy + dy / n * r, lx, ly, 0.8f * u::pt);
       }
       // Set toward the marks: flush right when the label is to their
       // left.
-      const bool right = best[2] <= around[0] + 0.5f;
-      float baseline = best[1] + 1.0f + 9.0f;
+      const bool right = best[2] <= around[0] + 0.5f * u::pt;
+      points_t baseline = best[1] + 1.0f * u::pt + 9.0f * u::pt;
       for (std::size_t i : group) {
         const Mark& mark = *placed[i].mark;
         const TextStyle words = words_of (mark);
         if (list)
           symbol (dl,
                   mark,
-                  right ? best[2] - 5.5f : best[0] + 5.5f,
-                  baseline - 3.6f,
-                  0.62f);
+                  right ? best[2] - 5.5f * u::pt : best[0] + 5.5f * u::pt,
+                  baseline - 3.6f * u::pt,
+                  0.62f * scale_factor[one]);
         if (right)
           label (text,
                  *font,
-                 best[2] - 1.0f - indent,
+                 best[2] - 1.0f * u::pt - indent,
                  baseline,
                  mark.name,
                  words,
                  TextAlign::Right);
         else
-          label (
-            text, *font, best[0] + 1.0f + indent, baseline, mark.name, words);
-        baseline += line;
+          label (text,
+                 *font,
+                 best[0] + 1.0f * u::pt + indent,
+                 baseline,
+                 mark.name,
+                 words);
+        baseline += line_height;
       }
     }
 
     // The heights of tops, where they are clear of the names and marks.
     for (const Top& top : tops) {
-      const Box box { top.x + 3.5f, top.y - 6.5f, top.x + 24.0f, top.y + 5.0f };
+      const Box box { top.x + 3.5f * u::pt,
+                      top.y - 6.5f * u::pt,
+                      top.x + 24.0f * u::pt,
+                      top.y + 5.0f * u::pt };
       if (std::ranges::any_of (set,
                                [&] (const Box& b) { return meets (box, b); }) ||
           std::ranges::any_of (symbols,
@@ -642,72 +785,96 @@ namespace moppe::game {
         continue;
       label (text,
              *font,
-             top.x + 4.5f,
-             top.y + 3.4f,
+             top.x + 4.5f * u::pt,
+             top.y + 3.4f * u::pt,
              top.words,
-             style (10.5f, height_ink));
+             style (10.5f * u::pt, height_ink));
     }
 
     // Under the map: what sheet this is, a scale, and north.
-    const float line_one = map_y + side + 24.0f;
-    const float line_two = line_one + 17.0f;
-    font->draw (text, map_x, line_one, title, style (15.0f, map_ink, 0.14f));
+    const points_t line_one = map_y + side + 24.0f * u::pt;
+    const points_t line_two = line_one + 17.0f * u::pt;
+    font->draw (text,
+                points_value (map_x),
+                points_value (line_one),
+                title,
+                style (15.0f * u::pt, map_ink, 0.14f * proportion[one]));
     const std::string size_words =
       distance_words (period_x) == distance_words (period_z)
         ? std::to_string (across_km) + " × " + distance_words (period_z)
         : distance_words (period_x) + " × " + distance_words (period_z);
-    font->draw (
-      text,
-      map_x,
-      line_two,
-      size_words + "  ·  contours " +
-        std::to_string (static_cast<int> (m_sheet.contour_interval_m)) +
-        " m  ·  heights in metres above the sea",
-      style (10.0f, map_ink));
+    font->draw (text,
+                points_value (map_x),
+                points_value (line_two),
+                size_words + "  ·  contours " +
+                  std::to_string (static_cast<int> (
+                    m_sheet.contour_interval.numerical_value_in (u::m))) +
+                  " m  ·  heights in metres above the sea",
+                style (10.0f * u::pt, map_ink));
 
     // The scale: two lengths of a round number, the first halved.
-    const float nice[] = { 50.0f,  100.0f,  200.0f, 250.0f,
-                           500.0f, 1000.0f, 2000.0f };
-    float unit = nice[0];
-    for (const float candidate : nice)
+    const meters_t nice[] = { 50.0f * u::m,  100.0f * u::m, 200.0f * u::m,
+                              250.0f * u::m, 500.0f * u::m, 1000.0f * u::m,
+                              2000.0f * u::m };
+    meters_t unit = nice[0];
+    for (const meters_t candidate : nice)
       if (2.0f * candidate <= 0.30f * span)
         unit = candidate;
-    const float bar_right = map_x + side - 46.0f;
-    const float bar_left = bar_right - 2.0f * unit * scale;
-    const float bar_y = line_one - 7.0f;
-    dl.color (map_ink, 1.0f);
-    box (dl, bar_left - 0.8f, bar_y - 0.8f, bar_right + 0.8f, bar_y + 4.8f);
-    dl.color (map_paper, 1.0f);
+    const points_t bar_right = map_x + side - 46.0f * u::pt;
+    const points_t bar_left = bar_right - 2.0f * unit * scale;
+    const points_t bar_y = line_one - 7.0f * u::pt;
+    const points_t bar_edge = 0.8f * u::pt;
+    set_ink (dl, map_ink, solid);
+    box (dl,
+         bar_left - bar_edge,
+         bar_y - bar_edge,
+         bar_right + bar_edge,
+         bar_y + 4.8f * u::pt);
+    set_ink (dl, map_paper, solid);
     box (dl,
          bar_left + 0.5f * unit * scale,
          bar_y,
          bar_left + unit * scale,
-         bar_y + 4.0f);
-    box (dl, bar_left + 1.5f * unit * scale, bar_y, bar_right, bar_y + 4.0f);
-    const TextStyle scale_figure = style (9.5f, map_ink);
-    font->draw (text, bar_left, line_two, "0", scale_figure, TextAlign::Center);
+         bar_y + 4.0f * u::pt);
+    box (dl,
+         bar_left + 1.5f * unit * scale,
+         bar_y,
+         bar_right,
+         bar_y + 4.0f * u::pt);
+    const TextStyle scale_figure = style (9.5f * u::pt, map_ink);
     font->draw (text,
-                bar_left + unit * scale,
-                line_two,
+                points_value (bar_left),
+                points_value (line_two),
+                "0",
+                scale_figure,
+                TextAlign::Center);
+    font->draw (text,
+                points_value (bar_left + unit * scale),
+                points_value (line_two),
                 distance_words (unit),
                 scale_figure,
                 TextAlign::Center);
     font->draw (text,
-                bar_right,
-                line_two,
+                points_value (bar_right),
+                points_value (line_two),
                 distance_words (2.0f * unit),
                 scale_figure,
                 TextAlign::Center);
 
-    const float north_x = map_x + side - 12.0f;
-    dl.color (map_ink, 1.0f);
-    dl.line (north_x, line_two - 9.0f, north_x, line_one - 10.0f, 1.2f);
-    arrow (dl, north_x, line_one - 12.0f, 0.0f, -1.0f, 7.0f);
+    const points_t north_x = map_x + side - 12.0f * u::pt;
+    set_ink (dl, map_ink, solid);
+    line (dl,
+          north_x,
+          line_two - 9.0f * u::pt,
+          north_x,
+          line_one - 10.0f * u::pt,
+          neat);
+    arrow (dl, north_x, line_one - 12.0f * u::pt, north_way, 7.0f * u::pt);
     font->draw (text,
-                north_x,
-                line_two + 1.0f,
+                points_value (north_x),
+                points_value (line_two + 1.0f * u::pt),
                 "N",
-                style (10.0f, map_ink),
+                style (10.0f * u::pt, map_ink),
                 TextAlign::Center);
 
     dl.state (render::DrawState ());

@@ -292,7 +292,7 @@ MOPPE_TEST (fluvial_capacity_is_typed_discharge_times_slope_and_time) {
                                           mp_units::astronomy::Julian_year,
                                         10.0f * u::m * u::m,
                                         0.5f * terrain_slope[mp_units::one],
-                                        0.25f,
+                                        0.25f * proportion[mp_units::one],
                                         transport);
   };
 

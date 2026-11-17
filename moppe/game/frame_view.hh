@@ -26,8 +26,8 @@ namespace moppe::game {
   // frame.  Keeping its view matrix here preserves cinematics' banked camera
   // while still letting FrameView apply riding-only shake afterward.
   struct FrameCameraReading {
-    Vec3 position {};
-    Vec3 forward { 0, 0, 1 };
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
     Mat4 view {};
     degrees_t field_of_view = 70.0f * u::deg;
   };
@@ -36,27 +36,28 @@ namespace moppe::game {
   // its visible pose.  They intentionally omit controls and physical state.
   struct VehiclePose {
     // The drawn frame's origin, about a metre above the ground at rest.
-    Vec3 position {};
-    Vec3 render_orientation { 0, 0, 1 };
-    Vec3 render_normal { 0, 1, 0 };
-    // Metres each wheel hangs below its rest position along the frame's
+    position_t position {};
+    direction_t render_orientation = unit_direction (Vec3 (0, 0, 1));
+    direction_t render_normal = unit_direction (Vec3 (0, 1, 0));
+    // How far each wheel hangs below its rest position along the frame's
     // down axis; negative is compressed.
-    float rear_wheel_drop = 0.0f;
-    float front_wheel_drop = 0.0f;
-    float lean_radians = 0.0f;
-    float wheel_spin_radians = 0.0f;
+    meters_t rear_wheel_drop = 0.0f * u::m;
+    meters_t front_wheel_drop = 0.0f * u::m;
+    radians_t lean = 0.0f * u::rad;
+    radians_t wheel_spin = 0.0f * u::rad;
     // Fork angle about the steering head; positive turns right.
-    float fork_radians = 0.0f;
-    float thrust = 0.0f;
-    float boost_level = 0.0f;
-    float boost_drive = 0.0f;
+    radians_t fork = 0.0f * u::rad;
+    control_signal_t thrust = 0.0f * control_signal[one];
+    // How full the jets' charge is and how hard they drive, 0..1.
+    proportion_t boost_level = 0.0f * proportion[one];
+    proportion_t boost_drive = 0.0f * proportion[one];
     // Drawn at this share of its size.
-    float scale = 1.0f;
-    // A pedalled bike's crank, radians round from the right arm down.
-    float crank_radians = 0.0f;
-    // How far back the rider leans for a wheelie, a share of the way
+    scale_factor_t scale = 1.0f * scale_factor[one];
+    // A pedalled bike's crank, round from the right arm down.
+    radians_t crank = 0.0f * u::rad;
+    // How far back the rider leans for a wheelie, -1..1 of the way
     // (negative forward; mov::Vehicle::rider_lean).
-    float rider_lean = 0.0f;
+    control_signal_t rider_lean = 0.0f * control_signal[one];
   };
 
   // A car (the jeep, the Caddy) as drawn: its origin (midway between the axles,
@@ -64,36 +65,36 @@ namespace moppe::game {
   // it stands (front left, front right, rear left, rear right; negative is
   // pressed), the front wheels' turn to the right, and the wheels' roll.
   struct CarPose {
-    Vec3 position {};
-    Vec3 forward { 0, 0, 1 };
-    Vec3 up { 0, 1, 0 };
-    std::array<float, 4> wheel_drop {};
-    float steer_radians = 0.0f;
-    float wheel_spin_radians = 0.0f;
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    std::array<meters_t, 4> wheel_drop {};
+    radians_t steer = 0.0f * u::rad;
+    radians_t wheel_spin = 0.0f * u::rad;
     // Drawn at this share of its size.
-    float scale = 1.0f;
+    scale_factor_t scale = 1.0f * scale_factor[one];
     // How it moves: someone riding along moves with it.
-    Vec3 velocity {};
+    velocity_t velocity {};
   };
 
   // The helicopter's line and its load's bridle as drawn
   // (game/sling.hh): the hook, the ring the legs meet at, where each leg
   // is made fast, and whether the line is taut.
   struct SlingPose {
-    Vec3 hook;
-    Vec3 ring;
-    std::array<Vec3, 4> legs {};
+    position_t hook;
+    position_t ring;
+    std::array<position_t, 4> legs {};
     bool taut = false;
   };
 
   // The helicopter as drawn: its origin (under the mast, level with the
   // skids' bottoms) and frame, and how far round each rotor has turned.
   struct HelicopterPose {
-    Vec3 position {};
-    Vec3 forward { 0, 0, 1 };
-    Vec3 up { 0, 1, 0 };
-    float rotor_radians = 0.0f;
-    float tail_radians = 0.0f;
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    radians_t rotor = 0.0f * u::rad;
+    radians_t tail = 0.0f * u::rad;
   };
 
   // The tractor as drawn: its origin (midway between the axles, on the
@@ -103,33 +104,33 @@ namespace moppe::game {
   // each pair has rolled; and its trailer's origin (on the ground under
   // its axle), frame, wheels' drop (left, right), and roll.
   struct TractorPose {
-    Vec3 position {};
-    Vec3 forward { 0, 0, 1 };
-    Vec3 up { 0, 1, 0 };
-    std::array<float, 4> wheel_drop {};
-    float steer_radians = 0.0f;
-    float front_spin_radians = 0.0f;
-    float rear_spin_radians = 0.0f;
-    Vec3 trailer_position { 0, 0, -3.72f };
-    Vec3 trailer_forward { 0, 0, 1 };
-    Vec3 trailer_up { 0, 1, 0 };
-    std::array<float, 2> trailer_wheel_drop {};
-    float trailer_spin_radians = 0.0f;
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    std::array<meters_t, 4> wheel_drop {};
+    radians_t steer = 0.0f * u::rad;
+    radians_t front_spin = 0.0f * u::rad;
+    radians_t rear_spin = 0.0f * u::rad;
+    position_t trailer_position = moppe::position (Vec3 (0, 0, -3.72f));
+    direction_t trailer_forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t trailer_up = unit_direction (Vec3 (0, 1, 0));
+    std::array<meters_t, 2> trailer_wheel_drop {};
+    radians_t trailer_spin = 0.0f * u::rad;
   };
 
   // The boat as drawn: its origin (on the keel a quarter of the way
   // along) and frame, how far its long-tail is swung and tipped up, how
   // far round the propeller has turned, and the engine's speed.
   struct BoatPose {
-    Vec3 position {};
-    Vec3 forward { 0, 0, 1 };
-    Vec3 up { 0, 1, 0 };
-    float swing_radians = 0.0f;
-    float tilt_radians = 0.0f;
-    float propeller_radians = 0.0f;
-    float rpm = 0.0f;
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    radians_t swing = 0.0f * u::rad;
+    radians_t tilt = 0.0f * u::rad;
+    radians_t propeller = 0.0f * u::rad;
+    proportion_t rpm = 0.0f * proportion[one];
     // How it moves: someone riding along moves with it.
-    Vec3 velocity {};
+    velocity_t velocity {};
   };
 
   // The jet ski as drawn: its origin (on the keel under the front of
@@ -137,14 +138,14 @@ namespace moppe::game {
   // the bow to the right), how far its rider leans (positive to the
   // right), and the engine's speed.
   struct JetSkiPose {
-    Vec3 position {};
-    Vec3 forward { 0, 0, 1 };
-    Vec3 up { 0, 1, 0 };
-    float steer_radians = 0.0f;
-    float lean_radians = 0.0f;
-    float rpm = 0.0f;
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    radians_t steer = 0.0f * u::rad;
+    radians_t lean = 0.0f * u::rad;
+    proportion_t rpm = 0.0f * proportion[one];
     // How it moves.
-    Vec3 velocity {};
+    velocity_t velocity {};
   };
 
   // What a frame shows of each kind of machine, and of the fleet
@@ -180,32 +181,36 @@ namespace moppe::game {
   using FleetPoses = FleetOf<PoseOf>;
 
   struct GliderPose {
-    Vec3 position {};
-    Vec3 heading { 0, 0, 1 };
-    float bank_radians = 0.0f;
+    position_t position {};
+    direction_t heading = unit_direction (Vec3 (0, 0, 1));
+    radians_t bank = 0.0f * u::rad;
     bool bike_attached = false;
   };
 
   // Everything the avatar's procedural animation reads: where the feet
   // are and how the body is moving over the ground, not its controls.
   struct WalkerPose {
-    Vec3 position {};         // the feet, eased over steps
-    Vec3 heading { 0, 0, 1 }; // the way the body faces
-    // How far round to the right the look is from the body, radians,
-    // and how fast the body turns after it, rad/s.
-    float look_aside = 0.0f;
-    float turn_speed = 0.0f;
-    Vec3 velocity {};
-    Vec3 ground_normal { 0, 1, 0 };
-    float stride_phase = 0.0f;
-    float stride_speed = 0.0f; // m/s
+    position_t position {}; // the feet, eased over steps
+    // The way the body faces.
+    direction_t heading = unit_direction (Vec3 (0, 0, 1));
+    // How far round to the right the look is from the body, and how fast
+    // the body turns after it.
+    radians_t look_aside = 0.0f * u::rad;
+    radians_per_second_t turn_speed = 0.0f * u::rad / u::s;
+    velocity_t velocity {};
+    direction_t ground_normal = unit_direction (Vec3 (0, 1, 0));
+    // How far through the gait cycle; the left foot strikes at zero and
+    // the right at one half.
+    proportion_t stride_phase = 0.0f * proportion[one];
+    speed_t stride_speed = 0.0f * u::m / u::s;
     bool grounded = true;
-    float airborne_seconds = 0.0f;
-    float vertical_speed = 0.0f; // m/s, up positive
-    float landing_dip = 0.0f;    // metres
-    float look_pitch = 0.0f;     // radians, up positive
+    seconds_t airborne = 0.0f * u::s;
+    // Up positive.
+    speed_t vertical_speed = 0.0f * u::m / u::s;
+    meters_t landing_dip = 0.0f * u::m;
+    inclination_t look_pitch = 0.0f * inclination[u::rad];
     // Hauling: where the rope in the right hand is tied.
-    std::optional<Vec3> rope_end;
+    std::optional<position_t> rope_end;
     // Fishing: the rod in the right hand and its line.
     std::optional<RodPose> rod;
   };
@@ -227,38 +232,40 @@ namespace moppe::game {
   // Renderer-free readings for the compact driving HUD. They deliberately
   // mirror the HUD's value inputs without importing its DrawList dependency
   // into FrameView. The trail map needs the unprojected subject reading too.
+
   struct FrameHud {
-    float speed_kmh = 0.0f;
-    float boost_ready01 = 1.0f;
-    float health01 = 1.0f;
-    float odometer_m = 0.0f;
+    kilometres_per_hour_t speed = 0.0f * si::kilo<si::metre> / si::hour;
+    proportion_t boost_ready = 1.0f * proportion[one];
+    proportion_t health = 1.0f * proportion[one];
+    meters_t odometer = 0.0f * u::m;
     int lives = 10;
     int stars = 0;
     int score = 0;
-    float airtime_s = 0.0f;
-    float spin_degrees = 0.0f;
-    float landed_airtime_s = 0.0f;
-    float landed_spin_degrees = 0.0f;
+    seconds_t airtime = 0.0f * u::s;
+    degrees_t spin = 0.0f * u::deg;
+    seconds_t landed_airtime = 0.0f * u::s;
+    degrees_t landed_spin = 0.0f * u::deg;
     int landed_points = 0;
     bool landed_clean = false;
-    float landed_age_s = 10.0f;
+    seconds_t landed_age = 10.0f * u::s;
     // GameLogicState's wheelie readings.
-    float wheelie_m = 0.0f;
-    float last_wheelie_m = 0.0f;
+    meters_t wheelie = 0.0f * u::m;
+    meters_t last_wheelie = 0.0f * u::m;
     int last_wheelie_points = 0;
-    float best_wheelie_m = 0.0f;
-    float wheelie_age_s = 10.0f;
+    meters_t best_wheelie = 0.0f * u::m;
+    seconds_t wheelie_age = 10.0f * u::s;
     bool on_foot = false;
     bool gliding = false;
-    float vertical_speed_mps = 0.0f;
-    float frame_time_s = 1.0f / 60.0f;
-    float heading_radians = 0.0f;
-    Vec3 subject_position {};
-    Vec3 subject_heading { 0, 0, 1 };
+    // Up positive.
+    speed_t vertical_speed = 0.0f * u::m / u::s;
+    seconds_t frame_time = (1.0f / 60.0f) * u::s;
+    heading_t heading = 0.0f * moppe::heading[u::rad];
+    position_t subject_position {};
+    direction_t subject_heading = unit_direction (Vec3 (0, 0, 1));
   };
 
   struct FrameOverlay {
-    float cinematic_prompt_alpha = 0.0f;
+    proportion_t cinematic_prompt_alpha = 0.0f * proportion[one];
   };
 
   // These flags retain the existing render paragraphs' selection decisions.
@@ -281,52 +288,59 @@ namespace moppe::game {
   struct FrameCamera {
     // The selected camera body remains stable when shake rotates only its
     // reading.  `frame_*` is derived from the final shaken view matrix.
-    Vec3 position {};
-    Vec3 forward { 0, 0, 1 };
-    Vec3 right { 1, 0, 0 };
-    Vec3 up { 0, 1, 0 };
-    Vec3 frame_forward { 0, 0, 1 };
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t right = unit_direction (Vec3 (1, 0, 0));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
+    direction_t frame_forward = unit_direction (Vec3 (0, 0, 1));
     Mat4 view {};
     Mat4 projection {};
     degrees_t field_of_view = 70.0f * u::deg;
-    float aspect = 1.0f;
+    aspect_ratio_t aspect = 1.0f * aspect_ratio[one];
   };
 
   struct FrameLighting {
     DisplayColor fog_color {};
     DisplayColor clear_color {};
     attenuation_t fog_scale = 0.0f / u::m;
-    Vec3 sun_direction {};
+    direction_t sun_direction {};
     DisplayColor sun_diffuse {};
     DisplayColor sun_specular {};
     DisplayColor ambient {};
-    float sun_height = 0.62f;
-    float time = 0.0f;
+    // How high the sun stands, as the art direction reads it: a half on
+    // the horizon (game/daylight.hh).
+    proportion_t sun_height = 0.62f * proportion[one];
+    // Seconds into play, the clock everything animated reads.
+    seconds_t time = 0.0f * u::s;
     cloud_cover_t cloudiness = 0.0f * cloud_cover[mp_units::one];
-    float sun_visibility = 0.0f;
-    float exposure_bias = 1.0f;
-    float mist = 0.0f;
-    float rain = 0.0f;
+    // How much of the sun the camera sees.
+    proportion_t sun_visibility = 0.0f * proportion[one];
+    scale_factor_t exposure_bias = 1.0f * scale_factor[one];
+    // The weather (game/weather.hh): mist lying in the valleys, and rain,
+    // 1 a drizzle and up to 2.5 a downpour.
+    proportion_t mist = 0.0f * proportion[one];
+    scale_factor_t rain = 0.0f * scale_factor[one];
     // `sun_direction` is the key light, which at night is the moon; these
     // are the sky itself (game/daylight.hh).
-    Vec3 sky_sun { 0, 1, 0 };
-    Vec3 sky_moon { 0, -1, 0 };
-    Vec3 sky_pole { 0, 1, 0 };
-    float sky_turn = 0.0f;
-    float moonlight = 0.0f;
-    float daylight = 1.0f;
+    direction_t sky_sun = unit_direction (Vec3 (0, 1, 0));
+    direction_t sky_moon = unit_direction (Vec3 (0, -1, 0));
+    direction_t sky_pole = unit_direction (Vec3 (0, 1, 0));
+    radians_t sky_turn = 0.0f * u::rad;
+    proportion_t moonlight = 0.0f * proportion[one];
+    proportion_t daylight = 1.0f * proportion[one];
     // A fire's light: where it burns, how far it reaches, and its colour
     // at full strength. No reach, no fire.
-    Vec3 lamp_position {};
-    float lamp_reach = 0.0f;
+    position_t lamp_position {};
+    meters_t lamp_reach = 0.0f * u::m;
     DisplayColor lamp_color {};
   };
 
   struct FrameGraphics {
-    float scene_scale = 1.0f;
-    float render_scale_override = 0.0f;
+    scale_factor_t scene_scale = 1.0f * scale_factor[one];
+    scale_factor_t render_scale_override = 0.0f * scale_factor[one];
+    // Millions of pixels; zero, no budget.
     float scene_megapixel_budget = 0.0f;
-    float target_frame_rate = 0.0f;
+    frequency_t target_frame_rate = 0.0f * u::Hz;
     bool bloom = true;
     bool auto_exposure = true;
     bool lens_flare = true;
@@ -346,12 +360,13 @@ namespace moppe::game {
     FrameHud hud {};
     FrameOverlay overlay {};
     FrameVisibility visibility {};
-    float terrain_distance = 0.0f;
-    float motion_blur_amount = 0.0f;
-    // Water at the final camera's x,z, in world metres including waves.
-    // Present above the surface too, and when water is hidden; absent
-    // over dry ground. The camera's height gives the depth below it.
-    std::optional<float> camera_water_level;
+    meters_t terrain_distance = 0.0f * u::m;
+    // How long the motion blur draws streaks, a share of a frame's motion.
+    proportion_t motion_blur_amount = 0.0f * proportion[one];
+    // Water at the final camera's x,z, including waves. Present above the
+    // surface too, and when water is hidden; absent over dry ground. The
+    // camera's height gives the depth below it.
+    std::optional<terrain::SurfaceElevation> camera_water_level;
   };
 
   struct FrameViewInput {
@@ -361,9 +376,9 @@ namespace moppe::game {
     const GraphicsSettings& graphics;
     FrameCameraReading selected_camera {};
     FrameSceneMode scene = FrameSceneMode::Gameplay;
-    float aspect = 1.0f;
-    float cinematic_motion_blur = 0.0f;
-    float cinematic_elapsed = 0.0f;
+    aspect_ratio_t aspect = 1.0f * aspect_ratio[one];
+    proportion_t cinematic_motion_blur = 0.0f * proportion[one];
+    seconds_t cinematic_elapsed = 0.0f * u::s;
     // A cinematic camera away from the player's eyes shows the figure that
     // the first-person view otherwise leaves undrawn.
     bool reveal_player = false;
@@ -378,11 +393,11 @@ namespace moppe::game {
 
   // Shared pure art-direction readings.  The application can update its
   // weather before composition without rendering needing to mutate it.
-  Vec3 sun_direction_for (float sun_height);
-  void sun_light_colors_for (float sun_height,
+  direction_t sun_direction_for (proportion_t sun_height);
+  void sun_light_colors_for (proportion_t sun_height,
                              DisplayColor& diffuse,
                              DisplayColor& specular);
-  DisplayColor horizon_color_for (float sun_height);
+  DisplayColor horizon_color_for (proportion_t sun_height);
 
   VehiclePose pose (const mov::Vehicle& vehicle);
   CarPose pose (const mov::Car& car);
@@ -394,7 +409,9 @@ namespace moppe::game {
   FleetPoses poses (const Fleet& fleet);
   // The bike and the jeep as they ride in the Caddy (game/sling.hh).
   GliderPose glider_pose (const mov::Glider& glider);
-  WalkerPose walker_pose (const Walker& walker, float look_pitch = 0.0f);
+  WalkerPose walker_pose (const Walker& walker,
+                          inclination_t look_pitch = 0.0f *
+                                                     inclination[u::rad]);
   FrameView compose_frame_view (const FrameViewInput& input);
 
   // How long the motion blur draws the world's streaks, as a share of a
@@ -404,14 +421,14 @@ namespace moppe::game {
   // cruises at, the Trail 90 only past what it reaches unboosted. On foot and
   // in the air there is none: the ground is far off from a wing or a cabin, so
   // what streaks there is the camera's turning, not speed.
-  float motion_blur_for (Doing mode, float kmh);
+  proportion_t motion_blur_for (Doing mode, kilometres_per_hour_t speed);
 
   // The raw, unsmoothed sight line toward the sun.  The game updates its
   // small temporal accumulator in tick(); this remains a pure reading so
   // composing or rendering a FrameView cannot advance simulation state.
-  float sun_visibility_target (const FrameView& view,
-                               const WorldParams& world,
-                               const map::SurfaceGeometry& surface);
+  proportion_t sun_visibility_target (const FrameView& view,
+                                      const WorldParams& world,
+                                      const map::SurfaceGeometry& surface);
 }
 
 #endif

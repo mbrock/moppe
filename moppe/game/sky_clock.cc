@@ -68,13 +68,14 @@ namespace moppe::game {
     read_sky (logic);
     // By night the haze keeps the sky's own dark blue, and an overcast
     // greys only as far as there is light to grey it.
-    const float lit = 0.12f + 0.88f * m_sky.daylight;
+    const scale_factor_t lit =
+      (0.12f + 0.88f * m_sky.daylight) * scale_factor[one];
     logic.m_fog = mix_display (
       mix_display (m_sky.horizon,
                    scale_display (DisplayColor (0.90f, 0.94f, 1.0f), lit),
-                   0.18f),
+                   0.18f * blend_weight[one]),
       scale_display (weather.fog_tint, lit),
-      weather.fog_tint_amount);
+      weather.fog_tint_amount * blend_weight[one]);
   }
 
   Weather SkyClock::read_weather (const GameLogicState& logic) {

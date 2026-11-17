@@ -29,6 +29,8 @@ namespace moppe {
 
   using meters_t = mp_units::quantity<mp_units::si::metre, float>;
   using meters_f64_t = mp_units::quantity<mp_units::si::metre, double>;
+  // Seconds kept in double, for clocks that run for a whole session.
+  using seconds_f64_t = mp_units::quantity<mp_units::si::second, double>;
   using square_meters_t =
     mp_units::quantity<mp_units::si::metre * mp_units::si::metre, float>;
   using cubic_meters_t =
@@ -92,6 +94,12 @@ namespace moppe {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+  // How done food is over the fire: none raw, one cooked through (fried
+  // golden brown), two burnt black. A stage, not a share: it passes one.
+  QUANTITY_SPEC (doneness,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
   // A size or a strength relative to a reference: a mesh's scale, a gain,
   // a multiplier on a tuned value. May exceed one.
   QUANTITY_SPEC (scale_factor,
@@ -110,6 +118,24 @@ namespace moppe {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+  // Where across a width, signed: -1 at one edge, 0 on the centre line, +1
+  // at the other (a waterfall curtain's columns).
+  QUANTITY_SPEC (span_coordinate, mp_units::dimensionless, mp_units::subkind);
+  // A bed's shear stress over its grains' submerged weight; past its
+  // critical value the flow rolls them along.
+  QUANTITY_SPEC (shields_number,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  // The power one measure grows by with another, d ∝ w^k: how a river's
+  // depth follows its width. Not a scale: it is an exponent, raised to.
+  QUANTITY_SPEC (scaling_exponent, mp_units::dimensionless, mp_units::subkind);
+  // A picture's width over its height: a camera's frame, a viewport.
+  QUANTITY_SPEC (aspect_ratio,
+                 mp_units::dimensionless,
+                 mp_units::isq::width / mp_units::isq::height,
+                 mp_units::non_negative,
+                 mp_units::subkind);
   // Which way, and nothing of how far: a unit-length vector. A normal, a
   // forward, an axis; the plan's version is a unit Vec2.
   QUANTITY_SPEC (direction,
@@ -124,6 +150,12 @@ namespace moppe {
   // converts to a plain radian quantity, but neither becomes the other.
   QUANTITY_SPEC (heading, mp_units::isq::angular_measure);
   QUANTITY_SPEC (inclination, mp_units::isq::angular_measure);
+
+  // ---- Pointers ----
+  //
+  // How far a pointer's wheel was turned, in its steps or the fraction of
+  // one a touchpad gives.
+  QUANTITY_SPEC (wheel_travel, mp_units::dimensionless, mp_units::subkind);
 
   // ---- History ----
 
@@ -166,6 +198,36 @@ namespace moppe {
   QUANTITY_SPEC (z_displacement,
                  mp_units::isq::displacement,
                  mp_units::subkind);
+
+  // ---- The screen ----
+  //
+  // Lengths on the display in its logical points, which the HUD and the
+  // map sheet lay out in, a pointer and the safe insets are measured in,
+  // and the host maps to pixels. They have their own
+  // dimension: a point on the glass is no length in the world and never
+  // converts to a metre.
+  inline constexpr struct dim_display_length final
+      : mp_units::base_dimension<"P"> {
+  } dim_display_length;
+  QUANTITY_SPEC (display_length, dim_display_length);
+  inline constexpr struct display_point final
+      : mp_units::named_unit<"pt", mp_units::kind_of<display_length>> {
+  } display_point;
+  // Lengths in a raster's own pixels: an image being drawn or read, such
+  // as the map sheet's line work. Another dimension again, since how many
+  // pixels a point covers is the host's render scale at run time, a
+  // quantity in px/pt, never a fixed conversion.
+  inline constexpr struct dim_raster_length final
+      : mp_units::base_dimension<"Px"> {
+  } dim_raster_length;
+  QUANTITY_SPEC (raster_length, dim_raster_length);
+  inline constexpr struct pixel final
+      : mp_units::named_unit<"px", mp_units::kind_of<raster_length>> {
+  } pixel;
+
+  // How solid something drawn is, from unseen (0) to opaque (1): a fade's
+  // level, a colour's alpha.
+  QUANTITY_SPEC (opacity, proportion);
 }
 
 template <>
@@ -216,6 +278,16 @@ namespace moppe::terrain {
                  mp_units::isq::speed,
                  mp_units::quantity_tensor_order::vector,
                  mp_units::subkind);
+  // How fine the bed a river's flood leaves, on the logarithmic scale grain
+  // sizes are graded on: 0 for cobbles and coarser, 1 for sand. Negative
+  // where no river sorted the ground.
+  QUANTITY_SPEC (bed_grain_fineness,
+                 mp_units::dimensionless,
+                 mp_units::subkind);
+  // How far up a river's strand the ground stands, as a share of the rise
+  // from the water's edge (0) to the spate's line (1). Negative off the
+  // strands.
+  QUANTITY_SPEC (strand_height, mp_units::dimensionless, mp_units::subkind);
 
   // ---- Drainage ----
 
@@ -234,6 +306,15 @@ namespace moppe::terrain {
   QUANTITY_SPEC (fractional_contributing_area,
                  mp_units::isq::area,
                  mp_units::non_negative);
+  // A ratio's base-2 logarithm, counted in doublings: how many octaves of
+  // catchment a cell gathers, or how far a wetness index runs.
+  QUANTITY_SPEC (octave_span, mp_units::dimensionless, mp_units::subkind);
+  // The power catchment area is raised to in a stream-power law: how much
+  // faster a bigger river cuts.
+  QUANTITY_SPEC (stream_power_exponent,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
 
   // A horizontal, unit-length representative of the directed flow carried by
   // a lattice sample. Unlike drainage_direction, this can be averaged across
@@ -279,6 +360,9 @@ namespace moppe::terrain {
 
   QUANTITY_SPEC (trail_influence, proportion);
   QUANTITY_SPEC (home_base_influence, proportion);
+  // How much a planner likes one candidate over another: a weighted sum of
+  // tuned preferences, compared only with scores from the same planner.
+  QUANTITY_SPEC (planning_score, mp_units::dimensionless, mp_units::subkind);
 }
 
 namespace moppe::map {
@@ -361,12 +445,31 @@ namespace moppe::game {
   // vegetation proportions until the renderer narrows it to a GPU lane.
   QUANTITY_SPEC (cloud_cover, proportion);
 
+  // ---- The rider ----
+
+  // How much harm the rider can still take, counted in points: a hundred
+  // when whole, none when a life is lost. A crash may take it below
+  // nothing for a moment, so it is not a proportion of anything.
+  QUANTITY_SPEC (health, mp_units::dimensionless, mp_units::subkind);
+
+  // ---- Fishing ----
+
+  // How far a fish on the line twists to one side (positive) or the
+  // other, as a share of its fullest bend: signed, so not a proportion.
+  QUANTITY_SPEC (wriggle, mp_units::dimensionless, mp_units::subkind);
+
   // ---- Organisms ----
 
   // A tree's size relative to the species' mature representative. Unlike a
   // proportion this may exceed one, and unlike a bare scalar it cannot be
   // confused with canopy recruitment or a random draw.
   QUANTITY_SPEC (tree_size_factor,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  // Leaf area over the ground area it covers: the canopy's, or the fallen
+  // leaves' on the forest floor.
+  QUANTITY_SPEC (leaf_area_index,
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);

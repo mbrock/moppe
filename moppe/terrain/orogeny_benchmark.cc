@@ -84,14 +84,16 @@ int main (int argc, char** argv) {
       const StreamPowerEvolutionReport report =
         map::evolve_terrain (surface, uplift, evolution);
       const auto stop = std::chrono::steady_clock::now ();
-      const double elapsed_ms =
-        std::chrono::duration<double, std::milli> (stop - start).count ();
+      const quantity<si::milli<si::second>, double> elapsed =
+        std::chrono::duration<double, std::milli> (stop - start).count () *
+        si::milli<si::second>;
 
       std::cout << resolution << ','
                 << static_cast<std::size_t> (resolution) *
                      static_cast<std::size_t> (resolution)
                 << ',' << seed << ',' << steps << ',' << repeat << ','
-                << std::fixed << std::setprecision (3) << elapsed_ms << ","
+                << std::fixed << std::setprecision (3)
+                << elapsed.numerical_value_in (si::milli<si::second>) << ","
                 << std::hex << height_hash (surface) << std::dec << ','
                 << report.final_step_mean_change.numerical_value_in (u::m)
                 << ','

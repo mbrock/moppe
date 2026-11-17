@@ -90,11 +90,11 @@ namespace moppe {
       return std::string (directory.path.UTF8String) + "/" + relative;
     }
 
-    double now () {
+    host_time_t now () {
       using namespace std::chrono;
-      return duration_cast<duration<double>> (
-               steady_clock::now ().time_since_epoch ())
-        .count ();
+      return host_time (duration_cast<duration<double>> (
+                          steady_clock::now ().time_since_epoch ())
+                          .count ());
     }
 
     void say (const std::string& phrase) {

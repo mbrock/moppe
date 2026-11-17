@@ -42,14 +42,22 @@ namespace moppe::platform {
       if (!controller)
         return;
 
+      using mp_units::one;
+      // The controller's axes and triggers as the game's signals.
+      const auto stick = [] (GCControllerAxisInput* axis) {
+        return axis.value * control_signal[one];
+      };
+      const auto trigger = [] (GCControllerButtonInput* button) {
+        return button.value * proportion[one];
+      };
       GamepadReading r;
       if (GCExtendedGamepad* pad = controller.extendedGamepad) {
-        r.left_x = pad.leftThumbstick.xAxis.value;
-        r.left_y = pad.leftThumbstick.yAxis.value;
-        r.right_x = pad.rightThumbstick.xAxis.value;
-        r.right_y = pad.rightThumbstick.yAxis.value;
-        r.left_trigger = pad.leftTrigger.value;
-        r.right_trigger = pad.rightTrigger.value;
+        r.left_x = stick (pad.leftThumbstick.xAxis);
+        r.left_y = stick (pad.leftThumbstick.yAxis);
+        r.right_x = stick (pad.rightThumbstick.xAxis);
+        r.right_y = stick (pad.rightThumbstick.yAxis);
+        r.left_trigger = trigger (pad.leftTrigger);
+        r.right_trigger = trigger (pad.rightTrigger);
         r.a = button_down (pad.buttonA);
         r.b = button_down (pad.buttonB);
         r.x = button_down (pad.buttonX);
@@ -60,8 +68,8 @@ namespace moppe::platform {
       } else if (GCMicroGamepad* remote = controller.microGamepad) {
         // The Siri Remote: its touch surface steers and drives, its play
         // button deploys, restarts, boosts, and skips, and its X mounts.
-        r.left_x = remote.dpad.xAxis.value;
-        r.left_y = remote.dpad.yAxis.value;
+        r.left_x = stick (remote.dpad.xAxis);
+        r.left_y = stick (remote.dpad.yAxis);
         r.a = r.y = button_down (remote.buttonA);
         r.b = button_down (remote.buttonX);
         read_dpad (remote.dpad, r);

@@ -54,7 +54,8 @@ namespace {
       .domain = surface.domain (),
       .use = terrain::TrailUseMap (surface.domain ()),
     };
-    trails.earthwork_delta_m.resize (surface.domain ().size (), 0.0f);
+    trails.earthwork_delta.resize (surface.domain ().size (),
+                                   0.0f * terrain::surface_elevation[u::m]);
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, trails.use);
     terrain::RoadNetwork roads = game::lay_world_roads (

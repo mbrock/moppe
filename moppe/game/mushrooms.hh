@@ -15,6 +15,9 @@
 #include <vector>
 
 namespace moppe::game {
+  // How done a mushroom is over the fire (quantities.hh's doneness).
+  using doneness_t = quantity<doneness[one], float>;
+
   // What a walker calls it, singular and plural.
   const char* mushroom_name (MushroomKind kind);
   const char* mushroom_plural (MushroomKind kind);
@@ -24,25 +27,24 @@ namespace moppe::game {
   // One mushroom standing on the forest floor. `base` is where its stem
   // enters the ground; `scale` multiplies its kind's ordinary height.
   struct MushroomSite {
-    Vec3 base {};
-    float scale = 1.0f;
-    float yaw = 0.0f;
-    // How far it leans from upright, and which way, in radians.
-    float lean = 0.0f;
-    float lean_toward = 0.0f;
+    position_t base {};
+    scale_factor_t scale = 1.0f * scale_factor[one];
+    heading_t yaw = 0.0f * heading[si::radian];
+    // How far it leans from upright, and which way.
+    inclination_t lean = 0.0f * inclination[si::radian];
+    heading_t lean_toward = 0.0f * heading[si::radian];
     std::uint32_t seed = 0;
     MushroomKind kind = MushroomKind::chanterelle;
     // How long over a fire: none raw, one fried golden brown, two burnt
     // black.
-    float cooked = 0.0f;
+    doneness_t cooked = 0.0f * doneness[one];
   };
 
   struct MushroomPlan {
     std::vector<MushroomSite> sites;
     // The world's extent in x and z, which the sites wrap round; zero for
     // none.
-    float period_x = 0.0f;
-    float period_z = 0.0f;
+    spatial_extent_t period {};
   };
 
   // A few of the trees host a group of mushrooms in an arc around the
@@ -55,7 +57,7 @@ namespace moppe::game {
                   const terrain::WaterSheets& water,
                   std::uint32_t seed,
                   meters_t sea_level,
-                  const Vec3& trailhead);
+                  const position_t& trailhead);
 
   // Records one mushroom, as planned, into `list` in world space. The
   // basket and the picking animation reuse it with their own transform.
@@ -76,19 +78,19 @@ namespace moppe::game {
 
     // The mushroom a walker standing at `feet` and facing `heading` would
     // reach for, if any lies within arm's reach and unpicked.
-    std::optional<std::uint32_t> within_reach (const Vec3& feet,
-                                               const Vec3& heading) const;
-
-    // The unpicked mushroom nearest `at`, horizontally, within `within`
-    // metres, passing over those in `skip`.
     std::optional<std::uint32_t>
-    nearest (const Vec3& at,
-             float within,
+    within_reach (const position_t& feet, const direction_t& heading) const;
+
+    // The unpicked mushroom nearest `at`, horizontally, within `within`,
+    // passing over those in `skip`.
+    std::optional<std::uint32_t>
+    nearest (const position_t& at,
+             meters_t within,
              std::span<const std::uint32_t> skip = {}) const;
 
-    // Every unpicked mushroom within `within` metres of `at`,
-    // horizontally.
-    std::vector<std::uint32_t> within (const Vec3& at, float within) const;
+    // Every unpicked mushroom within `within` of `at`, horizontally.
+    std::vector<std::uint32_t> within (const position_t& at,
+                                       meters_t within) const;
 
     // Brings the ground in line with the basket: anything it holds is no
     // longer standing, and anything only an earlier basket held (one
@@ -101,9 +103,10 @@ namespace moppe::game {
 
     // Where mushroom `index` stands, at the copy of the world nearest
     // `reference`: a walker past the seam sees the ones beyond it.
-    Vec3 base_near (std::uint32_t index, const Vec3& reference) const;
+    position_t base_near (std::uint32_t index,
+                          const position_t& reference) const;
 
-    void draw (render::Renderer& renderer, const Vec3& camera);
+    void draw (render::Renderer& renderer, const position_t& camera);
 
   private:
     struct TileMesh {
@@ -112,15 +115,15 @@ namespace moppe::game {
     };
 
     std::uint64_t tile_key (int x, int z) const;
-    int tile_x (float x) const;
-    int tile_z (float z) const;
-    TileMesh* mesh_at (const Vec3& at);
+    int tile_x (meters_t x) const;
+    int tile_z (meters_t z) const;
+    TileMesh* mesh_at (const position_t& at);
 
     MushroomPlan m_plan;
     // The tiles' size and how many there are to the world (none counted
     // when the plan does not wrap).
-    float m_tile_x = 16.0f;
-    float m_tile_z = 16.0f;
+    meters_t m_tile_x = 16.0f * si::metre;
+    meters_t m_tile_z = 16.0f * si::metre;
     int m_tiles_x = 0;
     int m_tiles_z = 0;
     std::vector<bool> m_picked;

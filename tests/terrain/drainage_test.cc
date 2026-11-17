@@ -147,7 +147,7 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
   MOPPE_CHECK (routing.receiver == wet.receiver);
   MOPPE_CHECK (wet.receiver == dry.receiver);
   for (std::size_t cell = 0; cell < heights.size (); ++cell) {
-    MOPPE_CHECK_NEAR (routing.slope[cell],
+    MOPPE_CHECK_NEAR (routing.slope[cell].numerical_value_in (mp_units::one),
                       wet.slope_at (cell).numerical_value_in (mp_units::one),
                       0.0f);
     MOPPE_CHECK_NEAR (
@@ -325,7 +325,7 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
   const std::array<float, count> areas { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f,
                                          1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
   const FloodField flood { .surface = make_flood_surface (grid, levels, depths),
-                           .sea_level = 0.0f,
+                           .sea_level = surface_elevation_point (0.0f * u::m),
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (count, 0),
                            .spill_receiver = receiver };

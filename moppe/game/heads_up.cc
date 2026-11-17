@@ -21,14 +21,14 @@ namespace moppe::game {
     // they drive, and, `over_driver`, as high over it as they sit.
     Vec3 whereabouts (const CompanionSnapshot& theirs, bool over_driver) {
       if (theirs.walker)
-        return theirs.walker->position;
+        return position_value (theirs.walker->position);
       if (theirs.glider)
-        return theirs.glider->position;
+        return position_value (theirs.glider->position);
       const Machine machine =
         driven_machine (theirs.mode).value_or (Machine::bike);
       const Vec3 at =
         visit (theirs.fleet, machine, [] (Machine, const auto& pose) -> Vec3 {
-          return pose.position;
+          return position_value (pose.position);
         });
       if (!over_driver)
         return at;
@@ -217,56 +217,70 @@ namespace moppe::game {
 
   void HeadsUp::draw_trail_map (const HudWorld& w,
                                 render::DrawList& dl,
-                                int width_pts,
-                                int height_pts,
-                                const Vec3& subject,
-                                Vec3 heading) const {
-    if (width_pts < 480 || height_pts < 360)
+                                points_t width,
+                                points_t height,
+                                const position_t& subject,
+                                direction_t heading) const {
+    if (width < 480.0f * u::pt || height < 360.0f * u::pt)
       return;
     const terrain::TerrainDomain& grid = w.world.trails ().domain;
     const auto& alignment = w.world.trails ().alignment.points;
     if (alignment.size () < 2)
       return;
-    const float period_x =
-      grid.width () * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-    const float period_z =
-      grid.height () * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
-    const float home_x = alignment.front ().x_m;
-    const float home_z = alignment.front ().z_m;
-    const auto wrap_delta = [] (float delta, float period) {
+    const meters_t period_x =
+      grid.width () * (grid.spacing_x ()).numerical_value_in (moppe::u::m) *
+      u::m;
+    const meters_t period_z =
+      grid.height () * (grid.spacing_z ()).numerical_value_in (moppe::u::m) *
+      u::m;
+    const meters_t home_x = x_of (alignment.front ());
+    const meters_t home_z = z_of (alignment.front ());
+    const auto wrap_delta = [] (meters_t delta, meters_t period) {
       if (delta > period * 0.5f)
         delta -= period;
       if (delta < -period * 0.5f)
         delta += period;
       return delta;
     };
-    const auto relative_alignment = [&] (terrain::TrailAlignmentPoint point) {
-      return Vec3 (point.x_m - home_x, 0, point.z_m - home_z);
+    // A stretch of the trail from its home, east and south.
+    struct Stretch {
+      meters_t x, z;
+    };
+    const auto relative_alignment = [&] (const plan_position_t& point) {
+      return Stretch { x_of (point) - home_x, z_of (point) - home_z };
     };
 
-    Vec3 low (0, 0, 0);
-    Vec3 high (0, 0, 0);
-    for (const terrain::TrailAlignmentPoint alignment_point : alignment) {
-      const Vec3 point = relative_alignment (alignment_point);
-      low[0] = std::min (static_cast<float> (low[0]), point[0]);
-      low[2] = std::min (static_cast<float> (low[2]), point[2]);
-      high[0] = std::max (static_cast<float> (high[0]), point[0]);
-      high[2] = std::max (static_cast<float> (high[2]), point[2]);
+    Stretch low { 0.0f * u::m, 0.0f * u::m };
+    Stretch high { 0.0f * u::m, 0.0f * u::m };
+    for (const plan_position_t& alignment_point : alignment) {
+      const Stretch point = relative_alignment (alignment_point);
+      low.x = std::min (low.x, point.x);
+      low.z = std::min (low.z, point.z);
+      high.x = std::max (high.x, point.x);
+      high.z = std::max (high.z, point.z);
     }
-    const float world_span =
-      std::max ({ high[0] - low[0], high[2] - low[2], 100.0f }) * 1.16f;
-    const float center_x = 0.5f * (low[0] + high[0]);
-    const float center_z = 0.5f * (low[2] + high[2]);
-    const float map_size = std::min (154.0f, height_pts * 0.24f);
-    const float map_x = 12.0f;
-    const float map_y = height_pts - map_size - 12.0f;
-    const float inset = 9.0f;
-    const float scale = (map_size - 2.0f * inset) / world_span;
-    const auto map_point = [&] (const Vec3& point) {
-      return Vec3 (map_x + map_size * 0.5f + (point[0] - center_x) * scale,
-                   map_y + map_size * 0.5f - (point[2] - center_z) * scale,
-                   0);
+    const meters_t world_span =
+      std::max ({ high.x - low.x, high.z - low.z, 100.0f * u::m }) * 1.16f;
+    const meters_t center_x = 0.5f * (low.x + high.x);
+    const meters_t center_z = 0.5f * (low.z + high.z);
+    const points_t map_size = std::min (154.0f * u::pt, height * 0.24f);
+    const points_t map_x = 12.0f * u::pt;
+    const points_t map_y = height - map_size - 12.0f * u::pt;
+    const points_t inset = 9.0f * u::pt;
+    const auto scale = (map_size - 2.0f * inset) / world_span;
+    // Where a stretch falls on the map; floats, the DrawList's vertices.
+    struct OnMap {
+      float x, y;
     };
+    const auto map_point = [&] (const Stretch& point) {
+      return OnMap {
+        points_value (map_x + map_size * 0.5f + (point.x - center_x) * scale),
+        points_value (map_y + map_size * 0.5f - (point.z - center_z) * scale)
+      };
+    };
+    // The map's frame, as the DrawList takes it.
+    const float left = points_value (map_x), top = points_value (map_y);
+    const float size = points_value (map_size);
 
     render::DrawState state;
     state.blend = true;
@@ -282,57 +296,59 @@ namespace moppe::game {
     // ground motion makes that reconstruction visibly pulse in flight.
     dl.color (0.01f, 0.025f, 0.035f, 1.0f);
     dl.begin (render::Prim::Quads);
-    dl.vertex (map_x, map_y);
-    dl.vertex (map_x + map_size, map_y);
-    dl.vertex (map_x + map_size, map_y + map_size);
-    dl.vertex (map_x, map_y + map_size);
+    dl.vertex (left, top);
+    dl.vertex (left + size, top);
+    dl.vertex (left + size, top + size);
+    dl.vertex (left, top + size);
     dl.end ();
     dl.color (0.22f, 0.42f, 0.46f, 0.9f);
-    dl.line (map_x, map_y, map_x + map_size, map_y, 1.0f);
-    dl.line (map_x + map_size, map_y, map_x + map_size, map_y + map_size, 1.0f);
-    dl.line (map_x + map_size, map_y + map_size, map_x, map_y + map_size, 1.0f);
-    dl.line (map_x, map_y + map_size, map_x, map_y, 1.0f);
+    dl.line (left, top, left + size, top, 1.0f);
+    dl.line (left + size, top, left + size, top + size, 1.0f);
+    dl.line (left + size, top + size, left, top + size, 1.0f);
+    dl.line (left, top + size, left, top, 1.0f);
 
     dl.color (1.0f, 0.58f, 0.12f, 0.96f);
     for (std::size_t point = 0; point < alignment.size (); ++point) {
-      const Vec3 a = relative_alignment (alignment[point]);
-      Vec3 b = relative_alignment (alignment[(point + 1) % alignment.size ()]);
-      b[0] = a[0] + wrap_delta (b[0] - a[0], period_x);
-      b[2] = a[2] + wrap_delta (b[2] - a[2], period_z);
-      const Vec3 ma = map_point (a);
-      const Vec3 mb = map_point (b);
-      dl.line (ma[0], ma[1], mb[0], mb[1], 2.4f);
+      const Stretch a = relative_alignment (alignment[point]);
+      Stretch b =
+        relative_alignment (alignment[(point + 1) % alignment.size ()]);
+      b.x = a.x + wrap_delta (b.x - a.x, period_x);
+      b.z = a.z + wrap_delta (b.z - a.z, period_z);
+      const OnMap ma = map_point (a);
+      const OnMap mb = map_point (b);
+      dl.line (ma.x, ma.y, mb.x, mb.y, 2.4f);
     }
 
-    const Vec3 home_map = map_point (Vec3 (0, 0, 0));
+    const OnMap home_map = map_point ({ 0.0f * u::m, 0.0f * u::m });
     dl.color (1.0f, 0.9f, 0.45f, 1.0f);
     dl.begin (render::Prim::Quads);
-    dl.vertex (home_map[0] - 3.0f, home_map[1] - 3.0f);
-    dl.vertex (home_map[0] + 3.0f, home_map[1] - 3.0f);
-    dl.vertex (home_map[0] + 3.0f, home_map[1] + 3.0f);
-    dl.vertex (home_map[0] - 3.0f, home_map[1] + 3.0f);
+    dl.vertex (home_map.x - 3.0f, home_map.y - 3.0f);
+    dl.vertex (home_map.x + 3.0f, home_map.y - 3.0f);
+    dl.vertex (home_map.x + 3.0f, home_map.y + 3.0f);
+    dl.vertex (home_map.x - 3.0f, home_map.y + 3.0f);
     dl.end ();
 
-    const Vec3 relative_subject (wrap_delta (subject[0] - home_x, period_x),
-                                 0,
-                                 wrap_delta (subject[2] - home_z, period_z));
-    Vec3 player = map_point (relative_subject);
-    player[0] = std::clamp (
-      static_cast<float> (player[0]), map_x + 5.0f, map_x + map_size - 5.0f);
-    player[1] = std::clamp (
-      static_cast<float> (player[1]), map_y + 5.0f, map_y + map_size - 5.0f);
-    heading[1] = 0.0f;
-    if (length2 (heading) < 1e-5f)
-      heading = Vec3 (0, 0, 1);
-    heading = normalized (heading);
-    const Vec3 side (-heading[2], 0, heading[0]);
+    const plan_position_t at = plan (subject);
+    const Stretch relative_subject { wrap_delta (x_of (at) - home_x, period_x),
+                                     wrap_delta (z_of (at) - home_z,
+                                                 period_z) };
+    OnMap player = map_point (relative_subject);
+    player.x = std::clamp (player.x, left + 5.0f, left + size - 5.0f);
+    player.y = std::clamp (player.y, top + 5.0f, top + size - 5.0f);
+    // The way the subject faces on the ground: the arrow's floats.
+    Vec3 ahead = direction_value (heading);
+    ahead[1] = 0.0f;
+    if (length2 (ahead) < 1e-5f)
+      ahead = Vec3 (0, 0, 1);
+    ahead = normalized (ahead);
+    const Vec3 side (-ahead[2], 0, ahead[0]);
     dl.color (0.35f, 0.95f, 1.0f, 1.0f);
     dl.begin (render::Prim::Triangles);
-    dl.vertex (player[0] + heading[0] * 7.0f, player[1] - heading[2] * 7.0f);
-    dl.vertex (player[0] - heading[0] * 4.0f + side[0] * 4.0f,
-               player[1] + heading[2] * 4.0f - side[2] * 4.0f);
-    dl.vertex (player[0] - heading[0] * 4.0f - side[0] * 4.0f,
-               player[1] + heading[2] * 4.0f + side[2] * 4.0f);
+    dl.vertex (player.x + ahead[0] * 7.0f, player.y - ahead[2] * 7.0f);
+    dl.vertex (player.x - ahead[0] * 4.0f + side[0] * 4.0f,
+               player.y + ahead[2] * 4.0f - side[2] * 4.0f);
+    dl.vertex (player.x - ahead[0] * 4.0f - side[0] * 4.0f,
+               player.y + ahead[2] * 4.0f + side[2] * 4.0f);
     dl.end ();
     dl.state (render::DrawState ());
     dl.lit (true);
@@ -344,9 +360,9 @@ namespace moppe::game {
     const Fishing& fishing = w.session.logic ().m_fishing;
     const Creel& creel = fishing.creel;
     state.fish_total = creel.kept ();
-    const float since =
-      seconds_between (w.session.logic ().m_total_time, creel.last_time);
-    if (since < 5.0f) {
+    const seconds_t since =
+      seconds_between (w.session.logic ().m_total_time, creel.last_time) * u::s;
+    if (since < 5.0f * u::s) {
       const std::string name = fish_name (creel.last.kind);
       if (creel.last_lost) {
         m_prompts.catch_note = "It got away.";
@@ -359,16 +375,17 @@ namespace moppe::game {
                                " cm!";
       }
       state.catch_note = m_prompts.catch_note.c_str ();
-      state.catch_age_s = since;
+      state.catch_age = since;
     }
   }
 
   void HeadsUp::add_camp_readings (HudState& state, const HudWorld& w) {
     const Camp& camp = w.session.logic ().m_camp;
     state.resting = camp.resting;
-    state.clock_hours = w.sky.clock.numerical_value_in (si::hour);
-    if (seconds_between (w.session.logic ().m_total_time, camp.ate_time) <
-        6.0f) {
+    state.clock = w.sky.clock;
+    if (seconds_between (w.session.logic ().m_total_time, camp.ate_time) *
+          u::s <
+        6.0f * u::s) {
       // What there was, the fish first, then the eggs, then the
       // mushrooms.
       std::vector<std::string> dishes;
@@ -390,12 +407,12 @@ namespace moppe::game {
         meal = meal.substr (3);
       const bool one = !camp.ate_fish && camp.ate_count + camp.ate_eggs == 1;
       m_prompts.meal_note =
-        camp.ate_cooked > 1.4f
+        camp.ate_cooked > 1.4f * proportion[mp_units::one]
           ? "Burnt to a cinder. Still, it is supper."
           : (one ? "A fried " : "Fried ") + meal + " by the fire. Lovely.";
       state.meal = m_prompts.meal_note.c_str ();
-      state.meal_age_s =
-        seconds_between (w.session.logic ().m_total_time, camp.ate_time);
+      state.meal_age =
+        seconds_between (w.session.logic ().m_total_time, camp.ate_time) * u::s;
     }
     // What Space and F do here, and what can be done about the camp
     // without a prompt for it (HudState::thumb).
@@ -463,31 +480,37 @@ namespace moppe::game {
 
   void HeadsUp::add_waymark (HudState& state,
                              const FrameView& frame,
-                             int width,
-                             int height,
+                             points_t width,
+                             points_t height,
                              const char* name,
                              unsigned who,
-                             const Vec3& at,
-                             float near,
-                             float far,
+                             const position_t& at,
+                             meters_t near,
+                             meters_t far,
                              const DisplayColor& tint,
-                             float vanish) {
+                             meters_t vanish) {
     if (state.waymark_count >= static_cast<int> (state.waymarks.size ()))
       return;
     const FrameCamera& camera = frame.camera;
-    const Vec3 to = at - camera.position;
-    const float metres = length (to);
+    // The way to it from the eye, in the camera's frame below: the
+    // projection's local arithmetic, in metres.
+    const Vec3 to = position_value (at) - position_value (camera.position);
+    const meters_t metres = length (to) * u::m;
     // Fading in past `near`, and out again toward `vanish`, if set.
-    const float shown =
-      std::clamp ((metres - near) / (far - near), 0.0f, 1.0f) *
-      (vanish > 0.0f
-         ? std::clamp ((vanish - metres) / (0.25f * vanish), 0.0f, 1.0f)
-         : 1.0f);
-    if (shown <= 0.0f)
+    constexpr magnitude_t none = 0.0f * one, all = 1.0f * one;
+    const opacity_t shown =
+      std::clamp ((metres - near) / (far - near), none, all)
+        .numerical_value_in (one) *
+      (vanish > 0.0f * u::m
+         ? std::clamp ((vanish - metres) / (0.25f * vanish), none, all)
+             .numerical_value_in (one)
+         : 1.0f) *
+      opacity[one];
+    if (shown <= 0.0f * opacity[one])
       return;
-    const float across = dot (to, camera.right);
-    const float above = dot (to, camera.up);
-    const float ahead = dot (to, camera.frame_forward);
+    const float across = dot (to, direction_value (camera.right));
+    const float above = dot (to, direction_value (camera.up));
+    const float ahead = dot (to, direction_value (camera.frame_forward));
     const float half =
       std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad));
     HudState::Waymark mark;
@@ -496,26 +519,29 @@ namespace moppe::game {
     mark.position = at;
     mark.metres = metres;
     mark.alpha = shown;
-    mark.red = tint.red;
-    mark.green = tint.green;
-    mark.blue = tint.blue;
+    mark.colour = tint;
+    // Where it falls in the frame, -1..1 across and up.
     const float x =
-      ahead > 0.1f ? across / (ahead * half * camera.aspect) : 0.0f;
+      ahead > 0.1f
+        ? across / (ahead * half * camera.aspect.numerical_value_in (one))
+        : 0.0f;
     const float y = ahead > 0.1f ? above / (ahead * half) : 0.0f;
+    constexpr radians_t down = -1.5707963f * u::rad;
     if (ahead > 0.1f && std::fabs (x) < 0.86f && std::fabs (y) < 0.80f) {
       // In view: a small arrow over it, pointing down at it.
       mark.in_view = true;
       mark.x = (0.5f + 0.5f * x) * width;
-      mark.y = (0.5f - 0.5f * y) * height - 12.0f;
-      mark.angle = -1.5707963f;
+      mark.y = (0.5f - 0.5f * y) * height - 12.0f * u::pt;
+      mark.angle = down;
     } else {
       // Out of view: at the edge, toward where turning would find it.
-      float angle = std::atan2 (above, across);
+      radians_t angle = std::atan2 (above, across) * u::rad;
       if (std::fabs (across) + std::fabs (above) < 1e-3f)
-        angle = -1.5707963f;
+        angle = down;
       mark.angle = angle;
-      mark.x = 0.5f * width + 0.43f * width * std::cos (angle);
-      mark.y = 0.5f * height - 0.40f * height * std::sin (angle);
+      mark.x = 0.5f * width + 0.43f * width * std::cos (radians_value (angle));
+      mark.y =
+        0.5f * height - 0.40f * height * std::sin (radians_value (angle));
     }
     state.waymarks[state.waymark_count++] = mark;
   }
@@ -523,8 +549,8 @@ namespace moppe::game {
   void HeadsUp::add_waymarks (HudState& state,
                               const HudWorld& w,
                               const FrameView& frame,
-                              int width,
-                              int height) const {
+                              points_t width,
+                              points_t height) const {
     const Doing mode = w.session.logic ().m_doing;
     const DisplayColor pale (0.96f, 0.96f, 0.96f);
     if (w.company.companion && !passenger_in (mode) &&
@@ -535,54 +561,61 @@ namespace moppe::game {
       DisplayColor jacket = pale;
       for (std::size_t c = 0; c < figure::colours.size (); ++c)
         if (std::string_view (figure::colour_names[c]) == "jacket")
-          jacket = mix_display (
-            figure::outfit_colour (c, w.company.their_outfit ()), pale, 0.35f);
+          jacket =
+            mix_display (figure::outfit_colour (c, w.company.their_outfit ()),
+                         pale,
+                         0.35f * blend_weight[one]);
       add_waymark (state,
                    frame,
                    width,
                    height,
                    "companion",
                    HudState::Waymark::Companion,
-                   at + Vec3 (0, 2.0f, 0),
-                   12.0f,
-                   24.0f,
+                   position (at + Vec3 (0, 2.0f, 0)),
+                   12.0f * u::m,
+                   24.0f * u::m,
                    jacket);
     }
     // The nearest named place, while it is near but not yet reached.
     {
       const terrain::RoadNetwork& roads = w.world.roads ();
-      const Vec3 here = frame.hud.subject_position;
+      const Vec3 here = position_value (frame.hud.subject_position);
       const char* name = nullptr;
-      float nearest_m = place_waymark_m, x = 0.0f, z = 0.0f;
+      meters_t nearest = place_waymark;
+      plan_position_t found = plan_position (0.0f, 0.0f);
       for (std::size_t p = 0;
            p < roads.places.size () && p < w.place_names.size ();
            ++p) {
         const terrain::RoadPlace& place = roads.places[p];
         if (place.kind == terrain::RoadPlace::Kind::Trailhead)
           continue;
-        const float dx =
-          terrain::minimum_image_delta (place.x_m - here[0], map.period_x_m ());
-        const float dz =
-          terrain::minimum_image_delta (place.z_m - here[2], map.period_z_m ());
-        if (const float metres = std::hypot (dx, dz); metres < nearest_m) {
-          nearest_m = metres;
+        const plan_position_t& at = place.at;
+        const float dx = terrain::minimum_image_delta (
+          plan_value (at).x () - here[0], plan_value (map.period ()).x ());
+        const float dz = terrain::minimum_image_delta (
+          plan_value (at).z () - here[2], plan_value (map.period ()).z ());
+        if (const meters_t metres = std::hypot (dx, dz) * u::m;
+            metres < nearest) {
+          nearest = metres;
           name = w.place_names[p].c_str ();
-          x = here[0] + dx;
-          z = here[2] + dz;
+          found = plan_position (here[0] + dx, here[2] + dz);
         }
       }
       if (name)
-        add_waymark (state,
-                     frame,
-                     width,
-                     height,
-                     name,
-                     HudState::Waymark::Place,
-                     Vec3 (x, w.ground.height (Vec3 (x, 0, z)) + 4.0f, z),
-                     40.0f,
-                     70.0f,
-                     DisplayColor (1.0f, 0.86f, 0.55f),
-                     place_waymark_m);
+        add_waymark (
+          state,
+          frame,
+          width,
+          height,
+          name,
+          HudState::Waymark::Place,
+          at_height (found,
+                     w.ground.height (lift (plan_value (found))) * u::m +
+                       4.0f * u::m),
+          40.0f * u::m,
+          70.0f * u::m,
+          DisplayColor (1.0f, 0.86f, 0.55f),
+          place_waymark);
     }
     // Every machine but the one being driven, and the bike while it
     // hangs under the wing.
@@ -598,40 +631,41 @@ namespace moppe::game {
         height,
         "",
         HudState::Waymark::of (machine),
-        position_value (w.session.machine_body (machine).position) +
-          Vec3 (0, meters_value (machine_kind (machine).mark_height), 0),
-        30.0f,
-        50.0f,
+        position (
+          position_value (w.session.machine_body (machine).position) +
+          Vec3 (0, meters_value (machine_kind (machine).mark_height), 0)),
+        30.0f * u::m,
+        50.0f * u::m,
         pale);
     }
   }
 
   HudState HeadsUp::hud_state_for (const FrameHud& reading) {
     HudState state;
-    state.speed_kmh = reading.speed_kmh;
-    state.boost_ready01 = reading.boost_ready01;
-    state.health01 = reading.health01;
-    state.odometer_m = reading.odometer_m;
+    state.speed = reading.speed;
+    state.boost_ready = reading.boost_ready;
+    state.health = reading.health;
+    state.odometer = reading.odometer;
     state.lives = reading.lives;
     state.stars = reading.stars;
     state.score = reading.score;
-    state.airtime_s = reading.airtime_s;
-    state.spin_degrees = reading.spin_degrees;
-    state.landed_airtime_s = reading.landed_airtime_s;
-    state.landed_spin_degrees = reading.landed_spin_degrees;
+    state.airtime = reading.airtime;
+    state.spin = reading.spin;
+    state.landed_airtime = reading.landed_airtime;
+    state.landed_spin = reading.landed_spin;
     state.landed_points = reading.landed_points;
     state.landed_clean = reading.landed_clean;
-    state.landed_age_s = reading.landed_age_s;
-    state.wheelie_m = reading.wheelie_m;
-    state.last_wheelie_m = reading.last_wheelie_m;
+    state.landed_age = reading.landed_age;
+    state.wheelie = reading.wheelie;
+    state.last_wheelie = reading.last_wheelie;
     state.last_wheelie_points = reading.last_wheelie_points;
-    state.best_wheelie_m = reading.best_wheelie_m;
-    state.wheelie_age_s = reading.wheelie_age_s;
+    state.best_wheelie = reading.best_wheelie;
+    state.wheelie_age = reading.wheelie_age;
     state.on_foot = reading.on_foot;
     state.gliding = reading.gliding;
-    state.vertical_speed_mps = reading.vertical_speed_mps;
-    state.frame_time_s = reading.frame_time_s;
-    state.heading_radians = reading.heading_radians;
+    state.vertical_speed = reading.vertical_speed;
+    state.frame_time = reading.frame_time;
+    state.heading = reading.heading;
     return state;
   }
 
@@ -641,8 +675,9 @@ namespace moppe::game {
     state.basket_eggs = basket.eggs;
     state.reached_name =
       basket.last_egg ? "egg" : mushroom_name (basket.last_kind);
-    state.reached_age_s =
-      seconds_between (w.session.logic ().m_total_time, basket.last_reach_time);
+    state.reached_age = seconds_between (w.session.logic ().m_total_time,
+                                         basket.last_reach_time) *
+                        u::s;
     state.reached_refused = basket.last_refused;
   }
 
@@ -656,14 +691,15 @@ namespace moppe::game {
 #endif
     const int size = std::min (limit, 2 * world.recipe ().resolution ());
     map.set (r,
-             paint_relief_map (world.surface (),
-                               world.readings (),
-                               world.water_surface (),
-                               world.rivers (),
-                               world.trails (),
-                               world.roads (),
-                               world.params ().water_level,
-                               size));
+             paint_relief_map (
+               world.surface (),
+               world.readings (),
+               world.water_surface (),
+               world.rivers (),
+               world.trails (),
+               world.roads (),
+               terrain::surface_elevation_point (world.params ().water_level),
+               size));
   }
 
   std::vector<MapSheet::Mark> HeadsUp::map_marks (const HudWorld& w) {
@@ -672,8 +708,8 @@ namespace moppe::game {
     std::vector<Mark> marks;
     const Doing mode = w.session.logic ().m_doing;
     marks.push_back ({ .kind = Mark::Kind::Walker,
-                       .position = w.session.subject_position (),
-                       .heading = w.session.subject_heading (),
+                       .position = position (w.session.subject_position ()),
+                       .heading = unit_direction (w.session.subject_heading ()),
                        .colour = dark,
                        .name = "" });
     if (w.company.companion && !passenger_in (mode) &&
@@ -685,65 +721,56 @@ namespace moppe::game {
         if (std::string_view (figure::colour_names[c]) == "jacket")
           jacket = figure::outfit_colour (c, w.company.their_outfit ());
       marks.push_back ({ .kind = Mark::Kind::Companion,
-                         .position = at,
-                         .heading = Vec3 (0, 0, -1),
+                         .position = position (at),
+                         .heading = unit_direction (Vec3 (0, 0, -1)),
                          .colour = jacket,
                          .name = "companion" });
     }
     if (mode != Doing::driving (Machine::bike) && !w.session.can_drop_bike ())
-      marks.push_back (
-        { .kind = Mark::Kind::Bike,
-          .position = position_value (w.session.bike ().position ()),
-          .colour = dark,
-          .name = "bike" });
+      marks.push_back ({ .kind = Mark::Kind::Bike,
+                         .position = w.session.bike ().position (),
+                         .colour = dark,
+                         .name = "bike" });
     if (mode != Doing::driving (Machine::jeep))
-      marks.push_back (
-        { .kind = Mark::Kind::Jeep,
-          .position = position_value (w.session.jeep ().position ()),
-          .colour = dark,
-          .name = "jeep" });
+      marks.push_back ({ .kind = Mark::Kind::Jeep,
+                         .position = w.session.jeep ().position (),
+                         .colour = dark,
+                         .name = "jeep" });
     if (mode != Doing::driving (Machine::tractor))
-      marks.push_back (
-        { .kind = Mark::Kind::Jeep,
-          .position = position_value (w.session.tractor ().position ()),
-          .colour = DisplayColor (0.70f, 0.12f, 0.08f),
-          .name = "tractor" });
+      marks.push_back ({ .kind = Mark::Kind::Jeep,
+                         .position = w.session.tractor ().position (),
+                         .colour = DisplayColor (0.70f, 0.12f, 0.08f),
+                         .name = "tractor" });
     if (mode != Doing::driving (Machine::caddy))
-      marks.push_back (
-        { .kind = Mark::Kind::Jeep,
-          .position = position_value (w.session.caddy ().position ()),
-          .colour = DisplayColor (0.22f, 0.50f, 0.45f),
-          .name = "Caddy" });
+      marks.push_back ({ .kind = Mark::Kind::Jeep,
+                         .position = w.session.caddy ().position (),
+                         .colour = DisplayColor (0.22f, 0.50f, 0.45f),
+                         .name = "Caddy" });
     if (mode != Doing::driving (Machine::mountain_bike))
-      marks.push_back (
-        { .kind = Mark::Kind::Bike,
-          .position = position_value (w.session.mountain_bike ().position ()),
-          .colour = DisplayColor (0.06f, 0.30f, 0.22f),
-          .name = "mountainbike" });
+      marks.push_back ({ .kind = Mark::Kind::Bike,
+                         .position = w.session.mountain_bike ().position (),
+                         .colour = DisplayColor (0.06f, 0.30f, 0.22f),
+                         .name = "mountainbike" });
     if (mode != Doing::driving (Machine::long_john))
-      marks.push_back (
-        { .kind = Mark::Kind::Bike,
-          .position = position_value (w.session.long_john ().position ()),
-          .colour = DisplayColor (0.58f, 0.575f, 0.57f),
-          .name = "Long John" });
+      marks.push_back ({ .kind = Mark::Kind::Bike,
+                         .position = w.session.long_john ().position (),
+                         .colour = DisplayColor (0.58f, 0.575f, 0.57f),
+                         .name = "Long John" });
     if (mode != Doing::driving (Machine::helicopter))
-      marks.push_back (
-        { .kind = Mark::Kind::Jeep,
-          .position = position_value (w.session.helicopter ().position ()),
-          .colour = DisplayColor (0.20f, 0.30f, 0.20f),
-          .name = "helicopter" });
+      marks.push_back ({ .kind = Mark::Kind::Jeep,
+                         .position = w.session.helicopter ().position (),
+                         .colour = DisplayColor (0.20f, 0.30f, 0.20f),
+                         .name = "helicopter" });
     if (mode != Doing::driving (Machine::boat))
-      marks.push_back (
-        { .kind = Mark::Kind::Jeep,
-          .position = position_value (w.session.boat ().position ()),
-          .colour = DisplayColor (0.62f, 0.48f, 0.30f),
-          .name = "boat" });
+      marks.push_back ({ .kind = Mark::Kind::Jeep,
+                         .position = w.session.boat ().position (),
+                         .colour = DisplayColor (0.62f, 0.48f, 0.30f),
+                         .name = "boat" });
     if (mode != Doing::driving (Machine::jet_ski))
-      marks.push_back (
-        { .kind = Mark::Kind::Jeep,
-          .position = position_value (w.session.jet_ski ().position ()),
-          .colour = DisplayColor (0.04f, 0.56f, 0.58f),
-          .name = "jet ski" });
+      marks.push_back ({ .kind = Mark::Kind::Jeep,
+                         .position = w.session.jet_ski ().position (),
+                         .colour = DisplayColor (0.04f, 0.56f, 0.58f),
+                         .name = "jet ski" });
     const Camp& camp = w.session.logic ().m_camp;
     if (camp.hung || camp.fire)
       marks.push_back (
@@ -774,10 +801,10 @@ namespace moppe::game {
       const PlaceKind& kind = place_kind (place.kind);
       if (!kind.named)
         continue;
-      const bool quiet = place.abandoned_years_ago > 0.0f;
+      const bool quiet = place.abandoned > age_t::zero ();
       marks.push_back (
         { .kind = Mark::Kind::Place,
-          .position = Vec3 (place.x_m, place.height_m, place.z_m),
+          .position = terrain::at_elevation (place.at, place.height),
           .colour = quiet ? kind.quiet_ink : kind.ink,
           .name = w.place_names[p].c_str (),
           .place = place.kind });
@@ -802,21 +829,18 @@ namespace moppe::game {
       return;
     HudState::Chart& chart = state.chart;
     chart.picture = map.picture ();
-    chart.period_x_m = map.period_x_m ();
-    chart.period_z_m = map.period_z_m ();
-    const Vec3 at = frame.hud.subject_position;
-    chart.x_m = at[0];
-    chart.z_m = at[2];
+    chart.period = map.period ();
+    chart.subject = plan (frame.hud.subject_position);
     // Ahead is where the camera looks; looking down or up, its top
-    // (or its foot) leans the way it faces.
-    const Vec3 forward = frame.camera.forward;
-    const Vec3 up = frame.camera.up;
+    // (or its foot) leans the way it faces. Not yet a unit vector: the
+    // HUD makes it one.
+    const Vec3 forward = direction_value (frame.camera.forward);
+    const Vec3 up = direction_value (frame.camera.up);
     const float lean = forward[1] < 0.0f ? 1.0f : -1.0f;
-    chart.ahead_x = forward[0] + lean * up[0];
-    chart.ahead_z = forward[2] + lean * up[2];
-    const Vec3 facing = frame.hud.subject_heading;
-    chart.facing_x = facing[0];
-    chart.facing_z = facing[2];
+    chart.ahead = plan_unit_direction (
+      Vec2 (forward[0] + lean * up[0], forward[2] + lean * up[2]));
+    chart.facing =
+      plan_unit_direction (plan (direction_value (frame.hud.subject_heading)));
     chart.daylight = frame.lighting.daylight;
     using Kind = MapSheet::Mark::Kind;
     using Pin = HudState::Chart::Pin;
@@ -833,11 +857,8 @@ namespace moppe::game {
                  : mark.kind == Kind::BusStop ? Pin::Kind::BusStop
                                               : Pin::Kind::Machine;
       pin.place = mark.place;
-      pin.x_m = mark.position[0];
-      pin.z_m = mark.position[2];
-      pin.red = mark.colour.red;
-      pin.green = mark.colour.green;
-      pin.blue = mark.colour.blue;
+      pin.position = plan (mark.position);
+      pin.colour = mark.colour;
     }
   }
 
@@ -850,53 +871,67 @@ namespace moppe::game {
     dl.clear ();
     text.clear ();
     const platform::Insets safe_insets = platform::safe_insets ();
-    dl.translate (safe_insets.left, safe_insets.top, 0);
+    dl.translate (safe_insets.left.numerical_value_in (display_point),
+                  safe_insets.top.numerical_value_in (display_point),
+                  0);
     map.draw (dl,
               text,
               hud.font (),
               map_marks (w),
               "MOPPE  \u00b7  SEED " +
                 std::to_string (w.world.recipe ().seed ().value),
-              width_pts,
-              height_pts);
+              static_cast<float> (width_pts) * u::pt,
+              static_cast<float> (height_pts) * u::pt);
   }
 
   void HeadsUp::add_bus_board (const HudWorld& w,
                                const FrameView& frame,
-                               int width,
-                               int height) {
-    constexpr float shown_m = 40.0f, fading_m = 25.0f;
+                               points_t width,
+                               points_t height) {
+    constexpr meters_t shown_within = 40.0f * u::m;
+    constexpr meters_t faded_within = 25.0f * u::m;
     const render::Font* font = hud.font ();
     if (!font)
       return;
     const Vec3 eye = w.session.subject_position ();
-    const float period_x = w.places.period_x, period_z = w.places.period_z;
+    const plan_extent_t& period = w.places.period;
     const std::optional<std::size_t> stop =
-      bus_stop_near (w.bus, eye, shown_m * u::m, period_x, period_z);
+      bus_stop_near (w.bus, position (eye), shown_within, period);
     if (!stop)
       return;
     const BusStop& at = w.bus.stops ()[*stop];
-    const float dx =
-      terrain::minimum_image_delta (at.sign[0] - eye[0], period_x);
-    const float dz =
-      terrain::minimum_image_delta (at.sign[2] - eye[2], period_z);
-    const float shown = std::clamp (
-      (shown_m - std::hypot (dx, dz)) / (shown_m - fading_m), 0.0f, 1.0f);
+    const Vec3& sign = position_value (at.sign);
+    const meters_t dx = terrain::minimum_image_delta (
+      (sign[0] - eye[0]) * u::m, plan_value (period).x () * u::m);
+    const meters_t dz = terrain::minimum_image_delta (
+      (sign[2] - eye[2]) * u::m, plan_value (period).z () * u::m);
+    const meters_t off =
+      std::hypot (meters_value (dx), meters_value (dz)) * u::m;
+    const opacity_t shown =
+      std::clamp ((shown_within - off) / (shown_within - faded_within),
+                  0.0f * one,
+                  1.0f * one)
+        .numerical_value_in (one) *
+      opacity[one];
     // Its foot over the bus's roof and the luggage on its rack, where
-    // the camera sees it.
+    // the camera sees it: the projection's local arithmetic, in metres.
     const FrameCamera& camera = frame.camera;
-    const Vec3 foot = Vec3 (eye[0] + dx, at.sign[1] + 3.4f, eye[2] + dz);
-    const Vec3 to = foot - camera.position;
-    const float ahead = dot (to, camera.frame_forward);
-    if (ahead < 0.5f || shown <= 0.0f)
+    const Vec3 foot = Vec3 (
+      eye[0] + meters_value (dx), sign[1] + 3.4f, eye[2] + meters_value (dz));
+    const Vec3 to = foot - position_value (camera.position);
+    const float ahead = dot (to, direction_value (camera.frame_forward));
+    if (ahead < 0.5f || shown <= 0.0f * opacity[one])
       return;
     const float half =
       std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad));
-    const float x =
-      (0.5f + 0.5f * dot (to, camera.right) / (ahead * half * camera.aspect)) *
-      static_cast<float> (width);
-    const float y = (0.5f - 0.5f * dot (to, camera.up) / (ahead * half)) *
-                    static_cast<float> (height);
+    // Where the font sets it: its floats.
+    const float x = points_value (
+      (0.5f + 0.5f * dot (to, direction_value (camera.right)) /
+                (ahead * half * camera.aspect.numerical_value_in (one))) *
+      width);
+    const float y = points_value (
+      (0.5f - 0.5f * dot (to, direction_value (camera.up)) / (ahead * half)) *
+      height);
     render::TextStyle title;
     title.size = 20.0f;
     render::TextStyle small;
@@ -905,14 +940,20 @@ namespace moppe::game {
     const std::string due =
       bus_due_words (w.bus.due (*stop, bus_time (w.session.logic ())));
     const DisplayColor ink (1.0f, 0.86f, 0.32f);
+    const DisplayColor black (0.0f, 0.0f, 0.0f), white (1.0f, 1.0f, 1.0f);
     for (const bool shade : { true, false }) {
+      // The styles' fields are the text layout's floats.
       render::TextStyle t = title, d = small;
-      t.red = shade ? 0.0f : ink.red;
-      t.green = shade ? 0.0f : ink.green;
-      t.blue = shade ? 0.0f : ink.blue;
-      d.red = d.green = d.blue = shade ? 0.0f : 1.0f;
-      t.alpha = (shade ? 0.5f : 1.0f) * shown;
-      d.alpha = (shade ? 0.5f : 0.95f) * shown;
+      const DisplayColor name_colour = shade ? black : ink;
+      const DisplayColor due_colour = shade ? black : white;
+      t.red = name_colour.red;
+      t.green = name_colour.green;
+      t.blue = name_colour.blue;
+      d.red = due_colour.red;
+      d.green = due_colour.green;
+      d.blue = due_colour.blue;
+      t.alpha = opacity_value ((shade ? 0.5f : 1.0f) * shown);
+      d.alpha = opacity_value ((shade ? 0.5f : 0.95f) * shown);
       if (shade)
         t.softness = d.softness = 5.0f;
       font->draw (text, x, y - 23.0f, at.name, t, render::TextAlign::Center);
@@ -930,15 +971,24 @@ namespace moppe::game {
     dl.clear ();
     text.clear ();
     const platform::Insets safe_insets = platform::safe_insets ();
-    dl.translate (safe_insets.left, safe_insets.top, 0);
+    const auto in_points = [] (points_t length) {
+      return length.numerical_value_in (display_point);
+    };
+    dl.translate (in_points (safe_insets.left), in_points (safe_insets.top), 0);
     const int hud_width =
-      r.width_pts () - (int)(safe_insets.left + safe_insets.right);
+      r.width_pts () - (int)in_points (safe_insets.left + safe_insets.right);
     const int hud_height =
-      r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
+      r.height_pts () - (int)in_points (safe_insets.top + safe_insets.bottom);
+    const points_t width = static_cast<float> (hud_width) * u::pt;
+    const points_t height = static_cast<float> (hud_height) * u::pt;
     if (visibility.cinematic_hud) {
       opening.draw_titles (hud, dl, text, hud_width, hud_height);
       hud.draw_ride_prompt (
-        text, frame.overlay.cinematic_prompt_alpha, hud_width, hud_height);
+        text,
+        frame.overlay.cinematic_prompt_alpha.numerical_value_in (one) *
+          opacity[one],
+        width,
+        height);
     } else if (visibility.game_hud) {
       HudState hud_state = hud_state_for (frame.hud);
       add_basket_readings (hud_state, w);
@@ -946,24 +996,24 @@ namespace moppe::game {
       add_fishing_readings (hud_state, w);
       add_prompt (hud_state, w);
       w.company.add_readings (hud_state, w.session);
-      add_waymarks (hud_state, w, frame, hud_width, hud_height);
-      add_bus_board (w, frame, hud_width, hud_height);
+      add_waymarks (hud_state, w, frame, width, height);
+      add_bus_board (w, frame, width, height);
       add_chart (hud_state, frame, w);
-      hud.draw (dl, text, hud_state, hud_width, hud_height);
+      hud.draw (dl, text, hud_state, width, height);
       if (hud.diagnostics ())
         draw_trail_map (w,
                         dl,
-                        hud_width,
-                        hud_height,
+                        width,
+                        height,
                         frame.hud.subject_position,
                         frame.hud.subject_heading);
       if (map.open ())
         draw_map (r, w, hud_width, hud_height);
       if (quit_asked)
-        hud.draw_quit_question (dl, text, hud_width, hud_height);
+        hud.draw_quit_question (dl, text, width, height);
     }
     hud.publish_offers ();
-    text.translate (safe_insets.left, safe_insets.top);
+    text.translate (in_points (safe_insets.left), in_points (safe_insets.top));
 
     // Even a clean inspection capture needs this empty HUD pass: it is
     // also the final post-chain composite into the drawable.

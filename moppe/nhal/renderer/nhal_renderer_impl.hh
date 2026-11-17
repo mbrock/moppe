@@ -558,7 +558,7 @@ namespace moppe::nhal {
       void cull_grass (const Mat4& view_proj, const FrameParams& params);
 
       shaders::gtao::Post post_block (const position_t& eye,
-                                      const Vec3& forward,
+                                      const direction_t& forward,
                                       const Vec3& right,
                                       const Vec3& up) const;
 

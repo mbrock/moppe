@@ -255,10 +255,11 @@ MOPPE_TEST (shore_surf_bounds_the_bake_without_changing_world_periods) {
   const auto field = fixture.bake ();
   check_surf_finite (field);
   MOPPE_CHECK (field.width == 512 && field.height == 512);
-  MOPPE_CHECK_NEAR (field.period_x, 5000.0f, 0.001f);
-  MOPPE_CHECK_NEAR (field.period_z, 2700.0f, 0.001f);
+  MOPPE_CHECK_NEAR (meters_value (field.period_x), 5000.0f, 0.001f);
+  MOPPE_CHECK_NEAR (meters_value (field.period_z), 2700.0f, 0.001f);
   const std::size_t x = field.width / 7 + 5;
-  const float spacing = field.period_x / static_cast<float> (field.width);
+  const float spacing =
+    meters_value (field.period_x) / static_cast<float> (field.width);
   MOPPE_CHECK_NEAR (field.samples[x + 1][0] - field.samples[x][0],
                     spacing / std::sqrt (9.81f * 4.0f),
                     2e-5f);

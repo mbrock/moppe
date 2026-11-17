@@ -13,13 +13,6 @@
 
 namespace moppe::terrain {
   namespace {
-    struct NoiseShape {
-      int cycles;
-      int octaves;
-      int lacunarity;
-      float gain;
-    };
-
     struct GeologicalSeeds {
       Seed base;
       Seed ridge;
@@ -33,117 +26,9 @@ namespace moppe::terrain {
       return { Seed { next () }, Seed { next () }, Seed { next () } };
     }
 
-    class PeriodicNoise {
-    public:
-      explicit PeriodicNoise (Seed seed)
-          : m_permutation (make_perlin_permutation (seed.value)) {}
-
-      float fbm (float x, float y, const NoiseShape& parameters) const {
-        float sum = 0.0f;
-        float amplitude = 1.0f;
-        float norm = 0.0f;
-        float frequency = 1.0f;
-        int period = parameters.cycles;
-        for (int octave = 0; octave < parameters.octaves; ++octave) {
-          sum +=
-            amplitude * noise (x * frequency, y * frequency, period, period);
-          norm += amplitude;
-          amplitude *= parameters.gain;
-          frequency *= static_cast<float> (parameters.lacunarity);
-          period *= parameters.lacunarity;
-        }
-        return sum / norm;
-      }
-
-      float ridged (float x, float y, const NoiseShape& parameters) const {
-        float sum = 0.0f;
-        float amplitude = 0.5f;
-        float frequency = 1.0f;
-        float weight = 1.0f;
-        float norm = 0.0f;
-        int period = parameters.cycles;
-        for (int octave = 0; octave < parameters.octaves; ++octave) {
-          float value =
-            1.0f -
-            std::fabs (noise (x * frequency, y * frequency, period, period));
-          value *= value;
-          value *= weight;
-          weight = std::clamp (value * 2.0f, 0.0f, 1.0f);
-          sum += value * amplitude;
-          norm += amplitude;
-          amplitude *= parameters.gain;
-          frequency *= static_cast<float> (parameters.lacunarity);
-          period *= parameters.lacunarity;
-        }
-        return sum / norm;
-      }
-
-    private:
-      float noise (float x, float y, int period_x, int period_y) const {
-        const float floor_x = std::floor (x);
-        const float floor_y = std::floor (y);
-        const int xi = wrap_lattice (static_cast<int> (floor_x), period_x);
-        const int yi = wrap_lattice (static_cast<int> (floor_y), period_y);
-        const int xj = wrap_lattice (static_cast<int> (floor_x) + 1, period_x);
-        const int yj = wrap_lattice (static_cast<int> (floor_y) + 1, period_y);
-        const float xf = x - floor_x;
-        const float yf = y - floor_y;
-        const float u = fade (xf);
-        const float v = fade (yf);
-
-        const int aa = m_permutation[m_permutation[xi] + yi];
-        const int ab = m_permutation[m_permutation[xi] + yj];
-        const int ba = m_permutation[m_permutation[xj] + yi];
-        const int bb = m_permutation[m_permutation[xj] + yj];
-
-        return lerp (
-          lerp (gradient (aa, xf, yf), gradient (ba, xf - 1.0f, yf), u),
-          lerp (gradient (ab, xf, yf - 1.0f),
-                gradient (bb, xf - 1.0f, yf - 1.0f),
-                u),
-          v);
-      }
-
-      static int wrap_lattice (int value, int period) {
-        const int wrapped = value % period;
-        return (wrapped < 0 ? wrapped + period : wrapped) & 255;
-      }
-
-      static float fade (float value) {
-        return value * value * value * (value * (value * 6.0f - 15.0f) + 10.0f);
-      }
-
-      static float lerp (float a, float b, float amount) {
-        return a + amount * (b - a);
-      }
-
-      static float gradient (int hash, float x, float y) {
-        switch (hash & 7) {
-        case 0:
-          return x + y;
-        case 1:
-          return x - y;
-        case 2:
-          return -x + y;
-        case 3:
-          return -x - y;
-        case 4:
-          return x;
-        case 5:
-          return -x;
-        case 6:
-          return y;
-        default:
-          return -y;
-        }
-      }
-
-      PerlinPermutation m_permutation;
-    };
-
     // The shapes are counted in cycles across the five kilometres the
     // world ordinarily runs.
-    constexpr float ordinary_period_m = 5000.0f;
+    constexpr meters_t ordinary_period = 5000.0f * u::m;
     constexpr NoiseShape ordinary_warp_shape { 3, 4, 2, 0.5f };
     constexpr NoiseShape ordinary_continent_shape { 3, 4, 2, 0.5f };
     constexpr NoiseShape ordinary_plains_shape { 12, 4, 2, 0.5f };
@@ -153,16 +38,28 @@ namespace moppe::terrain {
     // stretched: each shape keeps its length on the ground, to the nearest
     // whole cycle, which a periodic world needs. The lattice wraps at 256,
     // so the finest octave bounds how wide that can go.
-    NoiseShape across (NoiseShape shape, float scale) {
-      shape.cycles = std::max (1,
-                               static_cast<int> (std::lround (
-                                 static_cast<float> (shape.cycles) * scale)));
+    NoiseShape across (NoiseShape shape, scale_factor_t scale) {
+      shape.cycles = std::max (
+        1,
+        static_cast<int> (std::lround (static_cast<float> (shape.cycles) *
+                                       scale.numerical_value_in (one))));
       int finest = shape.cycles;
       for (int octave = 1; octave < shape.octaves; ++octave)
         finest *= shape.lacunarity;
       if (finest > 256)
         throw std::invalid_argument ("the world is too wide for its geology");
       return shape;
+    }
+
+    // A place as a share of the lap, on the lattice of a shape whose
+    // coarsest octave repeats `cycles` times around it.
+    float on_lattice (proportion_t along, int cycles) {
+      return along.numerical_value_in (one) * static_cast<float> (cycles);
+    }
+
+    // A signal of -1..1 folded onto 0..1.
+    float folded (noise_signal_t signal) {
+      return std::fma (signal.numerical_value_in (one), 0.5f, 0.5f);
     }
   }
 
@@ -174,30 +71,35 @@ namespace moppe::terrain {
     auto& uplift_column = spatial::get<uplift_weight> (result);
 
     const GeologicalSeeds seeds = derive_seeds (seed);
-    const PeriodicNoise base (seeds.base);
-    const PeriodicNoise ridge (seeds.ridge);
-    const PeriodicNoise warp (seeds.warp);
+    const PeriodicNoise base (seeds.base.value);
+    const PeriodicNoise ridge (seeds.ridge.value);
+    const PeriodicNoise warp (seeds.warp.value);
     const std::size_t width = result.domain ().width ();
     const std::size_t height = result.domain ().height ();
     // Only a wider world: a narrower one, as the tests and laboratories
     // make them, is the ordinary country in small. In quarters, so a
     // period that does not divide evenly by its samples still counts as
     // the round number it was meant as.
-    const float scale =
-      std::max (1.0f,
-                std::round (result.domain ().period_x ().numerical_value_in (
-                              moppe::u::m) /
-                            (0.25f * ordinary_period_m)) *
-                  0.25f);
+    const scale_factor_t scale =
+      std::max (
+        1.0f,
+        std::round ((result.domain ().period_x () / (0.25f * ordinary_period))
+                      .numerical_value_in (one)) *
+          0.25f) *
+      scale_factor[one];
     const NoiseShape warp_shape = across (ordinary_warp_shape, scale);
     const NoiseShape continent_noise_shape =
       across (ordinary_continent_shape, scale);
     const NoiseShape plains_shape = across (ordinary_plains_shape, scale);
     const NoiseShape mountain_shape = across (ordinary_mountain_shape, scale);
     // The warp reaches as far over the ground as it ever did.
-    const float warp_reach = 0.15f / scale;
-    const float inv_width = 1.0f / static_cast<float> (width);
-    const float inv_height = 1.0f / static_cast<float> (height);
+    const proportion_t warp_reach =
+      0.15f / scale.numerical_value_in (one) * proportion[one];
+    // The share of the lap one sample spans, across and down.
+    const proportion_t inv_width =
+      1.0f / static_cast<float> (width) * proportion[one];
+    const proportion_t inv_height =
+      1.0f / static_cast<float> (height) * proportion[one];
     std::atomic<std::size_t> next_row = 0;
     std::atomic<std::size_t> completed_rows = 0;
 
@@ -207,47 +109,55 @@ namespace moppe::terrain {
           next_row.fetch_add (1, std::memory_order_relaxed);
         if (row >= height)
           break;
-        const float v = static_cast<float> (row) * inv_height;
+        const proportion_t v = static_cast<float> (row) * inv_height;
         for (std::size_t column = 0; column < width; ++column) {
-          const float u = static_cast<float> (column) * inv_width;
-          const float warp_cycles = static_cast<float> (warp_shape.cycles);
-          const float warp_x = warp.fbm (
-            u * warp_cycles + 11.3f, v * warp_cycles + 7.7f, warp_shape);
-          const float warp_y = warp.fbm (
-            u * warp_cycles + 91.1f, v * warp_cycles + 33.9f, warp_shape);
-          const float warped_x = std::fma (warp_reach, warp_x, u);
-          const float warped_y = std::fma (warp_reach, warp_y, v);
+          const proportion_t u = static_cast<float> (column) * inv_width;
+          const int warp_cycles = warp_shape.cycles;
+          const noise_signal_t warp_x =
+            warp.fbm (on_lattice (u, warp_cycles) + 11.3f,
+                      on_lattice (v, warp_cycles) + 7.7f,
+                      warp_shape);
+          const noise_signal_t warp_y =
+            warp.fbm (on_lattice (u, warp_cycles) + 91.1f,
+                      on_lattice (v, warp_cycles) + 33.9f,
+                      warp_shape);
+          const proportion_t warped_x = fma (warp_reach, warp_x, u);
+          const proportion_t warped_y = fma (warp_reach, warp_y, v);
 
-          const float continent_cycles =
-            static_cast<float> (continent_noise_shape.cycles);
-          const float continent =
-            std::fma (base.fbm (warped_x * continent_cycles,
-                                warped_y * continent_cycles,
-                                continent_noise_shape),
-                      0.5f,
-                      0.5f);
-          const float plains_cycles = static_cast<float> (plains_shape.cycles);
-          const float plains = std::fma (base.fbm (warped_x * plains_cycles,
-                                                   warped_y * plains_cycles,
-                                                   plains_shape),
-                                         0.5f,
-                                         0.5f);
-          const float mountain_cycles =
-            static_cast<float> (mountain_shape.cycles);
-          const float mountains = ridge.ridged (warped_x * mountain_cycles,
-                                                warped_y * mountain_cycles,
-                                                mountain_shape);
-          const float mountain_mask = smoothstep (0.55f, 0.82f, continent);
-          const float lowland = plains * 0.12f * (1.0f - mountain_mask);
-          const float combined =
-            std::fma (mountains * 0.45f,
-                      mountain_mask,
-                      std::fma (continent, 0.55f, lowland));
+          const int continent_cycles = continent_noise_shape.cycles;
+          const ContinentShape continent =
+            folded (base.fbm (on_lattice (warped_x, continent_cycles),
+                              on_lattice (warped_y, continent_cycles),
+                              continent_noise_shape)) *
+            continent_shape[one];
+          const int plains_cycles = plains_shape.cycles;
+          const proportion_t plains =
+            folded (base.fbm (on_lattice (warped_x, plains_cycles),
+                              on_lattice (warped_y, plains_cycles),
+                              plains_shape)) *
+            proportion[one];
+          const int mountain_cycles = mountain_shape.cycles;
+          const noise_signal_t mountains =
+            ridge.ridged (on_lattice (warped_x, mountain_cycles),
+                          on_lattice (warped_y, mountain_cycles),
+                          mountain_shape);
+          // The share of the ground the mountains stand on.
+          const proportion_t mountain_mask =
+            smoothstep (0.55f, 0.82f, continent.numerical_value_in (one)) *
+            proportion[one];
+          const UpliftWeight lowland = quantity_cast<uplift_weight> (
+            plains * 0.12f * (1.0f * proportion[one] - mountain_mask));
+          const UpliftWeight combined = quantity_cast<uplift_weight> (
+            fma (mountains * 0.45f,
+                 mountain_mask,
+                 quantity_cast<uplift_weight> (
+                   fma (continent, 0.55f * one, lowland))));
 
           const std::size_t offset = row * width + column;
-          continent_column[offset] = continent * continent_shape[one];
+          continent_column[offset] = continent;
           uplift_column[offset] =
-            smoothstep (0.0f, 1.0f, combined) * uplift_weight[one];
+            smoothstep (0.0f, 1.0f, combined.numerical_value_in (one)) *
+            uplift_weight[one];
         }
         const std::size_t completed =
           completed_rows.fetch_add (1, std::memory_order_relaxed) + 1;

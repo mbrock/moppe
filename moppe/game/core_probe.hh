@@ -9,6 +9,8 @@
 // recording renderer. The host supplies the platform's view of memory and
 // where the report goes.
 
+#include <moppe/gfx/math.hh>
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -27,7 +29,8 @@ namespace moppe::game {
     std::function<CoreProbeMemory ()> memory;
     // Receives the whole report each time it grows.
     std::function<void (const std::string&)> write_report;
-    // A short description of the current step and its progress, 0..1.
+    // A short description of the current step and its progress, 0..1, as
+    // the host's progress bar takes it.
     std::function<void (const std::string&, float)> progress;
     std::string platform_name;
   };
@@ -35,9 +38,10 @@ namespace moppe::game {
   struct CoreProbeOptions {
     int seed = 123;
     int resolution = 2048;
-    double walk_seconds = 10.0;
-    double ride_seconds = 20.0;
-    double game_seconds = 20.0;
+    // How long to walk, to ride, and to play the demo, in simulated time.
+    quantity<si::second, double> walk = 10.0 * si::second;
+    quantity<si::second, double> ride = 20.0 * si::second;
+    quantity<si::second, double> game = 20.0 * si::second;
     // Drop every cache first, so the first build is a real generation.
     bool clear_caches = true;
   };

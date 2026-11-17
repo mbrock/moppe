@@ -32,7 +32,7 @@ namespace moppe {
       // Where a cascade of the sun's map is centred: a point that follows
       // the camera in whole texels, kept in double precision so that its
       // walk does not itself wobble the map.
-      using ShadowAnchor = std::optional<std::array<double, 3>>;
+      using ShadowAnchor = std::optional<std::array<meters_f64_t, 3>>;
 
       // Updates the production camera-local shadow level. The focus and
       // radius remain dimensional until the renderer boundary. `sky_pole`
@@ -40,9 +40,9 @@ namespace moppe {
       // squared to it rather than to the zenith.
       void render_local_shadow (render::Renderer& r,
                                 position_t camera,
-                                const Vec3& view_dir,
-                                const Vec3& sun_dir,
-                                const Vec3& sky_pole);
+                                const direction_t& view_dir,
+                                const direction_t& sun_dir,
+                                const direction_t& sky_pole);
 
       // Emits culled chunk draws: distance cull against max_dist plus
       // the view frustum's side planes.  Five nested LODs run from a
@@ -50,9 +50,9 @@ namespace moppe {
       // that reaches the near field is split into patches so only the
       // near ones pay for subdivision.
       void render (render::Renderer& r,
-                   const Vec3& cam,
+                   position_t cam,
                    const Mat4& view_proj,
-                   float max_dist);
+                   meters_t max_dist);
 
     private:
       static constexpr int PATCHES =
@@ -60,22 +60,26 @@ namespace moppe {
 
       struct Chunk {
         int x0, z0; // grid origin
-        Vec3 center;
-        float radius;
+        position_t center;
+        meters_t radius;
         // Horizontal Gerstner excursion; zero without waves on water.
-        float wave_reach = 0.0f;
-        float ymin, ymax;
+        meters_t wave_reach = 0.0f * u::m;
+        // Lowest ground and highest wave crest over the chunk.
+        terrain::SurfaceElevation ymin, ymax;
         // Height range of each patch, row-major.
-        float patch_ymin[PATCHES * PATCHES];
-        float patch_ymax[PATCHES * PATCHES];
+        terrain::SurfaceElevation patch_ymin[PATCHES * PATCHES];
+        terrain::SurfaceElevation patch_ymax[PATCHES * PATCHES];
       };
 
       std::vector<Chunk> m_chunks;
       std::vector<render::ChunkDraw> m_draws;
-      Vec3 m_scale;
-      Vec3 m_period;
-      Vec3 m_extent;
-      float m_lod_scale = 1;
+      // One lattice step along each axis.
+      meters_t m_cell_x = 1.0f * u::m;
+      meters_t m_cell_z = 1.0f * u::m;
+      plan_extent_t m_period;
+      // The coarser step: what turns the LOD distances, counted in source
+      // cells, into metres.
+      meters_t m_lod_scale = 1.0f * u::m;
       std::array<ShadowAnchor, 2> m_shadow_anchors;
       render::TexturePtr m_grass;
     };

@@ -24,8 +24,8 @@ namespace moppe {
         .day_turning = m_sky.day ().turning,
         .daylight = m_sky.sky ().daylight,
         .companion = m_company.companion ? &*m_company.companion : nullptr,
-        .companion_clock = m_company.hours >= 0.0
-                             ? std::optional (clock_time (m_company.hours))
+        .companion_clock = m_company.hours >= clock_time (0.0)
+                             ? std::optional (m_company.hours)
                              : std::nullopt,
       };
     }
@@ -40,7 +40,7 @@ namespace moppe {
                .places = m_places.layout,
                .bus = m_places.bus,
                .place_names = m_place_names,
-               .home_base = m_home_base_position,
+               .home_base = position (m_home_base_position),
                .sky = m_sky.sky () };
     }
 
@@ -69,7 +69,7 @@ namespace moppe {
             m_pan_contents.push_back (m_mushrooms.site (camp.pan.mushrooms[i]));
         draw_pan (dl,
                   camp.pan.place,
-                  camp.pan.yaw,
+                  camp.pan.yaw.numerical_value_in (u::rad) * u::rad,
                   m_pan_contents,
                   pan_cooked (camp.pan, now),
                   camp.pan.has_fish ? &camp.pan.fish : nullptr,
@@ -80,7 +80,8 @@ namespace moppe {
     bool MoppeGame::lying_down () const {
       const Camp& camp = logic ().m_camp;
       return camp.hung && logic ().m_doing == Doing::on_foot () &&
-             hammock_load (camp, logic ().m_total_time) > 0.5f;
+             hammock_load (camp, logic ().m_total_time) >
+               0.5f * proportion[one];
     }
 
     void MoppeGame::draw_sleeper (render::DrawList& dl,
@@ -94,15 +95,16 @@ namespace moppe {
             camp.hammock,
             camp.swing,
             resting_gaze (camp.hammock, camp.gaze_yaw, camp.gaze_pitch),
-            time),
+            time * u::s),
           m_company.outfit);
       // The basket waits on the ground under the foot of the hammock.
-      Vec3 floor = hammock_middle (camp.hammock) +
-                   hammock_across (camp.hammock) * 0.75f -
-                   hammock_along (camp.hammock) * 0.5f;
+      const direction_t across = hammock_across (camp.hammock);
+      const direction_t way = hammock_along (camp.hammock);
+      Vec3 floor = position_value (hammock_middle (camp.hammock)) +
+                   direction_value (across) * 0.75f -
+                   direction_value (way) * 0.5f;
       floor[1] = world_ground ().height (floor);
-      render_basket_set_down (
-        dl, floor, hammock_along (camp.hammock), m_basket_contents);
+      render_basket_set_down (dl, position (floor), way, m_basket_contents);
     }
   }
 }

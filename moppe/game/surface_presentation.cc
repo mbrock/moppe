@@ -33,7 +33,8 @@ namespace moppe::game {
         // by the water as sand where it is fine and cobbles where it is
         // coarse, so there the lane carries the bed's fineness instead of
         // the land's deposition.
-        const float fineness = source.river_bed.fineness[pixel];
+        const float fineness =
+          source.river_bed.fineness[pixel].numerical_value_in (one);
         const float laid =
           fineness >= 0.0f ? fineness
                            : render::detail::stored_scalar (deposition[pixel]);
@@ -67,7 +68,9 @@ namespace moppe::game {
         // A strand a river's spate covers reads as its shore, so the ground
         // draws it bare by the water and lets grass take the higher parts.
         float metres = render::detail::stored_scalar (shore[pixel]);
-        if (const float strand = source.river_bed.strand[pixel]; strand >= 0.0f)
+        if (const float strand =
+              source.river_bed.strand[pixel].numerical_value_in (one);
+            strand >= 0.0f)
           metres = std::min (metres, 0.8f + 2.0f * strand);
         render::detail::write_channel (
           at,

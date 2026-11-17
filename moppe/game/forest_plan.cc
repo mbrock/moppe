@@ -24,9 +24,12 @@ namespace moppe::game {
     // hard-core pass remains the physical upper bound. Proposals themselves
     // are a uniform deterministic stream, not one draw per square, so no
     // planting lattice exists to survive the rejection.
-    constexpr float forest_proposal_scale_min = 0.55f;
-    constexpr float forest_proposal_scale_max = 0.95f;
-    constexpr float forest_exclusion_ratio = 0.40f;
+    constexpr scale_factor_t forest_proposal_scale_min =
+      0.55f * scale_factor[one];
+    constexpr scale_factor_t forest_proposal_scale_max =
+      0.95f * scale_factor[one];
+    // The hard core's radius, as a share of the planting spacing.
+    constexpr scale_factor_t forest_exclusion_ratio = 0.40f * scale_factor[one];
 
     struct ForestPlanHeader {
       std::uint64_t magic;
@@ -54,50 +57,60 @@ namespace moppe::game {
     static_assert (sizeof (ForestSiteRecord) == 48);
 
     struct ForestCandidate {
-      float x;
-      float z;
-      float cover;
-      float moisture;
-      float grove;
+      meters_t x;
+      meters_t z;
+      map::ForestCover cover;
+      map::SurfaceMoisture moisture;
+      proportion_t grove;
       bool pioneer; // admitted by birch's own open-ground population
       bool open;    // admitted by the open trees' own population
       bool snag;    // the old stand a fire killed, still standing
       // What the canopy's competition left each tree here, and the bog.
-      float spruce, pine, birch, fell, bog;
+      map::SpruceAbundance spruce;
+      map::PineAbundance pine;
+      map::BirchAbundance birch;
+      map::MountainBirchAbundance fell;
+      map::SphagnumAbundance bog;
       // How far the ground has come back since it was last opened.
-      float recovery;
-      float priority;
+      map::StandRecovery recovery;
+      proportion_t priority;
       std::uint32_t identity;
     };
+
+    // A uniform draw from [0, 1) off one of a site's hash lanes.
+    proportion_t draw (std::uint32_t identity, std::uint32_t lane) {
+      return hash_lane (identity, lane) * proportion[one];
+    }
 
     // Where birch may dominate: a coherent field of patches from roughly
     // eighty to two hundred metres across, so birches arrive as groves
     // rather than as a sprinkle through the spruce.
-    float birch_grove (meters_t x,
-                       meters_t z,
-                       meters_t width,
-                       meters_t depth,
-                       std::uint32_t seed) {
+    proportion_t birch_grove (meters_t x,
+                              meters_t z,
+                              meters_t width,
+                              meters_t depth,
+                              std::uint32_t seed) {
       const proportion_t along_x = x / width;
       const proportion_t along_z = z / depth;
-      const auto laps = [] (meters_t extent, float patch_metres) {
+      const auto laps = [] (meters_t extent, meters_t patch) {
         return std::max<std::uint32_t> (
           1,
           static_cast<std::uint32_t> (
-            std::round (extent.numerical_value_in (u::m) / patch_metres)));
+            std::round ((extent / patch).numerical_value_in (one))));
       };
-      const float field =
+      const noise_signal_t field =
         0.65f *
-          periodic_noise (along_x, along_z, laps (width, 200.0f), seed ^ 0x5b1e)
-            .numerical_value_in (one) +
-        0.35f *
-          periodic_noise (along_x, along_z, laps (depth, 80.0f), seed ^ 0x8c3d)
-            .numerical_value_in (one);
-      return smoothstep (0.54f, 0.68f, field);
+          periodic_noise (
+            along_x, along_z, laps (width, 200.0f * u::m), seed ^ 0x5b1e) +
+        0.35f * periodic_noise (
+                  along_x, along_z, laps (depth, 80.0f * u::m), seed ^ 0x8c3d);
+      return band (0.54f * noise_signal[one], 0.68f * noise_signal[one], field);
     }
 
-    float wetness (float moisture) {
-      return smoothstep (0.30f, 0.70f, moisture);
+    proportion_t wetness (map::SurfaceMoisture moisture) {
+      return band (0.30f * map::surface_moisture[one],
+                   0.70f * map::surface_moisture[one],
+                   moisture);
     }
 
     // Birch is the pioneer: it holds the edges of the spruce, wet ground,
@@ -105,13 +118,18 @@ namespace moppe::game {
     bool is_birch (const ForestCandidate& candidate) {
       if (candidate.pioneer)
         return true;
-      const float edge = 1.0f - smoothstep (0.15f, 0.55f, candidate.cover);
-      const float odds =
-        0.03f +
-        candidate.grove *
-          (0.30f +
-           0.70f * std::max (edge, 0.8f * wetness (candidate.moisture)));
-      return hash_lane (candidate.identity, 7) < odds;
+      const proportion_t edge =
+        1.0f * proportion[one] - band (0.15f * map::forest_cover[one],
+                                       0.55f * map::forest_cover[one],
+                                       candidate.cover);
+      const probability_t odds =
+        (0.03f +
+         candidate.grove.numerical_value_in (one) *
+           (0.30f + 0.70f * std::max (edge, 0.8f * wetness (candidate.moisture))
+                              .numerical_value_in (one))) *
+        probability[one];
+      return draw (candidate.identity, 7).numerical_value_in (one) <
+             odds.numerical_value_in (one);
     }
 
     position_t sample_position (meters_t x, meters_t z) {
@@ -150,8 +168,9 @@ namespace moppe::game {
                     const terrain::WaterSheets& water,
                     meters_t x,
                     meters_t z) {
-      constexpr float root_plate_m = 1.6f;
-      constexpr float wet_depth_m = 0.02f;
+      constexpr meters_t root_plate = 1.6f * u::m;
+      constexpr terrain::ElevationChange wet_depth =
+        0.02f * terrain::surface_elevation[u::m];
       constexpr std::array<std::array<float, 2>, 7> probes { {
         { 0.0f, 0.0f },
         { 1.0f, 0.0f },
@@ -162,14 +181,14 @@ namespace moppe::game {
         { 0.5f, -0.866f },
       } };
       for (const auto& [dx, dz] : probes) {
-        const meters_t px = x + root_plate_m * dx * u::m;
-        const meters_t pz = z + root_plate_m * dz * u::m;
+        const meters_t px = x + root_plate * dx;
+        const meters_t pz = z + root_plate * dz;
         const position_t where = sample_position (px, pz);
-        const float ground = terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (surface, where));
-        const float level = terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (water, where));
-        if (level - ground > wet_depth_m)
+        const terrain::SurfaceElevation ground =
+          spatial::sample<terrain::surface_elevation> (surface, where);
+        const terrain::SurfaceElevation level =
+          spatial::sample<terrain::surface_elevation> (water, where);
+        if (level - ground > wet_depth)
           return false;
       }
       return true;
@@ -201,30 +220,41 @@ namespace moppe::game {
     // A stand is no older than the ground under it has had to grow one:
     // on a burn of a decade the trees are all saplings, and by a century
     // every age is there again.
-    ForestAge age_from_identity (std::uint32_t identity, float recovery) {
-      const float draw =
-        hash_lane (identity, 6) *
-        std::lerp (0.2f, 1.0f, smoothstep (0.03f, 0.6f, recovery));
-      if (draw < 0.18f)
+    ForestAge age_from_identity (std::uint32_t identity,
+                                 map::StandRecovery recovery) {
+      // Young ground draws from the younger end of the ages only.
+      const proportion_t age_draw =
+        draw (identity, 6) * std::lerp (0.2f,
+                                        1.0f,
+                                        band (0.03f * map::stand_recovery[one],
+                                              0.6f * map::stand_recovery[one],
+                                              recovery)
+                                          .numerical_value_in (one));
+      if (age_draw < 0.18f * proportion[one])
         return ForestAge::Sapling;
-      if (draw < 0.46f)
+      if (age_draw < 0.46f * proportion[one])
         return ForestAge::Young;
-      if (draw < 0.94f)
+      if (age_draw < 0.94f * proportion[one])
         return ForestAge::Mature;
       return ForestAge::Ancient;
     }
 
     TreeSizeFactor size_for_age (ForestAge age, std::uint32_t identity) {
-      const float draw = hash_lane (identity, 4);
+      // Each age spans its own range of sizes; the draw says where in it.
+      const proportion_t along = draw (identity, 4);
+      const auto between = [along] (float least, float range) {
+        return least * tree_size_factor[one] +
+               range * along.numerical_value_in (one) * tree_size_factor[one];
+      };
       switch (age) {
       case ForestAge::Sapling:
-        return (0.18f + 0.27f * draw) * tree_size_factor[one];
+        return between (0.18f, 0.27f);
       case ForestAge::Young:
-        return (0.48f + 0.32f * draw) * tree_size_factor[one];
+        return between (0.48f, 0.32f);
       case ForestAge::Mature:
-        return (0.78f + 0.42f * draw) * tree_size_factor[one];
+        return between (0.78f, 0.42f);
       case ForestAge::Ancient:
-        return (1.25f + 0.45f * draw) * tree_size_factor[one];
+        return between (1.25f, 0.45f);
       }
       return 1.0f * tree_size_factor[one];
     }
@@ -265,77 +295,101 @@ namespace moppe::game {
       const meters_t x = hash_lane (identity, 0) * width;
       const meters_t z = hash_lane (identity, 1) * depth;
       const map::ForestCover cover = cover_at (readings, x, z);
-      const proportion_t population = band (
+      proportion_t population = band (
         0.08f * map::forest_cover[one], 0.62f * map::forest_cover[one], cover);
-      float population_value = population.numerical_value_in (one);
-      const float grove = birch_grove (x, z, width, depth, seed);
+      const proportion_t grove = birch_grove (x, z, width, depth, seed);
       // Inside a birch grove, wet open ground carries a sparse stand of its
       // own: spread-out birches over a meadow the spruce never reaches. Only
       // the spruce mosaic is waived; habitat, routes, and settlements still
       // keep their ground clear.
-      float moisture = 0.0f;
+      map::SurfaceMoisture moisture = 0.0f * map::surface_moisture[one];
       bool pioneer = false;
-      if (grove > 0.0f) {
-        const auto read = [&] (auto quantity) {
-          return spatial::sample<quantity> (readings, sample_position (x, z))
-            .numerical_value_in (one);
-        };
-        const float habitat =
-          smoothstep (0.25f, 0.60f, read (map::tree_habitat));
-        const float open = (1.0f - read (map::trail_influence)) *
-                           (1.0f - read (map::home_base_influence));
-        moisture = moisture_at (readings, x, z).numerical_value_in (one);
-        const float pioneer_population = 0.22f * grove * wetness (moisture) *
-                                         habitat *
-                                         std::clamp (open, 0.0f, 1.0f);
-        pioneer = pioneer_population > population_value;
-        population_value = std::max (population_value, pioneer_population);
+      // What the readings hold here.
+      const auto held = [&] (auto quantity) {
+        return spatial::sample<quantity> (readings, sample_position (x, z));
+      };
+      // Away from the trails and the home base: what a route leaves open.
+      const auto unrouted = [&] {
+        return (1.0f - held (map::trail_influence).numerical_value_in (one)) *
+               (1.0f -
+                held (map::home_base_influence).numerical_value_in (one)) *
+               proportion[one];
+      };
+      if (grove > 0.0f * proportion[one]) {
+        const proportion_t habitat = band (0.25f * map::tree_habitat[one],
+                                           0.60f * map::tree_habitat[one],
+                                           held (map::tree_habitat));
+        const proportion_t open = unrouted ();
+        moisture = moisture_at (readings, x, z);
+        const proportion_t pioneer_population =
+          0.22f * grove.numerical_value_in (one) *
+          wetness (moisture).numerical_value_in (one) *
+          habitat.numerical_value_in (one) *
+          std::clamp (open.numerical_value_in (one), 0.0f, 1.0f) *
+          proportion[one];
+        pioneer = pioneer_population > population;
+        population = std::max (population, pioneer_population);
       }
       // Pine and the fell birch stand open where they hold the ground --
       // over the lichen, on the bog, along the treeline -- so they come
       // up at a population of their own, low enough to ride between.
-      const auto held = [&] (auto quantity) {
-        return spatial::sample<quantity> (readings, sample_position (x, z))
-          .numerical_value_in (one);
-      };
-      const float spruce = held (map::spruce_abundance);
-      const float pine = held (map::pine_abundance);
-      const float birch = held (map::birch_abundance);
-      const float fell = held (map::mountain_birch_abundance);
-      const float bog = held (map::sphagnum_abundance);
-      const float recovery = held (map::stand_recovery);
+      const map::SpruceAbundance spruce = held (map::spruce_abundance);
+      const map::PineAbundance pine = held (map::pine_abundance);
+      const map::BirchAbundance birch = held (map::birch_abundance);
+      const map::MountainBirchAbundance fell =
+        held (map::mountain_birch_abundance);
+      const map::SphagnumAbundance bog = held (map::sphagnum_abundance);
+      const map::StandRecovery recovery = held (map::stand_recovery);
       // On a burn the stand the fire killed still stands as snags, as
       // thick as it grew, and falls over the decades after: most of it is
       // down in thirty years and nearly all in a century.
-      const float burn = held (map::burn_recency);
-      const float since_fire = burn > 1e-6f
-                                 ? -12.0f * cr::log (burn)
-                                 : std::numeric_limits<float>::infinity ();
-      const float snag_population =
-        burn > 1e-6f ? 0.42f * cr::exp (-since_fire / 30.0f) : 0.0f;
-      const float routes = (1.0f - held (map::trail_influence)) *
-                           (1.0f - held (map::home_base_influence));
-      const float open_population =
-        (0.34f * pine + 0.32f * fell) * std::clamp (routes, 0.0f, 1.0f);
-      const bool open = open_population > population_value;
+      const map::BurnRecency burn = held (map::burn_recency);
+      const bool burnt = burn > 1e-6f * map::burn_recency[one];
+      const age_t since_fire =
+        (burnt ? -12.0f * cr::log (burn.numerical_value_in (one))
+               : std::numeric_limits<float>::infinity ()) *
+        age[astronomy::Julian_year];
+      const proportion_t snag_population =
+        (burnt ? 0.42f * cr::exp (
+                           (-since_fire / (30.0f * age[astronomy::Julian_year]))
+                             .numerical_value_in (one))
+               : 0.0f) *
+        proportion[one];
+      const proportion_t routes = unrouted ();
+      const proportion_t open_population =
+        (0.34f * pine.numerical_value_in (one) +
+         0.32f * fell.numerical_value_in (one)) *
+        std::clamp (routes.numerical_value_in (one), 0.0f, 1.0f) *
+        proportion[one];
+      const bool open = open_population > population;
       if (open) {
-        population_value = open_population;
+        population = open_population;
         pioneer = false;
       }
       const bool snag =
-        hash_lane (identity, 11) * (population_value + snag_population) <
+        draw (identity, 11) *
+          (population + snag_population).numerical_value_in (one) <
         snag_population;
-      population_value = std::min (population_value + snag_population, 1.0f);
-      const float proposal_scale = std::lerp (
-        forest_proposal_scale_min, forest_proposal_scale_max, population_value);
+      population =
+        std::min (population + snag_population, 1.0f * proportion[one]);
+      const scale_factor_t proposal_scale =
+        std::lerp (forest_proposal_scale_min.numerical_value_in (one),
+                   forest_proposal_scale_max.numerical_value_in (one),
+                   population.numerical_value_in (one)) *
+        scale_factor[one];
+      // The chance this proposal is planted at all.
+      const probability_t planted = population.numerical_value_in (one) *
+                                    proposal_scale.numerical_value_in (one) *
+                                    probability[one];
       if ((cover < 0.06f * map::forest_cover[one] &&
-           population_value <= 0.0f) ||
-          hash_lane (identity, 2) > population_value * proposal_scale ||
+           population <= 0.0f * proportion[one]) ||
+          draw (identity, 2).numerical_value_in (one) >
+            planted.numerical_value_in (one) ||
           !roots_dry (surface, water, x, z))
         continue;
-      candidates.push_back ({ .x = x.numerical_value_in (u::m),
-                              .z = z.numerical_value_in (u::m),
-                              .cover = cover.numerical_value_in (one),
+      candidates.push_back ({ .x = x,
+                              .z = z,
+                              .cover = cover,
                               .moisture = moisture,
                               .grove = grove,
                               .pioneer = pioneer,
@@ -347,7 +401,7 @@ namespace moppe::game {
                               .fell = fell,
                               .bog = bog,
                               .recovery = recovery,
-                              .priority = hash_lane (identity, 3),
+                              .priority = draw (identity, 3),
                               .identity = identity });
     }
 
@@ -356,18 +410,20 @@ namespace moppe::game {
         return a.priority < b.priority ||
                (a.priority == b.priority && a.identity < b.identity);
       });
-    const float width_m = width.numerical_value_in (u::m);
-    const float depth_m = depth.numerical_value_in (u::m);
-    const float exclusion =
-      spacing.numerical_value_in (u::m) * forest_exclusion_ratio;
-    const std::uint32_t bins_x = std::max (
-      1U, static_cast<std::uint32_t> (std::ceil (width_m / exclusion)));
-    const std::uint32_t bins_z = std::max (
-      1U, static_cast<std::uint32_t> (std::ceil (depth_m / exclusion)));
-    const float bin_x = width_m / static_cast<float> (bins_x);
-    const float bin_z = depth_m / static_cast<float> (bins_z);
-    const int reach_x = static_cast<int> (std::ceil (exclusion / bin_x));
-    const int reach_z = static_cast<int> (std::ceil (exclusion / bin_z));
+    const meters_t exclusion =
+      spacing * forest_exclusion_ratio.numerical_value_in (one);
+    // How many whole lengths of SPAN fit, rounded up.
+    const auto lengths = [] (meters_t extent, meters_t span) {
+      return std::ceil ((extent / span).numerical_value_in (one));
+    };
+    const std::uint32_t bins_x =
+      std::max (1U, static_cast<std::uint32_t> (lengths (width, exclusion)));
+    const std::uint32_t bins_z =
+      std::max (1U, static_cast<std::uint32_t> (lengths (depth, exclusion)));
+    const meters_t bin_x = width / static_cast<float> (bins_x);
+    const meters_t bin_z = depth / static_cast<float> (bins_z);
+    const int reach_x = static_cast<int> (lengths (exclusion, bin_x));
+    const int reach_z = static_cast<int> (lengths (exclusion, bin_z));
     std::vector<std::int32_t> heads (static_cast<std::size_t> (bins_x) * bins_z,
                                      -1);
     std::vector<std::int32_t> next;
@@ -379,13 +435,16 @@ namespace moppe::game {
       value %= extent;
       return static_cast<std::uint32_t> (value < 0 ? value + extent : value);
     };
-    const float exclusion_squared = exclusion * exclusion;
+    const square_meters_t exclusion_squared = exclusion * exclusion;
+    const auto bin_of = [] (meters_t at, meters_t bin, std::uint32_t bins) {
+      return std::min (
+        static_cast<std::uint32_t> ((at / bin).numerical_value_in (one)),
+        bins - 1);
+    };
 
     for (const ForestCandidate& candidate : candidates) {
-      const std::uint32_t bx =
-        std::min (static_cast<std::uint32_t> (candidate.x / bin_x), bins_x - 1);
-      const std::uint32_t bz =
-        std::min (static_cast<std::uint32_t> (candidate.z / bin_z), bins_z - 1);
+      const std::uint32_t bx = bin_of (candidate.x, bin_x, bins_x);
+      const std::uint32_t bz = bin_of (candidate.z, bin_z, bins_z);
       bool separated = true;
       for (int dz = -reach_z; separated && dz <= reach_z; ++dz)
         for (int dx = -reach_x; separated && dx <= reach_x; ++dx) {
@@ -396,10 +455,10 @@ namespace moppe::game {
           while (index >= 0) {
             const ForestCandidate& neighbour =
               accepted[static_cast<std::size_t> (index)];
-            const float delta_x =
-              terrain::minimum_image_delta (candidate.x - neighbour.x, width_m);
-            const float delta_z =
-              terrain::minimum_image_delta (candidate.z - neighbour.z, depth_m);
+            const meters_t delta_x =
+              terrain::minimum_image_delta (candidate.x - neighbour.x, width);
+            const meters_t delta_z =
+              terrain::minimum_image_delta (candidate.z - neighbour.z, depth);
             if (delta_x * delta_x + delta_z * delta_z < exclusion_squared) {
               separated = false;
               break;
@@ -417,27 +476,31 @@ namespace moppe::game {
 
     plan.sites.reserve (accepted.size ());
     for (const ForestCandidate& candidate : accepted) {
-      const meters_t x = candidate.x * u::m;
-      const meters_t z = candidate.z * u::m;
-      const map::ForestCover cover = candidate.cover * map::forest_cover[one];
+      const meters_t x = candidate.x;
+      const meters_t z = candidate.z;
+      const map::ForestCover cover = candidate.cover;
       const terrain::SurfaceElevation elevation = elevation_at (surface, x, z);
       // A boreal landscape: spruce is the forest, birch its pioneer.
       ForestCandidate site = candidate;
-      if (site.grove > 0.0f && site.moisture == 0.0f)
-        site.moisture = moisture_at (readings, x, z).numerical_value_in (one);
+      if (site.grove > 0.0f * proportion[one] &&
+          site.moisture == 0.0f * map::surface_moisture[one])
+        site.moisture = moisture_at (readings, x, z);
       // A snag was the old stand: grown before the fire, its top broken
       // off since.
       if (candidate.snag) {
-        const ForestAge age = hash_lane (candidate.identity, 12) < 0.25f
-                                ? ForestAge::Ancient
-                                : ForestAge::Mature;
+        const ForestAge age =
+          draw (candidate.identity, 12) < 0.25f * proportion[one]
+            ? ForestAge::Ancient
+            : ForestAge::Mature;
         plan.sites.push_back (
           { .position = forest_position (x, elevation, z),
             .normal = normal_at (surface, x, z),
             .cover = cover,
             .moisture = moisture_at (readings, x, z),
-            .size = size_for_age (age, candidate.identity) *
-                    (0.45f + 0.45f * hash_lane (candidate.identity, 13)),
+            .size =
+              size_for_age (age, candidate.identity) *
+              (0.45f +
+               0.45f * draw (candidate.identity, 13).numerical_value_in (one)),
             .seed = candidate.identity,
             .form = ForestForm::Snag,
             .age = age });
@@ -448,17 +511,18 @@ namespace moppe::game {
       // Which tree: drawn by the canopy's shares here, so a stand at an
       // edge mixes its neighbours. Birch's pioneers, and its groves among
       // the spruce, are birch whatever the draw.
-      const float shares[] = {
+      const std::array<proportion_t, 4> shares {
         candidate.spruce, candidate.pine, candidate.birch, candidate.fell
       };
-      const float total = shares[0] + shares[1] + shares[2] + shares[3];
-      float draw = hash_lane (candidate.identity, 9) * total;
+      const proportion_t total = shares[0] + shares[1] + shares[2] + shares[3];
+      proportion_t left =
+        draw (candidate.identity, 9) * total.numerical_value_in (one);
       std::size_t kind = 0;
-      while (kind < 3 && draw >= shares[kind])
-        draw -= shares[kind++];
+      while (kind < 3 && left >= shares[kind])
+        left -= shares[kind++];
       // Where no tree has come back yet, the first to is a birch.
-      if (total <= 0.0f)
-        kind = candidate.recovery < 0.5f ? 2 : 0;
+      if (total <= 0.0f * proportion[one])
+        kind = candidate.recovery < 0.5f * map::stand_recovery[one] ? 2 : 0;
       ForestForm form = kind == 1   ? ForestForm::Pine
                         : kind == 0 ? ForestForm::Conifer
                         : kind == 3 ? ForestForm::FellBirch
@@ -470,20 +534,31 @@ namespace moppe::game {
       // Toward the treeline the trees shrink: the fell birch low and
       // many-crowned, spruce stunted to krummholz among it. A bog's pines
       // are old and no taller than a person or two.
-      const float fell_share = total > 0.0f ? candidate.fell / total : 0.0f;
-      float shrink = 1.0f;
+      const proportion_t fell_share =
+        (total > 0.0f * proportion[one]
+           ? (candidate.fell / total).numerical_value_in (one)
+           : 0.0f) *
+        proportion[one];
+      scale_factor_t shrink = 1.0f * scale_factor[one];
       if (form == ForestForm::FellBirch)
-        shrink = 0.30f;
+        shrink = 0.30f * scale_factor[one];
       else if (form == ForestForm::Conifer)
-        shrink = 1.0f - 0.6f * fell_share;
+        shrink = (1.0f - 0.6f * fell_share.numerical_value_in (one)) *
+                 scale_factor[one];
       else if (form == ForestForm::Pine)
         shrink =
-          std::lerp (1.0f, 0.28f, candidate.bog) * (1.0f - 0.4f * fell_share);
+          std::lerp (1.0f, 0.28f, candidate.bog.numerical_value_in (one)) *
+          (1.0f - 0.4f * fell_share.numerical_value_in (one)) *
+          scale_factor[one];
       // And young ground grows young trees smaller still.
-      shrink *=
-        std::lerp (0.45f, 1.0f, smoothstep (0.0f, 0.3f, candidate.recovery));
-      const TreeSizeFactor size =
-        size_for_age (age, candidate.identity) * shrink;
+      shrink *= std::lerp (0.45f,
+                           1.0f,
+                           band (0.0f * map::stand_recovery[one],
+                                 0.3f * map::stand_recovery[one],
+                                 candidate.recovery)
+                             .numerical_value_in (one));
+      const TreeSizeFactor size = size_for_age (age, candidate.identity) *
+                                  shrink.numerical_value_in (one);
       plan.sites.push_back ({ .position = forest_position (x, elevation, z),
                               .normal = normal_at (surface, x, z),
                               .cover = cover,

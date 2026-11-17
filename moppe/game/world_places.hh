@@ -56,8 +56,8 @@ namespace moppe::game {
     // ones are where their country is; the poultry to their barns.
     void let_out_animals (const WorldGround& ground,
                           GameSession& session,
-                          const Vec3& home_base,
-                          const Vec3& spawn) const;
+                          const position_t& home_base,
+                          const position_t& spawn) const;
 
     // The places' stones, timber, and buildings; each beacon's laid wood;
     // and the old fire rings, cold until a camp's fire is lit in one. The
@@ -68,7 +68,8 @@ namespace moppe::game {
                const GameLogicState& logic);
 
     // A burning beacon near the eye lights what stands round it.
-    void light_beacons (FrameView& frame, const std::vector<float>& burn) const;
+    void light_beacons (FrameView& frame,
+                        std::span<const proportion_t> burn) const;
 
     // A barn lived in keeps its lantern lit in the dark hours; by day the
     // light from its open doors fills it. Near the eye, it is the lamp,

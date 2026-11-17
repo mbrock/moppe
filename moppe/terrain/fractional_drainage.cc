@@ -106,7 +106,7 @@ namespace moppe::terrain {
       FacetOffsets offsets;
       meters_t d1;
       meters_t d2;
-      float extent;
+      radians_t extent;
       float u1_x;
       float u1_z;
       float u2_x;
@@ -144,7 +144,7 @@ namespace moppe::terrain {
             .offsets = offsets,
             .d1 = d1,
             .d2 = d2,
-            .extent = cr::atan2 (d2_m, d1_m),
+            .extent = cr::atan2 (d2_m, d1_m) * u::rad,
             .u1_x = offsets.cardinal_x *
                     (grid.spacing_x ()).numerical_value_in (moppe::u::m) / d1_m,
             .u1_z = offsets.cardinal_y *
@@ -158,10 +158,12 @@ namespace moppe::terrain {
       }
     };
 
-    float route_score (float slope,
-                       const Vec3& direction,
-                       ChannelTangent previous_tangent,
-                       ChannelPersistence persistence) {
+    // The slope, made steeper or gentler by how well the way runs on
+    // along the channel the previous pass carved.
+    slope_t route_score (slope_t slope,
+                         const Vec3& direction,
+                         ChannelTangent previous_tangent,
+                         ChannelPersistence persistence) {
       const Vec3 previous = previous_tangent.numerical_value_in (mp_units::one);
       const float previous_length_squared = length2 (previous);
       if (previous_length_squared <= 1e-12f)
@@ -227,7 +229,7 @@ namespace moppe::terrain {
       const RoutingSurfaceElevation center =
         spatial::get<routing_surface_elevation> (focus);
       RouteReading best;
-      float best_score = 0.0f;
+      slope_t best_score = 0.0f * terrain_slope[mp_units::one];
 
       // Single-neighbour candidates cover bounded edges and are also the
       // clamped-to-edge cases of the triangular-facet construction.
@@ -238,9 +240,9 @@ namespace moppe::terrain {
           continue;
         const auto drop = center - spatial::get<routing_surface_elevation> (
                                      focus.row (*receiver));
-        const float slope =
-          (drop / geometry.distance).numerical_value_in (mp_units::one);
-        const float score = route_score (
+        const slope_t slope =
+          quantity_cast<terrain_slope> (drop / geometry.distance);
+        const slope_t score = route_score (
           slope, geometry.unit_direction, previous_tangent, persistence);
         if (score > best_score) {
           best_score = score;
@@ -248,15 +250,15 @@ namespace moppe::terrain {
             single_route (*receiver, geometry.columns, geometry.rows, grid);
           best.direction = geometry.direction;
           best.unit_direction = geometry.unit_direction;
-          best.slope = slope * terrain_slope[mp_units::one];
+          best.slope = slope;
         }
       }
 
       // The facet that wins, and where on it, decided by plain arithmetic;
       // the angles the reading reports are computed once, for the winner.
       const FacetGeometry* best_facet = nullptr;
-      float best_s1 = 0.0f;
-      float best_s2 = 0.0f;
+      slope_t best_s1 = 0.0f * terrain_slope[mp_units::one];
+      slope_t best_s2 = 0.0f * terrain_slope[mp_units::one];
 
       for (const FacetGeometry& geometry : stencil.facets) {
         const FacetOffsets offsets = geometry.offsets;
@@ -270,27 +272,32 @@ namespace moppe::terrain {
           spatial::get<routing_surface_elevation> (focus.row (*cardinal));
         const RoutingSurfaceElevation diagonal_height =
           spatial::get<routing_surface_elevation> (focus.row (*diagonal));
-        const float s1 = ((center - cardinal_height) / geometry.d1)
-                           .numerical_value_in (mp_units::one);
-        const float s2 = ((cardinal_height - diagonal_height) / geometry.d2)
-                           .numerical_value_in (mp_units::one);
-        if (s1 <= 0.0f || s2 <= 0.0f)
+        const slope_t s1 = quantity_cast<terrain_slope> (
+          (center - cardinal_height) / geometry.d1);
+        const slope_t s2 = quantity_cast<terrain_slope> (
+          (cardinal_height - diagonal_height) / geometry.d2);
+        constexpr slope_t level = 0.0f * terrain_slope[mp_units::one];
+        if (s1 <= level || s2 <= level)
           continue;
 
         // The steepest descent crosses the facet when its angle from the
         // cardinal edge, atan (s2 / s1), is short of the diagonal's,
         // atan (d2 / d1).
-        const float d1_m = (geometry.d1).numerical_value_in (moppe::u::m);
-        const float d2_m = (geometry.d2).numerical_value_in (moppe::u::m);
-        if (!(s2 * d1_m < s1 * d2_m))
+        if (!(s2 * geometry.d1 < s1 * geometry.d2))
           continue;
-        const float facet_slope = cr::hypot (s1, s2);
-        const float along = s1 / facet_slope;
-        const float across = s2 / facet_slope;
+        const slope_t facet_slope =
+          cr::hypot (s1.numerical_value_in (mp_units::one),
+                     s2.numerical_value_in (mp_units::one)) *
+          terrain_slope[mp_units::one];
+        // The descent's direction cosines along the two facet edges.
+        const float along =
+          (s1 / facet_slope).numerical_value_in (mp_units::one);
+        const float across =
+          (s2 / facet_slope).numerical_value_in (mp_units::one);
         const Vec3 direction (along * geometry.u1_x + across * geometry.u2_x,
                               0.0f,
                               along * geometry.u1_z + across * geometry.u2_z);
-        const float score =
+        const slope_t score =
           route_score (facet_slope, direction, previous_tangent, persistence);
         if (score <= best_score)
           continue;
@@ -307,20 +314,24 @@ namespace moppe::terrain {
                                  0.0f * flow_fraction[mp_units::one] };
         best.route.arc_count = 2;
         best.route.receiver_interpolation =
-          std::clamp (d1_m * s2 / (s1 * d2_m), 0.0f, 1.0f) *
+          std::clamp ((geometry.d1 * s2 / (s1 * geometry.d2))
+                        .numerical_value_in (mp_units::one),
+                      0.0f,
+                      1.0f) *
           facet_coordinate[mp_units::one];
-        best.route.run = d1_m / along * mp_units::si::metre;
+        best.route.run = geometry.d1 / along;
         best.unit_direction = direction;
-        best.slope = facet_slope * terrain_slope[mp_units::one];
+        best.slope = facet_slope;
       }
 
       if (best_facet) {
-        const float diagonal_fraction =
-          cr::atan2 (best_s2, best_s1) / best_facet->extent;
+        const FlowFraction diagonal_fraction = quantity_cast<flow_fraction> (
+          cr::atan2 (best_s2.numerical_value_in (mp_units::one),
+                     best_s1.numerical_value_in (mp_units::one)) *
+          u::rad / best_facet->extent);
         best.route.arcs[0].fraction =
-          (1.0f - diagonal_fraction) * flow_fraction[mp_units::one];
-        best.route.arcs[1].fraction =
-          diagonal_fraction * flow_fraction[mp_units::one];
+          1.0f * flow_fraction[mp_units::one] - diagonal_fraction;
+        best.route.arcs[1].fraction = diagonal_fraction;
         best.direction = normalized_angle (cr::atan2 (best.unit_direction[2],
                                                       best.unit_direction[0])) *
                          drainage_direction[mp_units::angular::radian];
@@ -338,19 +349,21 @@ namespace moppe::terrain {
       std::vector<std::uint32_t> donors (lattice.size (), 0);
       for (std::size_t offset = 0; offset < routes.size (); ++offset) {
         const FractionalFlowRoute& route = routes[offset];
-        float total_fraction = 0.0f;
+        constexpr FlowFraction none = 0.0f * flow_fraction[mp_units::one];
+        constexpr FlowFraction whole = 1.0f * flow_fraction[mp_units::one];
+        FlowFraction total_fraction = none;
         for (std::uint8_t arc = 0; arc < route.arc_count; ++arc) {
           const FractionalFlowArc& flow = route.arcs[arc];
-          const float fraction =
-            flow.fraction.numerical_value_in (mp_units::one);
           if (flow.receiver == lattice.index (offset) ||
               flow.receiver.value >= lattice.size () ||
-              !std::isfinite (fraction) || fraction <= 0.0f)
+              !std::isfinite (flow.fraction.numerical_value_in (one)) ||
+              flow.fraction <= none)
             throw std::logic_error ("invalid fractional drainage arc");
-          total_fraction += fraction;
+          total_fraction += flow.fraction;
           ++donors[lattice.offset (flow.receiver)];
         }
-        if (route.arc_count != 0 && std::fabs (total_fraction - 1.0f) > 1e-6f)
+        if (route.arc_count != 0 &&
+            abs (total_fraction - whole) > 1e-6f * flow_fraction[one])
           throw std::logic_error (
             "fractional drainage route does not conserve flow");
       }
@@ -448,26 +461,21 @@ namespace moppe::terrain {
       if (census.cell_count () != grid.width () * grid.height ())
         throw std::invalid_argument (
           "fractional drainage inputs do not share one terrain lattice");
-      const float persistence_value =
-        persistence.numerical_value_in (mp_units::one);
       if ((!previous_tangent.empty () &&
            previous_tangent.size () != grid.width () * grid.height ()) ||
-          !std::isfinite (persistence_value) || persistence_value < 0.0f ||
-          persistence_value >= 1.0f)
+          !std::isfinite (persistence.numerical_value_in (mp_units::one)) ||
+          persistence < 0.0f * channel_persistence[mp_units::one] ||
+          persistence >= 1.0f * channel_persistence[mp_units::one])
         throw std::invalid_argument (
           "fractional drainage channel memory is invalid");
 
       TerrainCellDomain lattice (grid);
       RoutingSurface surface (lattice);
       const std::span<const SurfaceElevation> levels = flood.water_levels ();
-      std::vector<float> level_values;
-      level_values.reserve (levels.size ());
-      for (SurfaceElevation level : levels)
-        level_values.push_back (surface_elevation_value (level));
       auto& elevations = spatial::get<routing_surface_elevation> (surface);
       for (std::size_t offset = 0; offset < lattice.size (); ++offset)
         elevations[offset] = RoutingSurfaceElevation (
-          level_values[offset] *
+          surface_elevation_value (levels[offset]) *
           routing_surface_elevation[mp_units::si::metre]);
 
       // The wet receiver tree supplies flat lake routes and proven depression
@@ -483,7 +491,7 @@ namespace moppe::terrain {
 
       if (backend) {
         backend->select_dry_routes (grid,
-                                    level_values,
+                                    levels,
                                     previous_tangent,
                                     persistence,
                                     flood.ocean,
@@ -535,7 +543,7 @@ namespace moppe::terrain {
           reading.direction = direction_for_offset (delta[0], delta[1], grid);
           reading.unit_direction =
             offset_unit_vector (delta[0], delta[1], grid);
-          reading.slope = wet.slope[offset] * terrain_slope[mp_units::one];
+          reading.slope = wet.slope[offset];
         }
         routes[offset] = reading.route;
         directions[offset] = reading.direction;
@@ -543,12 +551,9 @@ namespace moppe::terrain {
         slopes[offset] = reading.slope;
       }
 
-      const float cell_area_m2 =
-        (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
       std::vector<FractionalContributingArea> areas (
         lattice.size (),
-        cell_area_m2 * fractional_contributing_area[mp_units::si::metre *
-                                                    mp_units::si::metre]);
+        quantity_cast<fractional_contributing_area> (grid.cell_area ()));
       std::vector<ChannelTangent> tangents (
         lattice.size (), Vec3 () * channel_tangent[mp_units::one]);
       std::vector<ChannelAreaFlux> area_fluxes (

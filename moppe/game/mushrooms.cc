@@ -11,31 +11,32 @@
 
 namespace moppe::game {
   namespace {
-    constexpr float mushroom_tau = 6.2831853f;
+    constexpr radians_t mushroom_tau = 6.2831853f * u::rad;
     // Mushrooms are drawn larger than life, so a child walking through the
     // woods spots them over the moss and the long grass as an eager
     // forager would.
-    constexpr float storybook_scale = 3.4f;
+    constexpr scale_factor_t storybook_scale = 3.4f * scale_factor[one];
     // The share of trees with a group of mushrooms around them, and how
     // much likelier one is near the trailhead: a good autumn, so that a
     // walk from it finds some.
-    constexpr float host_odds = 0.09f;
-    constexpr float trailhead_bonus = 5.0f;
-    constexpr float trailhead_reach = 350.0f;
+    constexpr probability_t host_odds = 0.09f * probability[one];
+    constexpr scale_factor_t trailhead_bonus = 5.0f * scale_factor[one];
+    constexpr meters_t trailhead_reach = 350.0f * u::m;
     // Nor in the trailhead's own clearing, though they come up close by.
-    constexpr float mushroom_home_base_clearing = 0.35f;
+    constexpr proportion_t mushroom_home_base_clearing =
+      0.35f * proportion[one];
     // No mushroom grows in the tread a rider follows.
-    constexpr float mushroom_trail_tread = 0.5f;
+    constexpr proportion_t mushroom_trail_tread = 0.5f * proportion[one];
     // The tiles the ground's mushrooms are meshed in, the distance they are
     // drawn to, and the distance past which a tile's mesh is let go.
-    constexpr float tile_metres = 16.0f;
-    constexpr float draw_reach = 95.0f;
-    constexpr float keep_reach = 150.0f;
+    constexpr meters_t tile_metres = 16.0f * u::m;
+    constexpr meters_t draw_reach = 95.0f * u::m;
+    constexpr meters_t keep_reach = 150.0f * u::m;
     // No mushroom stands closer than this to a tree's axis.
-    constexpr float trunk_clearance = 1.1f;
-    constexpr float trunk_cell_metres = 4.0f;
+    constexpr meters_t trunk_clearance = 1.1f * u::m;
+    constexpr meters_t trunk_cell_metres = 4.0f * u::m;
     // A walker reaches this far, horizontally, to pick.
-    constexpr float pick_reach = 2.0f;
+    constexpr meters_t pick_reach = 2.0f * u::m;
 
     struct MushroomFrame;
 
@@ -46,8 +47,8 @@ namespace moppe::game {
       const char* plural;
       // Fly agaric is admired, not picked.
       bool edible;
-      // Its ordinary height in metres at scale one.
-      float height;
+      // Its ordinary height at scale one.
+      meters_t height;
       // How many a group holds: `least`, and up to `more` again as the
       // group's draw rises.
       int least;
@@ -59,56 +60,65 @@ namespace moppe::game {
     // A point of a mushroom's profile: its distance from the axis and
     // height, in units of the mushroom's height, and the colour there.
     struct ProfilePoint {
-      float radius;
-      float height;
+      ProfilePoint (float r, float h, DisplayColor c)
+          : radius (r * scale_factor[one]), height (h * scale_factor[one]),
+            colour (c) {}
+      scale_factor_t radius;
+      // Below zero, the stem's foot under the ground.
+      scale_factor_t height;
       DisplayColor colour;
     };
 
     // The body's frame: where the stem meets the ground, its axis, and two
     // directions across it.
     struct MushroomFrame {
-      Vec3 base;
-      Vec3 up;
-      Vec3 east;
-      Vec3 north;
-      float height;
-      float cooked;
+      position_t base;
+      direction_t up;
+      direction_t east;
+      direction_t north;
+      meters_t height;
+      doneness_t cooked;
     };
 
     // A colour as the pan leaves it: browned, then charred.
-    DisplayColor seared (const DisplayColor& raw, float cooked) {
+    DisplayColor seared (const DisplayColor& raw, doneness_t doneness) {
       const DisplayColor brown (0.46f, 0.27f, 0.11f);
       const DisplayColor char_black (0.06f, 0.05f, 0.045f);
+      const float cooked = doneness.numerical_value_in (one);
       if (cooked <= 0.0f)
         return raw;
       if (cooked <= 1.0f)
-        return mix_display (raw, brown, 0.72f * cooked);
-      return mix_display (mix_display (raw, brown, 0.72f),
+        return mix_display (raw, brown, 0.72f * cooked * blend_weight[one]);
+      return mix_display (mix_display (raw, brown, 0.72f * blend_weight[one]),
                           char_black,
-                          std::min (1.0f, cooked - 1.0f));
+                          std::min (1.0f, cooked - 1.0f) * blend_weight[one]);
     }
 
     MushroomFrame mushroom_frame (const MushroomSite& site) {
-      const Vec3 tilt (std::cos (site.lean_toward) * std::sin (site.lean),
-                       std::cos (site.lean),
-                       std::sin (site.lean_toward) * std::sin (site.lean));
+      const float lean = radians_value (site.lean);
+      const float lean_toward = radians_value (site.lean_toward);
+      const float yaw = radians_value (site.yaw);
+      const Vec3 tilt (std::cos (lean_toward) * std::sin (lean),
+                       std::cos (lean),
+                       std::sin (lean_toward) * std::sin (lean));
       const Vec3 up = normalized (tilt);
-      const Vec3 across (std::cos (site.yaw), 0.0f, std::sin (site.yaw));
+      const Vec3 across (std::cos (yaw), 0.0f, std::sin (yaw));
       const Vec3 north = normalized (cross (across, up));
       const Vec3 east = cross (up, north);
       return { .base = site.base,
-               .up = up,
-               .east = east,
-               .north = north,
-               .height = row (site.kind).height * site.scale * storybook_scale,
+               .up = unit_direction (up),
+               .east = unit_direction (east),
+               .north = unit_direction (north),
+               .height = quantity_cast<isq::length> (
+                 row (site.kind).height * site.scale * storybook_scale),
                .cooked = site.cooked };
     }
 
     // The outward normal of a profile segment, in (radius, height).
     std::array<float, 2> segment_normal (const ProfilePoint& a,
                                          const ProfilePoint& b) {
-      const float dr = b.radius - a.radius;
-      const float dh = b.height - a.height;
+      const float dr = (b.radius - a.radius).numerical_value_in (one);
+      const float dh = (b.height - a.height).numerical_value_in (one);
       const float l = std::max (std::hypot (dr, dh), 1e-6f);
       return { dh / l, -dr / l };
     }
@@ -137,22 +147,29 @@ namespace moppe::game {
         }
         normals[i] = n;
       }
+      // The vertices are written in the frame's metres.
+      const Vec3& base = position_value (frame.base);
+      const Vec3& up = direction_value (frame.up);
+      const Vec3& east = direction_value (frame.east);
+      const Vec3& north = direction_value (frame.north);
+      const float height = meters_value (frame.height);
       const auto point = [&] (std::size_t i, int side) {
-        const float angle =
+        const radians_t angle =
           mushroom_tau * static_cast<float> (side) / static_cast<float> (sides);
-        const Vec3 way =
-          frame.east * std::cos (angle) + frame.north * std::sin (angle);
-        const float r = profile[i].radius * wobble (i, angle);
-        return frame.base + way * (r * frame.height) +
-               frame.up * (profile[i].height * frame.height);
+        const float a = radians_value (angle);
+        const Vec3 way = east * std::cos (a) + north * std::sin (a);
+        const float r =
+          (profile[i].radius * wobble (i, angle)).numerical_value_in (one);
+        return base + way * (r * height) +
+               up * (profile[i].height.numerical_value_in (one) * height);
       };
       const auto normal = [&] (std::size_t i, int side) {
-        const float angle =
+        const radians_t angle =
           mushroom_tau * static_cast<float> (side) / static_cast<float> (sides);
-        const Vec3 way =
-          frame.east * std::cos (angle) + frame.north * std::sin (angle);
-        const Vec3 n = way * normals[i][0] + frame.up * normals[i][1];
-        return length2 (n) > 1e-8f ? normalized (n) : frame.up;
+        const float a = radians_value (angle);
+        const Vec3 way = east * std::cos (a) + north * std::sin (a);
+        const Vec3 n = way * normals[i][0] + up * normals[i][1];
+        return length2 (n) > 1e-8f ? normalized (n) : up;
       };
       const auto emit = [&] (std::size_t i, int side) {
         list.color (seared (profile[i].colour, frame.cooked));
@@ -171,7 +188,9 @@ namespace moppe::game {
         }
     }
 
-    const auto circular = [] (std::size_t, float) { return 1.0f; };
+    const auto circular = [] (std::size_t, radians_t) {
+      return 1.0f * scale_factor[one];
+    };
 
     void draw_chanterelle (render::DrawList& list,
                            const MushroomFrame& frame,
@@ -186,10 +205,14 @@ namespace moppe::game {
         { 0.30f, 0.80f, pale },  { 0.50f, 0.93f, gold }, { 0.54f, 0.88f, deep },
         { 0.50f, 0.97f, gold },  { 0.30f, 0.99f, gold }, { 0.00f, 0.90f, deep },
       };
-      const float phase = mushroom_tau * hash_lane (seed, 11);
+      const radians_t phase = mushroom_tau * hash_lane (seed, 11);
+      // Waves round the rim.
       const float lobes = 4.0f + std::floor (3.0f * hash_lane (seed, 12));
-      revolve (list, frame, profile, 14, [&] (std::size_t i, float angle) {
-        return i >= 3 ? 1.0f + 0.13f * std::sin (lobes * angle + phase) : 1.0f;
+      revolve (list, frame, profile, 14, [&] (std::size_t i, radians_t angle) {
+        return (i >= 3 ? 1.0f + 0.13f * std::sin (
+                                          radians_value (lobes * angle + phase))
+                       : 1.0f) *
+               scale_factor[one];
       });
     }
 
@@ -207,9 +230,12 @@ namespace moppe::game {
         { 0.42f, 0.96f, brown }, { 0.34f, 0.99f, brown },
         { 0.12f, 0.80f, brown }, { 0.00f, 0.60f, brown },
       };
-      const float phase = mushroom_tau * hash_lane (seed, 11);
-      revolve (list, frame, profile, 10, [&] (std::size_t i, float angle) {
-        return i >= 3 ? 1.0f + 0.16f * std::sin (3.0f * angle + phase) : 1.0f;
+      const radians_t phase = mushroom_tau * hash_lane (seed, 11);
+      revolve (list, frame, profile, 10, [&] (std::size_t i, radians_t angle) {
+        return (i >= 3 ? 1.0f + 0.16f * std::sin (
+                                          radians_value (3.0f * angle + phase))
+                       : 1.0f) *
+               scale_factor[one];
       });
     }
 
@@ -255,31 +281,34 @@ namespace moppe::game {
 
       // The warts: little white flecks lying on the cap.
       const int warts = 10 + static_cast<int> (8.0f * hash_lane (seed, 13));
+      // The flecks are written in the frame's metres.
+      const Vec3& base = position_value (frame.base);
+      const Vec3& up = direction_value (frame.up);
+      const Vec3& east = direction_value (frame.east);
+      const Vec3& north = direction_value (frame.north);
+      const float height = meters_value (frame.height);
       for (int k = 0; k < warts; ++k) {
         const std::uint32_t wart = lattice_hash (seed, 0x77a7u, k);
-        const float angle = mushroom_tau * hash_lane (wart, 0);
+        const float angle = radians_value (mushroom_tau * hash_lane (wart, 0));
         // Along the cap from crown to rim, sampled between its profile
         // points.
         const float along = std::sqrt (hash_lane (wart, 1));
         const float r = 0.40f * along;
         const float h = 1.03f - 0.17f * along * along;
-        const Vec3 way =
-          frame.east * std::cos (angle) + frame.north * std::sin (angle);
+        const Vec3 way = east * std::cos (angle) + north * std::sin (angle);
         const Vec3 normal =
-          normalized (frame.up * (1.0f - 0.6f * along) + way * (0.9f * along));
-        const Vec3 centre = frame.base + way * (r * frame.height) +
-                            frame.up * (h * frame.height) +
-                            normal * (0.006f * frame.height);
+          normalized (up * (1.0f - 0.6f * along) + way * (0.9f * along));
+        const Vec3 centre = base + way * (r * height) + up * (h * height) +
+                            normal * (0.006f * height);
         const Vec3 tangent = normalized (cross (normal, way));
         const Vec3 bitangent = cross (tangent, normal);
-        const float size =
-          frame.height * (0.025f + 0.025f * hash_lane (wart, 2));
+        const float size = height * (0.025f + 0.025f * hash_lane (wart, 2));
         list.color (white);
         list.normal (normal);
         constexpr int corners = 5;
         for (int c = 0; c < corners; ++c) {
-          const float a0 = mushroom_tau * c / corners;
-          const float a1 = mushroom_tau * (c + 1) / corners;
+          const float a0 = radians_value (mushroom_tau * c / corners);
+          const float a1 = radians_value (mushroom_tau * (c + 1) / corners);
           list.vertex (centre + normal * (0.3f * size));
           list.vertex (centre + tangent * (size * std::cos (a0)) +
                        bitangent * (size * std::sin (a0)));
@@ -292,16 +321,28 @@ namespace moppe::game {
     // By MushroomKind. Funnel chanterelles come in crowds, porcini
     // alone or in twos.
     constexpr MushroomKindRow mushroom_kinds[] = {
-      { "chanterelle", "chanterelles", true, 0.11f, 3, 5.0f, draw_chanterelle },
+      { "chanterelle",
+        "chanterelles",
+        true,
+        0.11f * u::m,
+        3,
+        5.0f,
+        draw_chanterelle },
       { "funnel chanterelle",
         "funnel chanterelles",
         true,
-        0.09f,
+        0.09f * u::m,
         6,
         8.0f,
         draw_funnel_chanterelle },
-      { "porcini", "porcini", true, 0.17f, 1, 2.6f, draw_porcini },
-      { "fly agaric", "fly agarics", false, 0.24f, 1, 3.6f, draw_fly_agaric },
+      { "porcini", "porcini", true, 0.17f * u::m, 1, 2.6f, draw_porcini },
+      { "fly agaric",
+        "fly agarics",
+        false,
+        0.24f * u::m,
+        1,
+        3.6f,
+        draw_fly_agaric },
     };
     static_assert (std::size (mushroom_kinds) == mushroom_kind_count);
 
@@ -310,28 +351,27 @@ namespace moppe::game {
     }
 
     // Which kind a tree's group is, by the tree.
-    MushroomKind kind_for (ForestForm form, float draw) {
+    // `draw` falls below each kind's threshold by its chance.
+    MushroomKind kind_for (ForestForm form, probability_t draw) {
+      constexpr auto p = probability[one];
       if (form == ForestForm::Conifer || form == ForestForm::Pine) {
-        if (draw < 0.40f)
+        if (draw < 0.40f * p)
           return MushroomKind::chanterelle;
-        if (draw < 0.70f)
+        if (draw < 0.70f * p)
           return MushroomKind::funnel_chanterelle;
         return MushroomKind::porcini;
       }
-      if (draw < 0.45f)
+      if (draw < 0.45f * p)
         return MushroomKind::fly_agaric;
-      if (draw < 0.80f)
+      if (draw < 0.80f * p)
         return MushroomKind::porcini;
       return MushroomKind::chanterelle;
     }
 
-    // How many mushrooms a group holds.
-    int group_size (MushroomKind kind, float draw) {
-      return row (kind).least + static_cast<int> (row (kind).more * draw);
-    }
-
-    position_t probe (float x, float z) {
-      return position (Vec3 (x, 0.0f, z));
+    // How many mushrooms a group holds: `draw` is how far toward its most.
+    int group_size (MushroomKind kind, proportion_t draw) {
+      return row (kind).least +
+             static_cast<int> (row (kind).more * draw.numerical_value_in (one));
     }
   }
 
@@ -353,99 +393,118 @@ namespace moppe::game {
                                const terrain::WaterSheets& water,
                                std::uint32_t seed,
                                meters_t sea_level,
-                               const Vec3& trailhead) {
+                               const position_t& trailhead) {
     MOPPE_PROFILE_ZONE ("plan_mushrooms");
-    const float sea = sea_level.numerical_value_in (u::m);
-    const Vec3 period = extent_value (forest.period);
+    const terrain::SurfaceElevation sea =
+      terrain::surface_elevation_point (sea_level);
+    const Vec3& extent = extent_value (forest.period);
+    const plan_extent_t period =
+      plan_extent (extent[0] * u::m, extent[2] * u::m);
     // Every trunk, by the cell it stands in, so no mushroom grows through
     // a neighbouring tree.
-    const auto cell_key = [] (float x, float z) {
+    const auto cell_key = [] (meters_t x, meters_t z) {
+      const float cell = meters_value (trunk_cell_metres);
       return (static_cast<std::uint64_t> (static_cast<std::uint32_t> (
-                static_cast<int> (std::floor (x / trunk_cell_metres))))
+                static_cast<int> (std::floor (meters_value (x) / cell))))
               << 32) |
              static_cast<std::uint32_t> (
-               static_cast<int> (std::floor (z / trunk_cell_metres)));
+               static_cast<int> (std::floor (meters_value (z) / cell)));
     };
-    std::unordered_map<std::uint64_t, std::vector<Vec3>> trunks;
+    std::unordered_map<std::uint64_t, std::vector<plan_position_t>> trunks;
     for (const ForestSite& tree : forest.sites) {
-      const Vec3 at = position_value (tree.position);
-      trunks[cell_key (at[0], at[2])].push_back (at);
+      const plan_position_t at = plan (tree.position);
+      trunks[cell_key (x_of (at), z_of (at))].push_back (at);
     }
-    const auto clear_of_trunks = [&] (float x, float z) {
+    const auto clear_of_trunks = [&] (const plan_position_t& spot) {
+      const meters_t x = x_of (spot);
+      const meters_t z = z_of (spot);
+      const Vec2& p = plan_value (spot);
       for (int dz = -1; dz <= 1; ++dz)
         for (int dx = -1; dx <= 1; ++dx) {
           const auto found = trunks.find (
             cell_key (x + dx * trunk_cell_metres, z + dz * trunk_cell_metres));
           if (found == trunks.end ())
             continue;
-          for (const Vec3& trunk : found->second)
-            if (std::hypot (trunk[0] - x, trunk[2] - z) < trunk_clearance)
+          for (const plan_position_t& trunk : found->second) {
+            const Vec2& t = plan_value (trunk);
+            if (std::hypot (t.x () - p.x (), t.z () - p.z ()) * u::m <
+                trunk_clearance)
               return false;
+          }
         }
       return true;
     };
 
     MushroomPlan plan;
-    plan.period_x = period[0];
-    plan.period_z = period[2];
+    plan.period = forest.period;
     for (const ForestSite& tree : forest.sites) {
       if (tree.age == ForestAge::Sapling)
         continue;
       const std::uint32_t identity = lattice_hash (tree.seed, 0x6d75u, seed);
-      const Vec3 at = position_value (tree.position);
-      const float from_trailhead =
-        std::hypot (at[0] - trailhead[0], at[2] - trailhead[2]);
-      const float odds =
-        host_odds * (1.0f + (trailhead_bonus - 1.0f) *
-                              (1.0f - smoothstep (0.4f * trailhead_reach,
-                                                  trailhead_reach,
-                                                  from_trailhead)));
-      if (hash_lane (identity, 0) >= odds)
+      const plan_position_t at = moppe::plan (tree.position);
+      const plan_displacement_t off = at - moppe::plan (trailhead);
+      const meters_t from_trailhead =
+        std::hypot (plan_value (off).x (), plan_value (off).z ()) * u::m;
+      const proportion_t far_from_trailhead =
+        1.0f * proportion[one] -
+        band (0.4f * trailhead_reach, trailhead_reach, from_trailhead);
+      const probability_t odds = quantity_cast<probability> (
+        host_odds *
+        (1.0f * scale_factor[one] +
+         quantity_cast<scale_factor> (
+           (trailhead_bonus - 1.0f * scale_factor[one]) * far_from_trailhead)));
+      if (hash_lane (identity, 0) * probability[one] >= odds)
         continue;
 
-      const MushroomKind kind = kind_for (tree.form, hash_lane (identity, 1));
-      const int members = group_size (kind, hash_lane (identity, 2));
+      const MushroomKind kind =
+        kind_for (tree.form, hash_lane (identity, 1) * probability[one]);
+      const int members =
+        group_size (kind, hash_lane (identity, 2) * proportion[one]);
       // An arc around the trunk, as the fungus spreads out under the
       // tree's crown.
-      const float middle = mushroom_tau * hash_lane (identity, 3);
-      const float spread = 0.6f + 1.6f * hash_lane (identity, 4);
-      const float distance = 1.3f + 2.2f * hash_lane (identity, 5);
-      const float group_scale = 0.8f + 0.4f * hash_lane (identity, 6);
+      const radians_t middle = mushroom_tau * hash_lane (identity, 3);
+      const radians_t spread = (0.6f + 1.6f * hash_lane (identity, 4)) * u::rad;
+      const meters_t distance = (1.3f + 2.2f * hash_lane (identity, 5)) * u::m;
+      const scale_factor_t group_scale =
+        (0.8f + 0.4f * hash_lane (identity, 6)) * scale_factor[one];
       for (int k = 0; k < members; ++k) {
         const std::uint32_t one_seed = lattice_hash (
           identity, static_cast<std::uint32_t> (k + 1), seed ^ 0x5b0e7u);
+        // From one end of the arc, -0.5, to the other, 0.5.
         const float place =
           members > 1 ? static_cast<float> (k) / (members - 1) - 0.5f : 0.0f;
         const float angle =
-          middle + spread * place + 0.25f * (hash_lane (one_seed, 0) - 0.5f);
-        const float reach = distance + 0.7f * (hash_lane (one_seed, 1) - 0.5f);
-        float x = at[0] + reach * std::cos (angle);
-        float z = at[2] + reach * std::sin (angle);
-        x = terrain::wrap_coordinate (x, period[0]);
-        z = terrain::wrap_coordinate (z, period[2]);
-        if (!clear_of_trunks (x, z))
+          radians_value (middle + spread * place +
+                         0.25f * (hash_lane (one_seed, 0) - 0.5f) * u::rad);
+        const meters_t reach =
+          distance + 0.7f * (hash_lane (one_seed, 1) - 0.5f) * u::m;
+        const plan_position_t spot =
+          terrain::wrap (at + plan_displacement (reach * std::cos (angle),
+                                                 reach * std::sin (angle)),
+                         period);
+        if (!clear_of_trunks (spot))
           continue;
-        const position_t where = probe (x, z);
-        const float ground = terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (surface, where));
-        const float level = terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (water, where));
-        const auto read = [&] (auto quantity) {
-          return spatial::sample<quantity> (readings, where)
-            .numerical_value_in (one);
-        };
+        const position_t where = at_height (spot, 0.0f * u::m);
+        const terrain::SurfaceElevation ground =
+          spatial::sample<terrain::surface_elevation> (surface, where);
+        const terrain::SurfaceElevation level =
+          spatial::sample<terrain::surface_elevation> (water, where);
         if (ground < sea || level > ground ||
-            read (map::trail_influence) > mushroom_trail_tread ||
-            read (map::home_base_influence) > mushroom_home_base_clearing)
+            spatial::sample<map::trail_influence> (readings, where) >
+              mushroom_trail_tread ||
+            spatial::sample<map::home_base_influence> (readings, where) >
+              mushroom_home_base_clearing)
           continue;
         MushroomSite site;
         site.kind = kind;
         site.seed = one_seed;
         site.scale = group_scale * (0.7f + 0.55f * hash_lane (one_seed, 2));
-        site.yaw = mushroom_tau * hash_lane (one_seed, 3);
-        site.lean = 0.18f * hash_lane (one_seed, 4);
-        site.lean_toward = mushroom_tau * hash_lane (one_seed, 5);
-        site.base = Vec3 (x, ground - 0.01f, z);
+        site.yaw =
+          quantity_cast<heading> (mushroom_tau * hash_lane (one_seed, 3));
+        site.lean = 0.18f * hash_lane (one_seed, 4) * inclination[u::rad];
+        site.lean_toward =
+          quantity_cast<heading> (mushroom_tau * hash_lane (one_seed, 5));
+        site.base = terrain::at_elevation (spot, ground - 0.01f * u::m);
         plan.sites.push_back (site);
       }
     }
@@ -469,26 +528,32 @@ namespace moppe::game {
            static_cast<std::uint32_t> (z);
   }
 
-  int MushroomPatch::tile_x (float x) const {
-    return static_cast<int> (std::floor (x / m_tile_x));
+  int MushroomPatch::tile_x (meters_t x) const {
+    return static_cast<int> (
+      std::floor (meters_value (x) / meters_value (m_tile_x)));
   }
 
-  int MushroomPatch::tile_z (float z) const {
-    return static_cast<int> (std::floor (z / m_tile_z));
+  int MushroomPatch::tile_z (meters_t z) const {
+    return static_cast<int> (
+      std::floor (meters_value (z) / meters_value (m_tile_z)));
   }
 
-  MushroomPatch::TileMesh* MushroomPatch::mesh_at (const Vec3& at) {
+  MushroomPatch::TileMesh* MushroomPatch::mesh_at (const position_t& at) {
+    const plan_position_t spot = plan (at);
     const auto found =
-      m_meshes.find (tile_key (tile_x (at[0]), tile_z (at[2])));
+      m_meshes.find (tile_key (tile_x (x_of (spot)), tile_z (z_of (spot))));
     return found == m_meshes.end () ? nullptr : &found->second;
   }
 
-  Vec3 MushroomPatch::base_near (std::uint32_t index,
-                                 const Vec3& reference) const {
-    Vec3 base = m_plan.sites[index].base;
-    base[0] += terrain::whole_periods (reference[0] - base[0], m_plan.period_x);
-    base[2] += terrain::whole_periods (reference[2] - base[2], m_plan.period_z);
-    return base;
+  position_t MushroomPatch::base_near (std::uint32_t index,
+                                       const position_t& reference) const {
+    position_t near = m_plan.sites[index].base;
+    Vec3& base = position_value (near);
+    const Vec3& to = position_value (reference);
+    const Vec3& period = extent_value (m_plan.period);
+    base[0] += terrain::whole_periods (to[0] - base[0], period[0]);
+    base[2] += terrain::whole_periods (to[2] - base[2], period[2]);
+    return near;
   }
 
   void MushroomPatch::rebuild (MushroomPlan plan) {
@@ -498,30 +563,35 @@ namespace moppe::game {
     m_meshes.clear ();
     m_tiles.clear ();
     // Tiles of about `tile_metres`, a whole number of them to the world.
-    const auto fit = [] (float period, float& size, int& count) {
+    const auto fit = [] (meters_t period, meters_t& size, int& count) {
       count =
-        period > 0.0f
-          ? std::max (1, static_cast<int> (std::ceil (period / tile_metres)))
+        period > 0.0f * u::m
+          ? std::max (1,
+                      static_cast<int> (std::ceil (meters_value (period) /
+                                                   meters_value (tile_metres))))
           : 0;
       size = count > 0 ? period / static_cast<float> (count) : tile_metres;
     };
-    fit (m_plan.period_x, m_tile_x, m_tiles_x);
-    fit (m_plan.period_z, m_tile_z, m_tiles_z);
+    const Vec3& period = extent_value (m_plan.period);
+    fit (period[0] * u::m, m_tile_x, m_tiles_x);
+    fit (period[2] * u::m, m_tile_z, m_tiles_z);
     for (std::uint32_t i = 0; i < m_plan.sites.size (); ++i) {
-      const Vec3& at = m_plan.sites[i].base;
-      m_tiles[tile_key (tile_x (at[0]), tile_z (at[2]))].push_back (i);
+      const plan_position_t at = moppe::plan (m_plan.sites[i].base);
+      m_tiles[tile_key (tile_x (x_of (at)), tile_z (z_of (at)))].push_back (i);
     }
   }
 
   std::optional<std::uint32_t>
-  MushroomPatch::within_reach (const Vec3& feet, const Vec3& heading) const {
-    Vec3 facing = heading;
+  MushroomPatch::within_reach (const position_t& feet,
+                               const direction_t& heading) const {
+    Vec3 facing = direction_value (heading);
     facing[1] = 0.0f;
     facing = length2 (facing) > 1e-6f ? normalized (facing) : Vec3 (0, 0, 1);
-    const int tx = tile_x (feet[0]);
-    const int tz = tile_z (feet[2]);
+    const plan_position_t stand = plan (feet);
+    const int tx = tile_x (x_of (stand));
+    const int tz = tile_z (z_of (stand));
     std::optional<std::uint32_t> best;
-    float best_score = 1e9f;
+    meters_t best_score = 1e9f * u::m;
     for (int dz = -1; dz <= 1; ++dz)
       for (int dx = -1; dx <= 1; ++dx) {
         const auto found = m_tiles.find (tile_key (tx + dx, tz + dz));
@@ -530,20 +600,23 @@ namespace moppe::game {
         for (const std::uint32_t index : found->second) {
           if (m_picked[index])
             continue;
-          const Vec3 offset = base_near (index, feet) - feet;
+          const Vec3 offset =
+            position_value (base_near (index, feet)) - position_value (feet);
           if (std::abs (offset[1]) > 1.5f)
             continue;
-          const float distance = std::hypot (offset[0], offset[2]);
+          const meters_t distance = std::hypot (offset[0], offset[2]) * u::m;
           if (distance > pick_reach)
             continue;
+          // The cosine between the facing and the way to it.
           const float ahead =
-            distance > 1e-3f
-              ? (offset[0] * facing[0] + offset[2] * facing[2]) / distance
+            distance > 1e-3f * u::m
+              ? (offset[0] * facing[0] + offset[2] * facing[2]) /
+                  meters_value (distance)
               : 1.0f;
           // Close at hand, or in front of the walker.
-          if (ahead < -0.2f && distance > 0.8f)
+          if (ahead < -0.2f && distance > 0.8f * u::m)
             continue;
-          const float score = distance - 0.8f * ahead;
+          const meters_t score = distance - 0.8f * ahead * u::m;
           if (score < best_score) {
             best_score = score;
             best = index;
@@ -553,14 +626,19 @@ namespace moppe::game {
     return best;
   }
 
-  std::optional<std::uint32_t> MushroomPatch::nearest (
-    const Vec3& at, float within, std::span<const std::uint32_t> skip) const {
-    const int tx = tile_x (at[0]);
-    const int tz = tile_z (at[2]);
-    const int span_x = static_cast<int> (std::ceil (within / m_tile_x));
-    const int span_z = static_cast<int> (std::ceil (within / m_tile_z));
+  std::optional<std::uint32_t>
+  MushroomPatch::nearest (const position_t& at,
+                          meters_t within,
+                          std::span<const std::uint32_t> skip) const {
+    const plan_position_t from = plan (at);
+    const int tx = tile_x (x_of (from));
+    const int tz = tile_z (z_of (from));
+    const int span_x = static_cast<int> (
+      std::ceil (meters_value (within) / meters_value (m_tile_x)));
+    const int span_z = static_cast<int> (
+      std::ceil (meters_value (within) / meters_value (m_tile_z)));
     std::optional<std::uint32_t> best;
-    float best_distance = within;
+    meters_t best_distance = within;
     for (int dz = -span_z; dz <= span_z; ++dz)
       for (int dx = -span_x; dx <= span_x; ++dx) {
         const auto found = m_tiles.find (tile_key (tx + dx, tz + dz));
@@ -570,8 +648,9 @@ namespace moppe::game {
           if (m_picked[index] ||
               std::find (skip.begin (), skip.end (), index) != skip.end ())
             continue;
-          const Vec3 base = base_near (index, at);
-          const float distance = std::hypot (base[0] - at[0], base[2] - at[2]);
+          const plan_displacement_t off = plan (base_near (index, at)) - from;
+          const meters_t distance =
+            std::hypot (plan_value (off).x (), plan_value (off).z ()) * u::m;
           if (distance < best_distance) {
             best_distance = distance;
             best = index;
@@ -581,12 +660,15 @@ namespace moppe::game {
     return best;
   }
 
-  std::vector<std::uint32_t> MushroomPatch::within (const Vec3& at,
-                                                    float within) const {
-    const int tx = tile_x (at[0]);
-    const int tz = tile_z (at[2]);
-    const int span_x = static_cast<int> (std::ceil (within / m_tile_x));
-    const int span_z = static_cast<int> (std::ceil (within / m_tile_z));
+  std::vector<std::uint32_t> MushroomPatch::within (const position_t& at,
+                                                    meters_t within) const {
+    const plan_position_t from = plan (at);
+    const int tx = tile_x (x_of (from));
+    const int tz = tile_z (z_of (from));
+    const int span_x = static_cast<int> (
+      std::ceil (meters_value (within) / meters_value (m_tile_x)));
+    const int span_z = static_cast<int> (
+      std::ceil (meters_value (within) / meters_value (m_tile_z)));
     std::vector<std::uint32_t> found;
     for (int dz = -span_z; dz <= span_z; ++dz)
       for (int dx = -span_x; dx <= span_x; ++dx) {
@@ -594,9 +676,11 @@ namespace moppe::game {
         if (tile == m_tiles.end ())
           continue;
         for (const std::uint32_t index : tile->second) {
-          const Vec3 base = base_near (index, at);
+          const plan_displacement_t off = plan (base_near (index, at)) - from;
           if (!m_picked[index] &&
-              std::hypot (base[0] - at[0], base[2] - at[2]) <= within)
+              std::hypot (plan_value (off).x (), plan_value (off).z ()) *
+                  u::m <=
+                within)
             found.push_back (index);
         }
       }
@@ -636,21 +720,29 @@ namespace moppe::game {
     }
   }
 
-  void MushroomPatch::draw (render::Renderer& renderer, const Vec3& camera) {
+  void MushroomPatch::draw (render::Renderer& renderer,
+                            const position_t& camera) {
     if (m_tiles.empty ())
       return;
-    const int tx = tile_x (camera[0]);
-    const int tz = tile_z (camera[2]);
-    const int span_x = static_cast<int> (std::ceil (draw_reach / m_tile_x));
-    const int span_z = static_cast<int> (std::ceil (draw_reach / m_tile_z));
+    const plan_position_t eye = plan (camera);
+    const int tx = tile_x (x_of (eye));
+    const int tz = tile_z (z_of (eye));
+    const int span_x = static_cast<int> (
+      std::ceil (meters_value (draw_reach) / meters_value (m_tile_x)));
+    const int span_z = static_cast<int> (
+      std::ceil (meters_value (draw_reach) / meters_value (m_tile_z)));
+    const meters_t period_x = extent_value (m_plan.period)[0] * u::m;
+    const meters_t period_z = extent_value (m_plan.period)[2] * u::m;
     // How far a tile, by the shortest way round the world, is from the
     // camera.
     const auto tile_distance = [&] (int x, int z) {
-      const float cx = (static_cast<float> (x) + 0.5f) * m_tile_x;
-      const float cz = (static_cast<float> (z) + 0.5f) * m_tile_z;
-      return std::hypot (
-               terrain::minimum_image_delta (cx - camera[0], m_plan.period_x),
-               terrain::minimum_image_delta (cz - camera[2], m_plan.period_z)) -
+      const meters_t cx = (static_cast<float> (x) + 0.5f) * m_tile_x;
+      const meters_t cz = (static_cast<float> (z) + 0.5f) * m_tile_z;
+      return std::hypot (meters_value (terrain::minimum_image_delta (
+                           cx - x_of (eye), period_x)),
+                         meters_value (terrain::minimum_image_delta (
+                           cz - z_of (eye), period_z))) *
+               u::m -
              0.7072f * std::max (m_tile_x, m_tile_z);
     };
 
@@ -690,22 +782,24 @@ namespace moppe::game {
           continue;
         // The tile is built where it lies in the world; past the seam it
         // stands a whole number of laps along.
-        const float lap_x =
+        const meters_t lap_x =
           m_tiles_x > 0
             ? static_cast<float> (
                 (tx + dx - terrain::wrap_index (tx + dx, m_tiles_x)) /
                 m_tiles_x) *
-                m_plan.period_x
-            : 0.0f;
-        const float lap_z =
+                period_x
+            : 0.0f * u::m;
+        const meters_t lap_z =
           m_tiles_z > 0
             ? static_cast<float> (
                 (tz + dz - terrain::wrap_index (tz + dz, m_tiles_z)) /
                 m_tiles_z) *
-                m_plan.period_z
-            : 0.0f;
-        renderer.draw_mesh (*tile.mesh,
-                            Mat4::translation (Vec3 (lap_x, 0.0f, lap_z)));
+                period_z
+            : 0.0f * u::m;
+        renderer.draw_mesh (
+          *tile.mesh,
+          Mat4::translation (
+            Vec3 (meters_value (lap_x), 0.0f, meters_value (lap_z))));
       }
   }
 }

@@ -34,7 +34,7 @@ namespace moppe::terrain {
     }
 
     struct Cell {
-      float level;
+      SurfaceElevation level;
       std::uint32_t index;
     };
 
@@ -80,8 +80,9 @@ namespace moppe::terrain {
         Cell cell;
       };
 
-      static std::uint32_t level_key (float level) {
-        const std::uint32_t bits = std::bit_cast<std::uint32_t> (level);
+      static std::uint32_t level_key (SurfaceElevation level) {
+        const std::uint32_t bits =
+          std::bit_cast<std::uint32_t> (surface_elevation_value (level));
         return bits & 0x80000000u ? ~bits : bits | 0x80000000u;
       }
 
@@ -100,9 +101,9 @@ namespace moppe::terrain {
   FloodField
   detail::analyze_standing_water (const TerrainDomain& grid,
                                   std::span<const SurfaceElevation> elevations,
-                                  float sea_level) {
+                                  SurfaceElevation sea_level) {
     MOPPE_PROFILE_ZONE ("analyze_standing_water");
-    if (!std::isfinite (sea_level))
+    if (!std::isfinite (surface_elevation_value (sea_level)))
       throw std::invalid_argument ("standing-water sea level must be finite");
 
     const std::size_t width = grid.width ();
@@ -112,8 +113,9 @@ namespace moppe::terrain {
       return y * width + x;
     };
 
-    std::vector<float> water (count, std::numeric_limits<float>::infinity ());
-    std::vector<float> depth (count, 0.0f);
+    std::vector<SurfaceElevation> water (
+      count,
+      surface_elevation_point (std::numeric_limits<float>::infinity () * u::m));
     std::vector<CellIndex> receiver (count, CellIndex { 0 });
     std::vector<std::uint8_t> visited (count, 0);
     LevelHeap frontier;
@@ -130,8 +132,8 @@ namespace moppe::terrain {
       MOPPE_PROFILE_ZONE ("flood.find_ocean_components");
       for (std::uint32_t origin = 0; origin < count; ++origin) {
         if (submerged_seen[origin] ||
-            elevation_at (grid, elevations, origin % width, origin / width) >
-              sea_level)
+            elevation_point_at (
+              grid, elevations, origin % width, origin / width) > sea_level)
           continue;
         component.clear ();
         submerged_seen[origin] = 1;
@@ -150,7 +152,7 @@ namespace moppe::terrain {
             const std::uint32_t next =
               static_cast<std::uint32_t> (index (nx, ny));
             if (submerged_seen[next] ||
-                elevation_at (grid, elevations, nx, ny) > sea_level)
+                elevation_point_at (grid, elevations, nx, ny) > sea_level)
               continue;
             submerged_seen[next] = 1;
             sea_frontier.push (next);
@@ -201,10 +203,10 @@ namespace moppe::terrain {
     if (!has_ocean) {
       MOPPE_PROFILE_ZONE ("flood.seed_endorheic_minimum");
       std::uint32_t minimum_cell = 0;
-      float minimum = elevation_at (grid, elevations, 0, 0);
+      SurfaceElevation minimum = elevation_point_at (grid, elevations, 0, 0);
       for (std::uint32_t cell = 1; cell < count; ++cell) {
-        const float value =
-          elevation_at (grid, elevations, cell % width, cell / width);
+        const SurfaceElevation value =
+          elevation_point_at (grid, elevations, cell % width, cell / width);
         if (value < minimum) {
           minimum = value;
           minimum_cell = cell;
@@ -253,7 +255,7 @@ namespace moppe::terrain {
             continue;
           visited[next] = 1;
           receiver[next] = current.index;
-          const float ground = surface_elevation_value (elevations[next]);
+          const SurfaceElevation ground = elevations[next];
           if (ground <= current.level) {
             water[next] = current.level;
             pit.push ({ current.level, next });
@@ -265,22 +267,20 @@ namespace moppe::terrain {
       }
     }
 
+    FloodSurface surface (grid);
+    auto& levels = spatial::get<surface_elevation> (surface);
+    auto& depths = spatial::get<standing_water_depth> (surface);
     {
       MOPPE_PROFILE_ZONE ("flood.compute_water_depth");
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const std::size_t cell = index (x, y);
-          depth[cell] = std::max (
-            0.0f, water[cell] - elevation_at (grid, elevations, x, y));
+          levels[cell] = water[cell];
+          depths[cell] = std::max (0.0f,
+                                   surface_elevation_value (water[cell]) -
+                                     elevation_at (grid, elevations, x, y)) *
+                         standing_water_depth[u::m];
         }
-    }
-
-    FloodSurface surface (grid);
-    auto& levels = spatial::get<surface_elevation> (surface);
-    auto& depths = spatial::get<standing_water_depth> (surface);
-    for (std::size_t cell = 0; cell < count; ++cell) {
-      levels[cell] = SurfaceElevation (water[cell] * surface_elevation[u::m]);
-      depths[cell] = depth[cell] * standing_water_depth[u::m];
     }
     return { .surface = std::move (surface),
              .sea_level = sea_level,
@@ -309,9 +309,10 @@ namespace moppe::terrain {
           "water-body row identity does not match its domain");
   }
 
-  LakeCensus census_lakes (const FloodField& flood, float wet_epsilon) {
+  LakeCensus census_lakes (const FloodField& flood, meters_t wet_epsilon) {
     MOPPE_PROFILE_ZONE ("census_lakes");
-    if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
+    if (!std::isfinite (meters_value (wet_epsilon)) ||
+        wet_epsilon < 0.0f * u::m)
       throw std::invalid_argument ("lake census epsilon must be non-negative");
     const std::size_t width = flood.width ();
     const std::size_t height = flood.height ();
@@ -324,7 +325,7 @@ namespace moppe::terrain {
     const square_meters_t cell_area = flood.domain ().cell_area ();
 
     for (std::uint32_t origin = 0; origin < count; ++origin) {
-      if (depth[origin].numerical_value_in (u::m) <= wet_epsilon ||
+      if (depth[origin] <= wet_epsilon ||
           body_at_cell[origin] != LakeCensus::dry)
         continue;
       const WaterBodyId id { static_cast<std::uint32_t> (bodies.size ()) };
@@ -342,8 +343,9 @@ namespace moppe::terrain {
                        .classification = WaterBodyClass::Puddle,
                        .inradius = 0.0f * mp_units::si::metre,
                        .channel_like = false };
-      double surface_sum_m = 0.0;
-      float lowest_level = std::numeric_limits<float>::infinity ();
+      meters_f64_t surface_sum = 0.0 * u::m;
+      SurfaceElevation lowest_level = surface_elevation_point (
+        std::numeric_limits<float>::infinity () * u::m);
       std::vector<std::uint32_t> members;
       body_at_cell[origin] = id;
       frontier.push (origin);
@@ -353,15 +355,13 @@ namespace moppe::terrain {
         members.push_back (cell);
         const std::size_t x = cell % width;
         const std::size_t y = cell / width;
-        const meters_t depth_m =
-          depth[cell].numerical_value_in (u::m) * mp_units::si::metre;
+        const meters_t depth_m = depth[cell];
         ++body.cells;
         body.maximum_depth = std::max (body.maximum_depth, depth_m);
         body.volume += depth_m * cell_area;
-        surface_sum_m +=
-          static_cast<double> (surface_elevation_value (level[cell]));
-        lowest_level =
-          std::min (lowest_level, surface_elevation_value (level[cell]));
+        surface_sum +=
+          static_cast<double> (surface_elevation_value (level[cell])) * u::m;
+        lowest_level = std::min (lowest_level, level[cell]);
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
@@ -369,7 +369,7 @@ namespace moppe::terrain {
           const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
-          if (depth[next].numerical_value_in (u::m) > wet_epsilon) {
+          if (depth[next] > wet_epsilon) {
             if (body_at_cell[next] == LakeCensus::dry) {
               body_at_cell[next] = id;
               frontier.push (next);
@@ -380,12 +380,12 @@ namespace moppe::terrain {
       body.area = static_cast<float> (body.cells) * cell_area;
       body.mean_depth = body.volume / body.area;
       body.surface_level =
-        static_cast<float> (surface_sum_m / static_cast<double> (body.cells)) *
+        static_cast<float> ((surface_sum / static_cast<double> (body.cells))
+                              .numerical_value_in (u::m)) *
         mp_units::si::metre;
       body.ocean_connected =
         flood.has_ocean &&
-        std::fabs (surface_elevation_value (level[members.front ()]) -
-                   flood.sea_level) <= wet_epsilon;
+        abs (level[members.front ()] - flood.sea_level) <= wet_epsilon;
       if (!body.ocean_connected) {
         // A priority-flood path can leave a connected flat, cross a dry
         // saddle, and re-enter the same flat.  Use its final departure as the
@@ -396,7 +396,7 @@ namespace moppe::terrain {
         std::uint32_t cell = members.front ();
         std::size_t steps = 0;
         while (flood.spill_receiver[cell] != cell && steps < count &&
-               !(surface_elevation_value (level[cell]) < lowest_level)) {
+               !(level[cell] < lowest_level)) {
           const std::uint32_t next = flood.spill_receiver[cell];
           if (body_at_cell[cell] == id && body_at_cell[next] != id) {
             body.outlet_cell = cell;
@@ -432,9 +432,8 @@ namespace moppe::terrain {
       // five cells wide. Wider flooded reaches can hide arms the alignment
       // never visits and should remain terminating standing bodies.
       constexpr float channel_inradius_cells = 2.05f;
-      const float cell_step_m = std::min (
-        (flood.domain ().spacing_x ()).numerical_value_in (moppe::u::m),
-        (flood.domain ().spacing_z ()).numerical_value_in (moppe::u::m));
+      const meters_t cell_step =
+        std::min (flood.domain ().spacing_x (), flood.domain ().spacing_z ());
       // Only wet cells' distances are read, and the nearest dry cell to a
       // wet one is a shore cell, so the sweep starts at the shore and
       // spreads through water alone.
@@ -492,15 +491,13 @@ namespace moppe::terrain {
         if (id == LakeCensus::dry || shore_distance[cell] < 0)
           continue;
         WaterBody& body = bodies[id.value];
-        body.inradius = std::max (body.inradius,
-                                  static_cast<float> (shore_distance[cell]) *
-                                    cell_step_m * mp_units::si::metre);
+        body.inradius = std::max (
+          body.inradius, static_cast<float> (shore_distance[cell]) * cell_step);
       }
       for (WaterBody& body : bodies)
-        body.channel_like =
-          !body.ocean_connected && water_body_is_permanent (body) &&
-          body.inradius <=
-            channel_inradius_cells * cell_step_m * mp_units::si::metre;
+        body.channel_like = !body.ocean_connected &&
+                            water_body_is_permanent (body) &&
+                            body.inradius <= channel_inradius_cells * cell_step;
     }
     return LakeCensus (std::move (body_at_cell), std::move (bodies));
   }

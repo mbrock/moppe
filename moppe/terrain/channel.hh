@@ -37,57 +37,57 @@ namespace moppe::terrain {
   struct ChannelFormation {
     // The bed is this share of the regime width, and no narrower than a
     // visible river.
-    float width_share = 0.75f;
+    proportion_t width_share = 0.75f * proportion[one];
     meters_t least_width = 5.0f * mp_units::si::metre;
     // Its depth at that least width, growing with the width to this power.
     meters_t least_depth = 0.25f * mp_units::si::metre;
-    float depth_growth = 0.8f;
+    scaling_exponent_t depth_growth = 0.8f * scaling_exponent[one];
     // How far from leaving a hollow filled (0) to cutting its sill through
     // (1) the graded bed lies.
-    float breach = 0.5f;
+    blend_weight_t breach = 0.5f * blend_weight[one];
     // The least a bed falls, so that water always knows its way.
-    float least_grade = 0.001f;
+    grade_t least_grade = 0.001f * grade[one];
     // Passes of easing along the stream: about four metres of reach each.
-    int easing = 24;
+    IterationCount easing = 24 * iteration_count[one];
     // Rise over run of the banks cut back from the bed's edges.
-    float bank_slope = 0.4f;
+    slope_t bank_slope = 0.4f * terrain_slope[one];
     // Where a river runs calm, under the first of these falls, it lays
     // bars of what it carries along its banks, most on the inside of a
     // bend, and cuts into the outside; above the second it runs steep
     // between whatever banks its valley gives it.
-    float calm_grade = 0.005f;
-    float steep_grade = 0.03f;
+    grade_t calm_grade = 0.005f * grade[one];
+    grade_t steep_grade = 0.03f * grade[one];
     // A bend is tight, radius over its river's width, under the first and
     // straight over the second.
-    float tight_bend = 2.5f;
-    float open_bend = 8.0f;
+    scale_factor_t tight_bend = 2.5f * scale_factor[one];
+    scale_factor_t open_bend = 8.0f * scale_factor[one];
     // A full bar: its slope, a strand to walk along; how far it runs out
     // from the bed, so many of the bed's widths and no less than a few
     // strides; and how much wider it makes the bed on its side.
-    float bar_slope = 0.07f;
-    float bar_widths = 1.5f;
+    slope_t bar_slope = 0.07f * terrain_slope[one];
+    scale_factor_t bar_widths = 1.5f * scale_factor[one];
     meters_t bar_reach = 6.0f * mp_units::si::metre;
-    float bar_widening = 0.6f;
+    scale_factor_t bar_widening = 0.6f * scale_factor[one];
     // How much of a full bar a calm river lays along a straight reach,
     // where its bars alternate from one bank to the other.
-    float straight_bar = 0.7f;
+    proportion_t straight_bar = 0.7f * proportion[one];
     // The most a full bar planes the ground beside it down: the river has
     // worked its floor this deep since it last stood higher.
     meters_t bar_lowering = 4.0f * mp_units::si::metre;
     // The outside of a tight calm bend, cut back by the current.
-    float cut_bank_slope = 0.8f;
+    slope_t cut_bank_slope = 0.8f * terrain_slope[one];
     // A sill is cut no deeper than this; what that leaves of a hollow
     // behind it fills.
     meters_t deepest_cut = 1.2f * mp_units::si::metre;
     // How far the ground may stand over a bed of a given depth and still
     // be its bank; higher is the valley's side, which the bed stops at.
-    float bank_height (float depth) const noexcept {
-      return 1.5f * depth + 0.25f;
+    meters_t bank_height (meters_t depth) const noexcept {
+      return 1.5f * depth + 0.25f * mp_units::si::metre;
     }
     // A body of standing water is a lake, and keeps its sill, when it
     // covers at least this many squares of the regime width of the river
     // leaving it.
-    float lake_widths = 4.0f;
+    scale_factor_t lake_widths = 4.0f * scale_factor[one];
     // A hollow beside the stream deeper than this below the bed is another
     // place, a drop or a side gully, and is not filled.
     meters_t deepest_fill = 1.5f * mp_units::si::metre;
@@ -100,8 +100,8 @@ namespace moppe::terrain {
 
   struct ChannelFormationResult {
     std::vector<SurfaceElevation> heights;
-    // Metres of ground laid down (positive) or cut away (negative).
-    std::vector<float> change_m;
+    // Ground laid down (positive) or cut away (negative).
+    std::vector<ElevationChange> change;
     cubic_meters_f64_t cut =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t filled =

@@ -4,6 +4,7 @@
 #include <moppe/game/animals.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/renderer.hh>
+#include <moppe/terrain/domain.hh>
 
 #include <cstdint>
 #include <functional>
@@ -18,24 +19,22 @@ namespace moppe::game {
   // each leg's two parts swung through the walk, the trot, or the roe
   // deer's bound by its gait; and the tail swishing. Those within
   // `reach` of the camera and before it (at the copy of the world nearest
-  // the camera, for the periods given) are drawn; `shadows` lends the
+  // the camera, for the period given) are drawn; `shadows` lends the
   // nearest to the sun's shadow instead.
   void render_animals (render::Renderer& r,
                        std::span<const Animal> animals,
-                       const std::function<float (float, float)>& ground,
-                       const Vec3& camera,
-                       const Vec3& forward,
-                       float time,
-                       float reach,
-                       float period_x,
-                       float period_z,
+                       const terrain::ElevationField& ground,
+                       const position_t& camera,
+                       const direction_t& forward,
+                       seconds_t time,
+                       meters_t reach,
+                       const plan_extent_t& period,
                        std::uint64_t motion_base);
 
   // Where an animal's muzzle is, grazing or not, for the tests and for
   // judging the pose.
-  [[nodiscard]] Vec3
-  animal_muzzle (const Animal& animal,
-                 const std::function<float (float, float)>& ground);
+  [[nodiscard]] position_t
+  animal_muzzle (const Animal& animal, const terrain::ElevationField& ground);
 }
 
 #endif

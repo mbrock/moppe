@@ -181,16 +181,19 @@ namespace moppe::game {
     // way ahead to watch. On foot the walker turns with the look, so it
     // is always ahead.
     void settle_look (GameLogicState& logic, float speed, float elapsed) {
-      logic.m_look_idle += elapsed;
+      logic.m_look_idle += elapsed * u::s;
       if (logic.m_doing == Doing::on_foot ())
         return;
       const float aside =
-        std::max (std::abs (logic.m_look_yaw), std::abs (logic.m_look_pitch));
+        std::max (std::abs (radians_value (logic.m_look_yaw)),
+                  std::abs (logic.m_look_pitch.numerical_value_in (u::rad)));
       const float wait = 0.6f + 1.4f * smoothstep (0.15f, 1.2f, aside);
-      const float rate = 1.3f *
-                         smoothstep (wait, wait + 1.0f, logic.m_look_idle) *
-                         smoothstep (0.5f, 6.0f, speed);
-      const float settle = smoothing_alpha (rate / u::s, elapsed * u::s);
+      const float rate =
+        1.3f *
+        smoothstep (wait, wait + 1.0f, seconds_value (logic.m_look_idle)) *
+        smoothstep (0.5f, 6.0f, speed);
+      const float settle =
+        smoothing_alpha (rate / u::s, elapsed * u::s).numerical_value_in (one);
       logic.m_look_yaw -= logic.m_look_yaw * settle;
       logic.m_look_pitch -= logic.m_look_pitch * settle;
     }
@@ -226,7 +229,8 @@ namespace moppe::game {
       if (bike && !session.ridden_bike ().grounded ())
         return none;
       const Vec3 at = session.subject_position ();
-      const terrain::RoadSample road = roads->nearest (at[0], at[2]);
+      const terrain::RoadSample road =
+        roads->nearest (plan_position (at[0], at[2]));
       if (!road.found || road.kind != terrain::Road::Kind::Road)
         return none;
       Vec3 ahead = session.subject_heading ();
@@ -235,14 +239,18 @@ namespace moppe::game {
         return none;
       ahead = normalized (ahead);
       const Vec3 right = normalized (cross (ahead, Vec3 (0.0f, 1.0f, 0.0f)));
-      Vec3 way (road.direction_x, 0.0f, road.direction_z);
+      const plan_direction_t& road_way = road.direction;
+      Vec3 way = lift (plan_value (road_way));
       if (dot (way, ahead) < 0.0f)
         way = -way;
       const float askew = std::atan2 (dot (way, right), dot (way, ahead));
       const terrain::RoadFormation& formation = roads->formation ();
-      const float tread = formation.half_width + formation.shoulder;
+      const float tread =
+        meters_value (formation.half_width + formation.shoulder);
       const float reach =
-        1.0f - smoothstep (tread + 1.0f, tread + 3.0f, std::abs (road.across));
+        1.0f - smoothstep (tread + 1.0f,
+                           tread + 3.0f,
+                           std::abs (meters_value (road.across)));
       const float along = 1.0f - smoothstep (0.4f, 0.7f, std::abs (askew));
       const float kmh = session.subject_speed_kmh ();
       const float moving = smoothstep (8.0f, 18.0f, kmh);
@@ -255,17 +263,23 @@ namespace moppe::game {
       // calls `visit` with the distance and the way at each step.
       const auto walk = [&] (float far, float step, auto&& visit) {
         Vec3 p =
-          at - Vec3 (-road.direction_z, 0.0f, road.direction_x) * road.across;
+          at -
+          Vec3 (-plan_value (road_way).z (), 0.0f, plan_value (road_way).x ()) *
+            meters_value (road.across);
         Vec3 w = way;
         for (float d = step; d <= far; d += step) {
           const Vec3 q = p + w * step;
-          const terrain::RoadSample s = roads->nearest (q[0], q[2]);
+          const terrain::RoadSample s =
+            roads->nearest (plan_position (q[0], q[2]));
           if (!s.found || s.kind != terrain::Road::Kind::Road)
             return;
-          Vec3 next (s.direction_x, 0.0f, s.direction_z);
+          const plan_direction_t& s_way = s.direction;
+          Vec3 next = lift (plan_value (s_way));
           if (dot (next, w) < 0.0f)
             next = -next;
-          p = q - Vec3 (-s.direction_z, 0.0f, s.direction_x) * s.across;
+          p =
+            q - Vec3 (-plan_value (s_way).z (), 0.0f, plan_value (s_way).x ()) *
+                  meters_value (s.across);
           w = next;
           visit (d, p, w);
         }
@@ -343,9 +357,11 @@ namespace moppe::game {
                .wheelie = input.lean_back });
       GameLogicState& logic = session.logic ();
       logic.m_look_pitch =
-        std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
+        std::clamp (logic.m_look_pitch + input.look_pitch * inclination[u::rad],
+                    -1.35f * inclination[u::rad],
+                    1.35f * inclination[u::rad]);
       if (input.look_yaw != 0.0f || input.look_pitch != 0.0f)
-        logic.m_look_idle = 0.0f;
+        logic.m_look_idle = 0.0f * u::s;
       if (logic.m_doing == Doing::on_foot ()) {
         // The walker turns with the look, and a following camera turns
         // with them at once rather than catching up.
@@ -353,11 +369,13 @@ namespace moppe::game {
         session.walker ().set_run (input.run && !logic.m_haul.active);
         if (logic.m_cam_mode != CAM_HELMET)
           session.camera ().turn (input.look_yaw, 0.0f);
-        logic.m_look_yaw = 0.0f;
+        logic.m_look_yaw = 0.0f * u::rad;
       } else {
         // Riding, the look swings about the way ahead, all the way round.
         logic.m_look_yaw =
-          std::remainder (logic.m_look_yaw + input.look_yaw, 6.2831853f);
+          std::remainder (radians_value (logic.m_look_yaw) + input.look_yaw,
+                          6.2831853f) *
+          u::rad;
       }
 
       InputFrame presses = input;
@@ -370,7 +388,7 @@ namespace moppe::game {
         GameLogicState& logic = session.logic ();
         logic.m_cam_mode = (CamMode)((logic.m_cam_mode + 1) % 3);
         if (logic.m_cam_mode == CAM_HELMET)
-          logic.m_fp_eye = session.camera ().position ();
+          logic.m_fp_eye = position (session.camera ().position ());
       }
     }
   }
@@ -461,8 +479,8 @@ namespace moppe::game {
               velocity_value (kick),
               10.0f,
               ground);
-        logic.m_shake = std::max (logic.m_shake, 0.05f);
-        logic.m_shake_time = 0.0f;
+        logic.m_shake = std::max (logic.m_shake, 0.05f * u::deg);
+        logic.m_shake_time = 0.0f * u::s;
       }
     }
 
@@ -498,8 +516,8 @@ namespace moppe::game {
           (a.ours && a.machine == driven) || (b.ours && b.machine == driven);
         if (felt) {
           logic.m_shake =
-            std::max (logic.m_shake, std::min (0.2f, 0.02f * speed));
-          logic.m_shake_time = 0.0f;
+            std::max (logic.m_shake, std::min (0.2f, 0.02f * speed) * u::deg);
+          logic.m_shake_time = 0.0f * u::s;
         }
       }
     }
@@ -727,7 +745,7 @@ namespace moppe::game {
       return position_value (m_glider.position ());
     case Doing::Way::passenger:
     case Doing::Way::bus:
-      return m_logic.m_seat_position;
+      return position_value (m_logic.m_seat_position);
     case Doing::Way::driving:
       return visit (
         m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
@@ -745,7 +763,7 @@ namespace moppe::game {
       return m_glider.heading ();
     case Doing::Way::passenger:
     case Doing::Way::bus:
-      return m_logic.m_seat_heading;
+      return direction_value (m_logic.m_seat_heading);
     case Doing::Way::driving:
       return visit (
         m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
@@ -763,7 +781,7 @@ namespace moppe::game {
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
     case Doing::Way::passenger:
     case Doing::Way::bus:
-      return length (m_logic.m_seat_velocity) * 3.6f;
+      return length (velocity_value (m_logic.m_seat_velocity)) * 3.6f;
     case Doing::Way::driving:
       return visit (
         m_fleet, m_logic.m_doing.machine, [] (Machine, const Drivable auto& b) {
@@ -852,15 +870,15 @@ namespace moppe::game {
     // Eyes open where the camera was and settle into the head, as when
     // Tab chooses them.
     if (m_logic.m_cam_mode == CAM_HELMET)
-      m_logic.m_fp_eye = m_camera.position ();
+      m_logic.m_fp_eye = position (m_camera.position ());
   }
 
   void GameSession::start_on_foot () {
     if (m_logic.m_doing == Doing::driving (Machine::bike))
       step_out (*this, Machine::bike);
     m_logic.m_cam_mode = CAM_CHASE;
-    m_logic.m_look_pitch = 0.0f;
-    m_logic.m_fp_eye = position_value (m_walker.eye_position ());
+    m_logic.m_look_pitch = 0.0f * inclination[u::rad];
+    m_logic.m_fp_eye = m_walker.eye_position ();
     m_camera.reset ();
   }
 
@@ -885,11 +903,12 @@ namespace moppe::game {
     case Doing::Way::passenger: {
       // From the seat, or from behind as the machine's driver is seen.
       const SeatView& view = machine_kind (m_logic.m_doing.machine).view;
-      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.78f +
-                m_logic.m_seat_heading * 0.08f;
-      rig.ahead = m_logic.m_seat_heading;
-      rig.pivot = m_logic.m_seat_position + Vec3 (0, 0.5f, 0);
-      rig.velocity = m_logic.m_seat_velocity;
+      rig.eye = position_value (m_logic.m_seat_position) +
+                direction_value (m_logic.m_seat_up) * 0.78f +
+                direction_value (m_logic.m_seat_heading) * 0.08f;
+      rig.ahead = direction_value (m_logic.m_seat_heading);
+      rig.pivot = position_value (m_logic.m_seat_position) + Vec3 (0, 0.5f, 0);
+      rig.velocity = velocity_value (m_logic.m_seat_velocity);
       rig.distance = view.distance;
       rig.nearest = view.nearest;
       rig.elevation = view.elevation;
@@ -898,11 +917,13 @@ namespace moppe::game {
     case Doing::Way::bus:
       // From the front seat, a sitter's head over it, looking out
       // through the windscreen; or from well behind and above the bus.
-      rig.eye = m_logic.m_seat_position + m_logic.m_seat_up * 0.8f +
-                m_logic.m_seat_heading * 0.1f;
-      rig.ahead = m_logic.m_seat_heading;
-      rig.pivot = m_logic.m_seat_position + m_logic.m_seat_up * 1.3f;
-      rig.velocity = m_logic.m_seat_velocity;
+      rig.eye = position_value (m_logic.m_seat_position) +
+                direction_value (m_logic.m_seat_up) * 0.8f +
+                direction_value (m_logic.m_seat_heading) * 0.1f;
+      rig.ahead = direction_value (m_logic.m_seat_heading);
+      rig.pivot = position_value (m_logic.m_seat_position) +
+                  direction_value (m_logic.m_seat_up) * 1.3f;
+      rig.velocity = velocity_value (m_logic.m_seat_velocity);
       rig.distance = 15.0f * u::m;
       rig.nearest = 7.0f * u::m;
       rig.elevation = 14.0f * u::deg;
@@ -951,21 +972,22 @@ namespace moppe::game {
       // rattle the eyeballs. The head turns about the vertical and then
       // nods about its own right, from the way ahead.
       const Vec3 up (0, 1, 0);
-      Vec3 look =
-        Quaternion::rotate (rig.ahead, up, -m_logic.m_look_yaw * u::rad);
+      Vec3 look = Quaternion::rotate (rig.ahead, up, -m_logic.m_look_yaw);
       Vec3 right = cross (look, up);
       if (length2 (right) > 1e-6f) {
         normalize (right);
-        look = Quaternion::rotate (look, right, m_logic.m_look_pitch * u::rad);
+        look = Quaternion::rotate (look, right, m_logic.m_look_pitch);
       }
       // A helicopter flies too fast for the eye to chase: it is carried
       // along, and only what the cabin does about it is smoothed.
       if (m_logic.m_doing == Doing::driving (Machine::helicopter))
-        m_logic.m_fp_eye +=
+        position_value (m_logic.m_fp_eye) +=
           rig.velocity * static_cast<float> (dt.numerical_value_in (u::s));
-      m_logic.m_fp_eye +=
-        (rig.eye - m_logic.m_fp_eye) * smoothing_alpha (25.0f / u::s, dt);
-      m_camera.place (m_logic.m_fp_eye, m_logic.m_fp_eye + look * 10.0f);
+      position_value (m_logic.m_fp_eye) +=
+        (rig.eye - position_value (m_logic.m_fp_eye)) *
+        smoothing_alpha (25.0f / u::s, dt).numerical_value_in (one);
+      m_camera.place (position_value (m_logic.m_fp_eye),
+                      position_value (m_logic.m_fp_eye) + look * 10.0f);
       return;
     }
     // Looking up swings the camera down behind the subject, below its
@@ -973,12 +995,12 @@ namespace moppe::game {
     // overhead. The look is held to what the camera can show, so turning
     // back answers at once.
     const float base = rig.elevation.numerical_value_in (u::rad);
-    const float raised =
-      std::clamp (base - m_logic.m_look_pitch, -0.75f, 1.35f);
-    m_logic.m_look_pitch = base - raised;
+    const float raised = std::clamp (
+      base - m_logic.m_look_pitch.numerical_value_in (u::rad), -0.75f, 1.35f);
+    m_logic.m_look_pitch = (base - raised) * inclination[u::rad];
     const float flip = m_logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
     m_camera.frame (rig.elevation, rig.distance, rig.nearest);
-    m_camera.aim (m_logic.m_look_yaw, raised - base);
+    m_camera.aim (radians_value (m_logic.m_look_yaw), raised - base);
     m_camera.update (moppe::position (rig.pivot),
                      rig.ahead * flip,
                      moppe::velocity (rig.velocity),
@@ -995,7 +1017,7 @@ namespace moppe::game {
   }
 
   void GameSession::settle_camera (const map::SurfaceGeometry& surface) {
-    m_logic.m_fp_eye = camera_rig ().eye;
+    m_logic.m_fp_eye = position (camera_rig ().eye);
     m_camera.reset ();
     follow_camera (surface, 0 * u::s);
   }
@@ -1084,7 +1106,8 @@ namespace moppe::game {
       boat.update (elapsed * u::s, floating);
       if (logic.m_doing != Doing::driving (Machine::boat))
         return;
-      logic.m_odometer += length (velocity_value (boat.velocity ())) * elapsed;
+      logic.m_odometer +=
+        length (velocity_value (boat.velocity ())) * elapsed * u::m;
 
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const DisplayColor spray_color (0.86f, 0.92f, 0.97f);
@@ -1217,7 +1240,8 @@ namespace moppe::game {
           world, surface, water, seconds_into_play (logic.m_total_time)));
       if (logic.m_doing != Doing::driving (Machine::jet_ski))
         return;
-      logic.m_odometer += length (velocity_value (ski.velocity ())) * elapsed;
+      logic.m_odometer +=
+        length (velocity_value (ski.velocity ())) * elapsed * u::m;
 
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const DisplayColor spray_color (0.86f, 0.92f, 0.97f);
@@ -1433,7 +1457,8 @@ namespace moppe::game {
     heli.set_parked (logic.m_doing != Doing::driving (Machine::helicopter));
     heli.update (dt, water_at (position_value (heli.position ())));
     if (logic.m_doing == Doing::driving (Machine::helicopter)) {
-      logic.m_odometer += length (velocity_value (heli.velocity ())) * elapsed;
+      logic.m_odometer +=
+        length (velocity_value (heli.velocity ())) * elapsed * u::m;
       // Low over the ground, the downwash blows up what lies there.
       const float height = heli.altitude ().numerical_value_in (u::m);
       if (heli.rotor () > 0.6f * one && height < 9.0f) {
@@ -1467,7 +1492,7 @@ namespace moppe::game {
     tractor.update (dt, water_at (position_value (tractor.position ())));
     if (logic.m_doing == Doing::driving (Machine::tractor)) {
       logic.m_odometer +=
-        length (velocity_value (tractor.velocity ())) * elapsed;
+        length (velocity_value (tractor.velocity ())) * elapsed * u::m;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const float throttle = scalar_value (tractor.throttle ());
       if (chance (logic.m_fx_rng) < 0.12f + 0.5f * throttle) {
@@ -1500,7 +1525,8 @@ namespace moppe::game {
                      logic.m_sling.load == Machine::caddy);
     caddy.update (dt, water_at (position_value (caddy.position ())));
     if (logic.m_doing == Doing::driving (Machine::caddy)) {
-      logic.m_odometer += length (velocity_value (caddy.velocity ())) * elapsed;
+      logic.m_odometer +=
+        length (velocity_value (caddy.velocity ())) * elapsed * u::m;
       std::uniform_real_distribution<float> chance (0.0f, 1.0f);
       const float throttle = scalar_value (caddy.throttle ());
       if (chance (logic.m_fx_rng) < 0.05f + 0.25f * throttle) {
@@ -1528,7 +1554,8 @@ namespace moppe::game {
     session.jet_ski ().set_trunks (trunks);
     advance_jet_ski (world, surface, session, water, elapsed);
     if (logic.m_doing == Doing::driving (Machine::jeep)) {
-      logic.m_odometer += length (velocity_value (jeep.velocity ())) * elapsed;
+      logic.m_odometer +=
+        length (velocity_value (jeep.velocity ())) * elapsed * u::m;
       // Sliding wheels throw up what they slide on.
       const float slide = std::fabs (dot (velocity_value (jeep.velocity ()),
                                           direction_value (jeep.left ())));
@@ -1577,32 +1604,32 @@ namespace moppe::game {
       if (length2 (heading) > 0.0001f)
         normalize (heading);
       else
-        heading = logic.m_jump_last_heading;
+        heading = direction_value (logic.m_jump_last_heading);
 
-      if (logic.m_jump_airtime > 0.0f) {
-        Vec3 previous = logic.m_jump_last_heading;
+      if (logic.m_jump_airtime > 0.0f * u::s) {
+        Vec3 previous = direction_value (logic.m_jump_last_heading);
         previous[1] = 0.0f;
         if (length2 (previous) > 0.0001f) {
           normalize (previous);
           const float sine = cross (previous, heading)[1];
           const float cosine =
             std::clamp (dot (previous, heading), -1.0f, 1.0f);
-          logic.m_jump_spin_radians += std::atan2 (sine, cosine);
-          logic.m_jump_peak_spin_radians =
-            std::max (logic.m_jump_peak_spin_radians,
-                      std::abs (logic.m_jump_spin_radians));
+          logic.m_jump_spin_radians += std::atan2 (sine, cosine) * u::rad;
+          logic.m_jump_peak_spin_radians = std::max (
+            logic.m_jump_peak_spin_radians, abs (logic.m_jump_spin_radians));
         }
       } else {
-        logic.m_jump_spin_radians = 0.0f;
-        logic.m_jump_peak_spin_radians = 0.0f;
+        logic.m_jump_spin_radians = 0.0f * u::rad;
+        logic.m_jump_peak_spin_radians = 0.0f * u::rad;
       }
-      logic.m_jump_last_heading = heading;
-      logic.m_jump_airtime = seconds_value (vehicle.airtime ());
-      logic.m_landed_age += elapsed;
+      logic.m_jump_last_heading = unit_direction (heading);
+      logic.m_jump_airtime = seconds_value (vehicle.airtime ()) * u::s;
+      logic.m_landed_age += elapsed * u::s;
     } else {
-      if (driving && logic.m_jump_airtime >= 0.75f) {
+      if (driving && logic.m_jump_airtime >= 0.75f * u::s) {
         constexpr float pi = 3.14159265f;
-        const float spin_degrees = logic.m_jump_peak_spin_radians * 180.0f / pi;
+        const float spin_degrees =
+          radians_value (logic.m_jump_peak_spin_radians) * 180.0f / pi;
         landed_trick_quarters =
           (int)std::floor ((spin_degrees + 10.0f) / 90.0f);
 
@@ -1616,18 +1643,18 @@ namespace moppe::game {
         }
         clean_stunt_landing = impact < 7.0f && alignment > 0.82f;
 
-        const float air_points =
-          60.0f * logic.m_jump_airtime * logic.m_jump_airtime;
+        const float air_points = 60.0f * seconds_value (logic.m_jump_airtime) *
+                                 seconds_value (logic.m_jump_airtime);
         const float trick_points =
           125.0f * landed_trick_quarters * landed_trick_quarters;
         const float landing_multiplier = clean_stunt_landing ? 1.5f : 1.0f;
         logic.m_landed_airtime = logic.m_jump_airtime;
-        logic.m_landed_spin_degrees = spin_degrees;
+        logic.m_landed_spin_degrees = spin_degrees * u::deg;
         logic.m_landed_clean = clean_stunt_landing;
         logic.m_landed_points =
           (int)std::round ((air_points + trick_points) * landing_multiplier);
         logic.m_score += logic.m_landed_points;
-        logic.m_landed_age = 0.0f;
+        logic.m_landed_age = 0.0f * u::s;
 
         // A clean stunt keeps the ride flowing: the better the whip, the more
         // jump-jet reserve comes back for the next launch.
@@ -1635,43 +1662,43 @@ namespace moppe::game {
           vehicle.replenish_boost (
             std::min (0.35f, 0.10f + 0.04f * landed_trick_quarters));
       }
-      logic.m_jump_airtime = 0.0f;
-      logic.m_jump_spin_radians = 0.0f;
-      logic.m_jump_peak_spin_radians = 0.0f;
-      logic.m_landed_age += elapsed;
+      logic.m_jump_airtime = 0.0f * u::s;
+      logic.m_jump_spin_radians = 0.0f * u::rad;
+      logic.m_jump_peak_spin_radians = 0.0f * u::rad;
+      logic.m_landed_age += elapsed * u::s;
     }
 
     // A wheelie scores the ground it covers on the back wheel, two points a
     // metre once it has gone five, unless it ends in a loop. Once up it
     // lasts until the front wheel comes down (for a moment more than a
     // bump's), or the bike leaves the ground for a jump.
-    logic.m_wheelie_age += elapsed;
+    logic.m_wheelie_age += elapsed * u::s;
     const bool riding_up =
       logic.m_doing == Doing::driving (Machine::bike) &&
       (vehicle.wheeling () ||
-       (logic.m_wheelie_m > 0.0f && !vehicle.front_down () &&
+       (logic.m_wheelie_m > 0.0f * u::m && !vehicle.front_down () &&
         vehicle.airtime () < 0.5f * u::s));
     if (riding_up) {
       Vec3 ground_speed = velocity_value (vehicle.velocity ());
       ground_speed[1] = 0.0f;
-      logic.m_wheelie_m += length (ground_speed) * elapsed;
-      logic.m_wheelie_gap = 0.0f;
-    } else if (logic.m_wheelie_m > 0.0f) {
-      logic.m_wheelie_gap += elapsed;
-      if (logic.m_wheelie_gap > 0.15f ||
+      logic.m_wheelie_m += length (ground_speed) * elapsed * u::m;
+      logic.m_wheelie_gap = 0.0f * u::s;
+    } else if (logic.m_wheelie_m > 0.0f * u::m) {
+      logic.m_wheelie_gap += elapsed * u::s;
+      if (logic.m_wheelie_gap > 0.15f * u::s ||
           logic.m_doing != Doing::driving (Machine::bike)) {
         logic.m_last_wheelie_m = logic.m_wheelie_m;
         // One looped over onto its back scores nothing.
         const bool looped = direction_value (vehicle.up ())[1] < 0.3f;
         logic.m_last_wheelie_points =
-          logic.m_wheelie_m >= 5.0f && !looped
-            ? (int)std::round (2.0f * logic.m_wheelie_m)
+          logic.m_wheelie_m >= 5.0f * u::m && !looped
+            ? (int)std::round (2.0f * meters_value (logic.m_wheelie_m))
             : 0;
         logic.m_score += logic.m_last_wheelie_points;
         logic.m_best_wheelie_m =
           std::max (logic.m_best_wheelie_m, logic.m_wheelie_m);
-        logic.m_wheelie_m = 0.0f;
-        logic.m_wheelie_age = 0.0f;
+        logic.m_wheelie_m = 0.0f * u::m;
+        logic.m_wheelie_age = 0.0f * u::s;
       }
     }
     const DisplayColor dust_color = ground.dust_color;
@@ -1889,8 +1916,8 @@ namespace moppe::game {
     // Hard landings shake the camera and burst dirt outward: a low pancake of
     // dust plus a ring of ballistic clods.
     if (impact > 8.0f) {
-      logic.m_shake = std::min (0.28f, 0.010f * impact);
-      logic.m_shake_time = 0.0f;
+      logic.m_shake = std::min (0.28f, 0.010f * impact) * u::deg;
+      logic.m_shake_time = 0.0f * u::s;
       session.dust ().emit (
         moppe::position (vehicle_position + Vec3 (0, -0.25f, 0)),
         velocity (velocity_value (vehicle.velocity ()) * 0.2f),
@@ -1918,11 +1945,12 @@ namespace moppe::game {
     // Crashes hurt; health trickles back slowly. Falls from above a hundred
     // metres are simply fatal -- house rule.
     if (impact > 9.0f)
-      logic.m_health -= (impact - 9.0f) * 4.5f;
+      logic.m_health -= (impact - 9.0f) * 4.5f * health[one];
     if (driving && vehicle.pop_fall_drop () > 100.0f * u::m)
-      logic.m_health = 0.0f;
-    logic.m_health = std::min (100.0f, logic.m_health + 1.5f * elapsed);
-    if (logic.m_health <= 0.0f) {
+      logic.m_health = 0.0f * health[one];
+    logic.m_health = std::min (100.0f * health[one],
+                               logic.m_health + 1.5f * elapsed * health[one]);
+    if (logic.m_health <= 0.0f * health[one]) {
       session.dust ().emit (moppe::position (vehicle_position),
                             velocity (Vec3 (0, 6, 0)),
                             40,
@@ -1944,9 +1972,9 @@ namespace moppe::game {
         vehicle.reset (Vec3 (vehicle_position[0],
                              ground + (pedalled ? 0.5f : 1.2f),
                              vehicle_position[2]));
-        logic.m_health = 100.0f;
-        logic.m_shake = 1.0f;
-        logic.m_shake_time = 0.0f;
+        logic.m_health = 100.0f * health[one];
+        logic.m_shake = 1.0f * u::deg;
+        logic.m_shake_time = 0.0f * u::s;
       }
     }
 
@@ -1986,10 +2014,10 @@ namespace moppe::game {
 
     if (driving)
       logic.m_odometer +=
-        length (velocity_value (vehicle.velocity ())) * elapsed;
+        length (velocity_value (vehicle.velocity ())) * elapsed * u::m;
 
     session.dust ().update (dt);
-    logic.m_shake_time += elapsed;
+    logic.m_shake_time += elapsed * u::s;
     logic.m_shake *= decay (7.0f / u::s, elapsed * u::s);
 
     settle_look (logic, length (session.camera_rig ().velocity), elapsed);
@@ -2000,8 +2028,9 @@ namespace moppe::game {
       logic.m_doing != Doing::on_foot () ? session.subject_speed_kmh () : 0.0f;
     const float fov_target =
       std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
-    logic.m_fov_k += (fov_target - logic.m_fov_k) *
-                     smoothing_alpha (5.0f / u::s, elapsed * u::s);
+    logic.m_fov_k +=
+      (fov_target * blend_weight[one] - logic.m_fov_k) *
+      smoothing_alpha (5.0f / u::s, elapsed * u::s).numerical_value_in (one);
 
     return result;
   }

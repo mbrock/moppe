@@ -35,12 +35,10 @@ namespace moppe {
         spatial::sample<terrain::surface_elevation> (*water, where) -
         spatial::sample<terrain::surface_elevation> (surface, where);
       return terrain::sea_waves_at (
-        plan_value (plan (at)).x (),
-        plan_value (plan (at)).z (),
+        plan (at),
         time,
         terrain::sea_wave_scale (
-          spatial::sample<terrain::wave_amplitude> (*water, where)
-            .numerical_value_in (mp_units::one),
+          spatial::sample<terrain::wave_amplitude> (*water, where),
           standing.numerical_value_in (u::m) * u::m));
     }
 

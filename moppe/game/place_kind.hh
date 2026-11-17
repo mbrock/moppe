@@ -8,6 +8,7 @@
 // PlacesPlan's (places.hh).
 
 #include <moppe/color.hh>
+#include <moppe/gfx/math.hh>
 #include <moppe/terrain/roads.hh>
 
 #include <array>
@@ -20,9 +21,9 @@ namespace moppe::game {
     // Named on the map and shown as a place on the chart. The trailhead
     // is marked as where the machines start instead.
     bool named;
-    // How far round it the ground was grazed open while it was lived in,
-    // metres; none round the trailhead.
-    float pasture_m;
+    // How far round it the ground was grazed open while it was lived in;
+    // none round the trailhead.
+    meters_t pasture;
     // Its ink on the map and the chart, and once it has long been left.
     DisplayColor ink;
     DisplayColor quiet_ink;
@@ -32,25 +33,25 @@ namespace moppe::game {
     // Trailhead
     { .what = "the trailhead",
       .named = false,
-      .pasture_m = 0.0f,
+      .pasture = 0.0f * u::m,
       .ink = DisplayColor (0.80f, 0.13f, 0.11f),
       .quiet_ink = DisplayColor (0.80f, 0.13f, 0.11f) },
     // Landing
     { .what = "a landing",
       .named = true,
-      .pasture_m = 650.0f,
+      .pasture = 650.0f * u::m,
       .ink = DisplayColor (0.10f, 0.30f, 0.62f),
       .quiet_ink = DisplayColor (0.10f, 0.30f, 0.62f) },
     // LakeOutlet
     { .what = "a lake outlet",
       .named = true,
-      .pasture_m = 500.0f,
+      .pasture = 500.0f * u::m,
       .ink = DisplayColor (0.10f, 0.30f, 0.62f),
       .quiet_ink = DisplayColor (0.10f, 0.30f, 0.62f) },
     // Sanctuary
     { .what = "a sanctuary",
       .named = true,
-      .pasture_m = 1300.0f,
+      .pasture = 1300.0f * u::m,
       .ink = DisplayColor (0.56f, 0.12f, 0.16f),
       .quiet_ink = DisplayColor (0.36f, 0.24f, 0.26f) },
   } };

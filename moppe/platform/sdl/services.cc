@@ -249,11 +249,11 @@ namespace moppe::platform {
     return relative.empty () ? base : base + "/" + relative;
   }
 
-  double now () {
+  host_time_t now () {
     using namespace std::chrono;
-    return duration_cast<duration<double>> (
-             steady_clock::now ().time_since_epoch ())
-      .count ();
+    return host_time (
+      duration_cast<duration<double>> (steady_clock::now ().time_since_epoch ())
+        .count ());
   }
 
   Insets safe_insets () {
@@ -263,7 +263,10 @@ namespace moppe::platform {
       return float (EM_ASM_DOUBLE (
         { return (Module['moppeInsets'] || [ 0, 0, 0, 0 ])[$0]; }, side));
     };
-    return { inset (0), inset (1), inset (2), inset (3) };
+    return { display_points (inset (0)),
+             display_points (inset (1)),
+             display_points (inset (2)),
+             display_points (inset (3)) };
 #else
     return {};
 #endif

@@ -37,11 +37,11 @@ namespace moppe::game {
     meters_t along {};
     // The foot of the sign's post, on the verge to the right going along,
     // and the way the buses pass it, level.
-    Vec3 sign;
-    Vec3 forward { 0, 0, 1 };
+    position_t sign {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
     // A shelter behind the sign, its open front to the road, where the
     // verge is level enough to stand one: its middle on the ground.
-    std::optional<Vec3> shelter;
+    std::optional<position_t> shelter;
   };
 
   // Where a bus is, and how it stands: its position on the road under
@@ -49,9 +49,9 @@ namespace moppe::game {
   // periods), the way it faces, and its up.
   struct BusPose {
     meters_t along {};
-    Vec3 position;
-    Vec3 forward { 0, 0, 1 };
-    Vec3 up { 0, 1, 0 };
+    position_t position {};
+    direction_t forward = unit_direction (Vec3 (0, 0, 1));
+    direction_t up = unit_direction (Vec3 (0, 1, 0));
     speed_t speed {};
     // Standing at a stop (into BusLine::stops), and the stop it stands
     // at or comes to next.
@@ -60,9 +60,9 @@ namespace moppe::game {
     // For its drawing: how far its doors stand open, 0 shut to 1, and
     // its front wheels' turn (positive to the right) and how far its
     // wheels have rolled.
-    float door_open = 0.0f;
-    float steer_radians = 0.0f;
-    float wheel_spin_radians = 0.0f;
+    proportion_t door_open {};
+    radians_t steer {};
+    radians_t wheel_spin {};
   };
 
   // What a stop's board says: a bus stands there and leaves in `wait`,
@@ -100,7 +100,7 @@ namespace moppe::game {
     }
 
     meters_t length () const noexcept {
-      return empty () ? 0.0f * u::m : m_along.back () * u::m;
+      return empty () ? 0.0f * u::m : m_along.back ();
     }
 
     std::span<const BusStop> stops () const noexcept {
@@ -113,14 +113,14 @@ namespace moppe::game {
     }
 
     seconds_t round_trip () const noexcept {
-      return m_round * u::s;
+      return m_round;
     }
 
     // The road's line `along` the loop, any distance on or back: the
     // point on its centre (at the tread's height) and the way it goes
     // there, level. Unwrapped, so a lap on is a period on.
-    Vec3 point (meters_t along) const;
-    Vec3 direction (meters_t along) const;
+    position_t point (meters_t along) const;
+    direction_t direction (meters_t along) const;
 
     // Each bus at `now`.
     std::vector<BusPose> where (play_time_t now) const;
@@ -131,17 +131,19 @@ namespace moppe::game {
   private:
     // The line: its points, unwrapped, the tread's height at each, and
     // how far along each is.
-    std::vector<float> m_x, m_z, m_height, m_along;
+    std::vector<plan_position_t> m_points;
+    std::vector<terrain::SurfaceElevation> m_height;
+    std::vector<meters_t> m_along;
     // A lap on: the last point less the first.
-    float m_lap_x = 0.0f, m_lap_z = 0.0f;
+    plan_displacement_t m_lap {};
     std::vector<BusStop> m_stops;
-    // Seconds into a round that a bus reaches each stop, and leaves it.
-    std::vector<float> m_arrive, m_leave;
-    float m_round = 0.0f;
+    // How far into a round a bus reaches each stop, and leaves it.
+    std::vector<seconds_t> m_arrive, m_leave;
+    seconds_t m_round {};
     std::size_t m_buses = 0;
 
-    // Seconds into the round, for the bus `k`.
-    float phase (std::size_t k, play_time_t now) const;
+    // How far into the round the bus `k` is.
+    seconds_t phase (std::size_t k, play_time_t now) const;
   };
 
   // The stops along the world's loop, and the timetable: one at the
@@ -160,10 +162,8 @@ namespace moppe::game {
   // A bus as the machines' bumpers meet it (rescue.hh): a row of spheres
   // down its length and its weight, at the copy of the world nearest
   // `near`, never ours to push.
-  [[nodiscard]] MachineBody bus_body (const BusPose& pose,
-                                      const Vec3& near,
-                                      float period_x,
-                                      float period_z);
+  [[nodiscard]] MachineBody
+  bus_body (const BusPose& pose, const position_t& near, plan_extent_t period);
 
   // -- riding -------------------------------------------------------
 
@@ -176,20 +176,19 @@ namespace moppe::game {
   // and where a rider sits inside, in the world (unwrapped as the pose
   // is): `seat` 0 the front row's by the door (bus_model::seat_01), 1
   // the one beside it, for the other player.
-  [[nodiscard]] Vec3 bus_door (const BusPose& pose);
+  [[nodiscard]] position_t bus_door (const BusPose& pose);
   // The bus's model space (bus_model.hh) where it stands.
   [[nodiscard]] Mat4 bus_frame (const BusPose& pose);
-  [[nodiscard]] Vec3 bus_seat (const BusPose& pose, std::size_t seat = 0);
-  // That seat in the bus's model space.
-  [[nodiscard]] Vec3 bus_seat_in_model (std::size_t seat);
+  [[nodiscard]] position_t bus_seat (const BusPose& pose, std::size_t seat = 0);
+  // That seat in the bus's model space, from its origin.
+  [[nodiscard]] displacement_t bus_seat_in_model (std::size_t seat);
 
   // On foot within a few steps of the door of a bus standing at a stop:
   // which bus, to board.
   [[nodiscard]] std::optional<std::size_t> bus_at_hand (const BusLine& line,
-                                                        const Vec3& feet,
+                                                        const position_t& feet,
                                                         play_time_t now,
-                                                        float period_x,
-                                                        float period_z);
+                                                        plan_extent_t period);
 
   // Gets on bus `bus` into seat `seat`, the walker left where they stood.
   void board_bus (GameSession& session,
@@ -208,10 +207,9 @@ namespace moppe::game {
 
   // The stop whose sign is nearest `at` within `reach`, across the seam.
   [[nodiscard]] std::optional<std::size_t> bus_stop_near (const BusLine& line,
-                                                          const Vec3& at,
+                                                          const position_t& at,
                                                           meters_t reach,
-                                                          float period_x,
-                                                          float period_z);
+                                                          plan_extent_t period);
 }
 
 #endif

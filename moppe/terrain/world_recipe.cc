@@ -31,21 +31,24 @@ namespace moppe::terrain {
     // Evolution age and tectonic forcing are separate clocks. The initial
     // orogeny raises the country, then erosion and deposition reorganize that
     // finite relief without banking uplift for the whole geological run.
-    const float duration =
-      generation_profile == TerrainGenerationProfile::Smoke      ? 50000.0f
-      : generation_profile == TerrainGenerationProfile::Fast     ? 200000.0f
-      : generation_profile == TerrainGenerationProfile::Play     ? 2000000.0f
-      : generation_profile == TerrainGenerationProfile::Research ? 1000000.0f
-                                                                 : 2000000.0f;
-    m_evolution.duration = duration * mp_units::astronomy::Julian_year;
-    const float profile_uplift_duration =
-      generation_profile == TerrainGenerationProfile::Smoke      ? 50000.0f
-      : generation_profile == TerrainGenerationProfile::Fast     ? 50000.0f
-      : generation_profile == TerrainGenerationProfile::Play     ? 500000.0f
-      : generation_profile == TerrainGenerationProfile::Research ? 250000.0f
-                                                                 : 500000.0f;
-    m_evolution.uplift_duration = uplift_duration.value_or (
-      profile_uplift_duration * mp_units::astronomy::Julian_year);
+    constexpr auto year = mp_units::astronomy::Julian_year;
+    const julian_years_t duration =
+      generation_profile == TerrainGenerationProfile::Smoke  ? 50000.0f * year
+      : generation_profile == TerrainGenerationProfile::Fast ? 200000.0f * year
+      : generation_profile == TerrainGenerationProfile::Play ? 2000000.0f * year
+      : generation_profile == TerrainGenerationProfile::Research
+        ? 1000000.0f * year
+        : 2000000.0f * year;
+    m_evolution.duration = duration;
+    const julian_years_t profile_uplift_duration =
+      generation_profile == TerrainGenerationProfile::Smoke  ? 50000.0f * year
+      : generation_profile == TerrainGenerationProfile::Fast ? 50000.0f * year
+      : generation_profile == TerrainGenerationProfile::Play ? 500000.0f * year
+      : generation_profile == TerrainGenerationProfile::Research
+        ? 250000.0f * year
+        : 500000.0f * year;
+    m_evolution.uplift_duration =
+      uplift_duration.value_or (profile_uplift_duration);
     if (channel_initiation_area)
       m_evolution.channel_initiation_area = *channel_initiation_area;
     if (sediment_concentration)
@@ -59,9 +62,8 @@ namespace moppe::terrain {
     m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
                               mp_units::si::metre /
                               mp_units::astronomy::Julian_year;
-    m_evolution.sea_level = (water_datum).numerical_value_in (moppe::u::m);
-    m_trail_formation.sea_level =
-      (water_datum).numerical_value_in (moppe::u::m);
+    m_evolution.sea_level = surface_elevation_point (water_datum);
+    m_trail_formation.sea_level = surface_elevation_point (water_datum);
   }
 
   WorldRecipe make_world_recipe (

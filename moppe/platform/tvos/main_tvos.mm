@@ -57,7 +57,9 @@ static UIWindow* g_window = nil;
   if (m_controller)
     m_controller->poll ();
 
-  const double t = moppe::platform::now ();
+  const double t = moppe::platform::now ()
+                     .quantity_from (moppe::platform::host_clock_epoch)
+                     .numerical_value_in (mp_units::si::second);
   float dt = m_last_time > 0 ? (float)(t - m_last_time) : 1.0f / 60;
   m_last_time = t;
   if (dt > 0.05f)
@@ -182,10 +184,10 @@ namespace moppe::platform {
     if (!g_window)
       return result;
     const UIEdgeInsets insets = g_window.safeAreaInsets;
-    result.left = (float)insets.left;
-    result.top = (float)insets.top;
-    result.right = (float)insets.right;
-    result.bottom = (float)insets.bottom;
+    result.left = display_points ((float)insets.left);
+    result.top = display_points ((float)insets.top);
+    result.right = display_points ((float)insets.right);
+    result.bottom = display_points ((float)insets.bottom);
     return result;
   }
 }

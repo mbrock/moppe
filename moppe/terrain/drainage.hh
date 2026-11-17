@@ -3,6 +3,7 @@
 
 #include <moppe/terrain/domain.hh>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -15,6 +16,22 @@ namespace moppe::terrain {
   using DrainageReadings =
     spatial::Bundle<TerrainDomain, slope_t, ContributingArea>;
 
+  inline DrainageReadings
+  make_drainage_readings (TerrainDomain domain,
+                          std::span<const slope_t> slopes,
+                          std::span<const ContributingArea> areas) {
+    DrainageReadings readings (std::move (domain));
+    if (slopes.size () != readings.size () || areas.size () != readings.size ())
+      throw std::invalid_argument (
+        "drainage readings do not match terrain domain");
+    std::ranges::copy (slopes, spatial::get<terrain_slope> (readings).begin ());
+    std::ranges::copy (areas,
+                       spatial::get<contributing_area> (readings).begin ());
+    return readings;
+  }
+
+  // The same from bare numbers: slopes as rise over run, areas in square
+  // metres. For tests that write their readings out by hand.
   inline DrainageReadings
   make_drainage_readings (TerrainDomain domain,
                           std::span<const float> slopes,
@@ -41,7 +58,7 @@ namespace moppe::terrain {
   struct WetDrainageRouting {
     TerrainDomain domain;
     std::vector<CellIndex> receiver;
-    std::vector<float> slope;
+    std::vector<slope_t> slope;
   };
 
   // A compact functional graph. Dry drainage uses strictly lower receivers;

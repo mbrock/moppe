@@ -59,8 +59,8 @@ EMSCRIPTEN_KEEPALIVE int genesis_start (
                                     wgsl (sky_vertex),
                                     wgsl (sky_fragment) },
       lattice,
-      period_m,
-      sea_level_m);
+      period_m * moppe::u::m,
+      moppe::terrain::surface_elevation_point (sea_level_m * moppe::u::m));
     return 1;
   } catch (const std::exception& error) {
     std::cerr << "genesis: " << error.what () << std::endl;
@@ -89,10 +89,13 @@ EMSCRIPTEN_KEEPALIVE void
 genesis_frame (float progress, float mix, double seconds) {
   if (!genesis)
     return;
-  const float aspect =
-    float (device->surface_width ()) / float (device->surface_height ());
-  if (genesis->render (
-        moppe::site::genesis_choreography (progress, seconds, aspect), mix))
+  using namespace moppe;
+  const site::aspect_ratio_t aspect = float (device->surface_width ()) /
+                                      float (device->surface_height ()) *
+                                      aspect_ratio[one];
+  if (genesis->render (site::genesis_choreography (
+                         progress * proportion[one], seconds * u::s, aspect),
+                       mix * blend_weight[one]))
     device->end_frame ();
 }
 }

@@ -25,38 +25,44 @@ namespace {
     return spruce;
   }
 
-  float camp_test_level (float, float) {
-    return 10.0f;
+  terrain::SurfaceElevation camp_test_level (plan_position_t) {
+    return terrain::surface_elevation_point (10.0f * u::m);
   }
 }
 
 MOPPE_TEST (a_hammock_hangs_between_two_fit_trees) {
   const std::vector<mov::Trunk> trees = { camp_test_birch (100.0f, 100.0f),
                                           camp_test_birch (104.0f, 100.0f) };
-  const Vec3 between (102.0f, 10.0f, 100.3f);
+  const position_t between = position (Vec3 (102.0f, 10.0f, 100.3f));
   const std::optional<HammockSite> site =
     hammock_site_at (trees, between, camp_test_level);
   MOPPE_CHECK (site.has_value ());
   if (!site)
     return;
   // The straps are level, within reach, and on the trunks.
-  MOPPE_CHECK_NEAR (site->strap[0][1], site->strap[1][1], 1e-5f);
-  MOPPE_CHECK (site->strap[0][1] > 10.9f && site->strap[0][1] < 12.5f);
-  MOPPE_CHECK_NEAR (
-    std::fabs (site->strap[1][0] - site->strap[0][0]), 4.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (position_value (site->strap[0])[1],
+                    position_value (site->strap[1])[1],
+                    1e-5f);
+  MOPPE_CHECK (position_value (site->strap[0])[1] > 10.9f &&
+               position_value (site->strap[0])[1] < 12.5f);
+  MOPPE_CHECK_NEAR (std::fabs (position_value (site->strap[1])[0] -
+                               position_value (site->strap[0])[0]),
+                    4.0f,
+                    1e-4f);
   MOPPE_CHECK_NEAR (
     meters_value (hammock_distance (*site, between)), 0.3f, 1e-4f);
-  MOPPE_CHECK_NEAR (length (hammock_along (*site)), 1.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (
+    length (direction_value (hammock_along (*site))), 1.0f, 1e-5f);
 
   // Not from outside the pair, nor from far off to one side.
-  MOPPE_CHECK (
-    !hammock_site_at (trees, Vec3 (97.0f, 10.0f, 100.0f), camp_test_level));
-  MOPPE_CHECK (
-    !hammock_site_at (trees, Vec3 (102.0f, 10.0f, 103.0f), camp_test_level));
+  MOPPE_CHECK (!hammock_site_at (
+    trees, position (Vec3 (97.0f, 10.0f, 100.0f)), camp_test_level));
+  MOPPE_CHECK (!hammock_site_at (
+    trees, position (Vec3 (102.0f, 10.0f, 103.0f)), camp_test_level));
 }
 
 MOPPE_TEST (unfit_trees_carry_no_hammock) {
-  const Vec3 between (102.0f, 10.0f, 100.0f);
+  const position_t between = position (Vec3 (102.0f, 10.0f, 100.0f));
   const auto hangs = [&] (std::vector<mov::Trunk> trees) {
     return hammock_site_at (trees, between, camp_test_level).has_value ();
   };
@@ -81,8 +87,11 @@ MOPPE_TEST (unfit_trees_carry_no_hammock) {
   MOPPE_CHECK (!hangs ({ camp_test_birch (100.0f, 100.0f),
                          camp_test_birch (104.0f, 100.0f, 11.2f) }));
   // The ground rises into where the cloth would hang.
-  const auto hummock = [] (float x, float) {
-    return 10.0f + (std::fabs (x - 102.0f) < 0.6f ? 0.8f : 0.0f);
+  const auto hummock = [] (plan_position_t at) {
+    return terrain::surface_elevation_point (
+      (10.0f +
+       (std::fabs (plan_value (at).x () - 102.0f) < 0.6f ? 0.8f : 0.0f)) *
+      u::m);
   };
   MOPPE_CHECK (!hammock_site_at (
     std::vector<mov::Trunk> { camp_test_birch (100.0f, 100.0f),
@@ -95,13 +104,13 @@ MOPPE_TEST (the_head_lies_toward_the_higher_root) {
   const std::vector<mov::Trunk> trees = {
     camp_test_birch (100.0f, 100.0f, 10.5f), camp_test_birch (104.0f, 100.0f)
   };
-  const std::optional<HammockSite> site =
-    hammock_site_at (trees, Vec3 (102.0f, 10.0f, 100.0f), camp_test_level);
+  const std::optional<HammockSite> site = hammock_site_at (
+    trees, position (Vec3 (102.0f, 10.0f, 100.0f)), camp_test_level);
   MOPPE_CHECK (site.has_value ());
   if (!site)
     return;
-  MOPPE_CHECK_NEAR (site->strap[1][0], 100.0f, 1e-4f);
-  MOPPE_CHECK_NEAR (hammock_along (*site)[0], -1.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (position_value (site->strap[1])[0], 100.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (direction_value (hammock_along (*site))[0], -1.0f, 1e-5f);
 }
 
 MOPPE_TEST (the_nearest_site_prefers_open_sky_when_asked) {
@@ -112,29 +121,33 @@ MOPPE_TEST (the_nearest_site_prefers_open_sky_when_asked) {
                                     camp_test_birch (164.0f, 100.0f) };
   for (int i = 0; i < 6; ++i)
     trees.push_back (camp_test_spruce (98.0f + 2.0f * i, 104.0f));
-  const Vec3 near (100.0f, 10.0f, 96.0f);
+  const position_t near = position (Vec3 (100.0f, 10.0f, 96.0f));
   const std::optional<HammockSite> nearest =
     nearest_hammock_site (trees, near, camp_test_level);
   const std::optional<HammockSite> open =
-    nearest_hammock_site (trees, near, camp_test_level, 60.0f);
+    nearest_hammock_site (trees, near, camp_test_level, 60.0f * u::m);
   MOPPE_CHECK (nearest.has_value () && open.has_value ());
   if (!nearest || !open)
     return;
-  MOPPE_CHECK_NEAR (hammock_middle (*nearest)[0], 102.0f, 1e-3f);
-  MOPPE_CHECK_NEAR (hammock_middle (*open)[0], 162.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (
+    position_value (hammock_middle (*nearest))[0], 102.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (hammock_middle (*open))[0], 162.0f, 1e-3f);
 }
 
 MOPPE_TEST (a_sleeper_lies_in_the_sag_of_the_cloth) {
   const std::vector<mov::Trunk> trees = { camp_test_birch (100.0f, 100.0f),
                                           camp_test_birch (104.0f, 100.0f) };
-  const HammockSite site =
-    *hammock_site_at (trees, Vec3 (102.0f, 10.0f, 100.0f), camp_test_level);
-  const AvatarSkeleton lying = pose_resting (site, 0.0f, Vec3 (0, 1, 0), 0.0f);
+  const HammockSite site = *hammock_site_at (
+    trees, position (Vec3 (102.0f, 10.0f, 100.0f)), camp_test_level);
+  const direction_t up = unit_direction (Vec3 (0, 1, 0));
+  const AvatarSkeleton lying =
+    pose_resting (site, 0.0f * u::rad, up, 0.0f * u::s);
   // Between the trees, below the straps, clear of the ground, on their
   // back with their head toward the second tree.
   MOPPE_CHECK (position_value (lying.pelvis)[0] > 101.0f &&
                position_value (lying.pelvis)[0] < 103.0f);
-  MOPPE_CHECK (position_value (lying.pelvis)[1] < site.strap[0][1] - 0.3f);
+  MOPPE_CHECK (position_value (lying.pelvis)[1] <
+               position_value (site.strap[0])[1] - 0.3f);
   MOPPE_CHECK (position_value (lying.pelvis)[1] > 10.45f);
   MOPPE_CHECK (direction_value (lying.forward)[1] > 0.9f);
   MOPPE_CHECK (position_value (lying.head)[0] >
@@ -142,66 +155,95 @@ MOPPE_TEST (a_sleeper_lies_in_the_sag_of_the_cloth) {
   MOPPE_CHECK (position_value (lying.ankle[0])[0] <
                position_value (lying.pelvis)[0] - 0.5f);
   // Their eyes look up and along their own length.
-  const Vec3 eye = resting_eye (site, 0.0f);
-  MOPPE_CHECK (length (eye - position_value (lying.head)) < 0.3f);
-  const Vec3 gaze = resting_gaze (site, 0.0f, 1.1f);
-  MOPPE_CHECK (gaze[1] > 0.8f && gaze[0] < 0.0f);
+  const position_t eye = resting_eye (site, 0.0f * u::rad);
+  MOPPE_CHECK (length (position_value (eye) - position_value (lying.head)) <
+               0.3f);
+  const direction_t gaze =
+    resting_gaze (site, 0.0f * u::rad, 1.1f * inclination[u::rad]);
+  MOPPE_CHECK (direction_value (gaze)[1] > 0.8f &&
+               direction_value (gaze)[0] < 0.0f);
   // A swing carries the sleeper sideways.
-  const AvatarSkeleton swung = pose_resting (site, 0.3f, Vec3 (0, 1, 0), 0.0f);
+  const AvatarSkeleton swung =
+    pose_resting (site, 0.3f * u::rad, up, 0.0f * u::s);
   MOPPE_CHECK (std::fabs (position_value (swung.pelvis)[2] -
                           position_value (lying.pelvis)[2]) > 0.1f);
 }
 
 MOPPE_TEST (the_fire_catches_burns_and_dies) {
   Camp camp;
-  MOPPE_CHECK (fire_burn (camp, play_time (10.0)) == 0.0f);
+  MOPPE_CHECK (fire_burn (camp, play_time (10.0)).numerical_value_in (one) ==
+               0.0f);
   camp.fire = true;
   camp.fire_time = play_time (10.0);
-  camp.hearth = Vec3 (5.0f, 2.0f, 7.0f);
-  MOPPE_CHECK (fire_burn (camp, play_time (10.0)) > 0.0f);
-  MOPPE_CHECK (fire_burn (camp, play_time (11.0)) <
-               fire_burn (camp, play_time (13.0)));
-  MOPPE_CHECK_NEAR (fire_burn (camp, play_time (20.0)), 1.0f, 1e-5f);
-  MOPPE_CHECK (fire_light_position (camp)[1] > 2.2f);
+  camp.hearth = position (Vec3 (5.0f, 2.0f, 7.0f));
+  MOPPE_CHECK (fire_burn (camp, play_time (10.0)).numerical_value_in (one) >
+               0.0f);
+  MOPPE_CHECK (fire_burn (camp, play_time (11.0)).numerical_value_in (one) <
+               fire_burn (camp, play_time (13.0)).numerical_value_in (one));
+  MOPPE_CHECK_NEAR (
+    fire_burn (camp, play_time (20.0)).numerical_value_in (one), 1.0f, 1e-5f);
+  MOPPE_CHECK (position_value (fire_light_position (camp))[1] > 2.2f);
   // Its light is warm and never still.
-  const DisplayColor light = fire_light_color (1.0f, 3.0f);
+  const DisplayColor light =
+    fire_light_color (1.0f * proportion[one], 3.0f * u::s);
   MOPPE_CHECK (light.red > light.green && light.green > light.blue);
-  MOPPE_CHECK (fire_light_color (1.0f, 3.1f).red != light.red);
+  MOPPE_CHECK (fire_light_color (1.0f * proportion[one], 3.1f * u::s).red !=
+               light.red);
   camp.fire = false;
   camp.fire_time = play_time (30.0);
-  MOPPE_CHECK (fire_burn (camp, play_time (30.5)) < 1.0f);
-  MOPPE_CHECK (fire_burn (camp, play_time (32.0)) == 0.0f);
+  MOPPE_CHECK (fire_burn (camp, play_time (30.5)).numerical_value_in (one) <
+               1.0f);
+  MOPPE_CHECK (fire_burn (camp, play_time (32.0)).numerical_value_in (one) ==
+               0.0f);
 
   // Getting in and out of the hammock eases its load.
   camp.resting = true;
   camp.rest_time = play_time (40.0);
-  MOPPE_CHECK (hammock_load (camp, play_time (40.0)) == 0.0f);
-  MOPPE_CHECK_NEAR (hammock_load (camp, play_time (42.0)), 1.0f, 1e-5f);
+  MOPPE_CHECK (hammock_load (camp, play_time (40.0)).numerical_value_in (one) ==
+               0.0f);
+  MOPPE_CHECK_NEAR (
+    hammock_load (camp, play_time (42.0)).numerical_value_in (one),
+    1.0f,
+    1e-5f);
   camp.resting = false;
   camp.rest_time = play_time (50.0);
-  MOPPE_CHECK_NEAR (hammock_load (camp, play_time (50.0)), 1.0f, 1e-5f);
-  MOPPE_CHECK (hammock_load (camp, play_time (52.0)) == 0.0f);
+  MOPPE_CHECK_NEAR (
+    hammock_load (camp, play_time (50.0)).numerical_value_in (one),
+    1.0f,
+    1e-5f);
+  MOPPE_CHECK (hammock_load (camp, play_time (52.0)).numerical_value_in (one) ==
+               0.0f);
 }
 
 MOPPE_TEST (mushrooms_fry_then_keep_then_burn) {
   const Pan pan = [] {
-    Pan set = pan_set_on (Vec3 (10, 5, 10), Vec3 (12, 5, 10));
+    Pan set =
+      pan_set_on (position (Vec3 (10, 5, 10)), position (Vec3 (12, 5, 10)));
     set.since = play_time (100.0);
     return set;
   }();
   // On the cook's side of the fire, the handle toward them.
-  MOPPE_CHECK (pan.place[0] > 10.2f && pan.place[0] < 10.6f);
-  MOPPE_CHECK_NEAR (pan.yaw, 0.0f, 1e-4f);
-  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (100.0)), 0.0f, 1e-6f);
-  MOPPE_CHECK (pan_cooked (pan, play_time (104.0)) > 0.3f);
-  MOPPE_CHECK (pan_cooked (pan, play_time (104.0)) < 1.0f);
+  MOPPE_CHECK (position_value (pan.place)[0] > 10.2f &&
+               position_value (pan.place)[0] < 10.6f);
+  MOPPE_CHECK_NEAR (pan.yaw.numerical_value_in (u::rad), 0.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    pan_cooked (pan, play_time (100.0)).numerical_value_in (one), 0.0f, 1e-6f);
+  MOPPE_CHECK (pan_cooked (pan, play_time (104.0)).numerical_value_in (one) >
+               0.3f);
+  MOPPE_CHECK (pan_cooked (pan, play_time (104.0)).numerical_value_in (one) <
+               1.0f);
   // Fried, and good for half a minute.
-  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (110.0)), 1.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (139.0)), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    pan_cooked (pan, play_time (110.0)).numerical_value_in (one), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    pan_cooked (pan, play_time (139.0)).numerical_value_in (one), 1.0f, 1e-6f);
   // Then it burns.
-  MOPPE_CHECK (pan_cooked (pan, play_time (150.0)) > 1.4f);
-  MOPPE_CHECK_NEAR (pan_cooked (pan, play_time (400.0)), 2.0f, 1e-6f);
+  MOPPE_CHECK (pan_cooked (pan, play_time (150.0)).numerical_value_in (one) >
+               1.4f);
+  MOPPE_CHECK_NEAR (
+    pan_cooked (pan, play_time (400.0)).numerical_value_in (one), 2.0f, 1e-6f);
   Pan off = pan;
   off.on = false;
-  MOPPE_CHECK_NEAR (pan_cooked (off, play_time (120.0)), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    pan_cooked (off, play_time (120.0)).numerical_value_in (one), 0.0f, 1e-6f);
 }

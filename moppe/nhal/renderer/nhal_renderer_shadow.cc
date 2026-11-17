@@ -95,7 +95,7 @@ namespace moppe::nhal {
       const Mat4& light = cascade.light_view_proj;
       shaders::terrain_shadow::Caster caster {};
       caster.light_view = matrix (light);
-      caster.focus = lanes (focus, m_params.time);
+      caster.focus = lanes (focus, seconds_value (m_params.time));
       const Transient caster_block = m_device->allocate (sizeof caster);
       std::memcpy (caster_block.data, &caster, sizeof caster);
 

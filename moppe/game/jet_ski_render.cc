@@ -36,7 +36,7 @@ namespace moppe::game {
         const Vec3 axis =
           normalized (jet_ski_model::column_top - jet_ski_model::column);
         return frame * Mat4::translation (jet_ski_model::column) *
-               Mat4::rotation (-1.3f * ski.steer_radians * u::rad, axis);
+               Mat4::rotation (-1.3f * ski.steer, axis);
       }
 
       // The rider astride the saddle, a hand on each grip and a foot in
@@ -51,9 +51,10 @@ namespace moppe::game {
           normalized (frame.transform_vector (Vec3 (0, 0, 1)));
         const Vec3 hull_left = normalized (cross (hull_up, facing));
         // Leaning to the right carries the head to starboard.
-        const float lean = 0.6f * ski.lean_radians;
+        const radians_t lean = 0.6f * ski.lean;
         const Vec3 up =
-          normalized (hull_up * std::cos (lean) - hull_left * std::sin (lean));
+          normalized (hull_up * std::cos (radians_value (lean)) -
+                      hull_left * std::sin (radians_value (lean)));
         const Vec3 left = normalized (cross (up, facing));
         const Vec3 foot[2] = { jet_ski_model::foot_right,
                                jet_ski_model::foot_left };
@@ -68,7 +69,7 @@ namespace moppe::game {
         hold.lean = 0.40f * u::rad;
         // Looking where the turn goes.
         hold.gaze = normalized (facing + hull_up * 0.04f -
-                                hull_left * (0.6f * ski.steer_radians));
+                                hull_left * radians_value (0.6f * ski.steer));
         hold.head_up = hull_up;
         hold.sole = unit_direction (facing);
         hold.instep = unit_direction (hull_up);
@@ -97,19 +98,24 @@ namespace moppe::game {
         const Vec3 facing =
           normalized (frame.transform_vector (Vec3 (0, 0, 1)));
         const Vec3 hull_left = normalized (cross (hull_up, facing));
-        const float lean = 0.5f * ski.lean_radians;
+        const radians_t lean = 0.5f * ski.lean;
         const Vec3 up =
-          normalized (hull_up * std::cos (lean) - hull_left * std::sin (lean));
+          normalized (hull_up * std::cos (radians_value (lean)) -
+                      hull_left * std::sin (radians_value (lean)));
         const Vec3 left = normalized (cross (up, facing));
-        const Vec3 behind (0.0f, 0.03f, -0.5f);
-        const Vec3 foot[2] = { jet_ski_model::foot_right + behind,
-                               jet_ski_model::foot_left + behind };
+        // How far aft of the rider, in the model's frame.
+        const displacement_t behind = displacement (Vec3 (0.0f, 0.03f, -0.5f));
+        const Vec3 foot[2] = {
+          jet_ski_model::foot_right + displacement_value (behind),
+          jet_ski_model::foot_left + displacement_value (behind)
+        };
 
         HoldPose hold;
         hold.facing = unit_direction (facing);
         hold.up = unit_direction (up);
         hold.pelvis =
-          position (frame.transform_point (jet_ski_model::seat + behind) +
+          position (frame.transform_point (jet_ski_model::seat +
+                                           displacement_value (behind)) +
                     hull_up * 0.09f);
         hold.lean = 0.25f * u::rad;
         hold.gaze = normalized (facing + hull_up * 0.08f);
@@ -152,7 +158,7 @@ namespace moppe::game {
     // turn the bow to the right.
     r.draw_mesh (*meshes.nozzle,
                  frame * Mat4::translation (jet_ski_model::jet) *
-                   Mat4::rotation (ski.steer_radians * u::rad, Vec3 (0, 1, 0)),
+                   Mat4::rotation (ski.steer, Vec3 (0, 1, 0)),
                  motion_base + 3);
   }
 }

@@ -44,7 +44,7 @@ namespace moppe::terrain {
   sediment_transport_capacity (julian_years_f64_t duration,
                                square_meters_t contributing_area,
                                slope_t slope,
-                               float channel_share,
+                               proportion_t channel_share,
                                const FluvialTransport& parameters);
 
   struct SedimentRoutingResult {

@@ -31,15 +31,16 @@ namespace moppe {
       if (m_opening.take_cut ())
         r.reset_temporal_state ();
 
-      const bool captured = m_capture.before_frame (
-        r,
-        frame,
-        static_cast<float> (seconds_into_play (logic ().m_total_time)),
-        m_sky.sky ().sun_height,
-        m_opening.active ());
+      const bool captured =
+        m_capture.before_frame (r,
+                                frame,
+                                seconds (static_cast<float> (
+                                  seconds_into_play (logic ().m_total_time))),
+                                m_sky.sky ().sun_height * proportion[one],
+                                m_opening.active ());
       render::FrameParams params = frame_params_for (frame);
       if (!m_capture.keeping_pace ())
-        params.frame_rate_target = 0.0f;
+        params.frame_rate_target = 0.0f * u::Hz;
       if (!r.begin_frame (params))
         return;
 
@@ -73,8 +74,8 @@ namespace moppe {
 
       // A fixed camera watching the sky is the whole scene; the panel
       // below carries the actual information.
-      const Vec3 eye (0.0f, 34.0f, 0.0f);
-      const Vec3 target (0.0f, 27.0f, -100.0f);
+      const position_t eye = position (Vec3 (0.0f, 34.0f, 0.0f));
+      const position_t target = position (Vec3 (0.0f, 27.0f, -100.0f));
       render::FrameParams fp;
       // The loading screen sizes the same render targets the game will use.
       // Leaving the budget off here would build a full-drawable set only to
@@ -82,21 +83,22 @@ namespace moppe {
       fp.scene_scale = m_graphics.scene_scale;
       fp.render_scale_override = m_graphics.render_scale_override;
       fp.scene_megapixel_budget = m_graphics.scene_megapixel_budget;
-      fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
+      fp.view = Mat4::look_at (
+        position_value (eye), position_value (target), Vec3 (0, 1, 0));
       fp.proj = Mat4::perspective_reversed (64.0f * u::deg,
                                             width / std::max (1.0f, height),
                                             render::camera_near_m,
                                             render::camera_far_m);
       fp.camera_pos = eye;
-      constexpr float loading_sun_height = 0.70f;
+      const proportion_t loading_sun_height = 0.70f * proportion[one];
       fp.clear_color = horizon_color_for (loading_sun_height);
-      fp.sun_dir = normalized (Vec3 (0.82f, 0.58f, 0.0f));
+      fp.sun_dir = direction_of (displacement (Vec3 (0.82f, 0.58f, 0.0f)));
       sun_light_colors_for (
         loading_sun_height, fp.sun_diffuse, fp.sun_specular);
       fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
       fp.time = loading.elapsed;
-      fp.exposure_bias = 1.0f;
-      fp.sun_visibility = 0.32f;
+      fp.exposure_bias = 1.0f * scale_factor[one];
+      fp.sun_visibility = 0.32f * proportion[one];
       if (!r.begin_frame (fp)) {
         // The world must not be dropped just because no frame started.
         if (completed)
@@ -105,9 +107,9 @@ namespace moppe {
       }
 
       render::SkyParams sky;
-      sky.time = loading.elapsed;
+      sky.time = fp.time;
       sky.sun_height = loading_sun_height;
-      sky.cloudiness = 0.14f;
+      sky.cloudiness = 0.14f * proportion[one];
       sky.sun_dir = fp.sun_dir;
       sky.fog_color = fp.clear_color;
       r.draw_sky (sky);
@@ -152,18 +154,18 @@ namespace moppe {
         std::ostringstream eyebrow;
         eyebrow << "SEED " << loading.seed;
         m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                    left,
-                                    bottom - 118.0f,
+                                    left * u::pt,
+                                    (bottom - 118.0f) * u::pt,
                                     eyebrow.str (),
                                     style (9.0f, 0.62f, 0.16f));
         m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                    left,
-                                    bottom - 86.0f,
+                                    left * u::pt,
+                                    (bottom - 86.0f) * u::pt,
                                     loading.title,
                                     style (27.0f, 0.96f, 0.0f));
         m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                    left,
-                                    bottom - 62.0f,
+                                    left * u::pt,
+                                    (bottom - 62.0f) * u::pt,
                                     loading.detail,
                                     style (14.0f, 0.74f, 0.01f));
 
@@ -180,18 +182,21 @@ namespace moppe {
         const float rail_y = bottom - 44.0f;
         m_heads_up.dl.color (0.96f, 0.96f, 0.96f, 0.16f);
         fill_rect (left, rail_y, content_width, 1.0f);
-        if (loading.progress >= 0.0f) {
+        if (loading.progress) {
+          const proportion_t done = *loading.progress;
           m_heads_up.dl.color (0.96f, 0.96f, 0.96f, 0.78f);
           fill_rect (left,
                      rail_y,
-                     content_width * std::clamp (loading.progress, 0.0f, 1.0f),
+                     content_width *
+                       std::clamp (done.numerical_value_in (one), 0.0f, 1.0f),
                      1.0f);
           std::ostringstream percent;
-          percent << static_cast<int> (std::lround (loading.progress * 100.0f))
+          percent << static_cast<int> (
+                       std::lround (done.numerical_value_in (one) * 100.0f))
                   << '%';
           m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                      left + content_width,
-                                      rail_y - 8.0f,
+                                      (left + content_width) * u::pt,
+                                      (rail_y - 8.0f) * u::pt,
                                       percent.str (),
                                       style (9.0f, 0.62f, 0.06f),
                                       render::TextAlign::Right);
@@ -204,11 +209,12 @@ namespace moppe {
         for (std::size_t i = history_begin; i < history_end; ++i) {
           const LoadingEvent& event = loading.events[i];
           std::ostringstream line;
-          line << std::fixed << std::setprecision (1) << event.elapsed
-               << " s   " << event.title;
+          line << std::fixed << std::setprecision (1)
+               << event.elapsed.numerical_value_in (si::second) << " s   "
+               << event.title;
           m_heads_up.hud.draw_shaded (m_heads_up.text,
-                                      left,
-                                      line_y,
+                                      left * u::pt,
+                                      line_y * u::pt,
                                       line.str (),
                                       style (10.0f, 0.46f, 0.02f));
           line_y += 16.0f;
@@ -239,7 +245,10 @@ namespace moppe {
       m_heads_up.dl.clear ();
       m_heads_up.text.clear ();
       m_heads_up.hud.draw_game_over (
-        m_heads_up.dl, m_heads_up.text, r.width_pts (), r.height_pts ());
+        m_heads_up.dl,
+        m_heads_up.text,
+        static_cast<float> (r.width_pts ()) * u::pt,
+        static_cast<float> (r.height_pts ()) * u::pt);
       m_heads_up.hud.publish_offers ();
       r.draw_hud_text (m_heads_up.text);
       r.draw_hud (m_heads_up.dl);

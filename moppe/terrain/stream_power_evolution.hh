@@ -31,7 +31,8 @@ namespace moppe::terrain {
       1e-5f * mp_units::si::metre / mp_units::astronomy::Julian_year;
     square_meters_t reference_area =
       1.0f * mp_units::si::metre * mp_units::si::metre;
-    float area_exponent = 0.4f;
+    quantity<stream_power_exponent[one], float> area_exponent =
+      0.4f * stream_power_exponent[one];
     // Where the channel network begins. Above this catchment running water
     // cuts; below it the ground is a hillslope and belongs to creep.
     //
@@ -55,8 +56,7 @@ namespace moppe::terrain {
     proportion_t critical_hillslope_gradient = 1.0f * proportion[mp_units::one];
     proportion_t maximum_hillslope_diffusivity_multiplier =
       1.0f * proportion[mp_units::one];
-    // Metres in the terrain elevation frame.
-    float sea_level = 50.0f;
+    SurfaceElevation sea_level = surface_elevation_point (50.0f * u::m);
     // How strongly the prior geological step's channel tangent favours an
     // aligned, still-downhill D-infinity route. Zero recovers memoryless
     // routing; values must remain below one.

@@ -58,8 +58,8 @@ namespace {
   int consume_frame (moppe::game::SimulationClock& simulation,
                      const moppe::platform::FrameStep& step) {
     // The SDL host caps the selected interval before passing it to the game.
-    return simulation.consume (
-      static_cast<float> (std::clamp (step.elapsed_seconds, 0.0, 0.05)));
+    return simulation.consume (static_cast<float> (
+      std::clamp (step.elapsed.numerical_value_in (moppe::u::s), 0.0, 0.05)));
   }
 }
 
@@ -106,7 +106,7 @@ MOPPE_TEST (frame_clock_does_not_double_count_delayed_feedback) {
   game::SimulationClock simulation;
   const nhal::FrameTiming anchor = presentation.predict (8, 1.0 + 8.25 * h);
   MOPPE_CHECK (anchor.predicted);
-  const platform::FrameStep first = frame.select (0.0, anchor);
+  const platform::FrameStep first = frame.select (0.0 * moppe::u::s, anchor);
   MOPPE_CHECK (!first.by_display);
   MOPPE_CHECK (consume_frame (simulation, first) == 0);
 
@@ -114,7 +114,7 @@ MOPPE_TEST (frame_clock_does_not_double_count_delayed_feedback) {
   const nhal::FrameTiming ahead = presentation.predict (9, 1.0 + 9.25 * h);
   MOPPE_CHECK (ahead.predicted);
   MOPPE_CHECK (std::abs (ahead.display_seconds - (1.0 + 16 * h)) < 1e-12);
-  const platform::FrameStep advance = frame.select (h, ahead);
+  const platform::FrameStep advance = frame.select (h * moppe::u::s, ahead);
   int steps = consume_frame (simulation, advance);
   MOPPE_CHECK (advance.by_display);
   MOPPE_CHECK (steps == 2);
@@ -126,18 +126,20 @@ MOPPE_TEST (frame_clock_does_not_double_count_delayed_feedback) {
   MOPPE_CHECK (caught_up.predicted);
   MOPPE_CHECK (std::abs (caught_up.display_seconds - ahead.display_seconds) <
                1e-12);
-  const platform::FrameStep correction = frame.select (h, caught_up);
+  const platform::FrameStep correction =
+    frame.select (h * moppe::u::s, caught_up);
   steps += consume_frame (simulation, correction);
   // Two refreshes elapsed, and the prediction advanced by two refreshes.
   // Spending wall time on the duplicate would advance three instead.
   MOPPE_CHECK (steps == 2);
   MOPPE_CHECK (correction.by_display);
-  MOPPE_CHECK (std::abs (correction.elapsed_seconds) < 1e-12);
+  MOPPE_CHECK (std::abs (correction.elapsed.numerical_value_in (moppe::u::s)) <
+               1e-12);
 
   presentation.presented (8, 1.0 + 11 * h);
   const nhal::FrameTiming next = presentation.predict (11, 1.0 + 11.25 * h);
   MOPPE_CHECK (next.predicted);
-  const platform::FrameStep resumed = frame.select (h, next);
+  const platform::FrameStep resumed = frame.select (h * moppe::u::s, next);
   MOPPE_CHECK (resumed.by_display);
   MOPPE_CHECK (consume_frame (simulation, resumed) == 1);
 }
@@ -158,7 +160,7 @@ MOPPE_TEST (frame_clock_consumes_cadence_corrections_once) {
     const nhal::FrameTiming anchor =
       presentation.predict (32 + lag, 1.0 + 62.25 * h);
     MOPPE_CHECK (anchor.predicted);
-    const platform::FrameStep first = frame.select (0.0, anchor);
+    const platform::FrameStep first = frame.select (0.0 * moppe::u::s, anchor);
     MOPPE_CHECK (!first.by_display);
     MOPPE_CHECK (consume_frame (simulation, first) == 0);
 
@@ -181,7 +183,8 @@ MOPPE_TEST (frame_clock_consumes_cadence_corrections_once) {
       }
       previous_display = timing.display_seconds;
 
-      const platform::FrameStep step = frame.select (wall_ticks * h, timing);
+      const platform::FrameStep step =
+        frame.select ((wall_ticks * h) * moppe::u::s, timing);
       int expected_steps = wall_ticks;
       if (serial == 48)
         expected_steps += static_cast<int> (lag);
@@ -192,11 +195,11 @@ MOPPE_TEST (frame_clock_consumes_cadence_corrections_once) {
       const int steps = consume_frame (simulation, step);
       MOPPE_CHECK (steps == expected_steps);
       MOPPE_CHECK (step.by_display);
-      MOPPE_CHECK (std::abs (step.elapsed_seconds - expected_steps * h) <
-                   1e-12);
+      MOPPE_CHECK (std::abs (step.elapsed.numerical_value_in (moppe::u::s) -
+                             expected_steps * h) < 1e-12);
       total_steps += steps;
       wall_total += wall_ticks * h;
-      elapsed_total += step.elapsed_seconds;
+      elapsed_total += step.elapsed.numerical_value_in (moppe::u::s);
     }
     MOPPE_CHECK (total_steps == 82);
     MOPPE_CHECK (std::abs (elapsed_total - wall_total) < 1e-12);
@@ -234,9 +237,10 @@ MOPPE_TEST (frame_clock_preserves_jitter_fallback_and_catch_up_policy) {
   platform::FrameClock frame;
   game::SimulationClock simulation;
   for (const Sample& sample : samples) {
-    const platform::FrameStep step =
-      frame.select (sample.wall, { sample.display, h, sample.predicted });
-    MOPPE_CHECK (std::abs (step.elapsed_seconds - sample.elapsed) < 1e-12);
+    const platform::FrameStep step = frame.select (
+      sample.wall * moppe::u::s, { sample.display, h, sample.predicted });
+    MOPPE_CHECK (std::abs (step.elapsed.numerical_value_in (moppe::u::s) -
+                           sample.elapsed) < 1e-12);
     MOPPE_CHECK (step.by_display == sample.by_display);
     MOPPE_CHECK (consume_frame (simulation, step) == sample.steps);
   }

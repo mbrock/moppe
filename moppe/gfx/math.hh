@@ -37,6 +37,8 @@ namespace moppe {
   using radians_t = quantity<si::radian, float>;
   using magnitude_t = quantity<one, float>;
   using speed_t = quantity<si::metre / si::second, float>;
+  // A speed as a speedometer reads it.
+  using kilometres_per_hour_t = quantity<si::kilo<si::metre> / si::hour, float>;
   using velocity_component_t =
     quantity<isq::velocity[si::metre / si::second], float>;
   using acceleration_component_t =
@@ -82,6 +84,22 @@ namespace moppe {
   using drag_coefficient_t = quantity<isq::drag_coefficient[one], float>;
   using efficiency_t = quantity<isq::mechanical_efficiency[one], float>;
 
+  using scaling_exponent_t = quantity<scaling_exponent[one], float>;
+  using aspect_ratio_t = quantity<aspect_ratio[one], float>;
+  using opacity_t = quantity<opacity[one], float>;
+
+  // Lengths on the screen, in display points (moppe/quantities.hh):
+  // 12.0f * u::pt.
+  using points_t = quantity<display_point, float>;
+  namespace u {
+    inline constexpr auto pt = display_point;
+  }
+  // Lengths in a raster's pixels (moppe/quantities.hh): 1.5f * u::px.
+  using pixels_t = quantity<pixel, float>;
+  namespace u {
+    inline constexpr auto px = pixel;
+  }
+
   // Angles with a role (moppe/quantities.hh).
   using heading_t = quantity<heading[si::radian], float>;
   using inclination_t = quantity<inclination[si::radian], float>;
@@ -125,6 +143,19 @@ namespace moppe {
   inline float meters_value (meters_t q) {
     return q.numerical_value_in (si::metre);
   }
+  // A host's reading in points, as a length on the screen.
+  inline points_t display_points (float value) {
+    return value * display_point;
+  }
+  inline float points_value (points_t q) {
+    return q.numerical_value_in (display_point);
+  }
+  inline float pixels_value (pixels_t q) {
+    return q.numerical_value_in (pixel);
+  }
+  inline float opacity_value (opacity_t q) {
+    return q.numerical_value_in (one);
+  }
   inline float kilograms_value (kilograms_t q) {
     return q.numerical_value_in (si::kilogram);
   }
@@ -149,18 +180,20 @@ namespace moppe {
   }
 
   // Frame-rate-independent exponential decay: the surviving
-  // proportion of a quantity after dt at decay rate k.  Returns the
-  // plain float weight that the unit-blind vector lerps consume; the
-  // typed rate is the point, making the exponent's dimensionlessness
-  // (frame-rate independence) a compile-time fact.
-  inline float decay (damping_t k, seconds_t dt) {
-    return cr::exp (-scalar_value (k * dt));
+  // proportion of a quantity after dt at decay rate k.  The typed rate
+  // makes the exponent's dimensionlessness (frame-rate independence) a
+  // compile-time fact.  A length or a duration scales by it directly;
+  // unit-blind floats take numerical_value_in (one).
+  inline proportion_t decay (damping_t k, seconds_t dt) {
+    return cr::exp (-scalar_value (k * dt)) * proportion[one];
   }
 
   // The complementary smoothing weight: how far toward a target a
-  // low-pass filter moves during dt when it converges at rate k.
-  inline float smoothing_alpha (damping_t k, seconds_t dt) {
-    return 1.0f - decay (k, dt);
+  // low-pass filter moves during dt when it converges at rate k.  A
+  // blend weight is its own kind, so a step toward a typed target is
+  // named back into the target's type: radians_t ((to - x) * alpha).
+  inline blend_weight_t smoothing_alpha (damping_t k, seconds_t dt) {
+    return (1.0f - decay (k, dt).numerical_value_in (one)) * blend_weight[one];
   }
 
   // Trig on typed angles.  Degrees convert implicitly at the call
@@ -429,9 +462,11 @@ namespace moppe {
     return Vec3 (left.native () * right.native ());
   }
 
-  inline Vec3
-  linear_vector_interpolate (const Vec3& from, const Vec3& to, float alpha) {
-    return (1.0f - alpha) * from + alpha * to;
+  inline Vec3 linear_vector_interpolate (const Vec3& from,
+                                         const Vec3& to,
+                                         blend_weight_t alpha) {
+    const float weight = alpha.numerical_value_in (one);
+    return (1.0f - weight) * from + weight * to;
   }
 
   // The horizontal plane's two lanes: x, then z (the world's y is up).

@@ -11,58 +11,72 @@
 
 namespace moppe::game {
   namespace {
-    constexpr float basket_tau = 6.2831853f;
+    constexpr radians_t basket_tau = 6.2831853f * u::rad;
     // The basket's rim, half its length and width, the depth of its
     // body, and the height of the handle's arch over the rim.
-    constexpr float rim_length = 0.19f;
-    constexpr float rim_width = 0.13f;
-    constexpr float basket_depth = 0.13f;
-    constexpr float handle_rise = 0.20f;
+    constexpr meters_t rim_length = 0.19f * u::m;
+    constexpr meters_t rim_width = 0.13f * u::m;
+    constexpr meters_t basket_depth = 0.13f * u::m;
+    constexpr meters_t handle_rise = 0.20f * u::m;
     // How many of the gathered mushrooms show in it.
     constexpr std::size_t basket_shown = 18;
 
+    // An offset as what moves a place (position_t is rooted in
+    // isq::position_vector).
+    auto shift (const displacement_t& offset) {
+      return quantity_cast<isq::position_vector> (offset);
+    }
+
     struct BasketFrame {
-      Vec3 rim;     // centre of the rim
-      Vec3 forward; // along its length
-      Vec3 side;    // across it
-      Vec3 up;
+      position_t rim;      // centre of the rim
+      direction_t forward; // along its length
+      direction_t side;    // across it
+      direction_t up;
     };
 
     // The basket hangs from the left hand, its handle in the fingers, a
     // little out from the thigh so the legs swing past it.
     BasketFrame basket_frame (const AvatarSkeleton& k) {
-      const Vec3 up (0, 1, 0);
-      Vec3 forward = direction_value (k.forward);
-      forward[1] = 0.0f;
-      forward =
-        length2 (forward) > 1e-6f ? normalized (forward) : Vec3 (0, 0, 1);
-      const Vec3 side = cross (up, forward);
-      Vec3 hand = position_value (k.wrist[0]);
-      const Vec3 along =
-        position_value (k.wrist[0]) - position_value (k.elbow[0]);
-      if (length2 (along) > 1e-6f)
-        hand += normalized (along) * 0.07f;
+      const direction_t up = unit_direction (Vec3 (0, 1, 0));
+      Vec3 level = direction_value (k.forward);
+      level[1] = 0.0f;
+      const direction_t forward = unit_direction (
+        length2 (level) > 1e-6f ? normalized (level) : Vec3 (0, 0, 1));
+      const direction_t side = unit_direction (
+        cross (direction_value (up), direction_value (forward)));
+      position_t hand = k.wrist[0];
+      const displacement_t forearm = displacement (position_value (k.wrist[0]) -
+                                                   position_value (k.elbow[0]));
+      if (length2 (displacement_value (forearm)) > 1e-6f)
+        hand += shift (along (direction_of (forearm), 0.07f * u::m));
       // Out from the body: the left hand's side.
-      const Vec3 out = direction_value (k.right) * -0.09f;
-      return { .rim = hand + out - up * handle_rise,
+      const displacement_t out = along (k.right, -0.09f * u::m);
+      return { .rim = hand + shift (out) - shift (along (up, handle_rise)),
                .forward = forward,
                .side = side,
                .up = up };
     }
 
-    // A point on the wicker's surface: `around` in radians about the
-    // axis, `down` from the rim (0) to the floor (1).
-    Vec3 wicker_point (const BasketFrame& b, float around, float down) {
-      const float taper = 1.0f - 0.22f * down;
-      return b.rim + b.forward * (rim_length * taper * std::cos (around)) +
-             b.side * (rim_width * taper * std::sin (around)) -
-             b.up * (basket_depth * down);
+    // A point on the wicker's surface: `around` the axis, `down` from the
+    // rim (0) to the floor (1).
+    position_t
+    wicker_point (const BasketFrame& b, radians_t around, proportion_t down) {
+      // The share of the rim's size the wicker keeps that far down.
+      const proportion_t taper = 1.0f - 0.22f * down;
+      const float a = radians_value (around);
+      return b.rim +
+             shift (along (b.forward, rim_length * taper * std::cos (a))) +
+             shift (along (b.side, rim_width * taper * std::sin (a))) -
+             shift (along (b.up, basket_depth * down));
     }
 
-    Vec3 wicker_normal (const BasketFrame& b, float around) {
-      return normalized (b.forward * (std::cos (around) / rim_length) +
-                         b.side * (std::sin (around) / rim_width) +
-                         b.up * -1.5f);
+    direction_t wicker_normal (const BasketFrame& b, radians_t around) {
+      const float a = radians_value (around);
+      const auto bulge = b.forward * (std::cos (a) / rim_length) +
+                         b.side * (std::sin (a) / rim_width) +
+                         b.up * (-1.5f / u::m);
+      return unit_direction (
+        normalized (bulge.numerical_value_in (one / u::m)));
     }
 
     void draw_wicker (render::DrawList& dl, const BasketFrame& b) {
@@ -72,14 +86,16 @@ namespace moppe::game {
       const DisplayColor light (0.70f, 0.52f, 0.30f);
       const DisplayColor dark (0.52f, 0.36f, 0.19f);
       for (int band = 0; band < bands; ++band) {
-        const float d0 = static_cast<float> (band) / bands;
-        const float d1 = static_cast<float> (band + 1) / bands;
+        const proportion_t d0 =
+          static_cast<float> (band) / bands * proportion[one];
+        const proportion_t d1 =
+          static_cast<float> (band + 1) / bands * proportion[one];
         for (int s = 0; s < sides; ++s) {
-          const float a0 = basket_tau * s / sides;
-          const float a1 = basket_tau * (s + 1) / sides;
+          const radians_t a0 = basket_tau * s / sides;
+          const radians_t a1 = basket_tau * (s + 1) / sides;
           // A checker of over and under.
           dl.color ((band + s) % 2 ? light : dark);
-          const auto put = [&] (float a, float d) {
+          const auto put = [&] (radians_t a, proportion_t d) {
             dl.normal (wicker_normal (b, a));
             dl.vertex (wicker_point (b, a, d));
           };
@@ -92,34 +108,40 @@ namespace moppe::game {
         }
       }
       // The floor.
+      const proportion_t floor = 1.0f * proportion[one];
       dl.color (dark);
       dl.normal (b.up);
-      const Vec3 middle = b.rim - b.up * basket_depth;
+      const position_t middle = b.rim - shift (along (b.up, basket_depth));
       for (int s = 0; s < sides; ++s) {
         dl.vertex (middle);
-        dl.vertex (wicker_point (b, basket_tau * s / sides, 1.0f));
-        dl.vertex (wicker_point (b, basket_tau * (s + 1) / sides, 1.0f));
+        dl.vertex (wicker_point (b, basket_tau * s / sides, floor));
+        dl.vertex (wicker_point (b, basket_tau * (s + 1) / sides, floor));
       }
-      // A thick rolled rim and the handle's arch, both as tubes.
-      const auto tube = [&] (auto centre, int segments, float radius) {
+      // A thick rolled rim and the handle's arch, both as tubes, `centre`
+      // giving the spine at a share of the way along.
+      const auto tube = [&] (auto centre, int segments, meters_t radius) {
         constexpr int round = 6;
         for (int i = 0; i < segments; ++i) {
-          const Vec3 p0 = centre (static_cast<float> (i) / segments);
-          const Vec3 p1 = centre (static_cast<float> (i + 1) / segments);
-          const Vec3 axis = normalized (p1 - p0);
-          Vec3 u = cross (axis, b.up);
+          const position_t p0 =
+            centre (static_cast<float> (i) / segments * proportion[one]);
+          const position_t p1 =
+            centre (static_cast<float> (i + 1) / segments * proportion[one]);
+          const direction_t axis = direction_of (p1 - p0);
+          Vec3 u = cross (direction_value (axis), direction_value (b.up));
           if (length2 (u) < 1e-6f)
-            u = cross (axis, b.side);
+            u = cross (direction_value (axis), direction_value (b.side));
           u = normalized (u);
-          const Vec3 v = cross (axis, u);
+          const Vec3 v = cross (direction_value (axis), u);
           for (int r = 0; r < round; ++r) {
-            const float t0 = basket_tau * r / round;
-            const float t1 = basket_tau * (r + 1) / round;
-            const Vec3 n0 = u * std::cos (t0) + v * std::sin (t0);
-            const Vec3 n1 = u * std::cos (t1) + v * std::sin (t1);
-            const auto put = [&] (const Vec3& p, const Vec3& n) {
+            const float t0 = radians_value (basket_tau * r / round);
+            const float t1 = radians_value (basket_tau * (r + 1) / round);
+            const direction_t n0 =
+              unit_direction (u * std::cos (t0) + v * std::sin (t0));
+            const direction_t n1 =
+              unit_direction (u * std::cos (t1) + v * std::sin (t1));
+            const auto put = [&] (const position_t& p, const direction_t& n) {
               dl.normal (n);
-              dl.vertex (p + n * radius);
+              dl.vertex (p + shift (along (n, radius)));
             };
             put (p0, n0);
             put (p1, n0);
@@ -131,17 +153,21 @@ namespace moppe::game {
         }
       };
       dl.color (light);
-      tube ([&] (float t) { return wicker_point (b, basket_tau * t, 0.0f); },
-            sides,
-            0.012f);
       tube (
-        [&] (float t) {
-          const float a = PI * t;
-          return b.rim + b.forward * (0.96f * rim_length * std::cos (a)) +
-                 b.up * (handle_rise * std::sin (a));
+        [&] (proportion_t t) {
+          return wicker_point (b, basket_tau * t, 0.0f * proportion[one]);
+        },
+        sides,
+        0.012f * u::m);
+      tube (
+        [&] (proportion_t t) {
+          const float a = radians_value (PI * u::rad * t);
+          return b.rim +
+                 shift (along (b.forward, 0.96f * rim_length * std::cos (a))) +
+                 shift (along (b.up, handle_rise * std::sin (a)));
         },
         10,
-        0.011f);
+        0.011f * u::m);
     }
 
     // The gathered mushrooms lie heaped in it, the latest on top.
@@ -154,41 +180,53 @@ namespace moppe::game {
         const std::size_t place = i - first;
         const std::uint32_t seed = basket[i].seed;
         // A ring of places around the floor, then another a layer up.
-        const float layer = static_cast<float> (place / 7);
-        const float around =
+        const std::size_t layer = place / 7;
+        const radians_t around =
           basket_tau * (static_cast<float> (place % 7) / 7 + 0.5f * layer / 3 +
                         0.08f * hash_lane (seed, 21));
-        const float out = place % 7 == 6 ? 0.0f : 0.55f;
-        const float depth = std::max (0.25f, 0.85f - 0.3f * layer);
+        const proportion_t out =
+          (place % 7 == 6 ? 0.0f : 0.55f) * proportion[one];
+        const proportion_t depth =
+          std::max (0.25f, 0.85f - 0.3f * layer) * proportion[one];
+        const float a = radians_value (around);
         MushroomSite lying = basket[i];
-        lying.base = b.rim +
-                     b.forward * (out * rim_length * std::cos (around)) +
-                     b.side * (out * rim_width * std::sin (around)) -
-                     b.up * (basket_depth * depth);
+        lying.base =
+          b.rim + shift (along (b.forward, out * rim_length * std::cos (a))) +
+          shift (along (b.side, out * rim_width * std::sin (a))) -
+          shift (along (b.up, basket_depth * depth));
         lying.scale = 0.5f * basket[i].scale;
-        lying.lean = 0.5f + 0.8f * hash_lane (seed, 22);
-        lying.lean_toward = basket_tau * hash_lane (seed, 23);
+        lying.lean = (0.5f + 0.8f * hash_lane (seed, 22)) * inclination[u::rad];
+        lying.lean_toward =
+          radians_value (basket_tau * hash_lane (seed, 23)) * heading[u::rad];
         draw_mushroom (dl, lying);
       }
     }
 
     // A hemp rope from the right hand to where it is tied, sagging a
     // little: a thin tube of four sides.
-    void draw_rope (render::DrawList& dl, const Vec3& from, const Vec3& to) {
+    void draw_rope (render::DrawList& dl,
+                    const position_t& from,
+                    const position_t& to) {
       constexpr int pieces = 12;
-      constexpr float thick = 0.014f;
-      const Vec3 along = to - from;
-      const float span = length (along);
-      if (span < 1e-3f)
+      constexpr meters_t thick = 0.014f * u::m;
+      const displacement_t line = to - from;
+      const meters_t span = length (displacement_value (line)) * u::m;
+      if (span < 1e-3f * u::m)
         return;
-      const Vec3 axis = along * (1.0f / span);
-      Vec3 side = cross (axis, Vec3 (0, 1, 0));
-      side = length2 (side) > 1e-6f ? normalized (side) : Vec3 (1, 0, 0);
-      const Vec3 over = cross (side, axis);
-      const float sag = 0.04f * span;
+      const Vec3 axis =
+        displacement_value (line) * (1.0f / meters_value (span));
+      const Vec3 across = cross (axis, Vec3 (0, 1, 0));
+      const direction_t side = unit_direction (
+        length2 (across) > 1e-6f ? normalized (across) : Vec3 (1, 0, 0));
+      const direction_t over =
+        unit_direction (cross (direction_value (side), axis));
+      const direction_t up = unit_direction (Vec3 (0, 1, 0));
+      const meters_t sag = 0.04f * span;
       const auto at = [&] (int piece) {
-        const float t = static_cast<float> (piece) / pieces;
-        return from + along * t - Vec3 (0, sag * 4.0f * t * (1.0f - t), 0);
+        const proportion_t t =
+          static_cast<float> (piece) / pieces * proportion[one];
+        return from + shift (line * t) -
+               shift (along (up, sag * 4.0f * t * (1.0f - t)));
       };
       render::DrawState solid;
       solid.cull = false;
@@ -197,18 +235,21 @@ namespace moppe::game {
       dl.fogged (true);
       dl.begin (render::Prim::Triangles);
       dl.color (DisplayColor (0.60f, 0.50f, 0.32f));
-      const Vec3 faces[4] = { side, over, -side, -over };
+      const direction_t faces[4] = { side, over, -side, -over };
       for (int piece = 0; piece < pieces; ++piece) {
-        const Vec3 a = at (piece), b = at (piece + 1);
+        const position_t a = at (piece), b = at (piece + 1);
         for (int f = 0; f < 4; ++f) {
-          const Vec3 u = faces[f] * thick, v = faces[(f + 1) % 4] * thick;
-          dl.normal (normalized (faces[f] + faces[(f + 1) % 4]));
-          dl.vertex (a + u);
-          dl.vertex (b + u);
-          dl.vertex (b + v);
-          dl.vertex (a + u);
-          dl.vertex (b + v);
-          dl.vertex (a + v);
+          const displacement_t u = along (faces[f], thick),
+                               v = along (faces[(f + 1) % 4], thick);
+          dl.normal (
+            unit_direction (normalized (direction_value (faces[f]) +
+                                        direction_value (faces[(f + 1) % 4]))));
+          dl.vertex (a + shift (u));
+          dl.vertex (b + shift (u));
+          dl.vertex (b + shift (v));
+          dl.vertex (a + shift (u));
+          dl.vertex (b + shift (v));
+          dl.vertex (a + shift (v));
         }
       }
       dl.end ();
@@ -233,44 +274,47 @@ namespace moppe::game {
 
   void render_walker (render::DrawList& draw,
                       const WalkerPose& walker,
-                      float time,
+                      seconds_t time,
                       std::span<const MushroomSite> basket,
                       Outfit outfit) {
-    const AvatarSkeleton k = pose_avatar (walker, time * u::s);
+    const AvatarSkeleton k = pose_avatar (walker, time);
     figure::draw (draw, k, outfit);
     draw_basket (draw, basket_frame (k), basket);
     if (walker.rope_end)
       draw_rope (draw,
-                 position_value (k.wrist[1]) +
-                   (position_value (k.wrist[1]) - position_value (k.elbow[1])) *
-                     0.25f,
+                 k.wrist[1] +
+                   shift (displacement (position_value (k.wrist[1]) -
+                                        position_value (k.elbow[1])) *
+                          0.25f),
                  *walker.rope_end);
     if (walker.rod)
-      draw_rod (draw, k, *walker.rod, time);
+      draw_rod (draw, k, *walker.rod, seconds_value (time));
   }
 
   void render_basket (render::DrawList& draw,
                       const WalkerPose& walker,
-                      float time,
+                      seconds_t time,
                       std::span<const MushroomSite> basket) {
-    const AvatarSkeleton k = pose_avatar (walker, time * u::s);
+    const AvatarSkeleton k = pose_avatar (walker, time);
     draw_basket (draw, basket_frame (k), basket);
     if (walker.rod)
-      draw_rod (draw, k, *walker.rod, time);
+      draw_rod (draw, k, *walker.rod, seconds_value (time));
   }
 
   void render_basket_set_down (render::DrawList& draw,
-                               const Vec3& floor,
-                               const Vec3& forward,
+                               const position_t& floor,
+                               const direction_t& forward,
                                std::span<const MushroomSite> basket) {
-    const Vec3 up (0, 1, 0);
-    Vec3 along = forward;
-    along[1] = 0.0f;
-    along = length2 (along) > 1e-6f ? normalized (along) : Vec3 (0, 0, 1);
+    const direction_t up = unit_direction (Vec3 (0, 1, 0));
+    Vec3 level = direction_value (forward);
+    level[1] = 0.0f;
+    const direction_t lengthwise = unit_direction (
+      length2 (level) > 1e-6f ? normalized (level) : Vec3 (0, 0, 1));
     draw_basket (draw,
-                 { .rim = floor + up * basket_depth,
-                   .forward = along,
-                   .side = cross (up, along),
+                 { .rim = floor + shift (along (up, basket_depth)),
+                   .forward = lengthwise,
+                   .side = unit_direction (cross (
+                     direction_value (up), direction_value (lengthwise))),
                    .up = up },
                  basket);
   }

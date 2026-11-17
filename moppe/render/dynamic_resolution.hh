@@ -31,12 +31,16 @@ namespace moppe::render {
     static constexpr int window = 8, in_flight = 4;
     // The GPU's part of a frame's period; the bottom of the quiet band
     // and where the time is steered to, as parts of that budget.
-    static constexpr float headroom = 0.90f, quiet = 0.85f, rest = 0.925f;
+    static constexpr proportion_t headroom = 0.90f * proportion[one],
+                                  quiet = 0.85f * proportion[one],
+                                  rest = 0.925f * proportion[one];
     // The most the pixel count changes at once, down and up.
-    static constexpr float fall = 0.70f, rise = 1.10f;
+    static constexpr scale_factor_t fall = 0.70f * scale_factor[one],
+                                    rise = 1.10f * scale_factor[one];
 
-    float share () const {
-      return float (m_step) / float (steps);
+    // The share of its ordinary width and height the scene is drawn at.
+    proportion_t share () const {
+      return float (m_step) / float (steps) * proportion[one];
     }
 
     // One frame's GPU time, where frames are due every `period`.
@@ -55,19 +59,22 @@ namespace moppe::render {
       m_count = 0;
 
       const seconds_t budget = period * headroom;
-      const float toward = seconds_value (budget * rest) / seconds_value (mean);
+      const scale_factor_t toward = seconds_value (budget * rest) /
+                                    seconds_value (mean) * scale_factor[one];
       if (mean > budget)
-        m_pixels *= std::max (toward, fall);
+        m_pixels *= std::max (toward, fall).numerical_value_in (one);
       else if (mean < budget * quiet)
-        m_pixels *= std::min (toward, rise);
+        m_pixels *= std::min (toward, rise).numerical_value_in (one);
       else
         return;
-      const float least = float (fewest * fewest) / float (steps * steps);
-      m_pixels = std::clamp (m_pixels, least, 1.0f);
-      const int step =
-        std::clamp (int (std::lround (std::sqrt (m_pixels) * float (steps))),
-                    fewest,
-                    steps);
+      const proportion_t least =
+        float (fewest * fewest) / float (steps * steps) * proportion[one];
+      m_pixels = std::clamp (m_pixels, least, 1.0f * proportion[one]);
+      const int step = std::clamp (
+        int (std::lround (std::sqrt (m_pixels.numerical_value_in (one)) *
+                          float (steps))),
+        fewest,
+        steps);
       if (step != m_step) {
         m_step = step;
         m_passing = in_flight;
@@ -77,7 +84,7 @@ namespace moppe::render {
   private:
     int m_step = steps;
     // The share of the scene's pixels the steps follow.
-    float m_pixels = 1.0f;
+    proportion_t m_pixels = 1.0f * proportion[one];
     seconds_t m_sum = seconds (0.0f);
     int m_count = 0, m_passing = 0;
   };

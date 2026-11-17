@@ -14,17 +14,21 @@ namespace moppe::game {
   class InputFrameAdapter {
   public:
     void controls (const platform::ControlState& state) {
-      m_analog.turn = std::clamp (state.steer, -1.0f, 1.0f);
-      m_analog.drive = std::clamp (state.drive, -1.0f, 1.0f);
-      m_analog.boost = std::clamp (state.boost, 0.0f, 1.0f);
-      m_look_rate_x = std::clamp (state.look_x, -1.0f, 1.0f);
-      m_look_rate_y = std::clamp (state.look_y, -1.0f, 1.0f);
+      constexpr control_signal_t back = -1.0f * control_signal[one];
+      constexpr control_signal_t ahead = 1.0f * control_signal[one];
+      constexpr proportion_t none = 0.0f * proportion[one];
+      constexpr proportion_t all = 1.0f * proportion[one];
+      m_analog.turn = std::clamp (state.steer, back, ahead);
+      m_analog.drive = std::clamp (state.drive, back, ahead);
+      m_analog.boost = std::clamp (state.boost, none, all);
+      m_look_rate_x = std::clamp (state.look_x, back, ahead);
+      m_look_rate_y = std::clamp (state.look_y, back, ahead);
     }
 
     // Pointer movement in points becomes head turn in radians.
-    void look (float dx, float dy) {
-      m_look_yaw += 0.0035f * dx;
-      m_look_pitch -= 0.0035f * dy;
+    void look (points_t dx, points_t dy) {
+      m_look_yaw += 0.0035f * dx.numerical_value_in (display_point);
+      m_look_pitch -= 0.0035f * dy.numerical_value_in (display_point);
     }
 
     void key (platform::Key key, bool down) {
@@ -134,8 +138,8 @@ namespace moppe::game {
 
     InputFrame take_frame (float dt = 0.0f) {
       InputFrame frame = m_analog;
-      m_look_yaw += look_yaw_rate * m_look_rate_x * dt;
-      m_look_pitch += look_pitch_rate * m_look_rate_y * dt;
+      m_look_yaw += look_yaw_rate * input_value (m_look_rate_x) * dt;
+      m_look_pitch += look_pitch_rate * input_value (m_look_rate_y) * dt;
       if (std::abs (input_value (m_keys.turn)) >
           std::abs (input_value (frame.turn)))
         frame.turn = m_keys.turn;
@@ -178,8 +182,8 @@ namespace moppe::game {
       m_light_fire = false;
       m_look_yaw = 0.0f;
       m_look_pitch = 0.0f;
-      m_look_rate_x = 0.0f;
-      m_look_rate_y = 0.0f;
+      m_look_rate_x = {};
+      m_look_rate_y = {};
       m_run = false;
       m_lean_back = false;
       m_combo = 0;
@@ -210,8 +214,8 @@ namespace moppe::game {
     bool m_light_fire = false;
     float m_look_yaw = 0.0f;
     float m_look_pitch = 0.0f;
-    float m_look_rate_x = 0.0f;
-    float m_look_rate_y = 0.0f;
+    control_signal_t m_look_rate_x {};
+    control_signal_t m_look_rate_y {};
     bool m_run = false;
     bool m_lean_back = false;
     int m_combo = 0;

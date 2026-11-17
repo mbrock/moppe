@@ -202,7 +202,7 @@ namespace moppe::game {
              .fog_tint =
                mix_display (a.fog_tint_amount > 0.0f ? a.fog_tint : b.fog_tint,
                             b.fog_tint_amount > 0.0f ? b.fog_tint : a.fog_tint,
-                            t),
+                            t * blend_weight[one]),
              .fog_tint_amount = lerp (a.fog_tint_amount, b.fog_tint_amount),
              .sunlight = lerp (a.sunlight, b.sunlight),
              .skylight = lerp (a.skylight, b.skylight),

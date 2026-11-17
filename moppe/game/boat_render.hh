@@ -26,27 +26,29 @@ namespace moppe::game {
                     std::optional<Outfit> helmsman,
                     uint64_t motion_base,
                     const std::optional<RodPose>& rod = std::nullopt,
-                    float time = 0.0f,
+                    seconds_t time = 0.0f * u::s,
                     std::optional<Outfit> passenger = std::nullopt);
 
   // Where the boat's stern passed and how fast, kept a few seconds so
   // that its wake can be drawn spreading behind it on the water.
   struct WakeMark {
-    Vec3 stern;  // on the water, under the transom
-    Vec3 across; // level, to port
-    float speed = 0.0f;
-    float time = 0.0f;
-    // How much foam there is here, 0..1, so that it lies in patches.
-    float foam = 1.0f;
+    position_t stern;   // on the water, under the transom
+    direction_t across; // level, to port
+    speed_t speed = 0.0f * u::m / u::s;
+    seconds_t time = 0.0f * u::s;
+    // How much foam there is here, so that it lies in patches.
+    proportion_t foam = 1.0f * proportion[one];
   };
 
   class BoatWake {
   public:
-    static constexpr float lasts = 7.0f;
+    static constexpr seconds_t lasts = 7.0f * u::s;
     // Marks the stern at `time` if it has moved on and is under way in
     // water `depth` deep.
-    void
-    follow (const BoatPose& boat, float water_level, float depth, float time);
+    void follow (const BoatPose& boat,
+                 meters_t water_level,
+                 meters_t depth,
+                 seconds_t time);
     void clear () {
       m_marks.clear ();
     }
@@ -55,9 +57,9 @@ namespace moppe::game {
     // `light` dims the foam with the day. `level` is the water's surface
     // at a place now, which the wake lies on as the waves pass under it.
     void draw (render::DrawList& dl,
-               float time,
-               float light,
-               const std::function<float (const Vec3&)>& level) const;
+               seconds_t time,
+               proportion_t light,
+               const std::function<meters_t (const position_t&)>& level) const;
 
   private:
     std::deque<WakeMark> m_marks;
@@ -74,10 +76,10 @@ namespace moppe::game {
                const JetSkiPose& jet_ski,
                const BoatPose* their_boat,
                const JetSkiPose* their_jet_ski,
-               const std::function<float (const Vec3&)>& level,
-               const std::function<float (const Vec3&)>& ground,
-               float time,
-               float daylight);
+               const std::function<meters_t (const position_t&)>& level,
+               const std::function<meters_t (const position_t&)>& ground,
+               seconds_t time,
+               proportion_t daylight);
 
   private:
     BoatWake m_boat;

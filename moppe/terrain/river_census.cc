@@ -20,6 +20,7 @@
 #include <moppe/game/generated_world.hh>
 #include <moppe/game/land.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/terrain/torus.hh>
 #include <moppe/terrain/watercourse.hh>
 #include <moppe/terrain/world_recipe.hh>
 
@@ -51,12 +52,14 @@ int main (int argc, char** argv) {
     const int resolution = argc > 2 ? std::stoi (argv[2]) : 2048;
     const std::uint32_t seed =
       argc > 3 ? static_cast<std::uint32_t> (std::stoul (argv[3])) : 123;
-    const float across_m = argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f;
+    const meters_t across =
+      (argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f) * u::m;
     const std::string variant = argc > 5 ? argv[5] : "beds";
     if (variant != "beds" && variant != "bare")
       throw std::invalid_argument ("the variant is beds or bare");
     const WorldRecipe recipe = make_world_recipe (
-      spatial_extent_in_metres (Vec3 (across_m, 320.0f, across_m)),
+      spatial_extent_in_metres (
+        Vec3 (meters_value (across), 320.0f, meters_value (across))),
       resolution,
       Seed { seed },
       50.0f * u::m,
@@ -65,9 +68,9 @@ int main (int argc, char** argv) {
                                 static_cast<std::size_t> (resolution),
                                 recipe.extent ());
     map::SurfaceGeometry surface (domain);
-    const std::string world = std::to_string (resolution) + "-" +
-                              std::to_string (seed) + "-" +
-                              std::to_string (int (across_m / 1000.0f));
+    const std::string world =
+      std::to_string (resolution) + "-" + std::to_string (seed) + "-" +
+      std::to_string (int (meters_value (across) / 1000.0f));
     std::filesystem::create_directories (work);
     const std::filesystem::path evolved =
       work / ("evolved-" + world + ".arrows");
@@ -77,10 +80,9 @@ int main (int argc, char** argv) {
       map::evolve_terrain (surface, uplift, recipe.evolution ());
       game::save_land (surface, evolved.string ());
     }
-    std::vector<float> change;
+    std::vector<ElevationChange> change;
     if (variant == "beds")
-      change =
-        map::form_river_channels (surface, recipe.water_datum ()).change_m;
+      change = map::form_river_channels (surface, recipe.water_datum ()).change;
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
     game::quantize_land (surface);
     map::rebuild_geometry (surface);
@@ -92,31 +94,62 @@ int main (int argc, char** argv) {
     const auto ground = elevations (surface);
     const auto water = spatial::get<surface_elevation> (sheets);
     const int width = resolution;
-    const float spacing = domain.spacing_x ().numerical_value_in (u::m);
-    const auto cell_at = [&] (float x_m, float z_m) {
-      const int x = wrap_index (int (std::lround (x_m / spacing)), width);
-      const int z = wrap_index (int (std::lround (z_m / spacing)), width);
+    const meters_t spacing = domain.spacing_x ();
+    // A river point's place and how far down its reach it lies.
+    const auto place_of = [] (const RiverAlignmentPoint& point) {
+      return plan_position (point.x_m, point.z_m);
+    };
+    const auto distance_of = [] (const RiverAlignmentPoint& point) {
+      return point.distance_m * u::m;
+    };
+    const auto cell_at = [&] (plan_position_t at) {
+      const int x = wrap_index (
+        int (std::lround (static_cast<float> (x_of (at) / spacing))), width);
+      const int z = wrap_index (
+        int (std::lround (static_cast<float> (z_of (at) / spacing))), width);
       return std::size_t (z) * width + x;
     };
-    // The water over the ground at a place, bilinear, as the renderer clips
-    // it.
-    const auto depth_at = [&] (float x_m, float z_m) {
-      const float gx = wrap_coordinate (x_m / spacing, float (width));
-      const float gz = wrap_coordinate (z_m / spacing, float (width));
+    // A height at a place, bilinear between the samples AT (x, z) gives in
+    // metres (the sheets' raster lanes).
+    const auto bilinear = [&] (plan_position_t place, const auto& at) {
+      const float gx = wrap_coordinate (
+        static_cast<float> (x_of (place) / spacing), float (width));
+      const float gz = wrap_coordinate (
+        static_cast<float> (z_of (place) / spacing), float (width));
       const int x0 = int (std::floor (gx));
       const int z0 = int (std::floor (gz));
       const int x1 = wrap_index (x0 + 1, width);
       const int z1 = wrap_index (z0 + 1, width);
-      const auto at = [&] (int x, int z) {
-        const std::size_t cell = std::size_t (z) * width + x;
-        return surface_elevation_value (water[cell]) -
-               surface_elevation_value (ground[cell]);
-      };
       const float tx = gx - x0;
       const float tz = gz - z0;
       return std::lerp (std::lerp (at (x0, z0), at (x1, z0), tx),
                         std::lerp (at (x0, z1), at (x1, z1), tx),
-                        tz);
+                        tz) *
+             u::m;
+    };
+    // The water over the ground at a place, bilinear, as the renderer clips
+    // it.
+    const auto depth_at = [&] (plan_position_t place) -> ElevationChange {
+      return bilinear (place, [&] (int x, int z) {
+        const std::size_t cell = std::size_t (z) * width + x;
+        return surface_elevation_value (water[cell]) -
+               surface_elevation_value (ground[cell]);
+      });
+    };
+    // The unit way from BEFORE to AFTER, the chord at least MINIMUM long,
+    // measured by std::hypot as the census always has.
+    const auto way_between =
+      [] (plan_position_t before, plan_position_t after, meters_t minimum) {
+        const Vec2 chord = plan_value (after - before);
+        const float run = std::max (std::hypot (chord.x (), chord.z ()),
+                                    meters_value (minimum));
+        return plan_unit_direction (Vec2 (chord.x () / run, chord.z () / run));
+      };
+    // OUT to the right of WAY (x east, z south): (-z, x) times OUT.
+    const auto aside = [] (plan_direction_t way, meters_t out) {
+      const Vec2& t = plan_value (way);
+      const float metres = meters_value (out);
+      return plan_displacement (Vec2 (-t.z () * metres, t.x () * metres));
     };
     // The deepest water within two metres across the river at a point.
     const auto deepest_across =
@@ -124,111 +157,111 @@ int main (int argc, char** argv) {
         const auto& here = points[point];
         const auto& before = points[point ? point - 1 : point];
         const auto& after = points[std::min (point + 1, points.size () - 1)];
-        float tx = after.x_m - before.x_m;
-        float tz = after.z_m - before.z_m;
-        const float run = std::max (std::hypot (tx, tz), 1e-4f);
-        tx /= run;
-        tz /= run;
-        float deepest = -std::numeric_limits<float>::infinity ();
-        for (float across = -2.0f; across <= 2.0f; across += 0.5f)
-          deepest = std::max (
-            deepest, depth_at (here.x_m - tz * across, here.z_m + tx * across));
+        const plan_direction_t way =
+          way_between (place_of (before), place_of (after), 1e-4f * u::m);
+        ElevationChange deepest =
+          -std::numeric_limits<float>::infinity () * u::m;
+        for (meters_t across = -2.0f * u::m; across <= 2.0f * u::m;
+             across += 0.5f * u::m)
+          deepest = std::max (deepest,
+                              depth_at (place_of (here) + aside (way, across)));
         return deepest;
       };
 
     // Every reach: its length, its dry gaps, and how deep the rest runs. A
     // fall is its curtain's, and a spring's first metres fade in, so
     // neither counts.
-    double total = 0.0;
-    double dry = 0.0;
-    std::vector<float> gaps;
-    constexpr std::array<float, 6> depth_edges { 0.0f,  0.02f, 0.05f,
-                                                 0.10f, 0.20f, 0.50f };
-    std::array<double, depth_edges.size () + 1> depth_bins {};
+    meters_f64_t total = 0.0 * u::m;
+    meters_f64_t dry = 0.0 * u::m;
+    std::vector<meters_t> gaps;
+    constexpr std::array<ElevationChange, 6> depth_edges {
+      0.0f * u::m,  0.02f * u::m, 0.05f * u::m,
+      0.10f * u::m, 0.20f * u::m, 0.50f * u::m
+    };
+    std::array<meters_f64_t, depth_edges.size () + 1> depth_bins {};
     std::vector<std::vector<std::uint8_t>> reach_wet (rivers.reaches.size ());
     for (const RiverReach& reach : rivers.reaches) {
       const auto& points = reach.alignment.points;
       auto& wet = reach_wet[reach.id];
       wet.assign (points.size (), 1);
-      float gap = 0.0f;
+      const meters_t none = 0.0f * u::m;
+      meters_t gap = none;
       for (std::size_t point = 0; point < points.size (); ++point) {
-        const float step =
+        const meters_t step =
           point + 1 < points.size ()
-            ? points[point + 1].distance_m - points[point].distance_m
-            : 0.0f;
+            ? distance_of (points[point + 1]) - distance_of (points[point])
+            : none;
         total += step;
         if (points[point].waterfall >= 0.5f ||
-            points[point].distance_m <= 20.0f)
+            distance_of (points[point]) <= 20.0f * u::m)
           continue;
-        const float deepest = deepest_across (points, point);
+        const ElevationChange deepest = deepest_across (points, point);
         std::size_t bin = 0;
         while (bin < depth_edges.size () && deepest > depth_edges[bin])
           ++bin;
         depth_bins[bin] += step;
-        wet[point] = deepest > 0.0f;
+        wet[point] = deepest > ElevationChange::zero ();
         if (!wet[point]) {
           dry += step;
           gap += step;
-        } else if (gap > 0.0f) {
-          gaps.push_back (std::exchange (gap, 0.0f));
+        } else if (gap > none) {
+          gaps.push_back (std::exchange (gap, none));
         }
       }
-      if (gap > 0.0f)
+      if (gap > none)
         gaps.push_back (gap);
     }
     std::ranges::sort (gaps, std::greater<> ());
-    const auto gaps_over = [&] (float length) {
-      return std::ranges::count_if (gaps, [&] (float g) { return g > length; });
+    const auto gaps_over = [&] (meters_t length) {
+      return std::ranges::count_if (gaps,
+                                    [&] (meters_t g) { return g > length; });
+    };
+    // Kilometres for the report, as metres over a thousand.
+    const auto km = [] (meters_f64_t length) {
+      return length.numerical_value_in (u::m) / 1000.0;
     };
     std::printf ("%s: %zu reaches, %.1f km of river, %.2f km dry (%.1f%%)\n",
                  variant.c_str (),
                  rivers.reaches.size (),
-                 total / 1000.0,
-                 dry / 1000.0,
-                 100.0 * dry / total);
+                 km (total),
+                 km (dry),
+                 100.0 * dry.numerical_value_in (u::m) /
+                   total.numerical_value_in (u::m));
     std::printf ("dry gaps: %zu; over 5 m %td, 10 m %td, 25 m %td; longest",
                  gaps.size (),
-                 gaps_over (5.0f),
-                 gaps_over (10.0f),
-                 gaps_over (25.0f));
+                 gaps_over (5.0f * u::m),
+                 gaps_over (10.0f * u::m),
+                 gaps_over (25.0f * u::m));
     for (std::size_t gap = 0; gap < std::min<std::size_t> (gaps.size (), 8);
          ++gap)
-      std::printf (" %.0f", gaps[gap]);
+      std::printf (" %.0f", meters_value (gaps[gap]));
     std::printf (" m\n");
     std::printf ("deepest across, km: dry %.2f, <2 cm %.2f, <5 cm %.2f, "
                  "<10 cm %.2f, <20 cm %.2f, <50 cm %.2f, deeper %.2f\n",
-                 depth_bins[0] / 1000,
-                 depth_bins[1] / 1000,
-                 depth_bins[2] / 1000,
-                 depth_bins[3] / 1000,
-                 depth_bins[4] / 1000,
-                 depth_bins[5] / 1000,
-                 depth_bins[6] / 1000);
+                 km (depth_bins[0]),
+                 km (depth_bins[1]),
+                 km (depth_bins[2]),
+                 km (depth_bins[3]),
+                 km (depth_bins[4]),
+                 km (depth_bins[5]),
+                 km (depth_bins[6]));
 
     // The banks: from the water's edge on either side, how steeply the
     // ground rises over the next three metres, by how steeply the river
     // falls. A bank under one in eight is a strand to walk along; over one
     // in three, a cut bank.
     {
-      const auto ground_at = [&] (float x_m, float z_m) {
-        const float gx = wrap_coordinate (x_m / spacing, float (width));
-        const float gz = wrap_coordinate (z_m / spacing, float (width));
-        const int x0 = int (std::floor (gx));
-        const int z0 = int (std::floor (gz));
-        const int x1 = wrap_index (x0 + 1, width);
-        const int z1 = wrap_index (z0 + 1, width);
-        const auto at = [&] (int x, int z) {
+      const auto ground_at = [&] (plan_position_t place) {
+        return surface_elevation_point (bilinear (place, [&] (int x, int z) {
           return surface_elevation_value (ground[std::size_t (z) * width + x]);
-        };
-        const float tx = gx - x0;
-        const float tz = gz - z0;
-        return std::lerp (std::lerp (at (x0, z0), at (x1, z0), tx),
-                          std::lerp (at (x0, z1), at (x1, z1), tx),
-                          tz);
+        }));
       };
       // Gentle, middling, and steep banks along rivers falling under one
       // in a hundred, one to three, and more.
-      std::array<std::array<double, 3>, 3> banks {};
+      std::array<std::array<meters_f64_t, 3>, 3> banks {};
+      const auto grade_of = [] (ElevationChange rise, meters_t run) {
+        return quantity_cast<grade> (quantity_cast<isq::height> (rise) / run);
+      };
       for (const RiverReach& reach : rivers.reaches) {
         const auto& points = reach.alignment.points;
         for (std::size_t point = 8; point + 8 < points.size (); point += 2) {
@@ -238,45 +271,52 @@ int main (int argc, char** argv) {
             continue;
           const auto& above = points[point - 8];
           const auto& below = points[point + 8];
-          const float run = below.distance_m - above.distance_m;
-          const float fall = (ground_at (above.x_m, above.z_m) -
-                              ground_at (below.x_m, below.z_m)) /
-                             std::max (run, 1.0f);
-          const std::size_t grade = fall < 0.01f ? 0 : fall < 0.03f ? 1 : 2;
-          float tx = points[point + 2].x_m - points[point - 2].x_m;
-          float tz = points[point + 2].z_m - points[point - 2].z_m;
-          const float length = std::max (std::hypot (tx, tz), 1e-3f);
-          tx /= length;
-          tz /= length;
-          const float step =
-            points[point + 2].distance_m - points[point].distance_m;
+          const meters_t run = distance_of (below) - distance_of (above);
+          const grade_t fall = grade_of (ground_at (place_of (above)) -
+                                           ground_at (place_of (below)),
+                                         std::max (run, 1.0f * u::m));
+          const std::size_t kind = fall < 0.01f * grade[one]   ? 0
+                                   : fall < 0.03f * grade[one] ? 1
+                                                               : 2;
+          const plan_direction_t way =
+            way_between (place_of (points[point - 2]),
+                         place_of (points[point + 2]),
+                         1e-3f * u::m);
+          const meters_t step =
+            distance_of (points[point + 2]) - distance_of (here);
           for (const float side : { -1.0f, 1.0f }) {
-            float edge = 0.0f;
-            while (edge < 40.0f &&
-                   depth_at (here.x_m - side * tz * edge,
-                             here.z_m + side * tx * edge) > 0.0f)
-              edge += 0.5f;
-            const auto rise = [&] (float out) {
-              return ground_at (here.x_m - side * tz * out,
-                                here.z_m + side * tx * out);
+            // Out from the bank on this side, toward the water's edge.
+            const auto out = [&] (meters_t distance) {
+              return place_of (here) + aside (way, side * distance);
             };
-            const float slope = (rise (edge + 3.0f) - rise (edge)) / 3.0f;
-            banks[grade][slope < 0.125f        ? 0
-                         : slope < 1.0f / 3.0f ? 1
-                                               : 2] += 0.5 * step;
+            meters_t edge = 0.0f * u::m;
+            while (edge < 40.0f * u::m &&
+                   depth_at (out (edge)) > ElevationChange::zero ())
+              edge += 0.5f * u::m;
+            const grade_t slope = grade_of (
+              ground_at (out (edge + 3.0f * u::m)) - ground_at (out (edge)),
+              3.0f * u::m);
+            banks[kind][slope < 0.125f * grade[one]        ? 0
+                        : slope < 1.0f / 3.0f * grade[one] ? 1
+                                                           : 2] += 0.5 * step;
           }
         }
       }
       const char* names[] = { "under 1%", "1-3%", "over 3%" };
-      for (std::size_t grade = 0; grade < 3; ++grade) {
-        const double all = banks[grade][0] + banks[grade][1] + banks[grade][2];
+      for (std::size_t kind = 0; kind < 3; ++kind) {
+        const double all = (banks[kind][0] + banks[kind][1] + banks[kind][2])
+                             .numerical_value_in (u::m);
+        const auto share = [&] (std::size_t bank) {
+          return 100.0 * banks[kind][bank].numerical_value_in (u::m) /
+                 std::max (all, 1.0);
+        };
         std::printf ("banks where rivers fall %s: %.1f km, %.0f%% strand, "
                      "%.0f%% middling, %.0f%% cut\n",
-                     names[grade],
+                     names[kind],
                      all / 1000.0,
-                     100.0 * banks[grade][0] / std::max (all, 1.0),
-                     100.0 * banks[grade][1] / std::max (all, 1.0),
-                     100.0 * banks[grade][2] / std::max (all, 1.0));
+                     share (0),
+                     share (1),
+                     share (2));
       }
     }
 
@@ -350,9 +390,9 @@ int main (int argc, char** argv) {
         }));
     std::ranges::reverse (path);
     {
-      double along = 0.0;
-      double dry_along = 0.0;
-      double gap_start = 0.0;
+      meters_f64_t along = 0.0 * u::m;
+      meters_f64_t dry_along = 0.0 * u::m;
+      meters_f64_t gap_start = 0.0 * u::m;
       bool was_wet = true;
       for (const RiverReachId id : path) {
         const auto& points = rivers.reaches[id].alignment.points;
@@ -362,13 +402,13 @@ int main (int argc, char** argv) {
             gap_start = along;
           if (wet && !was_wet)
             std::printf ("  dry from %.0f m to %.0f m, at %.0f %.0f\n",
-                         gap_start,
-                         along,
-                         points[point].x_m,
-                         points[point].z_m);
+                         gap_start.numerical_value_in (u::m),
+                         along.numerical_value_in (u::m),
+                         meters_value (x_of (place_of (points[point]))),
+                         meters_value (z_of (place_of (points[point]))));
           was_wet = wet;
-          const float step =
-            points[point + 1].distance_m - points[point].distance_m;
+          const meters_t step =
+            distance_of (points[point + 1]) - distance_of (points[point]);
           along += step;
           if (!wet)
             dry_along += step;
@@ -376,15 +416,15 @@ int main (int argc, char** argv) {
       }
       std::printf ("greatest river: %zu reaches, %.0f m, %.0f m dry\n",
                    path.size (),
-                   along,
-                   dry_along);
+                   along.numerical_value_in (u::m),
+                   dry_along.numerical_value_in (u::m));
     }
 
     // Views down the greatest river, on the bank at eye height and from a
     // little height: at its source, at a confluence half way, at its mouth.
     {
-      const auto ground_m = [&] (float x_m, float z_m) {
-        return surface_elevation_value (ground[cell_at (x_m, z_m)]);
+      const auto ground_on = [&] (plan_position_t at) {
+        return ground[cell_at (at)];
       };
       std::ofstream views (work / (variant + "-" + world + "-views.txt"));
       views << "world seed " << seed << " resolution " << resolution
@@ -392,20 +432,23 @@ int main (int argc, char** argv) {
       const auto view = [&] (const std::string& name,
                              const std::vector<RiverAlignmentPoint>& points,
                              std::size_t at) {
-        const auto& here = points[at];
+        const plan_position_t here = place_of (points[at]);
         const auto& before = points[at >= 4 ? at - 4 : 0];
         const auto& after = points[std::min (at + 4, points.size () - 1)];
-        float tx = after.x_m - before.x_m;
-        float tz = after.z_m - before.z_m;
-        const float run = std::max (std::hypot (tx, tz), 1e-3f);
-        tx /= run;
-        tz /= run;
-        const float heading = std::atan2 (tx, tz) * 57.29578f;
-        const float bank_x = here.x_m - tx * 12.0f - tz * 8.0f;
-        const float bank_z = here.z_m - tz * 12.0f + tx * 8.0f;
-        const float high_x = here.x_m - tx * 45.0f;
-        const float high_z = here.z_m - tz * 45.0f;
-        const float river = ground_m (here.x_m, here.z_m);
+        const plan_direction_t way =
+          way_between (place_of (before), place_of (after), 1e-3f * u::m);
+        const Vec2& t = plan_value (way);
+        // Downstream, clockwise from north, in the shot list's degrees.
+        const quantity<heading[si::degree], float> heading =
+          std::atan2 (t.x (), t.z ()) * 57.29578f * moppe::heading[si::degree];
+        const plan_position_t bank =
+          here - along (way, 12.0f * u::m) + aside (way, 8.0f * u::m);
+        const plan_position_t high = here - along (way, 45.0f * u::m);
+        const SurfaceElevation river = ground_on (here);
+        const auto eye_height = [&] (plan_position_t at, meters_t over) {
+          return surface_elevation_value (std::max (ground_on (at), river) +
+                                          over);
+        };
         char line[320];
         std::snprintf (
           line,
@@ -414,15 +457,16 @@ int main (int argc, char** argv) {
           "hold 3\nshot %s-high eye %.2f %.2f %.2f heading %.1f pitch -20 "
           "fov 60 hold 3\n",
           name.c_str (),
-          bank_x,
-          std::max (ground_m (bank_x, bank_z), river) + 1.7f,
-          bank_z,
-          heading + 25.0f,
+          meters_value (x_of (bank)),
+          eye_height (bank, 1.7f * u::m),
+          meters_value (z_of (bank)),
+          (heading + 25.0f * moppe::heading[si::degree])
+            .numerical_value_in (si::degree),
           name.c_str (),
-          high_x,
-          std::max (ground_m (high_x, high_z), river) + 22.0f,
-          high_z,
-          heading);
+          meters_value (x_of (high)),
+          eye_height (high, 22.0f * u::m),
+          meters_value (z_of (high)),
+          heading.numerical_value_in (si::degree));
         views << line;
       };
       const auto& source = rivers.reaches[path.front ()].alignment.points;
@@ -444,16 +488,18 @@ int main (int argc, char** argv) {
           const std::size_t to = std::min (list.find (';', from), list.size ());
           const std::string spot = list.substr (from, to - from);
           const std::size_t comma = spot.find (',');
-          const float x = std::stof (spot.substr (0, comma));
-          const float z = std::stof (spot.substr (comma + 1));
+          const plan_position_t place =
+            plan_position (std::stof (spot.substr (0, comma)),
+                           std::stof (spot.substr (comma + 1)));
           const RiverReach* nearest = nullptr;
           std::size_t at = 0;
-          float best = std::numeric_limits<float>::infinity ();
+          meters_t best = std::numeric_limits<float>::infinity () * u::m;
           for (const RiverReach& reach : rivers.reaches)
             for (std::size_t point = 0; point < reach.alignment.points.size ();
                  ++point) {
-              const auto& here = reach.alignment.points[point];
-              const float d = std::hypot (here.x_m - x, here.z_m - z);
+              const Vec2 off =
+                plan_value (place_of (reach.alignment.points[point]) - place);
+              const meters_t d = std::hypot (off.x (), off.z ()) * u::m;
               if (d < best) {
                 best = d;
                 nearest = &reach;
@@ -473,15 +519,21 @@ int main (int argc, char** argv) {
     for (int z = 0; z < width; ++z)
       for (int x = 0; x < width; ++x) {
         const std::size_t cell = std::size_t (z) * width + x;
-        const float h = surface_elevation_value (ground[cell]);
-        const float east = surface_elevation_value (
-          ground[std::size_t (z) * width + wrap_index (x + 1, width)]);
-        const float south = surface_elevation_value (
-          ground[std::size_t (wrap_index (z + 1, width)) * width + x]);
-        const float shade =
-          std::clamp (0.6f + 0.25f * ((h - east) + (h - south)), 0.1f, 1.0f);
-        const float grey = std::clamp (60.0f + h * 0.5f, 0.0f, 255.0f) * shade;
-        const bool wet = surface_elevation_value (water[cell]) > h;
+        const SurfaceElevation h = ground[cell];
+        const SurfaceElevation east =
+          ground[std::size_t (z) * width + wrap_index (x + 1, width)];
+        const SurfaceElevation south =
+          ground[std::size_t (wrap_index (z + 1, width)) * width + x];
+        const ElevationChange relief = (h - east) + (h - south);
+        // Brightness, lit from the south-east, and grey by height: the
+        // picture's bytes.
+        const float shade = std::clamp (
+          0.6f + 0.25f * relief.numerical_value_in (u::m), 0.1f, 1.0f);
+        const float grey =
+          std::clamp (
+            60.0f + surface_elevation_value (h) * 0.5f, 0.0f, 255.0f) *
+          shade;
+        const bool wet = water[cell] > h;
         std::uint8_t* rgb = &image[cell * 3];
         rgb[0] = wet ? 40 : std::uint8_t (grey);
         rgb[1] = wet ? 90 : std::uint8_t (grey);
@@ -491,8 +543,7 @@ int main (int argc, char** argv) {
       const auto& points = reach.alignment.points;
       for (std::size_t point = 0; point < points.size (); ++point)
         if (!reach_wet[reach.id][point]) {
-          std::uint8_t* rgb =
-            &image[cell_at (points[point].x_m, points[point].z_m) * 3];
+          std::uint8_t* rgb = &image[cell_at (place_of (points[point])) * 3];
           rgb[0] = 255;
           rgb[1] = 30;
           rgb[2] = 30;
@@ -502,7 +553,8 @@ int main (int argc, char** argv) {
     if (!change.empty ()) {
       std::vector<std::uint8_t> moved (change.size () * 3);
       for (std::size_t cell = 0; cell < change.size (); ++cell) {
-        const float c = std::clamp (change[cell], -1.0f, 1.0f);
+        const float c =
+          std::clamp (change[cell].numerical_value_in (u::m), -1.0f, 1.0f);
         moved[cell * 3] = std::uint8_t (255.0f * (1.0f - std::max (c, 0.0f)));
         moved[cell * 3 + 1] = std::uint8_t (255.0f * (1.0f - std::abs (c)));
         moved[cell * 3 + 2] =

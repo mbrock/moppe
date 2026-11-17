@@ -65,6 +65,18 @@ namespace moppe {
       translate (Vec3 (x, y, z));
     }
 
+    void DrawList::translate (const displacement_t& offset) {
+      translate (displacement_value (offset));
+    }
+
+    void DrawList::translate (const position_t& place) {
+      translate (position_value (place));
+    }
+
+    void DrawList::rotate (radians_t angle, const direction_t& axis) {
+      rotate (angle, direction_value (axis));
+    }
+
     void DrawList::rotate (radians_t angle, const Vec3& axis) {
       m_stack[m_top] = m_stack[m_top] * Mat4::rotation (angle, axis);
       m_normal_dirty = m_world_normal_dirty = true;
@@ -81,6 +93,11 @@ namespace moppe {
 
     void DrawList::scale (float x, float y, float z) {
       scale (Vec3 (x, y, z));
+    }
+
+    void DrawList::scale (scale_factor_t factor) {
+      const float f = factor.numerical_value_in (one);
+      scale (Vec3 (f, f, f));
     }
 
     void DrawList::mult (const Mat4& m) {
@@ -117,6 +134,10 @@ namespace moppe {
       m_color = PackedRgba8 (c.red, c.green, c.blue, a);
     }
 
+    void DrawList::color (DisplayColor c, proportion_t opacity) {
+      color (c, opacity.numerical_value_in (one));
+    }
+
     void DrawList::lit (bool on) {
       m_lit = on;
     }
@@ -124,6 +145,9 @@ namespace moppe {
       m_worn = wear < 0.0f ? 0
                            : static_cast<uint8_t> (
                                2 + std::lround (std::min (wear, 1.0f) * 253));
+    }
+    void DrawList::worn (proportion_t wear) {
+      worn (wear.numerical_value_in (one));
     }
     void DrawList::fogged (bool on) {
       m_fogged = on;
@@ -140,6 +164,15 @@ namespace moppe {
                              float sheen) {
       m_surface = Surface::of (metallic, roughness, coat, sheen);
     }
+    void DrawList::material (proportion_t metallic,
+                             proportion_t roughness,
+                             proportion_t coat,
+                             proportion_t sheen) {
+      material (metallic.numerical_value_in (one),
+                roughness.numerical_value_in (one),
+                coat.numerical_value_in (one),
+                sheen.numerical_value_in (one));
+    }
     void DrawList::plain () {
       m_surface = Surface ();
     }
@@ -152,6 +185,10 @@ namespace moppe {
         return;
       m_normal = n;
       m_world_normal_dirty = true;
+    }
+
+    void DrawList::normal (const direction_t& n) {
+      normal (direction_value (n));
     }
 
     void DrawList::uv (float u, float v) {
@@ -245,6 +282,14 @@ namespace moppe {
     void DrawList::vertex (float x, float y, float z) {
       assert (m_in_begin);
       m_prim_scratch.push_back (make_vertex (x, y, z));
+    }
+
+    void DrawList::vertex (const displacement_t& offset) {
+      vertex (displacement_value (offset));
+    }
+
+    void DrawList::vertex (const position_t& place) {
+      vertex (position_value (place));
     }
 
     void DrawList::end () {
@@ -562,6 +607,24 @@ namespace moppe {
         }
         dl.end ();
       }
+    }
+
+    void DrawList::cube (meters_t size) {
+      cube (meters_value (size));
+    }
+
+    void DrawList::sphere (meters_t radius, int slices, int stacks) {
+      sphere (meters_value (radius), slices, stacks);
+    }
+
+    void
+    DrawList::cone (meters_t base, meters_t height, int slices, int stacks) {
+      cone (meters_value (base), meters_value (height), slices, stacks);
+    }
+
+    void
+    DrawList::torus (meters_t inner, meters_t outer, int sides, int rings) {
+      torus (meters_value (inner), meters_value (outer), sides, rings);
     }
 
     void DrawList::cube (float size) {

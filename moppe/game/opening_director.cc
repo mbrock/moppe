@@ -117,7 +117,7 @@ namespace moppe::game {
 
   std::vector<OpeningShot> OpeningDirector::generated (
     const WorldGround& ground, const Vec3& home_base, const Vec3& spawn) {
-    const Vec3 along = ground.trail_heading ();
+    const Vec3 along = direction_value (ground.trail_heading ());
     Vec3 eye = home_base + along * 20.0f;
     eye[1] = ground.height (eye) + 3.6f;
     Vec3 look = spawn - eye;
@@ -249,15 +249,15 @@ namespace moppe::game {
   std::optional<FrameCameraReading> OpeningDirector::camera () const {
     if (m_reel.active ())
       return FrameCameraReading {
-        .position = m_reel.position (),
-        .forward = m_reel.forward (),
+        .position = position (m_reel.position ()),
+        .forward = unit_direction (m_reel.forward ()),
         .view = m_reel.view_matrix (),
         .field_of_view = m_reel.field_of_view () * u::deg,
       };
     if (m_flight.active ())
       return FrameCameraReading {
-        .position = m_flight.position (),
-        .forward = m_flight.forward (),
+        .position = position (m_flight.position ()),
+        .forward = unit_direction (m_flight.forward ()),
         .view = m_flight.view_matrix (),
         .field_of_view = m_flight.field_of_view (),
       };
@@ -307,9 +307,9 @@ namespace moppe::game {
       hud.draw_title_card (text,
                            caption.style == OpeningCaption::Style::Title,
                            *caption.text,
-                           caption.alpha,
-                           caption.y,
-                           width_pts,
-                           height_pts);
+                           caption.alpha * opacity[one],
+                           caption.y * proportion[one],
+                           static_cast<float> (width_pts) * u::pt,
+                           static_cast<float> (height_pts) * u::pt);
   }
 }

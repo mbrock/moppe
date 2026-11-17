@@ -15,7 +15,7 @@ namespace moppe::game {
   // would lie in it.
   void render_walker (render::DrawList& draw,
                       const WalkerPose& walker,
-                      float time,
+                      seconds_t time,
                       std::span<const MushroomSite> basket = {},
                       Outfit outfit = Outfit::blue_jacket);
 
@@ -23,14 +23,14 @@ namespace moppe::game {
   // seeing through their own eyes finds when looking down.
   void render_basket (render::DrawList& draw,
                       const WalkerPose& walker,
-                      float time,
+                      seconds_t time,
                       std::span<const MushroomSite> basket);
 
   // The basket set down on the ground at `floor`, its length along
   // `forward`, while its owner rests.
   void render_basket_set_down (render::DrawList& draw,
-                               const Vec3& floor,
-                               const Vec3& forward,
+                               const position_t& floor,
+                               const direction_t& forward,
                                std::span<const MushroomSite> basket);
 }
 

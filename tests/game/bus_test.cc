@@ -24,35 +24,48 @@ namespace {
     terrain::Road loop;
     loop.loop = true;
     for (int i = 0; i <= 250; ++i) {
-      loop.points.push_back ({ 4.0f * static_cast<float> (i), 500.0f });
-      loop.heights.push_back (10.0f);
+      loop.points.push_back (
+        plan_position (4.0f * static_cast<float> (i), 500.0f));
+      loop.heights.push_back (terrain::surface_elevation_point (10.0f * u::m));
     }
     return loop;
   }
 
   PlaceGround bus_test_country () {
-    return { .ground = [] (float, float) { return 10.0f; },
-             .water = [] (float, float) { return 0.0f; },
-             .sea = [] (float, float) { return false; },
-             .current = [] (float, float) { return Vec3 (); },
-             .sea_level = 0.0f,
-             .period_x = bus_test_period,
-             .period_z = bus_test_period };
+    using terrain::surface_elevation_point;
+    return { .ground =
+               [] (const plan_position_t&) {
+                 return surface_elevation_point (10.0f * u::m);
+               },
+             .water =
+               [] (const plan_position_t&) {
+                 return surface_elevation_point (0.0f * u::m);
+               },
+             .sea = [] (const plan_position_t&) { return false; },
+             .current =
+               [] (const plan_position_t&) {
+                 return terrain::WaterVelocity (
+                   Vec3 () * terrain::water_velocity[u::m / u::s]);
+               },
+             .sea_level = surface_elevation_point (0.0f * u::m),
+             .period =
+               plan_extent (bus_test_period * u::m, bus_test_period * u::m) };
   }
 
   terrain::RoadNetwork bus_test_network () {
     using Kind = terrain::RoadPlace::Kind;
     terrain::RoadNetwork network;
     network.places = {
-      { .kind = Kind::Trailhead, .x_m = 200.0f, .z_m = 100.0f },
-      { .kind = Kind::Landing, .x_m = 0.0f, .z_m = 500.0f },
-      { .kind = Kind::LakeOutlet, .x_m = 500.0f, .z_m = 900.0f },
+      { .kind = Kind::Trailhead, .at = plan_position (200.0f, 100.0f) },
+      { .kind = Kind::Landing, .at = plan_position (0.0f, 500.0f) },
+      { .kind = Kind::LakeOutlet, .at = plan_position (500.0f, 900.0f) },
     };
     network.roads.push_back (bus_test_loop ());
     terrain::Road branch;
     for (int i = 0; i <= 100; ++i) {
-      branch.points.push_back ({ 500.0f, 500.0f + 4.0f * i });
-      branch.heights.push_back (10.0f);
+      branch.points.push_back (plan_position (500.0f, 500.0f + 4.0f * i));
+      branch.heights.push_back (
+        terrain::surface_elevation_point (10.0f * u::m));
     }
     network.roads.push_back (branch);
     return network;
@@ -78,9 +91,10 @@ MOPPE_TEST (bus_stops_at_the_landing_and_past_each_branch_on_the_right) {
   // Eastward along +x, the right is +z: the signs stand south of the
   // road's line, past the tread, the shelters further back.
   for (const BusStop& stop : line.stops ()) {
-    MOPPE_CHECK (stop.sign[2] > 503.5f && stop.sign[2] < 506.0f);
+    const Vec3& sign = position_value (stop.sign);
+    MOPPE_CHECK (sign[2] > 503.5f && sign[2] < 506.0f);
     MOPPE_CHECK (stop.shelter.has_value () &&
-                 (*stop.shelter)[2] > stop.sign[2] + 1.0f);
+                 position_value (*stop.shelter)[2] > sign[2] + 1.0f);
   }
 }
 
@@ -103,8 +117,8 @@ MOPPE_TEST (buses_keep_their_timetable_round_the_loop) {
   // As play begins it stands at the first stop, in the right-hand lane.
   const BusPose start = line.where (play_time (0.0)).front ();
   MOPPE_CHECK (start.at_stop == std::optional<std::size_t> (0));
-  MOPPE_CHECK (std::fabs (start.position[2] - 500.9f) < 0.01f);
-  MOPPE_CHECK (start.forward[0] > 0.99f);
+  MOPPE_CHECK (std::fabs (position_value (start.position)[2] - 500.9f) < 0.01f);
+  MOPPE_CHECK (direction_value (start.forward)[0] > 0.99f);
   // The second stop's board: due once the first stop's 20 s and the run
   // are done.
   const BusDue due = line.due (1, play_time (0.0));
@@ -167,20 +181,17 @@ MOPPE_TEST (a_rider_boards_at_a_stop_and_gets_off_at_the_next_asked_for) {
   // Standing at the first stop as play begins, a bus's door is at hand
   // only from beside it.
   const BusPose standing = line.where (play_time (0.0)).front ();
-  const Vec3 door = bus_door (standing);
+  const Vec3 door = position_value (bus_door (standing));
+  const plan_extent_t period =
+    plan_extent (bus_test_period * u::m, bus_test_period * u::m);
   MOPPE_CHECK (bus_at_hand (line,
-                            door + Vec3 (0, 0, 2.0f),
+                            position (door + Vec3 (0, 0, 2.0f)),
                             play_time (0.0),
-                            bus_test_period,
-                            bus_test_period) == std::optional<std::size_t> (0));
-  MOPPE_CHECK (!bus_at_hand (line,
-                             door + Vec3 (0, 0, 9.0f),
-                             play_time (0.0),
-                             bus_test_period,
-                             bus_test_period));
-  // Nor once it has left the stop.
+                            period) == std::optional<std::size_t> (0));
   MOPPE_CHECK (!bus_at_hand (
-    line, door, play_time (30.0), bus_test_period, bus_test_period));
+    line, position (door + Vec3 (0, 0, 9.0f)), play_time (0.0), period));
+  // Nor once it has left the stop.
+  MOPPE_CHECK (!bus_at_hand (line, position (door), play_time (30.0), period));
 
   board_bus (session, line, 0);
   MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());
@@ -190,8 +201,8 @@ MOPPE_TEST (a_rider_boards_at_a_stop_and_gets_off_at_the_next_asked_for) {
   ride_bus (session, line);
   const BusPose moving = line.where (play_time (40.0)).front ();
   MOPPE_CHECK (!moving.at_stop && moving.next_stop == 1);
-  MOPPE_CHECK (length (session.subject_position () - bus_seat (moving)) <
-               1e-3f);
+  MOPPE_CHECK (length (session.subject_position () -
+                       position_value (bus_seat (moving))) < 1e-3f);
   leave_bus (session, line);
   MOPPE_CHECK (logic.m_doing == Doing::on_the_bus ());
   MOPPE_CHECK (logic.m_bus_alight);
@@ -232,8 +243,9 @@ MOPPE_TEST (two_players_buses_keep_the_same_time) {
       CompanionSnapshot theirs;
       theirs.player = players[1 - i];
       theirs.bus_clock =
-        seconds_into_play (bus_time (sessions[1 - i].logic ())) - late;
-      keep_bus_time (sessions[i].logic (), theirs, late + 0.02, players[i]);
+        bus_time (sessions[1 - i].logic ()) - late * si::second;
+      keep_bus_time (
+        sessions[i].logic (), theirs, (late + 0.02) * si::second, players[i]);
     }
     for (GameSession& session : sessions)
       session.logic ().m_total_time =

@@ -146,7 +146,7 @@ MOPPE_TEST (terrain_evolution_materializes_its_sediment_history) {
     uplift,
     { .duration = 200000.0f * mp_units::astronomy::Julian_year,
       .time_step = 50000.0f * mp_units::astronomy::Julian_year,
-      .sea_level = 50.0f });
+      .sea_level = terrain::surface_elevation_point (50.0f * u::m) });
 
   const auto& mobile = spatial::get<terrain::sediment_thickness> (surface);
   const auto& eroded = spatial::get<map::eroded_surface_material> (surface);

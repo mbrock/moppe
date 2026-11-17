@@ -10,6 +10,20 @@
 
 namespace moppe {
   namespace platform {
+    // Pointer coordinates, a drag, and the safe insets are lengths on the
+    // screen in display points (y down): points_t, the HUD's own unit
+    // (moppe/gfx/math.hh).
+    using wheel_travel_t =
+      mp_units::quantity<wheel_travel[mp_units::one], float>;
+
+    // The host's monotonic clock: seconds since some moment before the
+    // game started, never the wall's time of day.
+    inline constexpr struct host_clock_epoch final
+        : mp_units::absolute_point_origin<mp_units::isq::time> {
+    } host_clock_epoch;
+    using host_time_t =
+      mp_units::quantity_point<mp_units::si::second, host_clock_epoch, double>;
+
     // Unified key codes: removes the old ASCII/GLUT_KEY_* numeric
     // collision ('d' == GLUT_KEY_LEFT == 100).  Only keys the game
     // actually uses.
@@ -63,13 +77,13 @@ namespace moppe {
     // Continuous controls used by touch/gamepad-style platforms.  The
     // driving axes are signed (-1..1); boost is a trigger (0..1).
     struct ControlState {
-      float steer = 0;
-      float drive = 0;
-      float boost = 0;
+      control_signal_t steer {};
+      control_signal_t drive {};
+      proportion_t boost {};
       // How fast to turn the view, -1..1 rightward and upward: a stick
       // held over, as the mouse's pointer_move turns it by distance.
-      float look_x = 0;
-      float look_y = 0;
+      control_signal_t look_x {};
+      control_signal_t look_y {};
     };
 
     enum class PointerButton { Primary, Secondary, Middle };
@@ -100,29 +114,31 @@ namespace moppe {
       virtual void controls (const ControlState& state) {
         (void)state;
       }
-      virtual void pointer_move (float x, float y, float dx, float dy) {
+      virtual void
+      pointer_move (points_t x, points_t y, points_t dx, points_t dy) {
         (void)x;
         (void)y;
         (void)dx;
         (void)dy;
       }
       virtual void
-      pointer_button (PointerButton button, bool down, float x, float y) {
+      pointer_button (PointerButton button, bool down, points_t x, points_t y) {
         (void)button;
         (void)down;
         (void)x;
         (void)y;
       }
-      virtual void pointer_scroll (float x, float y, float delta) {
+      virtual void
+      pointer_scroll (points_t x, points_t y, wheel_travel_t delta) {
         (void)x;
         (void)y;
         (void)delta;
       }
-      // The seconds a remote-control timeline (input.hh) should keep, for
+      // The moment a remote-control timeline (input.hh) should keep, for
       // a game that is not stepping by the wall's clock -- one recording
-      // itself frame by frame; negative before it wants the timeline to
-      // start. Absent, the host keeps the wall's time.
-      virtual std::optional<double> script_seconds () const {
+      // itself frame by frame; before the epoch until it wants the
+      // timeline to start. Absent, the host keeps the wall's time.
+      virtual std::optional<host_time_t> script_seconds () const {
         return std::nullopt;
       }
     };
@@ -154,13 +170,19 @@ namespace moppe {
     std::string executable_build_id ();
     std::string cache_path (const std::string& relative);
 
-    // Monotonic time in seconds; never wall-clock.
-    double now ();
+    // Monotonic time; never wall-clock.
+    host_time_t now ();
+
+    // The host clock's moment `seconds` after its epoch, for hosts that
+    // read the OS's clock.
+    inline host_time_t host_time (double seconds) {
+      return host_clock_epoch + seconds * mp_units::si::second;
+    }
 
     // Screen areas covered by notches / home indicators, in points.
     // Zero on macOS.  The HUD and touch zones stay inside these.
     struct Insets {
-      float left = 0, top = 0, right = 0, bottom = 0;
+      points_t left {}, top {}, right {}, bottom {};
     };
     Insets safe_insets ();
 

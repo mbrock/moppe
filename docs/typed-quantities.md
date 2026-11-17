@@ -41,6 +41,14 @@ and CI fails when any area's typed share drops (`--check`).
 | Spin rate (scalar / vector) | `radians_per_second_t` / `angular_velocity_t` |
 | A unit vector | `direction_t`, `plan_direction_t` |
 | Speed / velocity | `speed_t` / `velocity_t`, `plan_velocity_t` |
+| A length on the screen: HUD layout, a pointer, safe insets | `points_t` (`u::pt`, `display_points (x)`) |
+| A length in a raster's pixels: a sheet or image being drawn | `pixels_t` (`u::px`) |
+
+Screen points, raster pixels, and metres are three dimensions and never
+convert into each other; how many pixels a point covers is the host's
+render scale, a run-time `px/pt` quantity. The map sheet's line work
+(`Ink::stroke` in `game/relief_map.cc`, its `pen`, `across`, `down`, and
+dash lengths) is the first place for `pixels_t`.
 
 A plan point moves by a plan displacement and two subtract to one
 (`at + along (way, 3.0f * u::m)`, `to - from`). A 3-D `displacement_t`

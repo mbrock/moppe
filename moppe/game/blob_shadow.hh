@@ -15,10 +15,11 @@ namespace moppe {
     public:
       void load (render::Renderer& r);
 
+      // The disc on the ground under `pos`, of `radius` while it is low.
       void draw (render::DrawList& dl,
                  const map::SurfaceGeometry& surface,
-                 const Vec3& pos,
-                 float radius);
+                 const position_t& pos,
+                 meters_t radius);
 
     private:
       render::TexturePtr m_tex;

@@ -38,13 +38,18 @@ namespace moppe::game::model_mesh {
     // over it (car paint) and its roughness, how much light passes
     // through (glass, lenses) and its index of refraction, the sheen of
     // cloth, and how strongly it glows in its own colour.
-    float metallic = 0.0f;
-    float roughness = 0.8f;
-    float coat = 0.0f;
-    float coat_roughness = 0.03f;
-    float transmission = 0.0f;
-    float ior = 1.5f;
-    float sheen = 0.0f;
+    // The exported tables give each as a bare number, which a proportion
+    // and the refractive index take as they are.
+    proportion_t metallic = 0.0f * proportion[one];
+    proportion_t roughness = 0.8f * proportion[one];
+    proportion_t coat = 0.0f * proportion[one];
+    proportion_t coat_roughness = 0.03f * proportion[one];
+    proportion_t transmission = 0.0f * proportion[one];
+    quantity<isq::refractive_index[one], float> ior =
+      1.5f * isq::refractive_index[one];
+    proportion_t sheen = 0.0f * proportion[one];
+    // A strength that may pass one (a lamp's 4): a scale_factor_t, once
+    // the exporter writes it as one, since that kind takes no bare float.
     float emission = 0.0f;
   };
 
@@ -64,7 +69,9 @@ namespace moppe::game::model_mesh {
 
   // Model space for a machine standing at `position`: x to its left, y
   // up, z along `forward`, squared up from `up`.
-  Mat4 body_frame (const Vec3& position, const Vec3& forward, const Vec3& up);
+  Mat4 body_frame (const position_t& position,
+                   const direction_t& forward,
+                   const direction_t& up);
 }
 
 #endif

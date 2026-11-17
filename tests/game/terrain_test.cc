@@ -17,11 +17,12 @@ MOPPE_TEST (terrain_local_shadow_keeps_a_typed_bounded_focus) {
   test::RecordingRenderer renderer;
   const position_t camera = position (Vec3 (100.0f, 20.0f, 200.0f));
 
-  terrain.render_local_shadow (renderer,
-                               camera,
-                               Vec3 (0.0f, 0.0f, 1.0f),
-                               normalized (Vec3 (0.7f, 0.7f, 0.2f)),
-                               Vec3 (0.0f, 0.866f, -0.5f));
+  terrain.render_local_shadow (
+    renderer,
+    camera,
+    unit_direction (Vec3 (0.0f, 0.0f, 1.0f)),
+    unit_direction (normalized (Vec3 (0.7f, 0.7f, 0.2f))),
+    unit_direction (Vec3 (0.0f, 0.866f, -0.5f)));
 
   MOPPE_CHECK (renderer.local_shadow.has_value ());
   const render::LocalShadowParams& shadow = *renderer.local_shadow;
@@ -59,8 +60,11 @@ MOPPE_TEST (the_shadow_lattice_turns_about_the_camera_not_the_origin) {
     return normalized (east * std::cos (turn) + noon * std::sin (turn));
   };
   const auto probe_texel = [&] (float turn, int axis) {
-    terrain.render_local_shadow (
-      renderer, camera, Vec3 (0, 0, 1), sun_at (turn), pole);
+    terrain.render_local_shadow (renderer,
+                                 camera,
+                                 unit_direction (Vec3 (0, 0, 1)),
+                                 unit_direction (sun_at (turn)),
+                                 unit_direction (pole));
     const Mat4& map =
       renderer.local_shadow->cascades[render::LocalShadowParams::near]
         .light_view_proj;
@@ -77,9 +81,9 @@ MOPPE_TEST (the_shadow_lattice_turns_about_the_camera_not_the_origin) {
   const float before = probe_texel (turn, 0);
   terrain.render_local_shadow (renderer,
                                position (Vec3 (4207.3f, 70.4f, 3111.9f)),
-                               Vec3 (0, 0, 1),
-                               sun_at (turn),
-                               pole);
+                               unit_direction (Vec3 (0, 0, 1)),
+                               unit_direction (sun_at (turn)),
+                               unit_direction (pole));
   const float after =
     1024.0f * renderer.local_shadow->cascades[render::LocalShadowParams::near]
                 .light_view_proj.transform_point (probe)[0];
@@ -126,7 +130,7 @@ MOPPE_TEST (terrain_keeps_wet_sheets_in_the_culled_chunk_draws) {
   const auto draw_from = [&] (const Vec3& eye, const Mat4& projection) {
     renderer.terrain_chunks.clear ();
     const Mat4 view = Mat4::look_at (eye, eye + Vec3 (0, 1, 0), Vec3 (0, 0, 1));
-    terrain.render (renderer, eye, projection * view, 256.0f);
+    terrain.render (renderer, position (eye), projection * view, 256.0f * u::m);
   };
   const auto has_patch = [&] (int x, int z) {
     return std::ranges::any_of (

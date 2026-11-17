@@ -98,18 +98,17 @@ namespace moppe::game {
       const Landing& landing = *lot.places.landing;
       mov::Boat& boat = lot.session.boat ();
       boat.set_trunks (&lot.trunks);
-      boat.place (moppe::position (landing.berth),
-                  unit_direction (outward ? -landing.berth_forward
-                                          : landing.berth_forward),
-                  landing.berth[1] * u::m);
-      m_mooring = moppe::position (landing.jetty.root);
-      m_mooring_out = unit_direction (landing.jetty.out);
+      const Vec3& berth = position_value (landing.berth);
+      boat.place (landing.berth,
+                  outward ? -landing.berth_forward : landing.berth_forward,
+                  berth[1] * u::m);
+      m_mooring = landing.jetty.root;
+      m_mooring_out = landing.jetty.out;
       const Vec3& spawn = position_value (lot.spawn);
       std::cerr << "moppe: boat moored at the landing's jetty, "
-                << std::hypot (landing.berth[0] - spawn[0],
-                               landing.berth[2] - spawn[2])
-                << " m from the spawn, at " << landing.berth[0] << ' '
-                << landing.berth[2] << std::endl;
+                << std::hypot (berth[0] - spawn[0], berth[2] - spawn[2])
+                << " m from the spawn, at " << berth[0] << ' ' << berth[2]
+                << std::endl;
       return;
     }
     if (!lakes_first && moor_boat (lot, true, outward))
@@ -132,18 +131,20 @@ namespace moppe::game {
     const direction_t beam = left_of (bow);
     std::vector<position_t> berths;
     if (lot.places.landing && m_mooring &&
-        length2 (position_value (*m_mooring) - lot.places.landing->jetty.root) <
-          1.0f) {
+        length2 (position_value (*m_mooring) -
+                 position_value (lot.places.landing->jetty.root)) < 1.0f) {
       // Across the jetty from the boat, a little nearer its head.
       const Jetty& jetty = lot.places.landing->jetty;
-      const direction_t out = unit_direction (jetty.out);
+      const direction_t out = jetty.out;
       const direction_t side = left_of (out);
       const meters_t across =
-        dot (position_value (berth) - jetty.root, direction_value (side)) *
+        dot (position_value (berth) - position_value (jetty.root),
+             direction_value (side)) *
         u::m;
       const meters_t beyond =
-        across +
-        std::copysign (jetty.half_width + 0.8f, meters_value (across)) * u::m;
+        across + std::copysign (meters_value (jetty.half_width) + 0.8f,
+                                meters_value (across)) *
+                   u::m;
       berths.push_back (
         moved (moved (berth, along (side, -beyond)), along (out, 0.9f * u::m)));
     }
@@ -436,8 +437,7 @@ namespace moppe::game {
     } else {
       return;
     }
-    session.logic ().m_fp_eye =
-      position_value (session.walker ().eye_position ());
+    session.logic ().m_fp_eye = session.walker ().eye_position ();
     session.settle_camera (ground.surface ());
     std::cerr << "moppe: walk: " << script << " beside the tractor at "
               << position_value (tractor.position ())[0] << ", "
@@ -502,10 +502,8 @@ namespace moppe::game {
       if (road.kind != terrain::Road::Kind::Road)
         continue;
       const auto point = [&] (std::size_t p) {
-        return near_spawn (lot.ground,
-                           lot.spawn,
-                           moppe::position (Vec3 (
-                             road.points[p].x_m, 0.0f, road.points[p].z_m)));
+        return near_spawn (
+          lot.ground, lot.spawn, at_height (road.points[p], 0.0f * u::m));
       };
       for (std::size_t p = 1; p + 1 < road.points.size (); p += 2) {
         const position_t a = point (p - 1);
@@ -522,7 +520,7 @@ namespace moppe::game {
         // gone over.
         const meters_t score =
           abs (r - 300.0f * u::m) +
-          (road.abandoned_years_ago > 0.0f ? 600.0f : 0.0f) * u::m;
+          (road.abandoned > age_t {} ? 600.0f : 0.0f) * u::m;
         if (score >= best_score)
           continue;
         const direction_t across = left_of (way);
@@ -629,9 +627,7 @@ namespace moppe::game {
       lot.ground.elevation (plan (lot.spawn));
     const auto point = [&] (std::size_t p) {
       return near_spawn (
-        lot.ground,
-        lot.spawn,
-        moppe::position (Vec3 (points[p].x_m, 0.0f, points[p].z_m)));
+        lot.ground, lot.spawn, at_height (points[p], 0.0f * u::m));
     };
     std::optional<std::pair<position_t, direction_t>> top;
     terrain::SurfaceElevation best = start + 15.0f * u::m;
@@ -728,10 +724,11 @@ namespace moppe::game {
       for (const Building& building : farm.buildings) {
         if (building.kind != Building::Kind::house)
           continue;
-        const position_t door =
-          near_spawn (lot.ground,
-                      lot.spawn,
-                      moppe::position (building.at + building.forward * 6.0f));
+        const position_t door = near_spawn (
+          lot.ground,
+          lot.spawn,
+          moppe::position (position_value (building.at) +
+                           direction_value (building.forward) * 6.0f));
         const meters_t r = from_spawn (lot.spawn, door);
         if (r > 3000.0f * u::m ||
             (hamlet && r >= from_spawn (lot.spawn, *hamlet)))
@@ -748,9 +745,7 @@ namespace moppe::game {
       if (place.kind != Kind::LakeOutlet && place.kind != Kind::Landing)
         continue;
       const position_t at =
-        near_spawn (lot.ground,
-                    lot.spawn,
-                    moppe::position (Vec3 (place.x_m, 0.0f, place.z_m)));
+        near_spawn (lot.ground, lot.spawn, at_height (place.at, 0.0f * u::m));
       const meters_t r = from_spawn (lot.spawn, at);
       if (r > 3000.0f * u::m ||
           (hamlet && r >= from_spawn (lot.spawn, *hamlet)))
@@ -870,8 +865,8 @@ namespace moppe::game {
       if (best && r > 380.0f * u::m)
         break;
     }
-    direction_t heading =
-      on_the_level (lot.ground.trail_heading (), Vec3 (0, 0, 1));
+    direction_t heading = on_the_level (
+      direction_value (lot.ground.trail_heading ()), Vec3 (0, 0, 1));
     position_t at = moved (centre, along (left_of (heading), -14.0f * u::m));
     if (best) {
       at = *best;

@@ -29,16 +29,19 @@ namespace moppe::game {
     const HelicopterMeshes& meshes = helicopter_meshes (r);
     const Mat4 frame = model_mesh::body_frame (
       helicopter.position, helicopter.forward, helicopter.up);
+    // The mast is the frame's up, the tail rotor's axle its left.
+    const direction_t mast = unit_direction (Vec3 (0, 1, 0));
+    const direction_t axle = unit_direction (Vec3 (1, 0, 0));
+    const displacement_t rotor_hub = displacement (helicopter_model::rotor_hub);
+    const displacement_t tail_hub = displacement (helicopter_model::tail_hub);
     r.draw_mesh (*meshes.body, frame, motion_base + 1);
-    r.draw_mesh (
-      *meshes.main_rotor,
-      frame * Mat4::translation (helicopter_model::rotor_hub) *
-        Mat4::rotation (helicopter.rotor_radians * u::rad, Vec3 (0, 1, 0)),
-      motion_base + 2);
-    r.draw_mesh (
-      *meshes.tail_rotor,
-      frame * Mat4::translation (helicopter_model::tail_hub) *
-        Mat4::rotation (helicopter.tail_radians * u::rad, Vec3 (1, 0, 0)),
-      motion_base + 3);
+    r.draw_mesh (*meshes.main_rotor,
+                 frame * Mat4::translation (displacement_value (rotor_hub)) *
+                   Mat4::rotation (helicopter.rotor, direction_value (mast)),
+                 motion_base + 2);
+    r.draw_mesh (*meshes.tail_rotor,
+                 frame * Mat4::translation (displacement_value (tail_hub)) *
+                   Mat4::rotation (helicopter.tail, direction_value (axle)),
+                 motion_base + 3);
   }
 }

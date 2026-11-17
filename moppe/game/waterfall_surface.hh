@@ -19,14 +19,14 @@ namespace moppe::game {
                   const map::SurfaceGeometry& surface,
                   const terrain::RiverNetwork& rivers);
     void clear ();
-    void draw (render::Renderer& renderer, const Vec3& camera) const;
+    void draw (render::Renderer& renderer, const position_t& camera) const;
     bool empty () const {
       return !m_mesh;
     }
 
   private:
     render::MeshPtr m_mesh;
-    Vec3 m_period;
+    plan_extent_t m_period;
   };
 }
 

@@ -3,7 +3,7 @@
 namespace moppe::game {
   GraphicsSettings default_graphics_settings () {
     GraphicsSettings settings = high_graphics_settings ();
-    settings.render_scale_override = 0.5f;
+    settings.render_scale_override = 0.5f * scale_factor[one];
     return settings;
   }
 
@@ -13,13 +13,13 @@ namespace moppe::game {
 
   GraphicsSettings balanced_graphics_settings () {
     GraphicsSettings settings;
-    settings.scene_scale = 2.0f / 3.0f;
+    settings.scene_scale = 2.0f / 3.0f * scale_factor[one];
     return settings;
   }
 
   GraphicsSettings low_graphics_settings () {
     GraphicsSettings settings;
-    settings.scene_scale = 0.5f;
+    settings.scene_scale = 0.5f * scale_factor[one];
     settings.terrain_shadows = false;
     settings.ocean = false;
     settings.vehicle_effects = false;
@@ -39,7 +39,7 @@ namespace moppe::game {
     // scales across the whole image or explodes into dense procedural
     // geometry. The temporal resolve restores the output footprint from this
     // 540p scene.
-    settings.scene_scale = 0.5f;
+    settings.scene_scale = 0.5f * scale_factor[one];
     settings.terrain_shadows = false;
     settings.motion_blur = false;
     settings.bloom = false;

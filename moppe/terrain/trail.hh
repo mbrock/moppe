@@ -9,11 +9,15 @@
 #include <vector>
 
 namespace moppe::terrain {
+  // A grade summed or averaged over a whole route, kept in double.
+  using grade_f64_t = mp_units::quantity<grade[mp_units::one], double>;
+
   // The Motorcycle Association's brief for one deliberately made circuit.
   // Site selection and routing express intent; cut and fill then reconcile
   // that intent with the terrain rather than letting drainage draw the route.
   struct TrailFormation {
-    float sea_level = 50.0f;
+    SurfaceElevation sea_level =
+      surface_elevation_point (50.0f * mp_units::si::metre);
     square_meters_t minimum_catchment_area =
       5000.0f * mp_units::si::metre * mp_units::si::metre;
     square_meters_t maximum_catchment_area =
@@ -29,11 +33,11 @@ namespace moppe::terrain {
     // Designed grade is the ordinary leisure-path target. Maximum grade is a
     // local exception after the available cut and fill have been accounted
     // for, not the grade that the route search should routinely accept.
-    slope_t maximum_grade = 0.08f * terrain_slope[mp_units::one];
-    slope_t designed_grade = 0.03f * terrain_slope[mp_units::one];
+    grade_t maximum_grade = 0.08f * grade[mp_units::one];
+    grade_t designed_grade = 0.03f * grade[mp_units::one];
     // The compacted tread gently falls toward the naturally lower side so
     // rain crosses the trail instead of being held on a level bench.
-    slope_t crossfall = 0.01f * terrain_slope[mp_units::one];
+    grade_t crossfall = 0.01f * grade[mp_units::one];
     IterationCount grading_iterations = iteration_count (40);
     meters_t home_base_water_distance = 90.0f * mp_units::si::metre;
     meters_t home_base_pad_radius = 18.0f * mp_units::si::metre;
@@ -57,8 +61,8 @@ namespace moppe::terrain {
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t fill_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
-    double mean_centerline_grade = 0.0;
-    double maximum_centerline_grade = 0.0;
+    grade_f64_t mean_centerline_grade = 0.0 * grade[mp_units::one];
+    grade_f64_t maximum_centerline_grade = 0.0 * grade[mp_units::one];
     std::size_t grade_exceptions = 0;
     meters_f64_t maximum_centerline_height_above_sea =
       0.0 * mp_units::si::metre;
@@ -79,16 +83,8 @@ namespace moppe::terrain {
   // grading, materials, and traversal-facing presentation. Points are stored
   // in an unwrapped chart so a toroidal seam cannot introduce a false corner;
   // the closing segment from the last point to the first is implicit.
-  struct TrailAlignmentPoint {
-    float x_m = 0.0f;
-    float z_m = 0.0f;
-
-    friend bool operator== (const TrailAlignmentPoint&,
-                            const TrailAlignmentPoint&) = default;
-  };
-
   struct TrailAlignment {
-    std::vector<TrailAlignmentPoint> points;
+    std::vector<plan_position_t> points;
     meters_f64_t length = 0.0 * mp_units::si::metre;
 
     friend bool operator== (const TrailAlignment&,
@@ -105,10 +101,10 @@ namespace moppe::terrain {
     TrailPlan plan;
     TrailAlignment alignment;
     meters_t formed_width = 0.0f * mp_units::si::metre;
-    // Physical metres relative to the terrain entering TrailFormation.
+    // Each cell's change relative to the terrain entering TrailFormation.
     // The renderer and physics still consume the typed surface geometry, while
     // this retained construction layer remains inspectable and reversible.
-    std::vector<float> earthwork_delta_m;
+    std::vector<ElevationChange> earthwork_delta;
     TrailUseMap use;
   };
 

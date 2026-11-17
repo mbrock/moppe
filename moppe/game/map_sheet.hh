@@ -43,9 +43,9 @@ namespace moppe::game {
         BusStop,
       };
       Kind kind = Kind::Walker;
-      Vec3 position;
+      position_t position = moppe::position (Vec3 ());
       // The way it faces, for those drawn as arrows.
-      Vec3 heading { 0.0f, 0.0f, 1.0f };
+      direction_t heading = unit_direction (Vec3 (0.0f, 0.0f, 1.0f));
       DisplayColor colour { 0.1f, 0.1f, 0.1f };
       const char* name = "";
       // Which place, for a Place.
@@ -86,12 +86,8 @@ namespace moppe::game {
       return m_texture.get ();
     }
 
-    float period_x_m () const noexcept {
-      return m_sheet.period_x_m;
-    }
-
-    float period_z_m () const noexcept {
-      return m_sheet.period_z_m;
+    plan_extent_t period () const noexcept {
+      return m_sheet.period;
     }
 
     // Takes a painted sheet and uploads its picture.
@@ -105,8 +101,8 @@ namespace moppe::game {
                const render::Font* font,
                std::span<const Mark> marks,
                const std::string& title,
-               int width_pts,
-               int height_pts) const;
+               points_t width,
+               points_t height) const;
 
   private:
     View m_view = View::Closed;

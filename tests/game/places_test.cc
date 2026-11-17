@@ -48,31 +48,51 @@ namespace {
 
   PlaceGround places_test_country () {
     return {
-      .ground = places_test_ground,
-      .water = places_test_water,
+      .ground =
+        [] (plan_position_t at) {
+          return terrain::surface_elevation_point (
+            places_test_ground (plan_value (at).x (), plan_value (at).z ()) *
+            u::m);
+        },
+      .water =
+        [] (plan_position_t at) {
+          return terrain::surface_elevation_point (
+            places_test_water (plan_value (at).x (), plan_value (at).z ()) *
+            u::m);
+        },
       .sea =
-        [] (float x, float z) {
-          return places_test_water (x, z) <= places_test_sea + 0.05f;
+        [] (plan_position_t at) {
+          return places_test_water (plan_value (at).x (),
+                                    plan_value (at).z ()) <=
+                 places_test_sea + 0.05f;
         },
       .current =
-        [] (float x, float z) {
-          return places_test_in_stream (x, z) ? Vec3 (0.8f, 0.0f, 0.0f)
-                                              : Vec3 (0.0f, 0.0f, 0.0f);
+        [] (plan_position_t at) {
+          return (places_test_in_stream (plan_value (at).x (),
+                                         plan_value (at).z ())
+                    ? Vec3 (0.8f, 0.0f, 0.0f)
+                    : Vec3 (0.0f, 0.0f, 0.0f)) *
+                 terrain::water_velocity[u::m / u::s];
         },
-      .sea_level = places_test_sea,
+      .sea_level = terrain::surface_elevation_point (places_test_sea * u::m),
     };
+  }
+
+  // The ground's height under a place, in metres.
+  float places_test_ground_under (const PlaceGround& country,
+                                  const position_t& at) {
+    return terrain::surface_elevation_value (country.ground (plan (at)));
   }
 
   terrain::RoadNetwork places_test_network (float sanctuary_left) {
     using Kind = terrain::RoadPlace::Kind;
     terrain::RoadNetwork network;
     network.places = {
-      { .kind = Kind::Landing, .x_m = 1010.0f, .z_m = 500.0f },
+      { .kind = Kind::Landing, .at = plan_position (1010.0f, 500.0f) },
       { .kind = Kind::Sanctuary,
-        .x_m = 3000.0f,
-        .z_m = 3004.0f,
-        .abandoned_years_ago = sanctuary_left },
-      { .kind = Kind::LakeOutlet, .x_m = 1600.0f, .z_m = 6000.0f },
+        .at = plan_position (3000.0f, 3004.0f),
+        .abandoned = sanctuary_left * mp_units::astronomy::Julian_year },
+      { .kind = Kind::LakeOutlet, .at = plan_position (1600.0f, 6000.0f) },
     };
     return network;
   }
@@ -87,16 +107,15 @@ MOPPE_TEST (the_landing_jetty_runs_out_to_water_deep_enough_to_moor) {
   const Landing& landing = *plan.landing;
   // Out to sea, which lies west, from where the beach comes up to the
   // deck.
-  MOPPE_CHECK (landing.jetty.out[0] < -0.9f);
-  MOPPE_CHECK_NEAR (
-    country.ground (landing.jetty.root[0], landing.jetty.root[2]),
-    landing.jetty.deck,
-    0.3f);
+  MOPPE_CHECK (direction_value (landing.jetty.out)[0] < -0.9f);
+  MOPPE_CHECK_NEAR (places_test_ground_under (country, landing.jetty.root),
+                    terrain::surface_elevation_value (landing.jetty.deck),
+                    0.3f);
   // The skiff lies afloat beside its head, bow to the land.
   const float depth =
-    places_test_sea - country.ground (landing.berth[0], landing.berth[2]);
+    places_test_sea - places_test_ground_under (country, landing.berth);
   MOPPE_CHECK (depth > 1.5f);
-  MOPPE_CHECK (landing.berth_forward[0] > 0.9f);
+  MOPPE_CHECK (direction_value (landing.berth_forward)[0] > 0.9f);
   MOPPE_CHECK (cleared (plan, landing.jetty.root));
 }
 
@@ -110,18 +129,24 @@ MOPPE_TEST (a_sanctuary_stands_on_its_summit_and_falls_once_left) {
     return;
   const game::Sanctuary& s = kept.sanctuaries[0];
   // On the top, not where the planner's coarse node put it.
-  MOPPE_CHECK (std::hypot (s.centre[0] - 3000.0f, s.centre[2] - 3000.0f) <
-               1.5f);
-  MOPPE_CHECK (s.kept && s.ruin == 0.0f);
-  MOPPE_CHECK (s.hearth[1] > 200.3f);
+  const Vec3& centre = position_value (s.centre);
+  MOPPE_CHECK (std::hypot (centre[0] - 3000.0f, centre[2] - 3000.0f) < 1.5f);
+  MOPPE_CHECK (s.kept && s.ruin == 0.0f * proportion[one]);
+  MOPPE_CHECK (position_value (s.hearth)[1] > 200.3f);
   // A walker at the platform's edge can light it; one at the wall
   // cannot.
-  MOPPE_CHECK (sanctuary_at_hand (kept, s.hearth + Vec3 (2.0f, 0, 0)) == 0u);
-  MOPPE_CHECK (!sanctuary_at_hand (kept, s.centre + s.gate * s.wall_radius));
+  MOPPE_CHECK (
+    sanctuary_at_hand (
+      kept, position (position_value (s.hearth) + Vec3 (2.0f, 0, 0))) == 0u);
+  MOPPE_CHECK (!sanctuary_at_hand (
+    kept,
+    s.centre +
+      quantity_cast<isq::position_vector> (along (s.gate, s.wall_radius))));
   // Long left, the stones have tumbled and the platform stands lower.
   const game::Sanctuary& ruin = left.sanctuaries[0];
-  MOPPE_CHECK (!ruin.kept && ruin.ruin > 0.5f);
-  MOPPE_CHECK (ruin.hearth[1] < s.hearth[1] - 0.1f);
+  MOPPE_CHECK (!ruin.kept && ruin.ruin > 0.5f * proportion[one]);
+  MOPPE_CHECK (position_value (ruin.hearth)[1] <
+               position_value (s.hearth)[1] - 0.1f);
 }
 
 MOPPE_TEST (the_mill_turns_its_wheel_in_the_outlet_stream) {
@@ -140,35 +165,33 @@ MOPPE_TEST (the_mill_turns_its_wheel_in_the_outlet_stream) {
   if (!mill)
     return;
   // Downstream of the outlet, on dry ground beside the stream...
-  MOPPE_CHECK (mill->at[0] > 1605.0f && mill->at[0] < 1645.0f);
-  MOPPE_CHECK (!places_test_in_stream (mill->at[0], mill->at[2]));
+  const Vec3& mill_at = position_value (mill->at);
+  MOPPE_CHECK (mill_at[0] > 1605.0f && mill_at[0] < 1645.0f);
+  MOPPE_CHECK (!places_test_in_stream (mill_at[0], mill_at[2]));
   // ...with the wheel's axle over the water.
-  const Vec3 forward = mill->forward;
+  const Vec3 forward = direction_value (mill->forward);
   const Vec3 left (forward[2], 0.0f, -forward[0]);
-  const Vec3 axle = mill->at + left * farm_model::mill_axle[0] +
+  const Vec3 axle = mill_at + left * farm_model::mill_axle[0] +
                     forward * farm_model::mill_axle[2];
   MOPPE_CHECK (std::abs (axle[2] - 6000.0f) < 2.2f);
   // The house and barn keep off the water.
   for (const Building& b : farm.buildings)
     if (b.kind != Building::Kind::mill)
-      MOPPE_CHECK (!places_test_in_lake (b.at[0], b.at[2]) &&
-                   std::abs (b.at[2] - 6000.0f) > 8.0f);
+      MOPPE_CHECK (!places_test_in_lake (position_value (b.at)[0],
+                                         position_value (b.at)[2]) &&
+                   std::abs (position_value (b.at)[2] - 6000.0f) > 8.0f);
 }
 
 MOPPE_TEST (a_beacon_catches_burns_and_dies_down) {
-  MOPPE_CHECK (beacon_burn (play_time (-100.0),
-                            play_time (-100.0),
-                            play_time (10.0)) == 0.0f);
-  MOPPE_CHECK (
-    beacon_burn (play_time (0.0), play_time (-100.0), play_time (1.0)) < 0.2f);
-  MOPPE_CHECK_NEAR (
-    beacon_burn (play_time (0.0), play_time (-100.0), play_time (20.0)),
-    1.0f,
-    1e-5f);
-  MOPPE_CHECK (
-    beacon_burn (play_time (0.0), play_time (20.0), play_time (20.5)) > 0.5f);
-  MOPPE_CHECK (
-    beacon_burn (play_time (0.0), play_time (20.0), play_time (30.0)) == 0.0f);
+  const auto burn = [] (double lit, double out, double now) {
+    return beacon_burn (play_time (lit), play_time (out), play_time (now))
+      .numerical_value_in (one);
+  };
+  MOPPE_CHECK (burn (-100.0, -100.0, 10.0) == 0.0f);
+  MOPPE_CHECK (burn (0.0, -100.0, 1.0) < 0.2f);
+  MOPPE_CHECK_NEAR (burn (0.0, -100.0, 20.0), 1.0f, 1e-5f);
+  MOPPE_CHECK (burn (0.0, 20.0, 20.5) > 0.5f);
+  MOPPE_CHECK (burn (0.0, 20.0, 30.0) == 0.0f);
 }
 
 // A farmhouse can be walked into: straight at its open door the hiker
@@ -189,13 +212,23 @@ MOPPE_TEST (the_farmhouse_is_walked_into_through_its_door) {
   const Vec3 at (64, 10, 64), forward (1, 0, 0), left (0, 0, -1);
   PlacesPlan plan;
   plan.farms.push_back (
-    { .buildings = {
-        { .kind = Building::Kind::house, .at = at, .forward = forward } } });
+    { .buildings = { { .kind = Building::Kind::house,
+                       .at = position (at),
+                       .forward = unit_direction (forward) } } });
   const PlaceGround ground {
-    .ground = [] (float, float) { return 10.0f; },
-    .water = [] (float, float) { return 0.0f; },
-    .sea = [] (float, float) { return false; },
-    .current = [] (float, float) { return Vec3 (); },
+    .ground =
+      [] (plan_position_t) {
+        return terrain::surface_elevation_point (10.0f * u::m);
+      },
+    .water =
+      [] (plan_position_t) {
+        return terrain::surface_elevation_point (0.0f * u::m);
+      },
+    .sea = [] (plan_position_t) { return false; },
+    .current =
+      [] (plan_position_t) {
+        return Vec3 () * terrain::water_velocity[u::m / u::s];
+      },
   };
   test::RecordingRenderer renderer;
   PlacesLandscape landscape;
@@ -243,30 +276,46 @@ MOPPE_TEST (the_barn_is_walked_into_up_its_ramp) {
   const Vec3 at (64, 10, 64), forward (1, 0, 0), left (0, 0, -1);
   PlacesPlan plan;
   plan.farms.push_back (
-    { .buildings = {
-        { .kind = Building::Kind::barn, .at = at, .forward = forward } } });
+    { .buildings = { { .kind = Building::Kind::barn,
+                       .at = position (at),
+                       .forward = unit_direction (forward) } } });
   const PlaceGround ground {
-    .ground = [] (float, float) { return 10.0f; },
-    .water = [] (float, float) { return 0.0f; },
-    .sea = [] (float, float) { return false; },
-    .current = [] (float, float) { return Vec3 (); },
+    .ground =
+      [] (plan_position_t) {
+        return terrain::surface_elevation_point (10.0f * u::m);
+      },
+    .water =
+      [] (plan_position_t) {
+        return terrain::surface_elevation_point (0.0f * u::m);
+      },
+    .sea = [] (plan_position_t) { return false; },
+    .current =
+      [] (plan_position_t) {
+        return Vec3 () * terrain::water_velocity[u::m / u::s];
+      },
   };
   // The floor inside, and the ramp falling from the sill to the ground.
   const float floor = at[1] + farm_model::barn_floor[1];
   const Vec3 middle = at + forward * -1.0f;
-  MOPPE_CHECK_NEAR (*floor_at (plan, middle[0], middle[2]), floor, 1e-4f);
+  MOPPE_CHECK_NEAR (terrain::surface_elevation_value (*floor_at (
+                      plan, moppe::plan_position (moppe::plan (middle)))),
+                    floor,
+                    1e-4f);
   float last = floor + 0.01f;
-  for (float d = barn_front + 0.05f; d < barn_front + barn_ramp_length;
-       d += 0.3f) {
-    const Vec3 p = at + forward * d;
-    const std::optional<float> h = floor_at (plan, p[0], p[2]);
-    MOPPE_CHECK (h && *h < last);
-    last = h.value_or (last);
+  for (meters_t d = barn_front + 0.05f * u::m;
+       d < barn_front + barn_ramp_length;
+       d += 0.3f * u::m) {
+    const Vec3 p = at + forward * meters_value (d);
+    const std::optional<terrain::SurfaceElevation> h =
+      floor_at (plan, moppe::plan_position (moppe::plan (p)));
+    MOPPE_CHECK (h && terrain::surface_elevation_value (*h) < last);
+    last = h ? terrain::surface_elevation_value (*h) : last;
   }
   // Its foot is set into the ground.
   MOPPE_CHECK (last < at[1] + 0.05f);
-  const Vec3 yard = at + forward * (barn_front + barn_ramp_length + 1.0f);
-  MOPPE_CHECK (!floor_at (plan, yard[0], yard[2]));
+  const Vec3 yard =
+    at + forward * meters_value (barn_front + barn_ramp_length + 1.0f * u::m);
+  MOPPE_CHECK (!floor_at (plan, moppe::plan_position (moppe::plan (yard))));
 
   test::RecordingRenderer renderer;
   PlacesLandscape landscape;
@@ -290,8 +339,8 @@ MOPPE_TEST (the_barn_is_walked_into_up_its_ramp) {
     return position_value (session.walker ().position ());
   };
   const Vec3 in = walk_at (0.3f);
-  MOPPE_CHECK (dot (in - at, forward) < barn_front - 0.5f);
+  MOPPE_CHECK (dot (in - at, forward) < meters_value (barn_front) - 0.5f);
   MOPPE_CHECK_NEAR (in[1], floor, 0.1f);
-  const Vec3 out = walk_at (barn_door_half + 2.0f);
-  MOPPE_CHECK (dot (out - at, forward) > barn_front);
+  const Vec3 out = walk_at (meters_value (barn_door_half) + 2.0f);
+  MOPPE_CHECK (dot (out - at, forward) > meters_value (barn_front));
 }

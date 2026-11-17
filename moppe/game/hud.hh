@@ -1,11 +1,13 @@
 #ifndef MOPPE_GAME_HUD_HH
 #define MOPPE_GAME_HUD_HH
 
+#include <moppe/color.hh>
 #include <moppe/game/affordances.hh>
 #include <moppe/game/doing.hh>
 #include <moppe/game/game_clock.hh>
 #include <moppe/game/place_kind.hh>
 #include <moppe/game/rescue.hh>
+#include <moppe/gfx/math.hh>
 #include <moppe/platform/input.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
@@ -43,39 +45,39 @@ namespace moppe {
     };
 
     struct HudState {
-      // length(bike().velocity()) * 3.6f; ignored while on_foot.
-      float speed_kmh;
+      // length(bike().velocity()) * 3.6f, in km/h; ignored while on_foot.
+      kilometres_per_hour_t speed = 0.0f * (u::km / u::h);
       // bike().boost_charge(): 0..1.  The gauge's reserve dashes.
-      float boost_ready01;
+      proportion_t boost_ready = 1.0f * proportion[one];
       // The remaining readings feed only the diagnostic overlay.
-      float health01;
-      float odometer_m;
-      int lives;
-      int stars;
-      int score;
-      float airtime_s;
-      float spin_degrees;
-      float landed_airtime_s;
-      float landed_spin_degrees;
-      int landed_points;
-      bool landed_clean;
-      float landed_age_s;
-      // The wheelie under way, metres on the back wheel (0 when there is
-      // none), the last one's length and points, the longest, and the
-      // seconds since the last one ended.
-      float wheelie_m = 0.0f;
-      float last_wheelie_m = 0.0f;
+      proportion_t health = 1.0f * proportion[one];
+      meters_t odometer = 0.0f * u::m;
+      int lives = 10;
+      int stars = 0;
+      int score = 0;
+      seconds_t airtime = 0.0f * u::s;
+      degrees_t spin = 0.0f * u::deg;
+      seconds_t landed_airtime = 0.0f * u::s;
+      degrees_t landed_spin = 0.0f * u::deg;
+      int landed_points = 0;
+      bool landed_clean = false;
+      seconds_t landed_age = 10.0f * u::s;
+      // The wheelie under way on the back wheel (0 when there is none),
+      // the last one's length and points, the longest, and the time
+      // since the last one ended.
+      meters_t wheelie = 0.0f * u::m;
+      meters_t last_wheelie = 0.0f * u::m;
       int last_wheelie_points = 0;
-      float best_wheelie_m = 0.0f;
-      float wheelie_age_s = 10.0f;
+      meters_t best_wheelie = 0.0f * u::m;
+      seconds_t wheelie_age = 10.0f * u::s;
       // Riding the motocross, which wheelies; and whether to prompt for
       // it, as the jets are prompted (thumb_hint).
       bool wheelies = false;
       bool wheelie_hint = false;
-      bool on_foot;
+      bool on_foot = false;
       // Soaring turns the gauge into an airspeed instrument with a climb
       // readout.
-      bool gliding;
+      bool gliding = false;
       // What most wants doing here (game/affordances.hh): the button that
       // does it, if it shows one, and the words with a key for it
       // ("Drive the tractor") and without ("Tractor within reach").
@@ -87,25 +89,25 @@ namespace moppe {
       bool can_step_out = false;
       // Riding a bike, whose rear brake Shift stamps on.
       bool skids = false;
-      float vertical_speed_mps;
+      speed_t vertical_speed = 0.0f * (u::m / u::s);
       // Real draw-callback interval: paces the fades and feeds the
       // diagnostic frame rate.
-      float frame_time_s;
-      // Heading in radians: zero is world +Z (north), positive turns east.
-      float heading_radians;
+      seconds_t frame_time = (1.0f / 60.0f) * u::s;
+      // Zero is world +Z (north), positive turns east.
+      heading_t heading = 0.0f * moppe::heading[si::radian];
       // How many mushrooms the basket holds, and eggs among them.
       int basket_total = 0;
       int basket_eggs = 0;
       // The last mushroom reached for and how long ago; a refused one was
       // poisonous and stayed where it grew.
       const char* reached_name = nullptr;
-      float reached_age_s = 100.0f;
+      seconds_t reached_age = 100.0f * u::s;
       bool reached_refused = false;
       // How many fish are in the creel, and the last one landed or
       // lost, said for a moment afterwards.
       int fish_total = 0;
       const char* catch_note = nullptr;
-      float catch_age_s = 100.0f;
+      seconds_t catch_age = 100.0f * u::s;
       // What a keyboard needs no prompt for, said for a host that offers
       // every action as a button (platform::offer_actions): what Space
       // does here, what F does from the saddle or the seat, and whether
@@ -122,10 +124,10 @@ namespace moppe {
       bool can_douse_fire = false;
       // What was last eaten, said for a moment afterwards.
       const char* meal = nullptr;
-      float meal_age_s = 100.0f;
+      seconds_t meal_age = 100.0f * u::s;
       // Lying in the hammock: the hour of the day, 0..24.
       bool resting = false;
-      float clock_hours = 0.0f;
+      hours_t clock = 0.0f * u::h;
       // Something worth finding that is out of the way -- the other
       // player, the nearest named place, or a parked machine -- over it
       // when it is in view, and otherwise at the frame's edge pointing
@@ -158,15 +160,16 @@ namespace moppe {
           return who & Vehicles;
         }
         const char* name = "";
-        Vec3 position;
-        // Where the arrow goes, in points, and which way it points:
-        // radians counterclockwise from screen right.
-        float x = 0.0f, y = 0.0f;
-        float angle = 0.0f;
+        position_t position = moppe::position (Vec3 ());
+        // Where the arrow goes, and which way it points: counterclockwise
+        // from screen right.
+        points_t x = 0.0f * u::pt, y = 0.0f * u::pt;
+        radians_t angle = 0.0f * u::rad;
         bool in_view = false;
-        float metres = 0.0f;
-        float alpha = 0.0f;
-        float red = 1.0f, green = 1.0f, blue = 1.0f;
+        // How far it is, and how far faded in.
+        meters_t metres = 0.0f * u::m;
+        opacity_t alpha = 0.0f * opacity[one];
+        DisplayColor colour { 1.0f, 1.0f, 1.0f };
       };
       std::array<Waymark, 12> waymarks {};
       int waymark_count = 0;
@@ -178,15 +181,15 @@ namespace moppe {
         const render::Texture* picture = nullptr;
         // The picture's period on the ground, and the world's +X and +Z
         // run across and down it (north is -Z, at the top).
-        float period_x_m = 0.0f, period_z_m = 0.0f;
-        // Where the subject stands, and the way ahead on the ground (a
-        // unit vector in X and Z).
-        float x_m = 0.0f, z_m = 0.0f;
-        float ahead_x = 0.0f, ahead_z = -1.0f;
+        plan_extent_t period = Vec2 (0.0f, 0.0f) * spatial_extent[si::metre];
+        // Where the subject stands, and the way ahead on the ground (the
+        // HUD makes it a unit vector).
+        plan_position_t subject = plan_position (0.0f, 0.0f);
+        plan_direction_t ahead = plan_unit_direction (Vec2 (0.0f, -1.0f));
         // The way the subject faces, which the mark at the middle points.
-        float facing_x = 0.0f, facing_z = -1.0f;
+        plan_direction_t facing = plan_unit_direction (Vec2 (0.0f, -1.0f));
         // 0 in the dark of night, 1 by day: the paper dims with the light.
-        float daylight = 1.0f;
+        proportion_t daylight = 1.0f * proportion[one];
         // What else is on it.
         struct Pin {
           enum class Kind {
@@ -203,8 +206,8 @@ namespace moppe {
           };
           Kind kind = Kind::Machine;
           terrain::RoadPlace::Kind place = terrain::RoadPlace::Kind::Trailhead;
-          float x_m = 0.0f, z_m = 0.0f;
-          float red = 0.1f, green = 0.1f, blue = 0.1f;
+          plan_position_t position = plan_position (0.0f, 0.0f);
+          DisplayColor colour { 0.1f, 0.1f, 0.1f };
         };
         std::array<Pin, 64> pins {};
         int pin_count = 0;
@@ -213,19 +216,11 @@ namespace moppe {
       // A word about the other player, when there is one, and how long
       // ago it was said.
       const char* notice = nullptr;
-      float notice_age_s = 100.0f;
-
-      HudState ()
-          : speed_kmh (0), boost_ready01 (1.0f), health01 (1.0f),
-            odometer_m (0), lives (10), stars (0), score (0), airtime_s (0),
-            spin_degrees (0), landed_airtime_s (0), landed_spin_degrees (0),
-            landed_points (0), landed_clean (false), landed_age_s (10),
-            on_foot (false), gliding (false), vertical_speed_mps (0),
-            frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
+      seconds_t notice_age = 100.0f * u::s;
     };
 
-    // A box on the screen, in points: left, top, right, bottom.
-    using HudBox = std::array<float, 4>;
+    // A box on the screen: left, top, right, bottom.
+    using HudBox = std::array<points_t, 4>;
 
     // Which waymarks share one marker. Marks start alone and any two
     // groups of the same kind (in view, or at the edge) whose boxes --
@@ -263,21 +258,21 @@ namespace moppe {
       void draw (render::DrawList& dl,
                  render::TextList& text,
                  const HudState& state,
-                 int width_pts,
-                 int height_pts);
+                 points_t width,
+                 points_t height);
 
       // "Sorry.  You are in great pain."  Covers the frame in black.
       void draw_game_over (render::DrawList& dl,
                            render::TextList& text,
-                           int width_pts,
-                           int height_pts);
+                           points_t width,
+                           points_t height);
 
       // Asks whether to quit (Esc in play): the frame veiled, the question
       // in the middle, and the keys that answer it.
       void draw_quit_question (render::DrawList& dl,
                                render::TextList& text,
-                               int width_pts,
-                               int height_pts) const;
+                               points_t width,
+                               points_t height) const;
 
       // Notes that `key` (by its name; none offers nothing) does `action`
       // just now.
@@ -288,9 +283,9 @@ namespace moppe {
       void draw_prompt (render::TextList& text,
                         const std::string& key,
                         const std::string& action,
-                        float alpha,
-                        int width_pts,
-                        int height_pts) const;
+                        opacity_t alpha,
+                        points_t width,
+                        points_t height) const;
 
       // Hands the host this frame's offers -- the prompts drawn since the
       // last call and what else there was to do -- and learns whether it
@@ -300,9 +295,9 @@ namespace moppe {
       // The opening's prompt to skip ahead and begin; nothing on a
       // touch screen, which has no key for it.
       void draw_ride_prompt (render::TextList& text,
-                             float alpha,
-                             int width_pts,
-                             int height_pts);
+                             opacity_t alpha,
+                             points_t width,
+                             points_t height);
 
       // One line of the opening's titles: the game's name large at the
       // centre of the frame, or a small credit in its lower third, unless
@@ -310,17 +305,17 @@ namespace moppe {
       void draw_title_card (render::TextList& text,
                             bool title,
                             const std::string& line,
-                            float alpha,
-                            float y,
-                            int width_pts,
-                            int height_pts) const;
+                            opacity_t alpha,
+                            proportion_t y,
+                            points_t width,
+                            points_t height) const;
 
       // Text with a soft shade beneath it, so light lettering stays
       // legible over snow and sky alike.
       void
       draw_shaded (render::TextList& text,
-                   float x,
-                   float y,
+                   points_t x,
+                   points_t y,
                    const std::string& line,
                    const render::TextStyle& style,
                    render::TextAlign align = render::TextAlign::Left) const;
@@ -344,64 +339,62 @@ namespace moppe {
 
       void draw_gauge (render::TextList& text,
                        const HudState& state,
-                       float dt,
-                       int width_pts,
-                       int height_pts);
+                       seconds_t dt,
+                       points_t width,
+                       points_t height);
       void draw_basket (render::TextList& text,
                         const HudState& state,
-                        float dt,
-                        int width_pts,
-                        int height_pts);
+                        seconds_t dt,
+                        points_t width,
+                        points_t height);
       void draw_clock (render::TextList& text,
                        const HudState& state,
-                       float dt,
-                       int width_pts,
-                       int height_pts);
+                       seconds_t dt,
+                       points_t width,
+                       points_t height);
       void draw_waymarks (render::TextList& text,
                           const HudState& state,
-                          float dt,
-                          int width_pts,
-                          int height_pts);
+                          seconds_t dt,
+                          points_t width,
+                          points_t height);
       void draw_chart (render::DrawList& dl,
                        render::TextList& text,
                        const HudState& state,
-                       float dt,
-                       int width_pts,
-                       int height_pts);
+                       seconds_t dt,
+                       points_t width,
+                       points_t height);
       void draw_prompts (render::TextList& text,
                          const HudState& state,
-                         float dt,
-                         int width_pts,
-                         int height_pts);
+                         seconds_t dt,
+                         points_t width,
+                         points_t height);
       void draw_diagnostics (render::DrawList& dl,
                              render::TextList& text,
                              const HudState& state,
-                             int width_pts,
-                             int height_pts);
+                             points_t width,
+                             points_t height);
       // A keycap with its action beside it, from x along the baseline, in
       // `words` (a prompt's, by default), and how wide that runs.
-      render::TextStyle prompt_words (float alpha) const;
-      float keyed_width (const std::string& key,
-                         const std::string& action,
-                         const render::TextStyle& words) const;
+      render::TextStyle prompt_words (opacity_t alpha) const;
+      points_t keyed_width (const std::string& key,
+                            const std::string& action,
+                            const render::TextStyle& words) const;
       void draw_keyed (render::TextList& text,
-                       float x,
-                       float baseline,
+                       points_t x,
+                       points_t baseline,
                        const std::string& key,
                        const std::string& action,
                        const render::TextStyle& words,
-                       float alpha) const;
+                       opacity_t alpha) const;
       void place_shape (render::TextList& text,
                         const render::SlugGlyph& shape,
-                        float cx,
-                        float cy,
-                        float scale,
-                        float angle_radians,
-                        float red,
-                        float green,
-                        float blue,
-                        float alpha,
-                        float softness = 1.0f) const;
+                        points_t cx,
+                        points_t cy,
+                        points_t scale,
+                        radians_t angle,
+                        DisplayColor colour,
+                        opacity_t alpha,
+                        points_t softness = 1.0f * u::pt) const;
 
       std::unique_ptr<render::Font> m_font;
       render::GlyphSetPtr m_shapes;
@@ -410,26 +403,26 @@ namespace moppe {
       bool m_diagnostics;
       // MOPPE_HUD=none: nothing over the picture, for films.
       bool m_hidden = false;
-      float m_fps;
+      frequency_t m_fps = 0.0f * u::Hz;
       // Smoothed visibility of each element; a prompt keeps its last words
-      // while it fades out.
-      float m_gauge_alpha;
-      float m_reserve_alpha;
-      float m_reserve_hold;
-      float m_prompt_alpha;
-      float m_basket_alpha;
-      float m_clock_alpha = 0.0f;
+      // while it fades out. The reserve lingers for m_reserve_hold.
+      opacity_t m_gauge_alpha = 0.0f * opacity[one];
+      opacity_t m_reserve_alpha = 0.0f * opacity[one];
+      seconds_t m_reserve_hold = 0.0f * u::s;
+      opacity_t m_prompt_alpha = 0.0f * opacity[one];
+      opacity_t m_basket_alpha = 0.0f * opacity[one];
+      opacity_t m_clock_alpha = 0.0f * opacity[one];
       // The chart's visibility and the radius of ground it shows, which
       // widens with speed;
-      float m_chart_alpha = 0.0f;
-      float m_chart_reach_m = 0.0f;
+      opacity_t m_chart_alpha = 0.0f * opacity[one];
+      meters_t m_chart_reach = 0.0f * u::m;
       // The waymarks' markers, each a set of HudState::Waymark::who and
       // how far it has faded in: those of this frame come up and those
       // no longer drawn fade away, so that a group opens out or closes
       // up by crossing over rather than in a jump.
       struct Marker {
         unsigned who;
-        float alpha;
+        opacity_t alpha;
         bool live; // grouped so in the last frame
       };
       std::vector<Marker> m_markers;

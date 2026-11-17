@@ -31,6 +31,9 @@ namespace lavoir {
   /// cardinality, the spatial sibling of seconds per step.
   using site_spacing_q = quantity<si::metre / unit, float>;
 
+  /// A pure number: the Courant number, a damping factor, a weight.
+  using ratio_q = quantity<one, float>;
+
   inline constexpr std::size_t wave_levels = 3;
 
   class water_line {
@@ -41,8 +44,8 @@ namespace lavoir {
                 step_pace_t pace)
         : m_sites (sites), m_pace (pace) {
       const auto courant = speed * (pace * (1 * step)) / (spacing * (1 * unit));
-      m_courant = courant.numerical_value_in (one);
-      if (!(m_courant > 0.0 && m_courant < 1.0))
+      m_courant = courant.in (one);
+      if (!(m_courant > 0.0 * one && m_courant < 1.0 * one))
         throw std::invalid_argument (
           "The water line's Courant number must sit inside (0, 1)");
 
@@ -88,9 +91,11 @@ namespace lavoir {
       const auto u_next = m_levels[next].lease ();
 
       const std::size_t count = m_sites.size ();
-      const float c2 = static_cast<float> (m_courant * m_courant);
-      constexpr float keel = 0.9975f;
-      constexpr float syrup = 0.06f;
+      const ratio_q c2 = value_cast<float> (m_courant * m_courant);
+      // What survives each step of the wave, and the viscous smoothing
+      // of its curvature.
+      constexpr ratio_q keel = 0.9975f * one;
+      constexpr ratio_q syrup = 0.06f * one;
 
       for (std::size_t i = 0; i < count; ++i) {
         const std::size_t left = (i + count - 1) % count;
@@ -127,15 +132,15 @@ namespace lavoir {
         const std::size_t site =
           (centre + count + static_cast<std::size_t> (offset + reach) - reach) %
           count;
-        const float shape =
-          std::exp (-0.5f * static_cast<float> (offset * offset) / 64.0f);
+        const ratio_q shape =
+          std::exp (-0.5f * static_cast<float> (offset * offset) / 64.0f) * one;
         u[site] -= strength * shape;
       }
     }
 
     interval m_sites;
     step_pace_t m_pace;
-    double m_courant = 0.0;
+    quantity<one, double> m_courant = 0.0 * one;
     std::array<column<metres_q>, wave_levels> m_levels;
     std::size_t m_level = 0;
     steps_t m_age = steps_t::zero ();

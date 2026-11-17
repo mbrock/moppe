@@ -24,21 +24,20 @@ namespace moppe::game {
                   const terrain::RoadNetwork& roads,
                   const terrain::RoadSurface& road_surface);
     void clear ();
-    void draw (render::Renderer& renderer, const Vec3& camera) const;
+    void draw (render::Renderer& renderer, const position_t& camera) const;
 
   private:
     struct Bridge {
       render::MeshPtr mesh;
-      // The mesh's origin, inside the period.
-      Vec3 centre;
-      // How far off it is still drawn, metres.
-      float reach = 2500.0f;
+      // The mesh's origin, inside the period, at height zero.
+      plan_position_t centre;
+      // How far off it is still drawn.
+      meters_t reach = 2500.0f * u::m;
     };
     void add_guardrails (render::Renderer& renderer,
                          const terrain::RoadSurface& roads);
     std::vector<Bridge> m_bridges;
-    float m_period_x = 0.0f;
-    float m_period_z = 0.0f;
+    plan_extent_t m_period = plan_extent (0.0f * u::m, 0.0f * u::m);
   };
 }
 

@@ -26,11 +26,11 @@ namespace moppe::terrain {
     // segment implicitly returns to the front. Open contours are retained
     // defensively, although a complete torus waterline should close.
     bool closed = false;
-    // Interleaved (x, z) positions in world metres.
-    std::vector<float> points;
+    // Places on the map, in order along the shore.
+    std::vector<plan_position_t> points;
 
     std::size_t size () const noexcept {
-      return points.size () / 2;
+      return points.size ();
     }
   };
 
@@ -50,14 +50,16 @@ namespace moppe::terrain {
                                  std::span<const SurfaceElevation> elevations,
                                  std::span<const SurfaceElevation> surface,
                                  const WaterBodyMembership& water_bodies,
-                                 float wet_epsilon);
+                                 ElevationChange wet_epsilon);
   }
 
   template <TerrainElevations Terrain, TerrainElevations WaterSurface>
-  Waterline extract_waterline (const Terrain& terrain,
-                               const WaterSurface& surface,
-                               const WaterBodyMembership& water_bodies,
-                               float wet_epsilon = 1e-7f) {
+  Waterline
+  extract_waterline (const Terrain& terrain,
+                     const WaterSurface& surface,
+                     const WaterBodyMembership& water_bodies,
+                     ElevationChange wet_epsilon = 1e-7f *
+                                                   surface_elevation[u::m]) {
     return detail::extract_waterline (terrain.domain (),
                                       elevations (terrain),
                                       elevations (surface),

@@ -20,46 +20,53 @@ namespace {
   terrain::RoadNetwork tee () {
     terrain::RoadNetwork network;
     network.places = {
-      { RoadPlace::Kind::Trailhead, 200.0f, 500.0f, 10.0f },
-      { RoadPlace::Kind::Landing, 900.0f, 500.0f, 1.0f },
-      { RoadPlace::Kind::Sanctuary, 500.0f, 150.0f, 80.0f },
+      { RoadPlace::Kind::Trailhead,
+        plan_position (200.0f, 500.0f),
+        terrain::surface_elevation_point (10.0f * u::m) },
+      { RoadPlace::Kind::Landing,
+        plan_position (900.0f, 500.0f),
+        terrain::surface_elevation_point (1.0f * u::m) },
+      { RoadPlace::Kind::Sanctuary,
+        plan_position (500.0f, 150.0f),
+        terrain::surface_elevation_point (80.0f * u::m) },
     };
     Road road;
     for (float x = 200.0f; x <= 900.0f; x += 50.0f)
-      road.points.push_back ({ x, 500.0f });
+      road.points.push_back (plan_position (x, 500.0f));
     Road path;
     path.kind = Road::Kind::Footpath;
-    path.abandoned_years_ago = 120.0f;
+    path.abandoned = 120.0f * mp_units::astronomy::Julian_year;
     for (int i = 0; i <= 10; ++i)
-      path.points.push_back ({ 500.0f, 485.0f - 33.5f * i });
+      path.points.push_back (plan_position (500.0f, 485.0f - 33.5f * i));
     network.roads = { road, path };
     return network;
   }
 }
 
 MOPPE_TEST (fingerposts_point_each_way_to_the_places_it_leads_to) {
-  const auto posts = game::plan_fingerposts (tee (), 1000.0f, 1000.0f);
+  const auto posts = game::plan_fingerposts (
+    tee (), plan_extent (1000.0f * u::m, 1000.0f * u::m));
   MOPPE_CHECK (posts.size () == 1);
   const game::Fingerpost& post = posts.front ();
-  MOPPE_CHECK_NEAR (post.junction_x_m, 500.0f, 1.0f);
-  MOPPE_CHECK_NEAR (post.junction_z_m, 500.0f, 1.0f);
+  MOPPE_CHECK_NEAR (plan_value (post.junction).x (), 500.0f, 1.0f);
+  MOPPE_CHECK_NEAR (plan_value (post.junction).z (), 500.0f, 1.0f);
   // Off the tread, in the widest gap: south of the road.
-  MOPPE_CHECK (post.z_m > 505.0f);
+  MOPPE_CHECK (plan_value (post.at).z () > 505.0f);
   MOPPE_CHECK (post.arms.size () == 3);
   int found = 0;
   for (const game::Fingerpost::Arm& arm : post.arms) {
     MOPPE_CHECK (arm.boards.size () == 1);
     const auto& board = arm.boards.front ();
     if (board.place == 0) {
-      MOPPE_CHECK (arm.direction_x < -0.99f);
-      MOPPE_CHECK_NEAR (board.metres, 300.0f, 1.0f);
+      MOPPE_CHECK (plan_value (arm.direction).x () < -0.99f);
+      MOPPE_CHECK_NEAR (meters_value (board.distance), 300.0f, 1.0f);
       MOPPE_CHECK (!arm.abandoned && arm.kind == Road::Kind::Road);
     } else if (board.place == 1) {
-      MOPPE_CHECK (arm.direction_x > 0.99f);
-      MOPPE_CHECK_NEAR (board.metres, 400.0f, 1.0f);
+      MOPPE_CHECK (plan_value (arm.direction).x () > 0.99f);
+      MOPPE_CHECK_NEAR (meters_value (board.distance), 400.0f, 1.0f);
     } else {
-      MOPPE_CHECK (arm.direction_z < -0.99f);
-      MOPPE_CHECK_NEAR (board.metres, 335.0f, 1.0f);
+      MOPPE_CHECK (plan_value (arm.direction).z () < -0.99f);
+      MOPPE_CHECK_NEAR (meters_value (board.distance), 335.0f, 1.0f);
       MOPPE_CHECK (arm.abandoned && arm.kind == Road::Kind::Footpath);
     }
     found |= 1 << board.place;

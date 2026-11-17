@@ -21,15 +21,16 @@ namespace moppe::game {
   int FrameCapture::video_steps (bool driven) const {
     if (!m_video_plan || m_video_done || driven)
       return 1;
-    const int first =
-      static_cast<int> (std::lround (m_video_plan->start * 60.0f));
+    const int first = static_cast<int> (
+      std::lround (seconds_value (m_video_plan->start) * 60.0f));
     return std::clamp (first - 120 - m_video_render_frame, 1, 20);
   }
 
-  std::optional<double> FrameCapture::script_seconds (bool playing) const {
+  std::optional<platform::host_time_t>
+  FrameCapture::script_seconds (bool playing) const {
     if (!m_video_plan)
       return std::nullopt;
-    return playing ? m_video_render_frame / 60.0 : -1.0;
+    return platform::host_time (playing ? m_video_render_frame / 60.0 : -1.0);
   }
 
   void FrameCapture::toggle_clip () {
@@ -45,8 +46,8 @@ namespace moppe::game {
 
   bool FrameCapture::before_frame (render::Renderer& r,
                                    const FrameView& frame,
-                                   float play_seconds,
-                                   float sun_height,
+                                   seconds_t play_time,
+                                   proportion_t sun_height,
                                    bool opening_active) {
     static const int screenshot_delay = [] {
       if (const char* frames = moppe::environment ("MOPPE_SCREENSHOT_FRAMES"))
@@ -61,7 +62,7 @@ namespace moppe::game {
       m_snapshot_requested = false;
       const std::string path = next_snapshot_path ();
       r.request_screenshot (path);
-      record_shot_pose (frame, path, play_seconds, sun_height);
+      record_shot_pose (frame, path, play_time, sun_height);
     }
     record_frame (r, opening_active);
     return captured;
@@ -85,8 +86,9 @@ namespace moppe::game {
       return value ? (float)::atof (value) : otherwise;
     };
     plan.fps = number ("MOPPE_VIDEO_FPS", 30.0f) > 45.0f ? 60 : 30;
-    plan.seconds = std::max (0.0f, number ("MOPPE_VIDEO_SECONDS", 0.0f));
-    plan.start = std::max (0.0f, number ("MOPPE_VIDEO_START", 0.0f));
+    plan.seconds =
+      seconds (std::max (0.0f, number ("MOPPE_VIDEO_SECONDS", 0.0f)));
+    plan.start = seconds (std::max (0.0f, number ("MOPPE_VIDEO_START", 0.0f)));
     plan.speed =
       std::max (1, static_cast<int> (number ("MOPPE_VIDEO_SPEED", 1.0f)));
     plan.height =
@@ -109,7 +111,8 @@ namespace moppe::game {
     if (m_video_done)
       return;
     const VideoPlan& plan = *m_video_plan;
-    const int first = static_cast<int> (std::lround (plan.start * 60.0f));
+    const int first =
+      static_cast<int> (std::lround (seconds_value (plan.start) * 60.0f));
     if (index < first)
       return;
     if (index == first)
@@ -125,8 +128,9 @@ namespace moppe::game {
       m_video_saw_flight = true;
     const bool landed = flight_only && m_video_saw_flight && !opening_active;
     if (!m_video.recording () || landed ||
-        (plan.seconds > 0.0f &&
-         m_video.frames () >= std::lround (plan.seconds * plan.fps))) {
+        (plan.seconds > seconds (0.0f) &&
+         m_video.frames () >=
+           std::lround (seconds_value (plan.seconds) * plan.fps))) {
       m_video.finish ();
       m_video_done = true;
       platform::request_quit ();
@@ -172,16 +176,16 @@ namespace moppe::game {
 
   void FrameCapture::record_shot_pose (const FrameView& frame,
                                        const std::string& path,
-                                       float play_seconds,
-                                       float sun_height) {
+                                       seconds_t play_time,
+                                       proportion_t sun_height) {
     const std::string name = std::filesystem::path (path).stem ().string ();
     const std::string line = format_opening_shot (
       name,
-      frame.camera.position,
-      frame.camera.forward,
+      position_value (frame.camera.position),
+      direction_value (frame.camera.forward),
       frame.camera.field_of_view.numerical_value_in (u::deg),
-      play_seconds,
-      sun_height);
+      seconds_value (play_time),
+      sun_height.numerical_value_in (one));
     std::cerr << "moppe: pose: " << line << '\n';
     std::ofstream shots (std::filesystem::path (m_snapshot_directory) /
                            "shots.txt",

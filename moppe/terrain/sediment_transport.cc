@@ -17,41 +17,76 @@ namespace moppe::terrain {
     constexpr auto cubic_metre =
       mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
 
-    double sediment_volume_value (SedimentVolume volume) {
-      return volume.numerical_value_in (cubic_metre);
+    // The routers carry their working values at double precision and narrow
+    // once when a result is stored, so these are the double forms of the
+    // header's float quantities.
+    using WorkingElevation =
+      quantity_point<surface_elevation[u::m],
+                     default_point_origin (surface_elevation[u::m]),
+                     double>;
+    using WorkingElevationChange = quantity<surface_elevation[u::m], double>;
+    using WorkingArea = quantity<u::m * u::m, double>;
+    // One signed lane of the ground's gradient, and its magnitude.
+    using SurfaceGradient = quantity<grade[one], double>;
+    using GradientMagnitude = quantity<terrain_slope[one], double>;
+    using DiffusivityMultiplier = quantity<scale_factor[one], double>;
+    using ActivationWeight = quantity<blend_weight[one], double>;
+    using FractionTotal = quantity<flow_fraction[one], double>;
+    // How many cells a mouth's deposit may spread over.
+    using FootprintCells = quantity<cell_count[one], double>;
+
+    // A product of lengths in cubic metres, named as solid. The unit is
+    // already cubic metres, so this changes no bits.
+    template <mp_units::Quantity Q>
+    SedimentVolume sediment_volume_of (Q volume) {
+      return volume.numerical_value_in (cubic_metre) *
+             sediment_volume[cubic_metre];
     }
 
-    SedimentVolume sediment_volume_from (double cubic_metres) {
-      return cubic_metres * sediment_volume[cubic_metre];
+    // The thickness a volume makes over an area, as a height change.
+    WorkingElevationChange thickness_over (SedimentVolume volume,
+                                           WorkingArea area) {
+      return (volume / area).numerical_value_in (u::m) *
+             surface_elevation[u::m];
     }
 
-    double hillslope_diffusivity_multiplier (
-      double gradient_magnitude,
+    DiffusivityMultiplier hillslope_diffusivity_multiplier (
+      GradientMagnitude gradient_magnitude,
       proportion_t critical_gradient,
       proportion_t maximum_diffusivity_multiplier) {
-      const double critical =
-        critical_gradient.numerical_value_in (mp_units::one);
-      const double maximum =
-        maximum_diffusivity_multiplier.numerical_value_in (mp_units::one);
-      const double activation =
-        std::clamp (2.0 * gradient_magnitude / critical - 1.0, 0.0, 1.0);
-      const double smooth_activation =
-        activation * activation * (3.0 - 2.0 * activation);
-      return 1.0 + (maximum - 1.0) * smooth_activation;
+      const GradientMagnitude critical =
+        static_cast<double> (critical_gradient.numerical_value_in (one)) *
+        terrain_slope[one];
+      const DiffusivityMultiplier maximum =
+        static_cast<double> (
+          maximum_diffusivity_multiplier.numerical_value_in (one)) *
+        scale_factor[one];
+      const DiffusivityMultiplier unity = 1.0 * scale_factor[one];
+      const ActivationWeight activation =
+        std::clamp (
+          (2.0 * gradient_magnitude / critical).numerical_value_in (one) - 1.0,
+          0.0,
+          1.0) *
+        blend_weight[one];
+      const ActivationWeight smooth_activation =
+        (activation * activation * (3.0 * blend_weight[one] - 2.0 * activation))
+          .numerical_value_in (one) *
+        blend_weight[one];
+      return unity +
+             (maximum - unity) * smooth_activation.numerical_value_in (one);
     }
 
     enum class HillslopeFaceAxis { x, z };
 
-    void reconstruct_centered_gradients (const TerrainDomain& domain,
-                                         std::span<const double> height_m,
-                                         std::span<double> gradient_x,
-                                         std::span<double> gradient_z) {
+    void
+    reconstruct_centered_gradients (const TerrainDomain& domain,
+                                    std::span<const WorkingElevation> levels,
+                                    std::span<SurfaceGradient> gradient_x,
+                                    std::span<SurfaceGradient> gradient_z) {
       const std::size_t width = domain.width ();
       const std::size_t height = domain.height ();
-      const double run_x =
-        2.0 * domain.spacing_x ().numerical_value_in (mp_units::si::metre);
-      const double run_z =
-        2.0 * domain.spacing_z ().numerical_value_in (mp_units::si::metre);
+      const meters_f64_t run_x = 2.0 * domain.spacing_x ();
+      const meters_f64_t run_z = 2.0 * domain.spacing_z ();
       parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
         for (std::size_t row = first; row < last; ++row) {
           const std::size_t prior_row = row == 0 ? height - 1 : row - 1;
@@ -62,56 +97,68 @@ namespace moppe::terrain {
             const std::size_t next_column =
               column + 1 == width ? 0 : column + 1;
             const std::size_t cell = row * width + column;
-            gradient_x[cell] = (height_m[row * width + next_column] -
-                                height_m[row * width + prior_column]) /
-                               run_x;
-            gradient_z[cell] = (height_m[next_row * width + column] -
-                                height_m[prior_row * width + column]) /
-                               run_z;
+            gradient_x[cell] = ((levels[row * width + next_column] -
+                                 levels[row * width + prior_column]) /
+                                run_x)
+                                 .numerical_value_in (one) *
+                               grade[one];
+            gradient_z[cell] = ((levels[next_row * width + column] -
+                                 levels[prior_row * width + column]) /
+                                run_z)
+                                 .numerical_value_in (one) *
+                               grade[one];
           }
         }
       });
     }
 
-    double reconstructed_face_gradient (std::span<const double> height_m,
-                                        std::span<const double> gradient_x,
-                                        std::span<const double> gradient_z,
-                                        std::size_t first,
-                                        std::size_t second,
-                                        HillslopeFaceAxis axis,
-                                        meters_t run) {
-      const double normal = (height_m[second] - height_m[first]) /
-                            run.numerical_value_in (mp_units::si::metre);
+    GradientMagnitude
+    reconstructed_face_gradient (std::span<const WorkingElevation> levels,
+                                 std::span<const SurfaceGradient> gradient_x,
+                                 std::span<const SurfaceGradient> gradient_z,
+                                 std::size_t first,
+                                 std::size_t second,
+                                 HillslopeFaceAxis axis,
+                                 meters_t run) {
+      const SurfaceGradient normal =
+        ((levels[second] - levels[first]) / run).numerical_value_in (one) *
+        grade[one];
       if (axis == HillslopeFaceAxis::x) {
-        const double tangent = 0.5 * (gradient_z[first] + gradient_z[second]);
-        return cr::hypot (normal, tangent);
+        const SurfaceGradient tangent =
+          0.5 * (gradient_z[first] + gradient_z[second]);
+        return cr::hypot (normal.numerical_value_in (one),
+                          tangent.numerical_value_in (one)) *
+               terrain_slope[one];
       }
 
-      const double tangent = 0.5 * (gradient_x[first] + gradient_x[second]);
-      return cr::hypot (tangent, normal);
+      const SurfaceGradient tangent =
+        0.5 * (gradient_x[first] + gradient_x[second]);
+      return cr::hypot (tangent.numerical_value_in (one),
+                        normal.numerical_value_in (one)) *
+             terrain_slope[one];
     }
 
-    int hillslope_sweep_count (const TerrainDomain& domain,
-                               julian_years_f64_t duration,
-                               square_meters_per_julian_year_t diffusivity,
-                               double maximum_diffusivity_multiplier) {
+    int hillslope_sweep_count (
+      const TerrainDomain& domain,
+      julian_years_f64_t duration,
+      square_meters_per_julian_year_t diffusivity,
+      DiffusivityMultiplier maximum_diffusivity_multiplier) {
       if (duration == 0 || diffusivity == 0)
         return 0;
       const auto maximum_diffusivity =
-        maximum_diffusivity_multiplier * diffusivity;
+        maximum_diffusivity_multiplier.numerical_value_in (one) * diffusivity;
       const auto stable_duration =
         1.0 / (2.0 * maximum_diffusivity *
                (1.0 / (domain.spacing_x () * domain.spacing_x ()) +
                 1.0 / (domain.spacing_z () * domain.spacing_z ())));
       const auto requested =
         mp_units::ceil<mp_units::one> (duration / stable_duration);
-      const double requested_count =
-        requested.numerical_value_in (mp_units::one);
       if (!mp_units::isfinite (requested) ||
-          requested_count > std::numeric_limits<int>::max ())
+          requested > std::numeric_limits<int>::max () * one)
         throw std::invalid_argument (
           "hillslope transport requests too many sweeps");
-      return std::max (1, static_cast<int> (requested_count));
+      return std::max (1,
+                       static_cast<int> (requested.numerical_value_in (one)));
     }
 
     void
@@ -142,6 +189,10 @@ namespace moppe::terrain {
           throw std::invalid_argument (
             "hillslope sediment must be finite and non-negative");
       }
+    }
+
+    bool finite_non_negative (SedimentVolume volume) {
+      return mp_units::isfinite (volume) && !(volume < SedimentVolume::zero ());
     }
 
     void validate_sediment_routing (
@@ -175,8 +226,7 @@ namespace moppe::terrain {
         throw std::invalid_argument (
           "water-body storage requires standing-water membership");
       for (const SedimentVolume capacity : body_storage_capacity) {
-        const double value = sediment_volume_value (capacity);
-        if (!std::isfinite (value) || value < 0.0)
+        if (!finite_non_negative (capacity))
           throw std::invalid_argument (
             "water-body storage must be finite and non-negative");
       }
@@ -194,24 +244,17 @@ namespace moppe::terrain {
       }
 
       for (std::size_t cell = 0; cell < count; ++cell) {
-        const double potential =
-          sediment_volume_value (potential_detachment[cell]);
-        const double capacity =
-          sediment_volume_value (transport_capacity[cell]);
-        const double deposition_limit =
-          sediment_volume_value (maximum_deposition[cell]);
-        const double cover = available_cover.empty ()
-                               ? 0.0
-                               : sediment_volume_value (available_cover[cell]);
-        const double ocean_storage =
-          ocean_mouth_capacity.empty ()
-            ? 0.0
-            : sediment_volume_value (ocean_mouth_capacity[cell]);
-        if (!std::isfinite (potential) || potential < 0.0 ||
-            !std::isfinite (capacity) || capacity < 0.0 ||
-            !std::isfinite (deposition_limit) || deposition_limit < 0.0 ||
-            !std::isfinite (cover) || cover < 0.0 ||
-            !std::isfinite (ocean_storage) || ocean_storage < 0.0)
+        const SedimentVolume cover = available_cover.empty ()
+                                       ? SedimentVolume::zero ()
+                                       : available_cover[cell];
+        const SedimentVolume ocean_storage = ocean_mouth_capacity.empty ()
+                                               ? SedimentVolume::zero ()
+                                               : ocean_mouth_capacity[cell];
+        if (!finite_non_negative (potential_detachment[cell]) ||
+            !finite_non_negative (transport_capacity[cell]) ||
+            !finite_non_negative (maximum_deposition[cell]) ||
+            !finite_non_negative (cover) ||
+            !finite_non_negative (ocean_storage))
           throw std::invalid_argument (
             "sediment volumes must be finite and non-negative");
         if (!water_body.empty () && water_body[cell] != no_water_body &&
@@ -226,18 +269,20 @@ namespace moppe::terrain {
           throw std::invalid_argument (
             "sediment route has too many receiver arcs");
 
-        double fraction_total = 0.0;
+        FractionTotal fraction_total = 0.0 * flow_fraction[one];
         for (std::uint8_t arc = 0; arc < route.arc_count; ++arc) {
           const std::size_t receiver = route.arcs[arc].receiver.value;
-          const double fraction =
-            route.arcs[arc].fraction.numerical_value_in (mp_units::one);
+          const FractionTotal fraction = route.arcs[arc].fraction;
           if (receiver >= count || position[receiver] <= position[cell] ||
-              !std::isfinite (fraction) || fraction < 0.0)
+              !mp_units::isfinite (fraction) ||
+              fraction < 0.0 * flow_fraction[one])
             throw std::invalid_argument (
               "sediment route is not a valid drainage DAG");
           fraction_total += fraction;
         }
-        if (route.arc_count != 0 && std::abs (fraction_total - 1.0) > 1e-5)
+        if (route.arc_count != 0 &&
+            mp_units::abs (fraction_total - 1.0 * flow_fraction[one]) >
+              1e-5 * flow_fraction[one])
           throw std::invalid_argument (
             "sediment receiver fractions must sum to one");
       }
@@ -248,13 +293,15 @@ namespace moppe::terrain {
   sediment_transport_capacity (julian_years_f64_t duration,
                                square_meters_t contributing_area,
                                slope_t slope,
-                               float channel_share,
+                               proportion_t channel_share,
                                const FluvialTransport& parameters) {
     if (!mp_units::isfinite (duration) || duration < 0 ||
         !mp_units::isfinite (contributing_area) || contributing_area < 0 ||
         !mp_units::isfinite (slope) || slope < 0 ||
-        !std::isfinite (channel_share) || channel_share < 0.0f ||
-        channel_share > 1.0f || !mp_units::isfinite (parameters.runoff_rate) ||
+        !mp_units::isfinite (channel_share) ||
+        channel_share < 0.0f * proportion[one] ||
+        channel_share > 1.0f * proportion[one] ||
+        !mp_units::isfinite (parameters.runoff_rate) ||
         parameters.runoff_rate < 0 ||
         !mp_units::isfinite (parameters.concentration_at_unit_slope) ||
         parameters.concentration_at_unit_slope < 0)
@@ -264,26 +311,21 @@ namespace moppe::terrain {
     const auto capacity =
       duration * contributing_area * parameters.runoff_rate *
       parameters.concentration_at_unit_slope * slope * channel_share;
-    return sediment_volume_from (capacity.numerical_value_in (cubic_metre));
+    return sediment_volume_of (capacity);
   }
 
   meters_t alluvial_valley_width (square_meters_t contributing_area,
                                   const ValleyDeposition& parameters) noexcept {
-    const float area_m2 =
-      std::max (0.0f,
-                contributing_area.numerical_value_in (mp_units::si::metre *
-                                                      mp_units::si::metre));
-    const float minimum_m = std::max (
-      0.0f, parameters.minimum_width.numerical_value_in (mp_units::si::metre));
-    const float maximum_m = std::max (
-      minimum_m,
-      parameters.maximum_width.numerical_value_in (mp_units::si::metre));
-    const float width_ratio = std::max (
-      0.0f, parameters.width_per_sqrt_area.numerical_value_in (mp_units::one));
-    return std::clamp (minimum_m + width_ratio * std::sqrt (area_m2),
-                       minimum_m,
-                       maximum_m) *
-           mp_units::si::metre;
+    const square_meters_t area =
+      std::max (square_meters_t::zero (), contributing_area);
+    const meters_t minimum =
+      std::max (meters_t::zero (), parameters.minimum_width);
+    const meters_t maximum = std::max (minimum, parameters.maximum_width);
+    const proportion_t width_ratio =
+      std::max (proportion_t::zero (), parameters.width_per_sqrt_area);
+    const meters_t width =
+      minimum + width_ratio.numerical_value_in (one) * mp_units::sqrt (area);
+    return std::clamp (width, minimum, maximum);
   }
 
   StandingWaterStorage standing_water_storage_capacity (
@@ -298,15 +340,16 @@ namespace moppe::terrain {
       throw std::invalid_argument (
         "standing-water capacity inputs do not share a domain");
 
-    std::vector<double> body_capacity_m3 (census.domain ().size ());
-    std::vector<double> ocean_capacity_m3 (count);
-    const double cell_area_m2 =
-      flood.domain ().cell_area ().numerical_value_in (mp_units::si::metre *
-                                                       mp_units::si::metre);
+    StandingWaterStorage result {
+      .body_capacity = std::vector<SedimentVolume> (census.domain ().size (),
+                                                    SedimentVolume::zero ()),
+      .ocean_mouth_capacity =
+        std::vector<SedimentVolume> (count, SedimentVolume::zero ())
+    };
+    const WorkingArea cell_area = flood.domain ().cell_area ();
     for (std::size_t cell = 0; cell < count; ++cell) {
-      const double maximum_m3 =
-        sediment_volume_value (maximum_deposition[cell]);
-      if (!std::isfinite (maximum_m3) || maximum_m3 < 0.0 ||
+      const SedimentVolume maximum = maximum_deposition[cell];
+      if (!finite_non_negative (maximum) ||
           !mp_units::isfinite (contributing_areas[cell]) ||
           contributing_areas[cell] < FractionalContributingArea::zero ())
         throw std::invalid_argument (
@@ -315,30 +358,22 @@ namespace moppe::terrain {
         census.body_at (CellIndex { static_cast<std::uint32_t> (cell) });
       if (body == LakeCensus::dry)
         continue;
-      const double accommodation_m3 =
-        static_cast<double> (flood.water_depth_m (cell)) * cell_area_m2;
+      const meters_f64_t depth = flood.water_depths ()[cell];
+      const SedimentVolume accommodation =
+        sediment_volume_of (depth * cell_area);
       if (flood.ocean[cell]) {
-        const float width_m =
-          alluvial_valley_width (square_meters_t (contributing_areas[cell]),
-                                 parameters)
-            .numerical_value_in (mp_units::si::metre);
-        const double footprint_cells =
-          std::max (1.0, 0.25 * width_m * width_m / cell_area_m2);
-        ocean_capacity_m3[cell] =
-          std::min (accommodation_m3, maximum_m3 * footprint_cells);
+        const meters_t width = alluvial_valley_width (
+          square_meters_t (contributing_areas[cell]), parameters);
+        const FootprintCells footprint_cells =
+          std::max (
+            1.0, (0.25 * width * width / cell_area).numerical_value_in (one)) *
+          cell_count[one];
+        result.ocean_mouth_capacity[cell] = std::min (
+          accommodation, maximum * footprint_cells.numerical_value_in (one));
       } else {
-        body_capacity_m3[body.value] += std::min (accommodation_m3, maximum_m3);
+        result.body_capacity[body.value] += std::min (accommodation, maximum);
       }
     }
-
-    StandingWaterStorage result;
-    result.body_capacity.reserve (body_capacity_m3.size ());
-    for (const double capacity_m3 : body_capacity_m3)
-      result.body_capacity.push_back (sediment_volume_from (capacity_m3));
-    result.ocean_mouth_capacity.reserve (count);
-    for (const double capacity_m3 : ocean_capacity_m3)
-      result.ocean_mouth_capacity.push_back (
-        sediment_volume_from (capacity_m3));
     return result;
   }
 
@@ -363,7 +398,7 @@ namespace moppe::terrain {
                                ocean_mouth_capacity);
 
     const std::size_t count = flow.size ();
-    std::vector<double> incoming (count);
+    std::vector<SedimentVolume> incoming (count, SedimentVolume::zero ());
     SedimentRoutingResult result {
       .detached = std::vector<SedimentVolume> (count, SedimentVolume::zero ()),
       .entrained_cover =
@@ -374,27 +409,24 @@ namespace moppe::terrain {
       .outgoing = std::vector<SedimentVolume> (count, SedimentVolume::zero ())
     };
 
-    double detached_total = 0.0;
-    double entrained_cover_total = 0.0;
-    double bedrock_detached_total = 0.0;
-    double deposited_total = 0.0;
-    double exported_total = 0.0;
-    std::vector<double> remaining_body_storage;
-    remaining_body_storage.reserve (body_storage_capacity.size ());
-    for (const SedimentVolume capacity : body_storage_capacity)
-      remaining_body_storage.push_back (sediment_volume_value (capacity));
+    SedimentVolume detached_total = SedimentVolume::zero ();
+    SedimentVolume entrained_cover_total = SedimentVolume::zero ();
+    SedimentVolume bedrock_detached_total = SedimentVolume::zero ();
+    SedimentVolume deposited_total = SedimentVolume::zero ();
+    SedimentVolume exported_total = SedimentVolume::zero ();
+    std::vector<SedimentVolume> remaining_body_storage (
+      body_storage_capacity.begin (), body_storage_capacity.end ());
 
     for (const CellIndex index : flow.topological_order ()) {
       const std::size_t cell = index.value;
       const FractionalFlowRoute& route = flow.route (index);
 
       if (ocean[cell]) {
-        const double deposited =
+        const SedimentVolume deposited =
           ocean_mouth_capacity.empty ()
-            ? 0.0
-            : std::min (incoming[cell],
-                        sediment_volume_value (ocean_mouth_capacity[cell]));
-        result.deposited[cell] = sediment_volume_from (deposited);
+            ? SedimentVolume::zero ()
+            : std::min (incoming[cell], ocean_mouth_capacity[cell]);
+        result.deposited[cell] = deposited;
         deposited_total += deposited;
         exported_total += incoming[cell] - deposited;
         continue;
@@ -403,21 +435,20 @@ namespace moppe::terrain {
       const WaterBodyId body =
         water_body.empty () ? no_water_body : water_body[cell];
       if (body != no_water_body && !route.empty ()) {
-        const double deposited =
+        const SedimentVolume deposited =
           std::min (incoming[cell], remaining_body_storage[body.value]);
         remaining_body_storage[body.value] -= deposited;
-        const double outgoing = incoming[cell] - deposited;
-        result.deposited[cell] = sediment_volume_from (deposited);
-        result.outgoing[cell] = sediment_volume_from (outgoing);
+        const SedimentVolume outgoing = incoming[cell] - deposited;
+        result.deposited[cell] = deposited;
+        result.outgoing[cell] = outgoing;
         deposited_total += deposited;
 
-        double posted = 0.0;
+        SedimentVolume posted = SedimentVolume::zero ();
         for (std::uint8_t arc = 0; arc < route.arc_count; ++arc) {
-          const double share =
+          const SedimentVolume share =
             arc + 1 == route.arc_count
               ? outgoing - posted
-              : outgoing *
-                  route.arcs[arc].fraction.numerical_value_in (mp_units::one);
+              : outgoing * route.arcs[arc].fraction.numerical_value_in (one);
           incoming[route.arcs[arc].receiver.value] += share;
           posted += share;
         }
@@ -425,59 +456,61 @@ namespace moppe::terrain {
       }
 
       if (route.empty ()) {
-        result.deposited[cell] = sediment_volume_from (incoming[cell]);
+        result.deposited[cell] = incoming[cell];
         deposited_total += incoming[cell];
         continue;
       }
 
-      const double capacity = sediment_volume_value (transport_capacity[cell]);
-      double spare_capacity = std::max (0.0, capacity - incoming[cell]);
-      const double cover = available_cover.empty ()
-                             ? 0.0
-                             : sediment_volume_value (available_cover[cell]);
-      const double entrained_cover = std::min (cover, spare_capacity);
+      const SedimentVolume capacity = transport_capacity[cell];
+      SedimentVolume spare_capacity =
+        std::max (SedimentVolume::zero (), capacity - incoming[cell]);
+      const SedimentVolume cover = available_cover.empty ()
+                                     ? SedimentVolume::zero ()
+                                     : available_cover[cell];
+      const SedimentVolume entrained_cover = std::min (cover, spare_capacity);
       spare_capacity -= entrained_cover;
-      const double bedrock_detachment = std::min (
-        sediment_volume_value (potential_detachment[cell]), spare_capacity);
-      const double local_detachment = entrained_cover + bedrock_detachment;
-      const double available = incoming[cell] + local_detachment;
-      const double deposited =
-        std::min (std::max (0.0, available - capacity),
-                  sediment_volume_value (maximum_deposition[cell]));
-      const double outgoing = available - deposited;
+      const SedimentVolume bedrock_detachment =
+        std::min (potential_detachment[cell], spare_capacity);
+      const SedimentVolume local_detachment =
+        entrained_cover + bedrock_detachment;
+      const SedimentVolume available = incoming[cell] + local_detachment;
+      const SedimentVolume deposited =
+        std::min (std::max (SedimentVolume::zero (), available - capacity),
+                  maximum_deposition[cell]);
+      const SedimentVolume outgoing = available - deposited;
 
-      result.detached[cell] = sediment_volume_from (local_detachment);
-      result.entrained_cover[cell] = sediment_volume_from (entrained_cover);
-      result.bedrock_detached[cell] = sediment_volume_from (bedrock_detachment);
-      result.deposited[cell] = sediment_volume_from (deposited);
-      result.outgoing[cell] = sediment_volume_from (outgoing);
+      result.detached[cell] = local_detachment;
+      result.entrained_cover[cell] = entrained_cover;
+      result.bedrock_detached[cell] = bedrock_detachment;
+      result.deposited[cell] = deposited;
+      result.outgoing[cell] = outgoing;
       detached_total += local_detachment;
       entrained_cover_total += entrained_cover;
       bedrock_detached_total += bedrock_detachment;
       deposited_total += deposited;
 
-      double posted = 0.0;
+      SedimentVolume posted = SedimentVolume::zero ();
       for (std::uint8_t arc = 0; arc < route.arc_count; ++arc) {
         // Make the final posting the exact remainder. Independently rounding
         // every arc would slowly manufacture or destroy sediment at splits.
-        const double share =
+        const SedimentVolume share =
           arc + 1 == route.arc_count
             ? outgoing - posted
-            : outgoing *
-                route.arcs[arc].fraction.numerical_value_in (mp_units::one);
+            : outgoing * route.arcs[arc].fraction.numerical_value_in (one);
         incoming[route.arcs[arc].receiver.value] += share;
         posted += share;
       }
     }
 
-    result.detached_total = sediment_volume_from (detached_total);
-    result.entrained_cover_total = sediment_volume_from (entrained_cover_total);
-    result.bedrock_detached_total =
-      sediment_volume_from (bedrock_detached_total);
-    result.deposited_total = sediment_volume_from (deposited_total);
-    result.exported_to_ocean = sediment_volume_from (exported_total);
+    result.detached_total = detached_total;
+    result.entrained_cover_total = entrained_cover_total;
+    result.bedrock_detached_total = bedrock_detached_total;
+    result.deposited_total = deposited_total;
+    result.exported_to_ocean = exported_total;
     result.balance_residual =
-      (detached_total - deposited_total - exported_total) * cubic_metre;
+      (detached_total - deposited_total - exported_total)
+        .numerical_value_in (cubic_metre) *
+      cubic_metre;
     return result;
   }
 
@@ -497,24 +530,21 @@ namespace moppe::terrain {
       throw std::invalid_argument (
         "valley deposition inputs do not match terrain domain");
 
-    const double cell_area_m2 = domain.cell_area ().numerical_value_in (
-      mp_units::si::metre * mp_units::si::metre);
-    const float spacing_x_m =
-      domain.spacing_x ().numerical_value_in (mp_units::si::metre);
-    const float spacing_z_m =
-      domain.spacing_z ().numerical_value_in (mp_units::si::metre);
-    const float along_radius_m = 0.75f * cr::hypot (spacing_x_m, spacing_z_m);
-    const float minimum_wall_relief_m = std::max (
-      0.0f,
-      parameters.minimum_wall_relief.numerical_value_in (mp_units::si::metre));
-    const float wall_relief_ratio = std::max (
-      0.0f,
-      parameters.wall_relief_per_width.numerical_value_in (mp_units::one));
+    const WorkingArea cell_area = domain.cell_area ();
+    const meters_t spacing_x = domain.spacing_x ();
+    const meters_t spacing_z = domain.spacing_z ();
+    const meters_t along_radius =
+      0.75f * cr::hypot (meters_value (spacing_x), meters_value (spacing_z)) *
+      u::m;
+    const meters_t minimum_wall_relief =
+      std::max (meters_t::zero (), parameters.minimum_wall_relief);
+    const proportion_t wall_relief_ratio =
+      std::max (proportion_t::zero (), parameters.wall_relief_per_width);
 
     LateralDepositionResult result { .deposited = std::vector<SedimentVolume> (
                                        count, SedimentVolume::zero ()) };
-    std::vector<double> distributed_m3 (count);
-    std::vector<double> working_height_m (count);
+    std::vector<SedimentVolume> distributed (count, SedimentVolume::zero ());
+    std::vector<WorkingElevation> working_heights (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
       if (!mp_units::isfinite (elevations[cell].delta_from_zero ()) ||
           !mp_units::isfinite (contributing_areas[cell]) ||
@@ -522,88 +552,93 @@ namespace moppe::terrain {
           !mp_units::isfinite (channel_tangents[cell].magnitude ()))
         throw std::invalid_argument (
           "valley deposition readings must be finite and non-negative");
-      const double volume_m3 =
-        sediment_volume_value (centerline_deposition[cell]);
-      if (!std::isfinite (volume_m3) || volume_m3 < 0.0)
+      if (!finite_non_negative (centerline_deposition[cell]))
         throw std::invalid_argument (
           "valley deposition volumes must be finite and non-negative");
-      working_height_m[cell] = surface_elevation_value (elevations[cell]);
+      working_heights[cell] = elevations[cell];
     }
 
     struct Candidate {
       std::size_t cell;
-      double height_m;
+      WorkingElevation height;
     };
-    double input_total_m3 = 0.0;
-    double output_total_m3 = 0.0;
+    SedimentVolume input_total = SedimentVolume::zero ();
+    SedimentVolume output_total = SedimentVolume::zero ();
     // One footprint and one list of candidates serve every source.
     std::vector<std::size_t> footprint;
     std::vector<Candidate> candidates;
     for (std::size_t source = 0; source < count; ++source) {
-      const double source_volume_m3 =
-        sediment_volume_value (centerline_deposition[source]);
-      input_total_m3 += source_volume_m3;
-      if (source_volume_m3 == 0.0)
+      const SedimentVolume source_volume = centerline_deposition[source];
+      input_total += source_volume;
+      if (source_volume == SedimentVolume::zero ())
         continue;
       if (ocean[source])
         throw std::invalid_argument (
           "valley deposition cannot originate in the ocean");
 
-      Vec3 tangent =
-        channel_tangents[source].numerical_value_in (mp_units::one);
-      float tangent_length = cr::hypot (tangent[0], tangent[2]);
-      if (tangent_length <= 1e-6f) {
+      plan_direction_t tangent =
+        plan (channel_tangents[source].numerical_value_in (one)) *
+        direction[one];
+      magnitude_t tangent_length =
+        hypot (tangent.numerical_value_ref_in (one)) * one;
+      if (tangent_length <= 1e-6f * one) {
         const CellIndex source_cell { static_cast<std::uint32_t> (source) };
         const FractionalFlowRoute& route = flow.route (source_cell);
         if (!route.empty ()) {
           const TerrainIndex from = domain.index (source);
           const TerrainIndex to = domain.index (route.arcs[0].receiver.value);
-          tangent[0] = minimum_image_delta (
-            (static_cast<float> (to.column) -
-             static_cast<float> (from.column)) *
-              spacing_x_m,
-            domain.period_x ().numerical_value_in (mp_units::si::metre));
-          tangent[2] = minimum_image_delta (
+          const meters_t step_x =
+            minimum_image_delta ((static_cast<float> (to.column) -
+                                  static_cast<float> (from.column)) *
+                                   spacing_x,
+                                 domain.period_x ());
+          const meters_t step_z = minimum_image_delta (
             (static_cast<float> (to.row) - static_cast<float> (from.row)) *
-              spacing_z_m,
-            domain.period_z ().numerical_value_in (mp_units::si::metre));
-          tangent_length = cr::hypot (tangent[0], tangent[2]);
+              spacing_z,
+            domain.period_z ());
+          tangent = Vec2 (meters_value (step_x), meters_value (step_z)) *
+                    direction[one];
+          tangent_length = hypot (tangent.numerical_value_ref_in (one)) * one;
         }
       }
-      if (tangent_length <= 1e-6f) {
-        tangent = Vec3 (0.0f, 0.0f, 1.0f);
+      if (tangent_length <= 1e-6f * one) {
+        tangent = Vec2 (0.0f, 1.0f) * direction[one];
       } else {
-        tangent /= tangent_length;
+        tangent /= tangent_length.numerical_value_in (one);
       }
+      const magnitude_t tangent_x =
+        tangent.numerical_value_ref_in (one).x () * one;
+      const magnitude_t tangent_z =
+        tangent.numerical_value_ref_in (one).z () * one;
 
       const square_meters_t area = square_meters_t (contributing_areas[source]);
-      const float width_m = alluvial_valley_width (area, parameters)
-                              .numerical_value_in (mp_units::si::metre);
-      const float half_width_m = 0.5f * width_m;
-      const float wall_relief_m =
-        minimum_wall_relief_m + wall_relief_ratio * width_m;
-      const float search_radius_m = half_width_m + along_radius_m;
-      const int radius_x =
-        static_cast<int> (std::ceil (search_radius_m / spacing_x_m));
-      const int radius_z =
-        static_cast<int> (std::ceil (search_radius_m / spacing_z_m));
+      const meters_t width = alluvial_valley_width (area, parameters);
+      const meters_t half_width = 0.5f * width;
+      const meters_t wall_relief =
+        minimum_wall_relief +
+        wall_relief_ratio.numerical_value_in (one) * width;
+      const meters_t search_radius = half_width + along_radius;
+      const int radius_x = static_cast<int> (
+        std::ceil ((search_radius / spacing_x).numerical_value_in (one)));
+      const int radius_z = static_cast<int> (
+        std::ceil ((search_radius / spacing_z).numerical_value_in (one)));
       const TerrainIndex center = domain.index (source);
-      const double ceiling_m = working_height_m[source] + wall_relief_m;
+      const WorkingElevation ceiling = working_heights[source] + wall_relief;
 
       footprint.clear ();
       for (int dz = -radius_z; dz <= radius_z; ++dz)
         for (int dx = -radius_x; dx <= radius_x; ++dx) {
-          const float offset_x_m = static_cast<float> (dx) * spacing_x_m;
-          const float offset_z_m = static_cast<float> (dz) * spacing_z_m;
-          const float along_m =
-            std::fabs (offset_x_m * tangent[0] + offset_z_m * tangent[2]);
-          const float across_m =
-            std::fabs (-offset_x_m * tangent[2] + offset_z_m * tangent[0]);
-          if (along_m > along_radius_m || across_m > half_width_m)
+          const meters_t offset_x = static_cast<float> (dx) * spacing_x;
+          const meters_t offset_z = static_cast<float> (dz) * spacing_z;
+          const meters_t along =
+            mp_units::abs (offset_x * tangent_x + offset_z * tangent_z);
+          const meters_t across =
+            mp_units::abs (-offset_x * tangent_z + offset_z * tangent_x);
+          if (along > along_radius || across > half_width)
             continue;
           const TerrainIndex site = domain.shifted (center, dx, dz);
           const std::size_t cell = domain.offset (site);
-          if (!ocean[cell] && working_height_m[cell] <= ceiling_m)
+          if (!ocean[cell] && working_heights[cell] <= ceiling)
             footprint.push_back (cell);
         }
       std::ranges::sort (footprint);
@@ -614,46 +649,48 @@ namespace moppe::terrain {
 
       candidates.clear ();
       for (const std::size_t cell : footprint)
-        candidates.push_back ({ cell, working_height_m[cell] });
+        candidates.push_back ({ cell, working_heights[cell] });
       std::ranges::sort (
         candidates, [] (const Candidate& a, const Candidate& b) {
-          return a.height_m != b.height_m ? a.height_m < b.height_m
-                                          : a.cell < b.cell;
+          return a.height != b.height ? a.height < b.height : a.cell < b.cell;
         });
 
-      double remaining_m3 = source_volume_m3;
+      SedimentVolume remaining = source_volume;
       std::size_t active = 1;
-      double floor_level_m = candidates.front ().height_m;
+      WorkingElevation floor_level = candidates.front ().height;
       while (active < candidates.size ()) {
-        const double next_level_m = candidates[active].height_m;
-        const double needed_m3 = (next_level_m - floor_level_m) * cell_area_m2 *
-                                 static_cast<double> (active);
-        if (remaining_m3 < needed_m3)
+        const WorkingElevation next_level = candidates[active].height;
+        const SedimentVolume needed =
+          sediment_volume_of ((next_level - floor_level) * cell_area *
+                              static_cast<double> (active));
+        if (remaining < needed)
           break;
-        remaining_m3 -= needed_m3;
-        floor_level_m = next_level_m;
+        remaining -= needed;
+        floor_level = next_level;
         ++active;
       }
-      floor_level_m +=
-        remaining_m3 / (cell_area_m2 * static_cast<double> (active));
+      floor_level +=
+        thickness_over (remaining, cell_area * static_cast<double> (active));
 
-      double posted_m3 = 0.0;
+      SedimentVolume posted = SedimentVolume::zero ();
       for (std::size_t position = 0; position < active; ++position) {
         const std::size_t cell = candidates[position].cell;
-        const double share_m3 =
+        const SedimentVolume share =
           position + 1 == active
-            ? source_volume_m3 - posted_m3
-            : (floor_level_m - candidates[position].height_m) * cell_area_m2;
-        distributed_m3[cell] += share_m3;
-        working_height_m[cell] += share_m3 / cell_area_m2;
-        posted_m3 += share_m3;
+            ? source_volume - posted
+            : sediment_volume_of ((floor_level - candidates[position].height) *
+                                  cell_area);
+        distributed[cell] += share;
+        working_heights[cell] += thickness_over (share, cell_area);
+        posted += share;
       }
-      output_total_m3 += posted_m3;
+      output_total += posted;
     }
 
-    for (std::size_t cell = 0; cell < count; ++cell)
-      result.deposited[cell] = sediment_volume_from (distributed_m3[cell]);
-    result.balance_residual = (input_total_m3 - output_total_m3) * cubic_metre;
+    result.deposited = std::move (distributed);
+    result.balance_residual =
+      (input_total - output_total).numerical_value_in (cubic_metre) *
+      cubic_metre;
     return result;
   }
 
@@ -681,101 +718,110 @@ namespace moppe::terrain {
         std::vector<SedimentVolume> (count, SedimentVolume::zero ()),
       .deposited = std::vector<SedimentVolume> (count, SedimentVolume::zero ())
     };
-    std::vector<double> deposited_m3 (count);
-    std::vector<double> remaining_capacity_m3 (count);
-    std::vector<double> body_load_m3 (census.domain ().size ());
-    std::vector<double> body_capacity_m3 (census.domain ().size ());
+    const SedimentVolume none = SedimentVolume::zero ();
+    const SedimentVolume negligible = 1e-12 * sediment_volume[cubic_metre];
+    std::vector<SedimentVolume> deposited (count, none);
+    std::vector<SedimentVolume> remaining_capacity (count, none);
+    std::vector<SedimentVolume> body_load (census.domain ().size (), none);
+    std::vector<SedimentVolume> body_capacity (census.domain ().size (), none);
     std::vector<std::vector<std::size_t>> body_cells (census.domain ().size ());
-    const double cell_area_m2 = domain.cell_area ().numerical_value_in (
-      mp_units::si::metre * mp_units::si::metre);
-    const float spacing_x_m =
-      domain.spacing_x ().numerical_value_in (mp_units::si::metre);
-    const float spacing_z_m =
-      domain.spacing_z ().numerical_value_in (mp_units::si::metre);
-    const float cell_diagonal_m = cr::hypot (spacing_x_m, spacing_z_m);
+    const WorkingArea cell_area = domain.cell_area ();
+    const meters_t spacing_x = domain.spacing_x ();
+    const meters_t spacing_z = domain.spacing_z ();
+    const meters_t cell_diagonal =
+      cr::hypot (meters_value (spacing_x), meters_value (spacing_z)) * u::m;
     const std::size_t no_footprint_position =
       std::numeric_limits<std::size_t>::max ();
     std::vector<std::size_t> footprint_position (count, no_footprint_position);
 
-    double input_m3 = 0.0;
-    double dry_m3 = 0.0;
-    double lake_m3 = 0.0;
-    double ocean_m3 = 0.0;
-    double exported_m3 = 0.0;
+    SedimentVolume input = none;
+    SedimentVolume dry = none;
+    SedimentVolume lake = none;
+    SedimentVolume ocean = none;
+    SedimentVolume exported = none;
     for (std::size_t cell = 0; cell < count; ++cell) {
-      const double load_m3 =
-        sediment_volume_value (centerline_deposition[cell]);
-      const double maximum_m3 =
-        sediment_volume_value (maximum_deposition[cell]);
-      if (!std::isfinite (load_m3) || load_m3 < 0.0 ||
-          !std::isfinite (maximum_m3) || maximum_m3 < 0.0)
+      const SedimentVolume load = centerline_deposition[cell];
+      const SedimentVolume maximum = maximum_deposition[cell];
+      if (!finite_non_negative (load) || !finite_non_negative (maximum))
         throw std::invalid_argument (
           "standing-water deposition volumes must be finite and non-negative");
-      input_m3 += load_m3;
+      input += load;
       const WaterBodyId body =
         census.body_at (CellIndex { static_cast<std::uint32_t> (cell) });
       if (body != LakeCensus::dry) {
-        const double accommodation_m3 =
-          static_cast<double> (flood.water_depth_m (cell)) * cell_area_m2;
-        remaining_capacity_m3[cell] = std::min (accommodation_m3, maximum_m3);
+        const meters_f64_t depth = flood.water_depths ()[cell];
+        const SedimentVolume accommodation =
+          sediment_volume_of (depth * cell_area);
+        remaining_capacity[cell] = std::min (accommodation, maximum);
       }
       if (body == LakeCensus::dry) {
         result.dry_centerline[cell] = centerline_deposition[cell];
-        dry_m3 += load_m3;
+        dry += load;
         continue;
       }
       if (!flood.ocean[cell]) {
-        body_load_m3[body.value] += load_m3;
-        body_capacity_m3[body.value] += remaining_capacity_m3[cell];
+        body_load[body.value] += load;
+        body_capacity[body.value] += remaining_capacity[cell];
         body_cells[body.value].push_back (cell);
         continue;
       }
-      if (load_m3 == 0.0)
+      if (load == none)
         continue;
 
-      Vec3 tangent = channel_tangents[cell].numerical_value_in (mp_units::one);
-      const float length = cr::hypot (tangent[0], tangent[2]);
-      tangent = length > 1e-6f ? tangent / length : Vec3 (0.0f, 0.0f, 1.0f);
-      const float width_m =
-        alluvial_valley_width (square_meters_t (contributing_areas[cell]),
-                               parameters)
-          .numerical_value_in (mp_units::si::metre);
-      const float search_m = width_m + cell_diagonal_m;
-      const int radius_x =
-        static_cast<int> (std::ceil (search_m / spacing_x_m));
-      const int radius_z =
-        static_cast<int> (std::ceil (search_m / spacing_z_m));
+      plan_direction_t tangent =
+        plan (channel_tangents[cell].numerical_value_in (one)) * direction[one];
+      const magnitude_t length =
+        hypot (tangent.numerical_value_ref_in (one)) * one;
+      tangent = length > 1e-6f * one ? tangent / length.numerical_value_in (one)
+                                     : Vec2 (0.0f, 1.0f) * direction[one];
+      const magnitude_t tangent_x =
+        tangent.numerical_value_ref_in (one).x () * one;
+      const magnitude_t tangent_z =
+        tangent.numerical_value_ref_in (one).z () * one;
+      const meters_t width = alluvial_valley_width (
+        square_meters_t (contributing_areas[cell]), parameters);
+      const meters_t search = width + cell_diagonal;
+      const int radius_x = static_cast<int> (
+        std::ceil ((search / spacing_x).numerical_value_in (one)));
+      const int radius_z = static_cast<int> (
+        std::ceil ((search / spacing_z).numerical_value_in (one)));
       const TerrainIndex center = domain.index (cell);
       struct MouthCell {
         std::size_t cell;
-        double weight;
+        SedimentVolume weight;
       };
       std::vector<MouthCell> footprint;
       for (int dz = -radius_z; dz <= radius_z; ++dz)
         for (int dx = -radius_x; dx <= radius_x; ++dx) {
-          const float offset_x_m = static_cast<float> (dx) * spacing_x_m;
-          const float offset_z_m = static_cast<float> (dz) * spacing_z_m;
-          const float along_m =
-            offset_x_m * tangent[0] + offset_z_m * tangent[2];
-          if (along_m < -cell_diagonal_m || along_m > width_m)
+          const meters_t offset_x = static_cast<float> (dx) * spacing_x;
+          const meters_t offset_z = static_cast<float> (dz) * spacing_z;
+          const meters_t along = offset_x * tangent_x + offset_z * tangent_z;
+          if (along < -cell_diagonal || along > width)
             continue;
-          const float progress =
-            std::clamp (along_m / std::max (width_m, 1e-6f), 0.0f, 1.0f);
-          const float half_width_m =
-            0.5f * width_m * std::lerp (0.25f, 1.0f, progress);
-          const float across_m =
-            std::fabs (-offset_x_m * tangent[2] + offset_z_m * tangent[0]);
-          if (across_m > half_width_m)
+          const blend_weight_t progress =
+            std::clamp (
+              (along / std::max (width, 1e-6f * u::m)).numerical_value_in (one),
+              0.0f,
+              1.0f) *
+            blend_weight[one];
+          const meters_t half_width =
+            0.5f * width *
+            std::lerp (0.25f, 1.0f, progress.numerical_value_in (one));
+          const meters_t across =
+            mp_units::abs (-offset_x * tangent_z + offset_z * tangent_x);
+          if (across > half_width)
             continue;
           const std::size_t destination =
             domain.offset (domain.shifted (center, dx, dz));
           if (!flood.ocean[destination])
             continue;
-          if (remaining_capacity_m3[destination] <= 0.0)
+          if (remaining_capacity[destination] <= none)
             continue;
-          const double distance_m = cr::hypot (offset_x_m, offset_z_m);
-          const double weight = remaining_capacity_m3[destination] *
-                                (1.0 - 0.5 * distance_m / search_m);
+          const meters_f64_t distance =
+            cr::hypot (meters_value (offset_x), meters_value (offset_z)) * u::m;
+          const SedimentVolume weight =
+            remaining_capacity[destination] *
+            (1.0 - (0.5 * distance / search).numerical_value_in (one));
           std::size_t& position = footprint_position[destination];
           if (position == no_footprint_position) {
             position = footprint.size ();
@@ -788,76 +834,77 @@ namespace moppe::terrain {
       for (const MouthCell& destination : footprint)
         footprint_position[destination.cell] = no_footprint_position;
 
-      double remaining_m3 = load_m3;
-      while (remaining_m3 > 1e-12 && !footprint.empty ()) {
-        const double weight_total =
-          std::accumulate (footprint.begin (),
-                           footprint.end (),
-                           0.0,
-                           [] (double sum, const MouthCell& destination) {
-                             return sum + destination.weight;
-                           });
-        if (weight_total <= 0.0)
+      SedimentVolume remaining = load;
+      while (remaining > negligible && !footprint.empty ()) {
+        const SedimentVolume weight_total = std::accumulate (
+          footprint.begin (),
+          footprint.end (),
+          none,
+          [] (SedimentVolume sum, const MouthCell& destination) {
+            return sum + destination.weight;
+          });
+        if (weight_total <= none)
           break;
-        const double pass_load_m3 = remaining_m3;
-        double posted_m3 = 0.0;
+        const SedimentVolume pass_load = remaining;
+        SedimentVolume posted = none;
         std::vector<MouthCell> still_open;
         for (const MouthCell& destination : footprint) {
-          const double requested_m3 =
-            pass_load_m3 * destination.weight / weight_total;
-          const double share_m3 =
-            std::min (requested_m3, remaining_capacity_m3[destination.cell]);
-          deposited_m3[destination.cell] += share_m3;
-          remaining_capacity_m3[destination.cell] -= share_m3;
-          posted_m3 += share_m3;
-          if (remaining_capacity_m3[destination.cell] > 1e-12)
+          const SedimentVolume requested =
+            sediment_volume_of (pass_load * destination.weight / weight_total);
+          const SedimentVolume share =
+            std::min (requested, remaining_capacity[destination.cell]);
+          deposited[destination.cell] += share;
+          remaining_capacity[destination.cell] -= share;
+          posted += share;
+          if (remaining_capacity[destination.cell] > negligible)
             still_open.push_back (destination);
         }
-        if (posted_m3 <= 1e-12)
+        if (posted <= negligible)
           break;
-        remaining_m3 -= posted_m3;
+        remaining -= posted;
         footprint = std::move (still_open);
       }
-      ocean_m3 += load_m3 - remaining_m3;
-      exported_m3 += remaining_m3;
+      ocean += load - remaining;
+      exported += remaining;
     }
 
     for (std::size_t body = 0; body < body_cells.size (); ++body) {
-      const double load_m3 = body_load_m3[body];
-      if (load_m3 == 0.0)
+      const SedimentVolume load = body_load[body];
+      if (load == none)
         continue;
-      const double capacity_m3 = body_capacity_m3[body];
-      if (capacity_m3 <= 0.0) {
-        exported_m3 += load_m3;
+      const SedimentVolume capacity = body_capacity[body];
+      if (capacity <= none) {
+        exported += load;
         continue;
       }
-      const double stored_m3 = std::min (load_m3, capacity_m3);
-      double posted_m3 = 0.0;
+      const SedimentVolume stored = std::min (load, capacity);
+      SedimentVolume posted = none;
       for (std::size_t position = 0; position < body_cells[body].size ();
            ++position) {
         const std::size_t cell = body_cells[body][position];
-        const double local_capacity_m3 = remaining_capacity_m3[cell];
-        const double share_m3 = position + 1 == body_cells[body].size ()
-                                  ? stored_m3 - posted_m3
-                                  : stored_m3 * local_capacity_m3 / capacity_m3;
-        deposited_m3[cell] += share_m3;
-        remaining_capacity_m3[cell] =
-          std::max (0.0, remaining_capacity_m3[cell] - share_m3);
-        posted_m3 += share_m3;
+        const SedimentVolume local_capacity = remaining_capacity[cell];
+        const SedimentVolume share =
+          position + 1 == body_cells[body].size ()
+            ? stored - posted
+            : sediment_volume_of (stored * local_capacity / capacity);
+        deposited[cell] += share;
+        remaining_capacity[cell] =
+          std::max (none, remaining_capacity[cell] - share);
+        posted += share;
       }
-      lake_m3 += posted_m3;
-      exported_m3 += load_m3 - posted_m3;
+      lake += posted;
+      exported += load - posted;
     }
 
-    double output_m3 = dry_m3 + exported_m3;
-    for (std::size_t cell = 0; cell < count; ++cell) {
-      result.deposited[cell] = sediment_volume_from (deposited_m3[cell]);
-      output_m3 += deposited_m3[cell];
-    }
-    result.lake_storage = sediment_volume_from (lake_m3);
-    result.ocean_mouth_storage = sediment_volume_from (ocean_m3);
-    result.exported = sediment_volume_from (exported_m3);
-    result.balance_residual = (input_m3 - output_m3) * cubic_metre;
+    SedimentVolume output = dry + exported;
+    for (std::size_t cell = 0; cell < count; ++cell)
+      output += deposited[cell];
+    result.deposited = std::move (deposited);
+    result.lake_storage = lake;
+    result.ocean_mouth_storage = ocean;
+    result.exported = exported;
+    result.balance_residual =
+      (input - output).numerical_value_in (cubic_metre) * cubic_metre;
     return result;
   }
 
@@ -888,19 +935,18 @@ namespace moppe::terrain {
       .deposited_thickness =
         std::vector<SedimentThickness> (count, SedimentThickness::zero ()),
     };
-    const double cell_area_m2 = domain.cell_area ().numerical_value_in (
-      mp_units::si::metre * mp_units::si::metre);
-    std::vector<double> height_m (count);
-    std::vector<double> sediment_m3 (count);
-    std::vector<double> gradient_x (count);
-    std::vector<double> gradient_z (count);
+    const WorkingArea cell_area = domain.cell_area ();
+    std::vector<WorkingElevation> levels (count);
+    std::vector<SedimentVolume> cover (count, SedimentVolume::zero ());
+    std::vector<SurfaceGradient> gradient_x (count);
+    std::vector<SurfaceGradient> gradient_z (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
-      height_m[cell] = surface_elevation_value (elevations[cell]);
-      sediment_m3[cell] =
-        sediment[cell].numerical_value_in (mp_units::si::metre) * cell_area_m2;
+      levels[cell] = elevations[cell];
+      cover[cell] = sediment_volume_of (sediment[cell] * cell_area);
     }
-    reconstruct_centered_gradients (domain, height_m, gradient_x, gradient_z);
+    reconstruct_centered_gradients (domain, levels, gradient_x, gradient_z);
 
+    const DiffusivityMultiplier linear = 1.0 * scale_factor[one];
     const std::size_t width = domain.width ();
     const std::size_t height = domain.height ();
     std::vector<std::uint8_t> row_nonlinear (height, 0);
@@ -917,11 +963,11 @@ namespace moppe::terrain {
                                          meters_t run) {
             if (fixed[other])
               return;
-            const double gradient = reconstructed_face_gradient (
-              height_m, gradient_x, gradient_z, cell, other, axis, run);
+            const GradientMagnitude gradient = reconstructed_face_gradient (
+              levels, gradient_x, gradient_z, cell, other, axis, run);
             if (hillslope_diffusivity_multiplier (
                   gradient, critical_gradient, maximum_diffusivity_multiplier) >
-                1.0)
+                linear)
               row_nonlinear[row] = 1;
           };
           inspect_face (row * width + next_column,
@@ -935,10 +981,12 @@ namespace moppe::terrain {
     });
     const bool nonlinear_flux_active = std::ranges::any_of (
       row_nonlinear, [] (std::uint8_t row) { return row != 0; });
-    const double stability_multiplier =
+    const DiffusivityMultiplier stability_multiplier =
       nonlinear_flux_active
-        ? maximum_diffusivity_multiplier.numerical_value_in (mp_units::one)
-        : 1.0;
+        ? static_cast<double> (
+            maximum_diffusivity_multiplier.numerical_value_in (one)) *
+            scale_factor[one]
+        : linear;
     const int sweep_count = hillslope_sweep_count (
       domain, duration, diffusivity, stability_multiplier);
     result.sweeps = iteration_count (sweep_count);
@@ -950,36 +998,40 @@ namespace moppe::terrain {
     // then each cell's four faces gathered in one order: every pass writes
     // only its own cells or faces, and the totals add by row, then rows in
     // order, so the sweep computes the same bits on any number of threads.
-    std::vector<double> flux_x (count);
-    std::vector<double> flux_z (count);
-    std::vector<double> row_bedrock_m3 (height);
-    std::vector<double> row_residual_m3 (height);
-    std::vector<double> row_transferred_m3 (height);
+    const SedimentVolume none = SedimentVolume::zero ();
+    std::vector<SedimentVolume> flux_x (count, none);
+    std::vector<SedimentVolume> flux_z (count, none);
+    std::vector<SedimentVolume> row_bedrock (height, none);
+    std::vector<SedimentVolume> row_residual (height, none);
+    std::vector<SedimentVolume> row_transferred (height, none);
     const auto face_flux = [&] (std::size_t first,
                                 std::size_t second,
                                 HillslopeFaceAxis axis,
                                 meters_t face_width,
-                                meters_t run) {
+                                meters_t run) -> SedimentVolume {
       if (fixed[first] || fixed[second])
-        return 0.0;
-      const double difference_m = height_m[first] - height_m[second];
-      if (difference_m == 0.0)
-        return 0.0;
-      const double gradient = reconstructed_face_gradient (
-        height_m, gradient_x, gradient_z, first, second, axis, run);
-      const double local_multiplier = hillslope_diffusivity_multiplier (
-        gradient, critical_gradient, maximum_diffusivity_multiplier);
-      const double conductance_m2 =
-        (local_multiplier * diffusivity * sweep_duration * face_width / run)
-          .numerical_value_in (mp_units::si::metre * mp_units::si::metre);
-      return difference_m * conductance_m2;
+        return none;
+      const WorkingElevationChange difference = levels[first] - levels[second];
+      if (difference == WorkingElevationChange::zero ())
+        return none;
+      const GradientMagnitude gradient = reconstructed_face_gradient (
+        levels, gradient_x, gradient_z, first, second, axis, run);
+      const DiffusivityMultiplier local_multiplier =
+        hillslope_diffusivity_multiplier (
+          gradient, critical_gradient, maximum_diffusivity_multiplier);
+      const WorkingArea conductance =
+        (local_multiplier.numerical_value_in (one) * diffusivity *
+         sweep_duration * face_width / run)
+          .numerical_value_in (u::m * u::m) *
+        (u::m * u::m);
+      return sediment_volume_of (difference * conductance);
     };
 
-    double transferred_m3 = 0.0;
-    double bedrock_detached_m3 = 0.0;
-    double residual_m3 = 0.0;
+    SedimentVolume transferred = none;
+    SedimentVolume bedrock_detached = none;
+    SedimentVolume residual = none;
     for (int sweep = 0; sweep < sweep_count; ++sweep) {
-      reconstruct_centered_gradients (domain, height_m, gradient_x, gradient_z);
+      reconstruct_centered_gradients (domain, levels, gradient_x, gradient_z);
       parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
         for (std::size_t row = first; row < last; ++row) {
           const std::size_t next_row = row + 1 == height ? 0 : row + 1;
@@ -1004,64 +1056,69 @@ namespace moppe::terrain {
       parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
         for (std::size_t row = first; row < last; ++row) {
           const std::size_t prior_row = row == 0 ? height - 1 : row - 1;
-          double bedrock_m3 = 0.0;
-          double row_net_m3 = 0.0;
-          double moved_m3 = 0.0;
+          SedimentVolume bedrock = none;
+          SedimentVolume row_net = none;
+          SedimentVolume moved = none;
           for (std::size_t column = 0; column < width; ++column) {
             const std::size_t prior_column =
               column == 0 ? width - 1 : column - 1;
             const std::size_t cell = row * width + column;
             // Positive flux on a face leaves its lower-indexed cell: the
             // left and upper faces bring it in, this cell's own take it out.
-            double net = 0.0;
-            double incoming = 0.0;
-            double outgoing = 0.0;
-            for (const double into : { flux_x[row * width + prior_column],
-                                       flux_z[prior_row * width + column],
-                                       -flux_x[cell],
-                                       -flux_z[cell] }) {
+            SedimentVolume net = none;
+            SedimentVolume incoming = none;
+            SedimentVolume outgoing = none;
+            for (const SedimentVolume into :
+                 { flux_x[row * width + prior_column],
+                   flux_z[prior_row * width + column],
+                   -flux_x[cell],
+                   -flux_z[cell] }) {
               net += into;
-              if (into > 0.0)
+              if (into > none)
                 incoming += into;
               else
                 outgoing -= into;
             }
-            const double cover_removed = std::min (sediment_m3[cell], outgoing);
-            bedrock_m3 += outgoing - cover_removed;
-            sediment_m3[cell] =
-              std::max (0.0, sediment_m3[cell] - cover_removed + incoming);
-            height_m[cell] += net / cell_area_m2;
+            const SedimentVolume cover_removed =
+              std::min (cover[cell], outgoing);
+            bedrock += outgoing - cover_removed;
+            cover[cell] =
+              std::max (none, cover[cell] - cover_removed + incoming);
+            levels[cell] += thickness_over (net, cell_area);
             result.eroded_thickness[cell] +=
-              static_cast<float> (outgoing / cell_area_m2) *
-              sediment_thickness[mp_units::si::metre];
+              static_cast<float> (
+                (outgoing / cell_area).numerical_value_in (u::m)) *
+              sediment_thickness[u::m];
             result.deposited_thickness[cell] +=
-              static_cast<float> (incoming / cell_area_m2) *
-              sediment_thickness[mp_units::si::metre];
-            row_net_m3 += net;
-            moved_m3 += outgoing;
+              static_cast<float> (
+                (incoming / cell_area).numerical_value_in (u::m)) *
+              sediment_thickness[u::m];
+            row_net += net;
+            moved += outgoing;
           }
-          row_bedrock_m3[row] = bedrock_m3;
-          row_residual_m3[row] = row_net_m3;
-          row_transferred_m3[row] = moved_m3;
+          row_bedrock[row] = bedrock;
+          row_residual[row] = row_net;
+          row_transferred[row] = moved;
         }
       });
       for (std::size_t row = 0; row < height; ++row) {
-        bedrock_detached_m3 += row_bedrock_m3[row];
-        residual_m3 += row_residual_m3[row];
-        transferred_m3 += row_transferred_m3[row];
+        bedrock_detached += row_bedrock[row];
+        residual += row_residual[row];
+        transferred += row_transferred[row];
       }
     }
 
     for (std::size_t cell = 0; cell < count; ++cell) {
-      result.heights[cell] = surface_elevation_point (
-        static_cast<float> (height_m[cell]) * mp_units::si::metre);
+      result.heights[cell] = mp_units::value_cast<float> (levels[cell]);
       result.sediment_thickness[cell] =
-        static_cast<float> (sediment_m3[cell] / cell_area_m2) *
-        sediment_thickness[mp_units::si::metre];
+        static_cast<float> (
+          (cover[cell] / cell_area).numerical_value_in (u::m)) *
+        sediment_thickness[u::m];
     }
-    result.transferred = sediment_volume_from (transferred_m3);
-    result.bedrock_detached = sediment_volume_from (bedrock_detached_m3);
-    result.balance_residual = residual_m3 * cubic_metre;
+    result.transferred = transferred;
+    result.bedrock_detached = bedrock_detached;
+    result.balance_residual =
+      residual.numerical_value_in (cubic_metre) * cubic_metre;
     return result;
   }
 }

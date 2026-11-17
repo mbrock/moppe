@@ -189,9 +189,11 @@ int main (int argc, char** argv) {
       argc > 3 ? static_cast<std::uint32_t> (std::stoul (argv[3])) : 123;
     // The game's default extent, as tools/bake-world bakes it, or as wide
     // as --world-size would make it.
-    const float across_m = argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f;
+    const meters_t across =
+      (argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f) * u::m;
     const WorldRecipe recipe = make_world_recipe (
-      spatial_extent_in_metres (Vec3 (across_m, 320.0f, across_m)),
+      spatial_extent_in_metres (
+        Vec3 (meters_value (across), 320.0f, meters_value (across))),
       resolution,
       Seed { seed },
       50.0f * u::m,
@@ -221,14 +223,13 @@ int main (int argc, char** argv) {
     // As the game does: give the rivers their beds, form the trails, then
     // find their network in the formed surface, so a world from saved land
     // is the same.
-    line (
-      "channels cut and fill",
-      hash_of (
-        map::form_river_channels (surface, recipe.water_datum ()).change_m));
+    line ("channels cut and fill",
+          hash_of (
+            map::form_river_channels (surface, recipe.water_datum ()).change));
     surface_lines ("channels", surface);
     line ("trails earthwork",
           hash_of (map::form_terrain_trails (surface, recipe.trail_formation ())
-                     .earthwork_delta_m));
+                     .earthwork_delta));
     surface_lines ("trails", surface);
     game::quantize_land (surface);
     surface_lines ("land", surface);
@@ -264,7 +265,7 @@ int main (int argc, char** argv) {
       std::filesystem::temp_directory_path () /
       ("world-fingerprint-" + std::to_string (seed) + "-" +
        std::to_string (resolution) + "-" +
-       std::to_string (static_cast<int> (across_m)));
+       std::to_string (static_cast<int> (meters_value (across))));
     std::filesystem::remove_all (directory);
     game::save_world_cache (*world, directory.string ());
     cost ("world cache saved");

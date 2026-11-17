@@ -24,9 +24,9 @@ namespace moppe::game {
     // A top that stands over everything around it, to be marked with its
     // height.
     struct Summit {
-      float x_m = 0.0f;
-      float z_m = 0.0f;
-      float height_m = 0.0f;
+      plan_position_t position = plan_position (0.0f, 0.0f);
+      // How far the top stands over the sea.
+      terrain::ElevationChange above_sea = 0.0f * u::m;
     };
 
     int size = 0;
@@ -34,10 +34,10 @@ namespace moppe::game {
     // blue, and an opaque alpha.
     std::vector<std::uint8_t> rgba;
     std::vector<Summit> summits;
-    float period_x_m = 0.0f;
-    float period_z_m = 0.0f;
-    float contour_interval_m = 10.0f;
-    float highest_m = 0.0f;
+    plan_extent_t period = plan_extent (0.0f * u::m, 0.0f * u::m);
+    terrain::ElevationChange contour_interval = 10.0f * u::m;
+    // The highest ground over the sea.
+    terrain::ElevationChange highest_above_sea = 0.0f * u::m;
   };
 
   // Paints the sheet `size` pixels square. The world is periodic, so the
@@ -49,7 +49,7 @@ namespace moppe::game {
                     const terrain::RiverNetwork& rivers,
                     const terrain::TrailNetwork& trails,
                     const terrain::RoadNetwork& roads,
-                    meters_t sea_level,
+                    terrain::SurfaceElevation sea_level,
                     int size);
 }
 

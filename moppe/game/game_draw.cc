@@ -30,7 +30,7 @@ namespace moppe {
       // takes it.
       const Mat4& m = camera.view;
       const ScanView view {
-        .eye = camera.position,
+        .eye = position_value (camera.position),
         .right = Vec3 (m.at (0, 0), m.at (1, 0), m.at (2, 0)),
         .up = Vec3 (m.at (0, 1), m.at (1, 1), m.at (2, 1)),
         .forward = Vec3 (-m.at (0, 2), -m.at (1, 2), -m.at (2, 2)),
@@ -48,42 +48,61 @@ namespace moppe {
     }
 
     render::FrameParams MoppeGame::frame_params_for (const FrameView& frame) {
-      render::FrameParams params;
-      params.view = frame.camera.view;
-      params.proj = frame.camera.projection;
-      params.camera_pos = frame.camera.position;
-      params.cam_right = frame.camera.right;
-      params.cam_up = frame.camera.up;
-      params.cam_forward = frame.camera.frame_forward;
-      params.clear_color = frame.lighting.clear_color;
-      params.fog_scale = attenuation_value (frame.lighting.fog_scale);
-      params.sun_dir = frame.lighting.sun_direction;
-      params.sun_diffuse = frame.lighting.sun_diffuse;
-      params.sun_specular = frame.lighting.sun_specular;
-      params.ambient = frame.lighting.ambient;
-      params.exposure_bias = frame.lighting.exposure_bias;
-      params.time = frame.lighting.time;
-      params.cloud_cover = frame.lighting.cloudiness.numerical_value_in (one);
-      params.mist = frame.lighting.mist;
-      params.rain = frame.lighting.rain;
-      params.sun_visibility = frame.lighting.sun_visibility;
-      params.sky_sun_dir = frame.lighting.sky_sun;
-      params.sky_moon_dir = frame.lighting.sky_moon;
-      params.sky_pole = frame.lighting.sky_pole;
-      params.sky_turn = frame.lighting.sky_turn;
-      params.moonlight = frame.lighting.moonlight;
-      params.lamp_pos = frame.lighting.lamp_position;
-      params.lamp_reach = frame.lighting.lamp_reach;
-      params.lamp_color = frame.lighting.lamp_color;
-      params.scene_scale = frame.graphics.scene_scale;
-      params.render_scale_override = frame.graphics.render_scale_override;
-      params.scene_megapixel_budget = frame.graphics.scene_megapixel_budget;
-      params.frame_rate_target = frame.graphics.target_frame_rate;
-      params.bloom = frame.graphics.bloom;
-      params.auto_exposure = frame.graphics.auto_exposure;
-      params.lens_flare = frame.graphics.lens_flare;
-      params.profile = true;
-      return params;
+      const FrameLighting& lighting = frame.lighting;
+      return {
+        .view = frame.camera.view,
+        .proj = frame.camera.projection,
+        .camera_pos = frame.camera.position,
+        .cam_right = frame.camera.right,
+        .cam_up = frame.camera.up,
+        .cam_forward = frame.camera.frame_forward,
+        .clear_color = lighting.clear_color,
+        .fog_scale = lighting.fog_scale,
+        .sun_dir = lighting.sun_direction,
+        .sun_diffuse = lighting.sun_diffuse,
+        .sun_specular = lighting.sun_specular,
+        .ambient = lighting.ambient,
+        .exposure_bias = lighting.exposure_bias,
+        .time = lighting.time,
+        .cloud_cover = quantity_cast<proportion> (lighting.cloudiness),
+        .mist = lighting.mist,
+        .rain = lighting.rain,
+        .sun_visibility = lighting.sun_visibility,
+        .sky_sun_dir = lighting.sky_sun,
+        .sky_moon_dir = lighting.sky_moon,
+        .sky_pole = lighting.sky_pole,
+        .sky_turn = lighting.sky_turn,
+        .moonlight = lighting.moonlight,
+        .lamp_pos = lighting.lamp_position,
+        .lamp_reach = lighting.lamp_reach,
+        .lamp_color = lighting.lamp_color,
+        .scene_scale = frame.graphics.scene_scale,
+        .render_scale_override = frame.graphics.render_scale_override,
+        .scene_megapixel_budget = frame.graphics.scene_megapixel_budget,
+        .frame_rate_target = frame.graphics.target_frame_rate,
+        .bloom = frame.graphics.bloom,
+        .auto_exposure = frame.graphics.auto_exposure,
+        .lens_flare = frame.graphics.lens_flare,
+        .profile = true,
+      };
+    }
+
+    // The ground the animals stand on: the land, or a floor built on it.
+    terrain::ElevationField MoppeGame::animal_ground () const {
+      return [this] (plan_position_t at) {
+        const float x = meters_value (x_of (at)), z = meters_value (z_of (at));
+        const float ground = world_ground ().height (Vec3 (x, 0.0f, z));
+        if (const std::optional<terrain::SurfaceElevation> floor =
+              floor_at (m_places.layout, at))
+          return terrain::surface_elevation_point (
+            std::max (terrain::surface_elevation_value (*floor), ground) *
+            u::m);
+        return terrain::surface_elevation_point (ground * u::m);
+      };
+    }
+
+    plan_extent_t MoppeGame::places_period () const {
+      return m_places.layout.period;
     }
 
     void MoppeGame::cast_actor_shadows (render::Renderer& r,
@@ -101,23 +120,15 @@ namespace moppe {
       m_places.landscape.cast_shadows (r, frame.camera.position);
       m_places.bus_view.cast_shadows (
         r, m_places.bus, bus_time (logic ()), frame.camera.position);
-      render_animals (
-        r,
-        session ().animals ().animals (),
-        [this] (float x, float z) {
-          const float ground = world_ground ().height (Vec3 (x, 0.0f, z));
-          if (const std::optional<float> floor =
-                floor_at (m_places.layout, x, z))
-            return std::max (*floor, ground);
-          return ground;
-        },
-        frame.camera.position,
-        frame.camera.frame_forward,
-        frame.lighting.time,
-        70.0f,
-        m_places.layout.period_x,
-        m_places.layout.period_z,
-        0);
+      render_animals (r,
+                      session ().animals ().animals (),
+                      animal_ground (),
+                      frame.camera.position,
+                      frame.camera.frame_forward,
+                      frame.lighting.time,
+                      70.0f * u::m,
+                      places_period (),
+                      0);
       m_signs.cast_shadow (r);
       if (m_company.companion)
         cast_fleet (r, m_caster_dl, m_company.companion->fleet);
@@ -127,12 +138,12 @@ namespace moppe {
     void MoppeGame::draw_world_layers (render::Renderer& r,
                                        const FrameView& frame) {
       const FrameVisibility& visibility = frame.visibility;
-      const Vec3& camera = frame.camera.position;
+      const Vec3& camera = position_value (frame.camera.position);
       if (m_graphics.terrain_shadows)
         cast_actor_shadows (r, frame);
       if (m_graphics.terrain_shadows)
         m_terrain.render_local_shadow (r,
-                                       position (camera),
+                                       frame.camera.position,
                                        frame.camera.frame_forward,
                                        frame.lighting.sun_direction,
                                        frame.lighting.sky_pole);
@@ -140,7 +151,7 @@ namespace moppe {
         render::SkyParams sky;
         sky.time = frame.lighting.time;
         sky.sun_height = frame.lighting.sun_height;
-        sky.cloudiness = frame.lighting.cloudiness.numerical_value_in (one);
+        sky.cloudiness = quantity_cast<proportion> (frame.lighting.cloudiness);
         sky.sun_dir = frame.lighting.sun_direction;
         sky.fog_color = frame.lighting.fog_color;
         r.draw_sky (sky);
@@ -155,10 +166,10 @@ namespace moppe {
 
       // Terrain first, chunk-culled to the haze horizon.
       m_terrain.render (r,
-                        camera,
+                        frame.camera.position,
                         frame.camera.projection * frame.camera.view,
                         frame.terrain_distance);
-      m_bridges.draw (r, camera);
+      m_bridges.draw (r, frame.camera.position);
 
       // Sky AFTER the terrain: depth testing kills the expensive
       // cloud shader wherever terrain covers it.
@@ -170,27 +181,26 @@ namespace moppe {
       // Gameplay movers part the generated field locally; cinematics keep
       // their authored floor undisturbed even though actors may exist.
       if (visibility.undergrowth) {
-        float interaction_radius = 0.0f;
+        meters_t interaction_radius = 0.0f * u::m;
         if (frame.scene == FrameSceneMode::Gameplay) {
           switch (frame.actors.active_mode.way) {
           case Doing::Way::foot:
-            interaction_radius = 0.55f;
+            interaction_radius = 0.55f * u::m;
             break;
           case Doing::Way::glider:
           case Doing::Way::passenger:
           case Doing::Way::bus:
             break;
           case Doing::Way::driving:
-            interaction_radius =
-              meters_value (machine_kind (frame.actors.active_mode.machine)
-                              .undergrowth_parting);
+            interaction_radius = machine_kind (frame.actors.active_mode.machine)
+                                   .undergrowth_parting;
             break;
           }
         }
         render::UndergrowthParams undergrowth {
           .time = frame.lighting.time,
-          .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
-          .reach = 64.0f,
+          .cloud_cover = quantity_cast<proportion> (frame.lighting.cloudiness),
+          .reach = 64.0f * u::m,
           .interaction_position = frame.hud.subject_position,
           .interaction_radius = interaction_radius
         };
@@ -198,36 +208,39 @@ namespace moppe {
         // nearest the camera, which can be walked into: out to the
         // plinth's edge, and over the barn's ramp; and round the barn
         // its yard is trodden short.
-        const Vec3 eye = frame.camera.position;
-        float nearest[2] = { 150.0f, 150.0f };
+        const Vec3& eye = camera;
+        meters_t nearest[2] = { 150.0f * u::m, 150.0f * u::m };
         for (const Farm& farm : m_places.layout.farms)
           for (const Building& b : farm.buildings) {
             if (farm.ruined || b.kind == Building::Kind::mill)
               continue;
-            Vec3 at = b.at;
-            at[0] +=
-              terrain::whole_periods (eye[0] - at[0], m_places.layout.period_x);
-            at[2] +=
-              terrain::whole_periods (eye[2] - at[2], m_places.layout.period_z);
-            const float d = std::hypot (at[0] - eye[0], at[2] - eye[2]);
+            Vec3 at = position_value (b.at);
+            at[0] += terrain::whole_periods (
+              eye[0] - at[0], plan_value (m_places.layout.period).x ());
+            at[2] += terrain::whole_periods (
+              eye[2] - at[2], plan_value (m_places.layout.period).z ());
+            const meters_t d =
+              std::hypot (at[0] - eye[0], at[2] - eye[2]) * u::m;
             const bool barn = b.kind == Building::Kind::barn;
             if (d >= nearest[barn])
               continue;
             nearest[barn] = d;
-            Vec3 f = b.forward;
+            Vec3 f = direction_value (b.forward);
             f[1] = 0.0f;
             f = normalized (f);
+            // Along the floor's length: its forward, turned a right angle.
+            const direction_t along = unit_direction (Vec3 (f[2], 0.0f, -f[0]));
             if (barn) {
-              undergrowth.yard_centre = at + f * 0.95f;
-              undergrowth.yard_along = Vec3 (f[2], 0.0f, -f[0]);
-              undergrowth.yard_half_x = 6.15f;
-              undergrowth.yard_half_z = 5.1f;
-              undergrowth.yard_margin = farm.kept ? 9.0f : 0.0f;
+              undergrowth.yard_centre = position (at + f * 0.95f);
+              undergrowth.yard_along = along;
+              undergrowth.yard_half_x = 6.15f * u::m;
+              undergrowth.yard_half_z = 5.1f * u::m;
+              undergrowth.yard_margin = (farm.kept ? 9.0f : 0.0f) * u::m;
             } else {
-              undergrowth.bare_centre = at;
-              undergrowth.bare_along = Vec3 (f[2], 0.0f, -f[0]);
-              undergrowth.bare_half_x = 3.75f;
-              undergrowth.bare_half_z = 2.75f;
+              undergrowth.bare_centre = position (at);
+              undergrowth.bare_along = along;
+              undergrowth.bare_half_x = 3.75f * u::m;
+              undergrowth.bare_half_z = 2.75f * u::m;
             }
           }
         r.draw_undergrowth (undergrowth);
@@ -238,7 +251,7 @@ namespace moppe {
       // cannot be painted over by the sward's own far density layer.
       m_boulders.draw (r);
       m_mushrooms.follow (logic ().m_basket);
-      m_mushrooms.draw (r, camera);
+      m_mushrooms.draw (r, position (camera));
       m_forest.draw (r);
     }
 
@@ -252,18 +265,23 @@ namespace moppe {
 
       // Soft blob shadows under the movers.
       draw_home_base_marker (m_world_dl);
-      m_signs.draw (
-        r, m_heads_up.hud.font (), m_place_names, [this] (float x, float z) {
-          return generated_world ().road_surface ().ground (
-            x, z, world_ground ().height (Vec3 (x, 0.0f, z)));
-        });
+      m_signs.draw (r,
+                    m_heads_up.hud.font (),
+                    m_place_names,
+                    [this] (const plan_position_t& at) {
+                      return generated_world ().road_surface ().ground (
+                        at, world_ground ().elevation (at));
+                    });
       if (actors.walker)
         m_blob.draw (m_world_dl,
                      surface (),
-                     actors.walker->position + Vec3 (0, 0.5f, 0),
-                     0.8f);
+                     actors.walker->position +
+                       quantity_cast<isq::position_vector> (
+                         displacement (Vec3 (0, 0.5f, 0))),
+                     0.8f * u::m);
       if (actors.glider)
-        m_blob.draw (m_world_dl, surface (), actors.glider->position, 3.4f);
+        m_blob.draw (
+          m_world_dl, surface (), actors.glider->position, 3.4f * u::m);
 
       // In helmet cam you ARE the rider: don't draw yourself. The other
       // player rides along in the jeep, or on the boat's fore seat.
@@ -319,40 +337,32 @@ namespace moppe {
                               frame.camera.position,
                               0xb05000,
                               bus_riders);
-      render_animals (
-        r,
-        session ().animals ().animals (),
-        [this] (float x, float z) {
-          const float ground = world_ground ().height (Vec3 (x, 0.0f, z));
-          if (const std::optional<float> floor =
-                floor_at (m_places.layout, x, z))
-            return std::max (*floor, ground);
-          return ground;
-        },
-        frame.camera.position,
-        frame.camera.frame_forward,
-        frame.lighting.time,
-        450.0f,
-        m_places.layout.period_x,
-        m_places.layout.period_z,
-        0x200000);
+      render_animals (r,
+                      session ().animals ().animals (),
+                      animal_ground (),
+                      frame.camera.position,
+                      frame.camera.frame_forward,
+                      frame.lighting.time,
+                      450.0f * u::m,
+                      places_period (),
+                      0x200000);
       render_birds (r,
                     session ().hens ().birds (),
-                    frame.camera.position,
-                    frame.camera.frame_forward,
-                    frame.lighting.time,
+                    position_value (frame.camera.position),
+                    direction_value (frame.camera.frame_forward),
+                    seconds_value (frame.lighting.time),
                     90.0f,
-                    m_places.layout.period_x,
-                    m_places.layout.period_z,
+                    plan_value (m_places.layout.period).x (),
+                    plan_value (m_places.layout.period).z (),
                     0x300000);
       draw_nest_eggs (m_world_dl,
                       m_places.nests,
                       logic ().m_nests,
-                      frame.camera.position,
-                      m_places.layout.period_x,
-                      m_places.layout.period_z);
+                      position_value (frame.camera.position),
+                      plan_value (m_places.layout.period).x (),
+                      plan_value (m_places.layout.period).z ());
       if (actors.walker && lying_down ())
-        draw_sleeper (m_world_dl, helmet, frame.lighting.time);
+        draw_sleeper (m_world_dl, helmet, seconds_value (frame.lighting.time));
       else if (actors.walker && !helmet)
         render_walker (m_world_dl,
                        *actors.walker,
@@ -369,15 +379,18 @@ namespace moppe {
         if (age >= 0.0f && age < 0.45f) {
           const float t = age / 0.45f;
           MushroomSite rising = m_mushrooms.site (basket.picked.back ());
+          const Vec3& walker_at = position_value (actors.walker->position);
           rising.base = m_mushrooms.base_near (basket.picked.back (),
                                                actors.walker->position);
-          const Vec3 to = actors.walker->position +
-                          normalized (actors.walker->heading) * 0.2f +
-                          Vec3 (0, 0.55f, 0);
-          rising.base = rising.base + (to - rising.base) * t +
-                        Vec3 (0, 0.35f * std::sin (PI * t), 0);
+          const Vec3 to =
+            walker_at +
+            normalized (direction_value (actors.walker->heading)) * 0.2f +
+            Vec3 (0, 0.55f, 0);
+          rising.base = position (position_value (rising.base) +
+                                  (to - position_value (rising.base)) * t +
+                                  Vec3 (0, 0.35f * std::sin (PI * t), 0));
           rising.scale *= 1.0f - 0.5f * t;
-          rising.yaw += 3.0f * t;
+          rising.yaw += 3.0f * t * heading[u::rad];
           m_world_dl.state (render::DrawState ());
           m_world_dl.lit (true);
           m_world_dl.fogged (true);
@@ -446,7 +459,7 @@ namespace moppe {
     void MoppeGame::draw_water_surfaces (render::Renderer& r,
                                          const FrameView& frame) {
       const FrameVisibility& visibility = frame.visibility;
-      const Vec3& camera = frame.camera.position;
+      const Vec3& camera = position_value (frame.camera.position);
 
       // The lab keeps the game's painted water while the map is the game's
       // own; a rebuilt map invalidates the water sheets, so they disappear
@@ -455,18 +468,19 @@ namespace moppe {
         render::OceanParams ocean;
         ocean.time = frame.lighting.time;
         ocean.fog_color = frame.lighting.fog_color;
-        ocean.fog_scale = attenuation_value (frame.lighting.fog_scale);
+        ocean.fog_scale = frame.lighting.fog_scale;
         const Vec3& world_extent = extent_value (world ().map_size);
         const Vec3 center (0.5f * world_extent[0], 0, 0.5f * world_extent[2]);
-        ocean.world_offset[0] = camera[0] - center[0];
-        ocean.world_offset[2] = camera[2] - center[2];
+        // The camera from the world's middle, seen from above.
+        ocean.world_offset = displacement (
+          Vec3 (camera[0] - center[0], 0.0f, camera[2] - center[2]));
         r.draw_ocean (ocean);
       }
 
       // Running channels are part of the same clipped water-level field as
       // lakes and the sea. Only vertical nickpoint geometry is separate;
       // ordinary reaches never draw an overlapping ribbon here.
-      m_waterfall_surface.draw (r, camera);
+      m_waterfall_surface.draw (r, position (camera));
     }
 
     void MoppeGame::draw_boat_wakes (render::Renderer& r,
@@ -474,11 +488,10 @@ namespace moppe {
       if (!frame.visibility.ocean)
         return;
       const terrain::WaterSheets& sheets = generated_world ().water_surface ();
-      const float time = frame.lighting.time;
-      const auto level = [&] (const Vec3& at) {
+      const seconds_t time = frame.lighting.time;
+      const auto level = [&] (const position_t& at) {
         return water_surface_at (
-                 world (), surface (), &sheets, position (at), time)
-          .numerical_value_in (u::m);
+          world (), surface (), &sheets, at, seconds_value (time));
       };
       const CompanionSnapshot* theirs =
         m_company.companion ? &*m_company.companion : nullptr;
@@ -489,9 +502,11 @@ namespace moppe {
         theirs ? &theirs->fleet.boat : nullptr,
         theirs ? &theirs->fleet.jet_ski : nullptr,
         level,
-        [&] (const Vec3& at) { return world_ground ().height (at); },
+        [&] (const position_t& at) {
+          return world_ground ().height (position_value (at)) * u::m;
+        },
         time,
-        m_sky.sky ().daylight);
+        m_sky.sky ().daylight * proportion[one]);
     }
 
     void MoppeGame::draw_effect_layers (render::Renderer& r,
@@ -513,18 +528,19 @@ namespace moppe {
         const Vec3 up (view.at (0, 1), view.at (1, 1), view.at (2, 1));
         const Vec3 forward (-view.at (0, 2), -view.at (1, 2), -view.at (2, 2));
         const float half_tangent = tan (camera.field_of_view * 0.5f);
-        const Vec3 right_span = right * (half_tangent * camera.aspect);
+        const Vec3 right_span =
+          right * (half_tangent * camera.aspect.numerical_value_in (one));
         const Vec3 up_span = up * half_tangent;
         r.apply_gtao ({
-          .camera_pos = position (camera.position),
-          .forward = forward,
+          .camera_pos = camera.position,
+          .forward = unit_direction (forward),
           .right_span = right_span,
           .up_span = up_span,
         });
-        if (frame.lighting.sun_direction[1] > 0.02f)
+        if (direction_value (frame.lighting.sun_direction)[1] > 0.02f)
           r.apply_light_shafts ({
-            .camera_pos = position (camera.position),
-            .forward = forward,
+            .camera_pos = camera.position,
+            .forward = unit_direction (forward),
             .right_span = right_span,
             .up_span = up_span,
             .sun_dir = frame.lighting.sun_direction,
@@ -537,16 +553,18 @@ namespace moppe {
       // per pixel whether the near plane is wet, before reconstruction
       // accumulates the boundary with the rest of the jittered scene.
       if (visibility.ocean && frame.camera_water_level &&
-          frame.camera.position[1] < *frame.camera_water_level + 1.0f)
+          position_value (frame.camera.position)[1] <
+            terrain::surface_elevation_value (*frame.camera_water_level) + 1.0f)
         r.apply_underwater ({
-          .water_level = *frame.camera_water_level * u::m,
+          .water_level =
+            terrain::surface_elevation_value (*frame.camera_water_level) * u::m,
         });
 
       // Reconstruction consumes the scene's colour, depth, and motion;
       // motion blur operates on its full-size result.
       r.reconstruct_scene ();
       if (visibility.motion_blur)
-        r.apply_motion_blur (frame.motion_blur_amount);
+        r.apply_motion_blur (frame.motion_blur_amount.numerical_value_in (one));
     }
   }
 }

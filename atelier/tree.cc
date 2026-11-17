@@ -142,24 +142,27 @@ namespace atelier {
         if (branch_order == 0 && segment >= 1 && segment + 1 < segment_count) {
           const std::size_t lateral_count = segment % 2 == 0 ? 2 : 1;
           for (std::size_t lateral = 0; lateral < lateral_count; ++lateral) {
-            const Real turn = 2.399963f * Real (2 * segment + lateral);
+            // The golden angle, once per lateral along the trunk.
+            const Angle turn =
+              2.399963f * Real (2 * segment + lateral) * angular::radian;
             append_axis (tree,
                          current,
                          1,
                          4 + (segment % 2),
-                         azimuth + turn * angular::radian,
+                         azimuth + turn,
                          (0.42f + 0.035f * Real (segment)) * angular::radian,
                          seed + 1009 * segment + 313 * lateral,
                          organ);
           }
         } else if (branch_order == 1 && (segment == 1 || segment == 3) &&
                    segment + 1 < segment_count) {
-          const Real side = segment == 1 ? -1.0f : 1.0f;
+          const Angle splay =
+            (segment == 1 ? -1.0f : 1.0f) * 0.78f * angular::radian;
           append_axis (tree,
                        current,
                        2,
                        2,
-                       azimuth + side * 0.78f * angular::radian,
+                       azimuth + splay,
                        elevation +
                          (organ == TreeOrgan::shoot ? 0.18f : -0.18f) *
                            angular::radian,
@@ -183,12 +186,12 @@ namespace atelier {
                    TreeOrgan::shoot);
       const std::size_t root_count = 5 + (seed >> 4) % 3;
       for (std::size_t root = 0; root < root_count; ++root) {
-        const Real turn = 2.399963f * Real (root);
+        const Angle turn = 2.399963f * Real (root) * angular::radian;
         append_axis (tree,
                      0,
                      1,
                      4 + root % 2,
-                     turn * angular::radian,
+                     turn,
                      (-0.32f - 0.045f * Real (root % 3)) * angular::radian,
                      seed ^ (0x7001U + 977 * static_cast<std::uint32_t> (root)),
                      TreeOrgan::root);

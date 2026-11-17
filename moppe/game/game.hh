@@ -85,7 +85,7 @@ namespace moppe {
         return generated_world ().surface ();
       }
 
-      void pointer_move (float, float, float dx, float dy) override;
+      void pointer_move (points_t, points_t, points_t dx, points_t dy) override;
 
       // The trodden trail tread is loose dirt; bare eroded faces are soil;
       // turf holds most of its dust and throws up clods of itself, and
@@ -203,6 +203,8 @@ namespace moppe {
       // The vehicles lend their meshes to the sun's shadow before it is
       // drawn, so that they shade the ground under them and their own
       // insides; riders, skinned into a draw list, cast none.
+      terrain::ElevationField animal_ground () const;
+      plan_extent_t places_period () const;
       void cast_actor_shadows (render::Renderer& r, const FrameView& frame);
 
       void draw_world_layers (render::Renderer& r, const FrameView& frame);
@@ -225,7 +227,7 @@ namespace moppe {
 
       // A launch recording itself runs its remote control by the frames of
       // play it has drawn, starting with the first.
-      std::optional<double> script_seconds () const override;
+      std::optional<platform::host_time_t> script_seconds () const override;
 
       void controls (const platform::ControlState& state) override;
 

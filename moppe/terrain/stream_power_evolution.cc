@@ -73,9 +73,10 @@ namespace moppe::terrain {
           p.reference_incision_rate < 0 ||
           !isfinite (p.maximum_deposition_rate) ||
           p.maximum_deposition_rate < 0 || !isfinite (p.reference_area) ||
-          p.reference_area <= 0 || !std::isfinite (p.area_exponent) ||
-          p.area_exponent < 0 || !isfinite (p.diffusivity) ||
-          p.diffusivity < 0 || !std::isfinite (p.sea_level) ||
+          p.reference_area <= 0 || !isfinite (p.area_exponent) ||
+          p.area_exponent < 0 * stream_power_exponent[one] ||
+          !isfinite (p.diffusivity) || p.diffusivity < 0 ||
+          !std::isfinite (surface_elevation_value (p.sea_level)) ||
           !isfinite (p.critical_hillslope_gradient) ||
           p.critical_hillslope_gradient <= 0 ||
           !isfinite (p.maximum_hillslope_diffusivity_multiplier) ||
@@ -348,7 +349,8 @@ namespace moppe::terrain {
           const auto incision_velocity =
             channel_share *
             cr::pow (area_growth,
-                     static_cast<double> (parameters.area_exponent)) *
+                     static_cast<double> (
+                       parameters.area_exponent.numerical_value_in (one))) *
             parameters.reference_incision_rate;
           const auto coupling = incision_velocity / run;
           const auto weight = dt * coupling;
@@ -392,12 +394,12 @@ namespace moppe::terrain {
             static_cast<float> (
               (downhill_height / run).numerical_value_in (mp_units::one)) *
             terrain_slope[mp_units::one];
-          transport_capacity[cell] =
-            sediment_transport_capacity (dt,
-                                         area,
-                                         slope,
-                                         static_cast<float> (channel_share),
-                                         parameters.fluvial_transport);
+          transport_capacity[cell] = sediment_transport_capacity (
+            dt,
+            area,
+            slope,
+            static_cast<float> (channel_share) * proportion[mp_units::one],
+            parameters.fluvial_transport);
         };
 
         const auto& areas =

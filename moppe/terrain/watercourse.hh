@@ -39,19 +39,26 @@ namespace moppe::terrain {
   // conveyance (the integral of d^(3/2) across it). Its vertical part is
   // how fast the water descends its own surface, which is the head it
   // sheds and so what whitens it.
+  // A speed per root of a length: the pace c of u = c sqrt(d), and Chezy's
+  // coefficient C of u = C sqrt(d S).
+  using root_metre_per_second_t =
+    mp_units::quantity<pow<1, 2> (mp_units::si::metre) / mp_units::si::second,
+                       float>;
+
   struct WatercoursePaint {
     // The share of its spate (river.hh) a river carries the day the world
     // is seen. Its bed and bars were shaped by the spate; most days it runs
     // well inside them.
-    float flow = 0.4f;
-    // Chezy's coefficient for a cobble bed, sqrt(m)/s: u = C sqrt(d S).
-    float roughness = 20.0f;
+    proportion_t flow = 0.4f * proportion[mp_units::one];
+    // Chezy's coefficient for a cobble bed: u = C sqrt(d S).
+    root_metre_per_second_t roughness =
+      20.0f * pow<1, 2> (mp_units::si::metre) / mp_units::si::second;
     // The Froude number steep water holds itself to; a stream on a mobile
     // bed steeper than about one in forty runs close to critical.
-    float critical_froude = 1.0f;
+    froude_number_t critical_froude = 1.0f * froude_number[mp_units::one];
     // How many regime widths (river.hh) running water may spread to on a
     // floor too flat to hold it; beyond, the stage gives way instead.
-    float spread = 1.5f;
+    scale_factor_t spread = 1.5f * scale_factor[mp_units::one];
     // A running surface may follow a steep bed but never bridge a drop by
     // standing arbitrarily high above the ground below it.
     meters_t depth_limit = 2.5f * mp_units::si::metre;

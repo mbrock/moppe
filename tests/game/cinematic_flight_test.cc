@@ -39,7 +39,7 @@ namespace {
 
     FlightFixture ()
         : flood { .surface = constant_flood_surface (grid, count, 0.1f, 0.0f),
-                  .sea_level = 0.1f,
+                  .sea_level = terrain::surface_elevation_point (0.1f * u::m),
                   .has_ocean = false,
                   .ocean = std::vector<std::uint8_t> (count, 0),
                   .spill_receiver = std::vector<terrain::CellIndex> (count) },
@@ -126,27 +126,27 @@ namespace {
       const float next_z =
         (next.value / FlightFixture::side) *
         (fixture.grid.spacing_z ()).numerical_value_in (moppe::u::m);
-      alignment.points.push_back ({ x, z });
+      alignment.points.push_back (plan_position (x, z));
       alignment_length += std::hypot (next_x - x, next_z - z);
     }
     alignment.length = alignment_length * mp_units::si::metre;
-    return {
-      .domain = fixture.grid,
-      .plan = { .home_base = home,
-                .scenic_focus = focus,
-                .control_sites = { home, focus },
-                .circuit = std::move (cells) },
-      .alignment = std::move (alignment),
-      .formed_width = 3.0f * mp_units::si::metre,
-      .earthwork_delta_m = std::vector<float> (FlightFixture::count, 0.0f),
-      .use = terrain::TrailUseMap (
-        fixture.grid,
-        std::vector<terrain::TrailInfluence> (
-          FlightFixture::count, 0.0f * terrain::trail_influence[mp_units::one]),
-        std::vector<terrain::HomeBaseInfluence> (
-          FlightFixture::count,
-          0.0f * terrain::home_base_influence[mp_units::one]))
-    };
+    return { .domain = fixture.grid,
+             .plan = { .home_base = home,
+                       .scenic_focus = focus,
+                       .control_sites = { home, focus },
+                       .circuit = std::move (cells) },
+             .alignment = std::move (alignment),
+             .formed_width = 3.0f * mp_units::si::metre,
+             .earthwork_delta = std::vector<terrain::ElevationChange> (
+               FlightFixture::count, 0.0f * terrain::surface_elevation[u::m]),
+             .use = terrain::TrailUseMap (
+               fixture.grid,
+               std::vector<terrain::TrailInfluence> (
+                 FlightFixture::count,
+                 0.0f * terrain::trail_influence[mp_units::one]),
+               std::vector<terrain::HomeBaseInfluence> (
+                 FlightFixture::count,
+                 0.0f * terrain::home_base_influence[mp_units::one])) };
   }
 }
 
@@ -247,7 +247,7 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
     receiver[cell] = terrain::CellIndex (cell);
   const terrain::FloodField flood {
     .surface = constant_flood_surface (grid, count, 0.0f, 0.0f),
-    .sea_level = 0.0f,
+    .sea_level = terrain::surface_elevation_point (0.0f * u::m),
     .has_ocean = false,
     .ocean = std::vector<std::uint8_t> (count, 0),
     .spill_receiver = receiver

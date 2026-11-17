@@ -19,7 +19,7 @@
 namespace moppe::game {
   void Companionship::notice (const char* words) {
     last_notice = words;
-    notice_at = link ? link->now () : 0.0;
+    notice_at = link ? link->now () : link_time (0.0);
     std::cerr << "moppe: multiplayer: " << words << std::endl;
   }
 
@@ -43,11 +43,10 @@ namespace moppe::game {
     const GameLogicState& state = session.logic ();
     CompanionSnapshot mine;
     mine.world = world;
-    mine.day_hours =
-      day_turning ? hours_since_midnight (state.m_day_hours) : -1.0;
+    mine.day_hours = day_turning ? state.m_day_hours : clock_time (-1.0);
     mine.mode = state.m_doing;
     mine.fleet = poses (session.fleet ());
-    mine.bus_clock = seconds_into_play (bus_time (state));
+    mine.bus_clock = bus_time (state);
     if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
     if (state.m_doing == Doing::on_foot ())
@@ -79,7 +78,9 @@ namespace moppe::game {
     mine.pan_on = camp.pan.on;
     mine.pan_place = camp.pan.place;
     mine.pan_yaw = camp.pan.yaw;
-    mine.pan_cooked = pan_cooked (camp.pan, state.m_total_time);
+    mine.pan_cooked =
+      pan_cooked (camp.pan, state.m_total_time).numerical_value_in (one) *
+      proportion[one];
     mine.pan_count = static_cast<std::uint8_t> (camp.pan.count);
     std::copy (std::begin (camp.pan.mushrooms),
                std::end (camp.pan.mushrooms),
@@ -121,11 +122,13 @@ namespace moppe::game {
                            companion->mode != Doing::driving (*seat);
       if (!companion || input.toggle_mount || aground) {
         const Vec3 left =
-          normalized (cross (state.m_seat_up, state.m_seat_heading));
+          normalized (cross (direction_value (state.m_seat_up),
+                             direction_value (state.m_seat_heading)));
         const bool water = machine_kind (*seat).medium == Medium::water;
-        session.walker ().spawn (moppe::position (state.m_seat_position -
-                                                  left * (water ? 1.1f : 1.4f)),
-                                 unit_direction (state.m_seat_heading));
+        session.walker ().spawn (
+          moppe::position (position_value (state.m_seat_position) -
+                           left * (water ? 1.1f : 1.4f)),
+          state.m_seat_heading);
         session.set_mode (Doing::on_foot ());
         input.toggle_mount = false;
         return;
@@ -155,7 +158,6 @@ namespace moppe::game {
 
   void Companionship::meet_strangers (const GameSession& session,
                                       seconds_t interval) {
-    const float elapsed = seconds_value (interval);
     strangers.clear ();
     if (!companion) {
       strangers_were.reset ();
@@ -168,44 +170,44 @@ namespace moppe::game {
       MachineBody body;
       body.machine = machine;
       visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
-        body.position = moppe::position (pose.position);
+        body.position = pose.position;
         if constexpr (requires { pose.render_orientation; }) {
-          body.forward = unit_direction (pose.render_orientation);
-          body.up = unit_direction (pose.render_normal);
+          body.forward = pose.render_orientation;
+          body.up = pose.render_normal;
         } else {
-          body.forward = unit_direction (pose.forward);
-          body.up = unit_direction (pose.up);
+          body.forward = pose.forward;
+          body.up = pose.up;
         }
         if constexpr (requires { pose.trailer_position; }) {
           body.towing = true;
-          body.towed_position = moppe::position (pose.trailer_position);
-          body.towed_forward = unit_direction (pose.trailer_forward);
-          body.towed_up = unit_direction (pose.trailer_up);
+          body.towed_position = pose.trailer_position;
+          body.towed_forward = pose.trailer_forward;
+          body.towed_up = pose.trailer_up;
           body.towed_mass = session.tractor ().trailer_mass ();
         }
       });
       body.mass = session.machine_body (machine).mass;
       body.ours = false;
-      if (strangers_were && elapsed > 0.0f) {
-        const Vec3 moved =
-          position_value (body.position) - (*strangers_were)[i];
+      if (strangers_were && interval > 0.0f * si::second) {
+        const Vec3 moved = position_value (body.position) -
+                           position_value ((*strangers_were)[i]);
         if (length2 (moved) < 25.0f)
-          body.velocity = moppe::velocity (moved * (1.0f / elapsed));
+          body.velocity =
+            moppe::velocity (moved * (1.0f / seconds_value (interval)));
       }
       strangers.push_back (body);
     }
-    std::array<Vec3, machine_count> were;
+    std::array<position_t, machine_count> were;
     for (const MachineBody& body : strangers)
-      were[static_cast<std::size_t> (body.machine)] =
-        position_value (body.position);
+      were[static_cast<std::size_t> (body.machine)] = body.position;
     strangers_were = were;
     // What says how it moves is believed over what was seen to.
     strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
-      moppe::velocity (theirs.fleet.jeep.velocity);
+      theirs.fleet.jeep.velocity;
     strangers[static_cast<std::size_t> (Machine::boat)].velocity =
-      moppe::velocity (theirs.fleet.boat.velocity);
+      theirs.fleet.boat.velocity;
     strangers[static_cast<std::size_t> (Machine::jet_ski)].velocity =
-      moppe::velocity (theirs.fleet.jet_ski.velocity);
+      theirs.fleet.jet_ski.velocity;
   }
 
   std::optional<CompanionSnapshot>
@@ -216,16 +218,18 @@ namespace moppe::game {
     arrived.clear ();
     link->set_world (world);
     link->receive (arrived);
-    const double now = link->now ();
+    const link_time_t now = link->now ();
     // The poses told are the simulation's, which moves on in whole
     // steps, now two to a frame and now three. They are stamped by a
     // clock that moves with it, so that the other machine sees even
     // motion however unevenly the frames fall.
-    pose_clock = pose_heard < 0.0
-                   ? now
-                   : pose_clock + (stepped > 0.0 ? stepped : now - pose_heard);
+    pose_clock =
+      pose_heard < link_time (0.0)
+        ? now
+        : pose_clock +
+            (stepped > 0.0 * si::second ? stepped : now - pose_heard);
     pose_heard = now;
-    stepped = 0.0;
+    stepped = 0.0 * si::second;
     const bool was_present = track.present (now);
     // Someone in another world is only told of, while no one here
     // keeps company.
@@ -261,7 +265,7 @@ namespace moppe::game {
                 << link->companion_address () << std::endl;
     } else if (!present && was_present) {
       notice ("Your companion has gone");
-      hours = -1.0;
+      hours = clock_time (-1.0);
       met = false;
     }
     return newly_met;
@@ -273,7 +277,7 @@ namespace moppe::game {
                               seconds_t interval) {
     if (!link)
       return;
-    companion = track.advance (link->now (), seconds_value (interval));
+    companion = track.advance (link->now (), interval);
     meet_strangers (session, interval);
 
     if (!link->due ())
@@ -292,7 +296,7 @@ namespace moppe::game {
 
   void Companionship::draw (render::Renderer& r,
                             render::DrawList& dl,
-                            float time,
+                            seconds_t time,
                             const GameLogicState& logic,
                             const MushroomPatch& mushrooms,
                             BlobShadow& blob,
@@ -327,7 +331,11 @@ namespace moppe::game {
       for (int i = 0; i < theirs.pan_count; ++i)
         if (theirs.pan_mushrooms[i] < mushrooms.mushroom_count ())
           pan.push_back (mushrooms.site (theirs.pan_mushrooms[i]));
-      draw_pan (dl, theirs.pan_place, theirs.pan_yaw, pan, theirs.pan_cooked);
+      draw_pan (dl,
+                theirs.pan_place,
+                theirs.pan_yaw.numerical_value_in (si::radian) * si::radian,
+                pan,
+                theirs.pan_cooked.numerical_value_in (one) * doneness[one]);
     }
     if (theirs.walker && theirs.lying_down ()) {
       figure::draw (
@@ -338,39 +346,45 @@ namespace moppe::game {
           resting_gaze (theirs.hammock, theirs.gaze_yaw, theirs.gaze_pitch),
           time),
         their_outfit ());
-      Vec3 floor = hammock_middle (theirs.hammock) +
-                   hammock_across (theirs.hammock) * 0.75f -
-                   hammock_along (theirs.hammock) * 0.5f;
+      Vec3 floor = position_value (hammock_middle (theirs.hammock)) +
+                   direction_value (hammock_across (theirs.hammock)) * 0.75f -
+                   direction_value (hammock_along (theirs.hammock)) * 0.5f;
       floor[1] = ground.height (floor);
       render_basket_set_down (
-        dl, floor, hammock_along (theirs.hammock), basket);
+        dl, position (floor), hammock_along (theirs.hammock), basket);
     } else if (theirs.walker && theirs.mode != Doing::on_the_bus ()) {
-      blob.draw (
-        dl, surface, theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
+      blob.draw (dl,
+                 surface,
+                 theirs.walker->position + quantity_cast<isq::position_vector> (
+                                             displacement (Vec3 (0, 0.5f, 0))),
+                 0.8f * u::m);
       render_walker (dl, *theirs.walker, time, basket, their_outfit ());
     }
     if (theirs.glider) {
-      blob.draw (dl, surface, theirs.glider->position, 3.4f);
+      blob.draw (dl, surface, theirs.glider->position, 3.4f * u::m);
       render_glider (r, dl, *theirs.glider, time, 0x4000, their_outfit ());
     }
   }
 
   void Companionship::light_fire (FrameView& frame) const {
-    if (!companion || !companion->hearth_laid || companion->fire_burn <= 0.01f)
+    if (!companion || !companion->hearth_laid ||
+        companion->fire_burn <= 0.01f * proportion[one])
       return;
     Camp theirs;
     theirs.hearth = companion->hearth;
-    const Vec3 lamp = fire_light_position (theirs);
+    const Vec3 lamp = position_value (fire_light_position (theirs));
     FrameLighting& lighting = frame.lighting;
-    if (lighting.lamp_reach > 0.0f &&
-        length2 (lighting.lamp_position - frame.camera.position) <=
-          length2 (lamp - frame.camera.position))
+    const Vec3& camera = position_value (frame.camera.position);
+    if (lighting.lamp_reach > 0.0f * u::m &&
+        length2 (position_value (lighting.lamp_position) - camera) <=
+          length2 (lamp - camera))
       return;
-    lighting.lamp_position = lamp;
-    lighting.lamp_reach = meters_value (fire_light_reach);
-    lighting.lamp_color =
-      scale_display (fire_light_color (companion->fire_burn, lighting.time),
-                     1.0f - 0.25f * lighting.daylight);
+    lighting.lamp_position = position (lamp);
+    lighting.lamp_reach = fire_light_reach;
+    lighting.lamp_color = scale_display (
+      fire_light_color (companion->fire_burn, lighting.time),
+      (1.0f - 0.25f * lighting.daylight.numerical_value_in (one)) *
+        scale_factor[one]);
   }
 
   void Companionship::add_readings (HudState& state,
@@ -378,6 +392,9 @@ namespace moppe::game {
     if (!link || !last_notice)
       return;
     state.notice = last_notice;
-    state.notice_age_s = static_cast<float> (link->now () - notice_at);
+    state.notice_age =
+      static_cast<float> (
+        (link->now () - notice_at).numerical_value_in (si::second)) *
+      u::s;
   }
 }

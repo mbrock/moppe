@@ -61,7 +61,7 @@ MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
       .time_step = 250.0f * mp_units::astronomy::Julian_year,
       .reference_incision_rate =
         0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
-      .sea_level = 0.0f });
+      .sea_level = surface_elevation_point (0.0f * u::m) });
 
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[0]), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[4]), 42.0f, 1e-6f);
@@ -87,7 +87,7 @@ MOPPE_TEST (finite_uplift_integrates_the_exact_active_interval) {
         .uplift_duration = 500.0f * mp_units::astronomy::Julian_year,
         .reference_incision_rate =
           0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
-        .sea_level = 0.0f });
+        .sea_level = surface_elevation_point (0.0f * u::m) });
   };
 
   const StreamPowerEvolutionResult three_hundred_year_steps = evolve (300.0f);
@@ -121,7 +121,7 @@ MOPPE_TEST (zero_uplift_duration_disables_tectonic_forcing) {
       .uplift_duration = 0.0f * mp_units::astronomy::Julian_year,
       .reference_incision_rate =
         0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
-      .sea_level = 0.0f });
+      .sea_level = surface_elevation_point (0.0f * u::m) });
 
   MOPPE_CHECK (result.heights == spatial::get<surface_elevation> (terrain));
   MOPPE_CHECK (result.report.tectonic_uplift_volume ==
@@ -142,7 +142,7 @@ MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
       .time_step = 1000.0f * mp_units::astronomy::Julian_year,
       .reference_incision_rate =
         0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
-      .sea_level = 0.0f });
+      .sea_level = surface_elevation_point (0.0f * u::m) });
 
   MOPPE_CHECK_NEAR (
     surface_elevation_value (result.heights[0]), heights[0], 0.0f);
@@ -166,14 +166,14 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
       .time_step = 100.0f * mp_units::astronomy::Julian_year,
       .reference_incision_rate =
         0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
-      .area_exponent = 0.0f,
+      .area_exponent = 0.0f * stream_power_exponent[one],
       // A four-cell world is entirely below any real channel head, so say
       // that this case is about the fluvial law and not about where the
       // channel network begins.
       .channel_initiation_area =
         1.0f * mp_units::si::metre * mp_units::si::metre,
       .fluvial_transport = unbounded_test_transport (),
-      .sea_level = 0.0f });
+      .sea_level = surface_elevation_point (0.0f * u::m) });
 
   // dt v_ref / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[0]), 0.0f, 0.0f);
@@ -195,14 +195,14 @@ MOPPE_TEST (thick_channel_cover_protects_bedrock_during_evolution) {
     .duration = 100.0f * mp_units::astronomy::Julian_year,
     .time_step = 100.0f * mp_units::astronomy::Julian_year,
     .reference_incision_rate = 0.1f * u::m / mp_units::astronomy::Julian_year,
-    .area_exponent = 0.0f,
+    .area_exponent = 0.0f * stream_power_exponent[one],
     .channel_initiation_area = 1.0f * u::m * u::m,
     .fluvial_transport = {
       .runoff_rate = 1.0f * u::m / mp_units::astronomy::Julian_year,
       .concentration_at_unit_slope =
         0.01f * sediment_concentration[mp_units::one],
     },
-    .sea_level = 0.0f,
+    .sea_level = surface_elevation_point (0.0f * u::m),
   };
 
   const StreamPowerEvolutionResult covered =
@@ -239,11 +239,11 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
       .time_step = duration_years * mp_units::astronomy::Julian_year,
       .reference_incision_rate =
         legacy_k * mp_units::si::metre / mp_units::astronomy::Julian_year,
-      .area_exponent = exponent,
+      .area_exponent = exponent * stream_power_exponent[one],
       .channel_initiation_area =
         1.0f * mp_units::si::metre * mp_units::si::metre,
       .fluvial_transport = unbounded_test_transport (),
-      .sea_level = 0.0f });
+      .sea_level = surface_elevation_point (0.0f * u::m) });
   const float legacy_weight =
     duration_years * legacy_k * std::pow (area_m2, exponent) / distance_m;
   const float expected = 100.0f / (1.0f + legacy_weight);
@@ -271,9 +271,9 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
                                    mp_units::astronomy::Julian_year,
         .reference_area =
           reference_area_m2 * mp_units::si::metre * mp_units::si::metre,
-        .area_exponent = exponent,
+        .area_exponent = exponent * stream_power_exponent[one],
         .fluvial_transport = unbounded_test_transport (),
-        .sea_level = 0.0f });
+        .sea_level = surface_elevation_point (0.0f * u::m) });
   };
   const StreamPowerEvolutionResult one_square_meter = evolve (1.0f, 2e-5f);
   const StreamPowerEvolutionResult one_hundred_square_meters =
@@ -296,7 +296,7 @@ MOPPE_TEST (depression_routing_closes_the_sediment_ledger) {
     uplift,
     { .duration = 100000.0f * mp_units::astronomy::Julian_year,
       .time_step = 10000.0f * mp_units::astronomy::Julian_year,
-      .sea_level = 0.0f });
+      .sea_level = surface_elevation_point (0.0f * u::m) });
 
   const auto cubic_metre = u::m * u::m * u::m;
   const double detached =
@@ -326,7 +326,7 @@ MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
   const StreamPowerEvolution parameters {
     .duration = 50000.0f * mp_units::astronomy::Julian_year,
     .time_step = 5000.0f * mp_units::astronomy::Julian_year,
-    .sea_level = 0.0f
+    .sea_level = surface_elevation_point (0.0f * u::m)
   };
   const StreamPowerEvolutionResult first =
     evolve_stream_power (terrain, uplift, parameters);
@@ -361,7 +361,7 @@ MOPPE_TEST (stream_power_interleaves_conservative_hillslope_transport) {
         0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .diffusivity = 0.1f * mp_units::si::metre * mp_units::si::metre /
                      mp_units::astronomy::Julian_year,
-      .sea_level = -1.0f });
+      .sea_level = surface_elevation_point (-1.0f * u::m) });
 
   MOPPE_CHECK (result.heights[12] <
                surface_elevation_point (heights[12] * u::m));
@@ -397,11 +397,11 @@ MOPPE_TEST (hillslope_catchments_are_left_to_creep) {
         .time_step = 100.0f * mp_units::astronomy::Julian_year,
         .reference_incision_rate =
           0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
-        .area_exponent = 0.0f,
+        .area_exponent = 0.0f * stream_power_exponent[one],
         .channel_initiation_area =
           initiation_m2 * mp_units::si::metre * mp_units::si::metre,
         .fluvial_transport = unbounded_test_transport (),
-        .sea_level = 0.0f });
+        .sea_level = surface_elevation_point (0.0f * u::m) });
   };
 
   MOPPE_CHECK_NEAR (

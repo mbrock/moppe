@@ -14,51 +14,81 @@
 
 namespace moppe::game {
   namespace {
+    using shields_number_t = quantity<shields_number[one], float>;
+    using relative_density_t = quantity<isq::relative_mass_density[one], float>;
+    // How many stones lie on a square metre.
+    constexpr auto per_square_metre = one / (u::m * u::m);
+    using stone_density_t = quantity<per_square_metre, float>;
+
     // Rock is 2.65 times as dense as water.
-    constexpr float river_submerged_density = 1.65f;
+    constexpr relative_density_t river_submerged_density =
+      1.65f * isq::relative_mass_density[one];
     // The river is walked a metre at a time.
-    constexpr float river_step = 1.0f;
-    constexpr float river_tau = 6.2831853f;
+    constexpr meters_t river_step = 1.0f * u::m;
+    constexpr radians_t river_tau = 6.2831853f * u::rad;
     // The tread a rider follows, as the boulder planner keeps it clear.
-    constexpr float river_trail_tread = 0.75f;
+    constexpr terrain::TrailInfluence river_trail_tread =
+      0.75f * map::trail_influence[one];
     // The top of a settled stone stands this many radii above the ground it
     // settled on: the body's height less its burial.
-    constexpr float river_settled_top = 2.0f * boulder_squash - boulder_burial;
+    constexpr scale_factor_t river_settled_top =
+      (2.0f * boulder_squash - boulder_burial).numerical_value_in (one) *
+      scale_factor[one];
     // A stone in water broad enough to stand on is solid; so is every stone
     // the boulder planner would make so.
-    constexpr float river_foothold_radius = 0.3f;
+    constexpr meters_t river_foothold_radius = 0.3f * u::m;
 
     // Stepping stones: a stride apart, centre to centre, so a walker's
     // feet find one stone before they leave the last, with their tops a
     // hand's breadth or two clear of the water.
-    constexpr float stepping_pitch = 0.70f;
-    constexpr float stepping_least_radius = 0.40f;
-    constexpr float stepping_greatest_radius = 0.75f;
-    constexpr float stepping_deepest = 0.55f;
-    constexpr float stepping_widest = 14.0f;
-    constexpr float stepping_spacing = 250.0f; // metres apart, at least
+    constexpr meters_t stepping_pitch = 0.70f * u::m;
+    constexpr meters_t stepping_least_radius = 0.40f * u::m;
+    constexpr meters_t stepping_greatest_radius = 0.75f * u::m;
+    constexpr terrain::ElevationChange stepping_deepest =
+      0.55f * terrain::surface_elevation[u::m];
+    constexpr meters_t stepping_widest = 14.0f * u::m;
+    constexpr meters_t stepping_spacing = 250.0f * u::m; // apart, at least
 
     // The sheet holds the water of an ordinary day, a share of the spate
     // that shaped the bed and sorted its stones (WatercoursePaint::flow).
     // A flow's depth goes as its discharge to the two thirds, in a wide
     // channel as over a sill, so the spate stood this many times deeper.
-    float spate_depth_ratio () {
-      return cr::pow (terrain::WatercoursePaint {}.flow, -2.0f / 3.0f);
+    scale_factor_t spate_depth_ratio () {
+      return cr::pow (
+               terrain::WatercoursePaint {}.flow.numerical_value_in (one),
+               -2.0f / 3.0f) *
+             scale_factor[one];
     }
 
-    position_t river_probe (float x, float z) {
-      return position (Vec3 (x, 0.0f, z));
+    position_t river_probe (const plan_position_t& at) {
+      return at_height (at, 0.0f * u::m);
     }
 
-    float river_cross (float ax, float az, float bx, float bz) {
-      return ax * bz - az * bx;
+    // How far the current turns from one heading to another: the sine of
+    // the angle between them, positive turning toward +normal.
+    magnitude_t river_cross (const plan_direction_t& a,
+                             const plan_direction_t& b) {
+      return (plan_value (a).x () * plan_value (b).z () -
+              plan_value (a).z () * plan_value (b).x ()) *
+             one;
     }
 
     // Roughly normal, from three independent lanes: mean 0, deviation 1.
-    float river_gaussian (std::uint32_t identity, std::uint32_t lane) {
+    noise_signal_t river_gaussian (std::uint32_t identity, std::uint32_t lane) {
       return 2.0f *
              (hash_lane (identity, lane) + hash_lane (identity, lane + 1) +
-              hash_lane (identity, lane + 2) - 1.5f);
+              hash_lane (identity, lane + 2) - 1.5f) *
+             noise_signal[one];
+    }
+
+    // How fast the water runs over the plan, and how fast it descends.
+    speed_t plan_speed (const terrain::WaterVelocity& current) {
+      return cr::hypot (current.numerical_value_ref_in (u::m / u::s)[0],
+                        current.numerical_value_ref_in (u::m / u::s)[2]) *
+             (u::m / u::s);
+    }
+    speed_t descent (const terrain::WaterVelocity& current) {
+      return -current.numerical_value_ref_in (u::m / u::s)[1] * (u::m / u::s);
     }
 
     // The ground and the water over it, read at any place.
@@ -68,111 +98,91 @@ namespace moppe::game {
                    const map::SurfaceReadings& readings,
                    const terrain::WaterSheets& water)
           : m_surface (surface), m_readings (readings), m_water (water),
-            m_period_x (
-              surface.domain ().period_x ().numerical_value_in (u::m)),
-            m_period_z (
-              surface.domain ().period_z ().numerical_value_in (u::m)) {}
+            m_period (plan_extent (surface.domain ().period_x (),
+                                   surface.domain ().period_z ())) {}
 
-      float ground (float x, float z) const {
-        return terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (m_surface,
-                                                       river_probe (x, z)));
+      terrain::SurfaceElevation ground (const plan_position_t& at) const {
+        return spatial::sample<terrain::surface_elevation> (m_surface,
+                                                            river_probe (at));
       }
-      float level (float x, float z) const {
-        return terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (m_water,
-                                                       river_probe (x, z)));
+      terrain::SurfaceElevation level (const plan_position_t& at) const {
+        return spatial::sample<terrain::surface_elevation> (m_water,
+                                                            river_probe (at));
       }
-      float depth (float x, float z) const {
-        return level (x, z) - ground (x, z);
+      terrain::ElevationChange depth (const plan_position_t& at) const {
+        return level (at) - ground (at);
       }
-      float speed (float x, float z) const {
-        const Vec3 current =
-          spatial::sample<terrain::water_velocity> (m_water, river_probe (x, z))
-            .numerical_value_in (u::m / u::s);
-        return cr::hypot (current[0], current[2]);
+      speed_t speed (const plan_position_t& at) const {
+        return plan_speed (
+          spatial::sample<terrain::water_velocity> (m_water, river_probe (at)));
       }
-      Vec3 normal (float x, float z) const {
+      terrain::TerrainNormal normal (const plan_position_t& at) const {
         return spatial::sample<terrain::terrain_normal> (m_surface,
-                                                         river_probe (x, z))
-          .numerical_value_in (one);
+                                                         river_probe (at));
       }
-      float trail (float x, float z) const {
+      terrain::TrailInfluence trail (const plan_position_t& at) const {
         return spatial::sample<map::trail_influence> (m_readings,
-                                                      river_probe (x, z))
-          .numerical_value_in (one);
+                                                      river_probe (at));
       }
-      float home (float x, float z) const {
+      terrain::HomeBaseInfluence home (const plan_position_t& at) const {
         return spatial::sample<map::home_base_influence> (m_readings,
-                                                          river_probe (x, z))
-          .numerical_value_in (one);
+                                                          river_probe (at));
       }
-      float wrap_x (float x) const {
-        return terrain::wrap_coordinate (x, m_period_x);
-      }
-      float wrap_z (float z) const {
-        return terrain::wrap_coordinate (z, m_period_z);
+      plan_position_t wrap (const plan_position_t& at) const {
+        return terrain::wrap (at, m_period);
       }
       // The shortest way between two places on the torus.
-      float apart_x (float dx) const {
-        return terrain::minimum_image_delta (dx, m_period_x);
-      }
-      float apart_z (float dz) const {
-        return terrain::minimum_image_delta (dz, m_period_z);
+      plan_displacement_t apart (const plan_displacement_t& d) const {
+        return terrain::minimum_image (d, m_period);
       }
 
     private:
       const map::SurfaceGeometry& m_surface;
       const map::SurfaceReadings& m_readings;
       const terrain::WaterSheets& m_water;
-      float m_period_x;
-      float m_period_z;
+      plan_extent_t m_period;
     };
 
     // A metre of river: where its centreline runs and what the water there
     // is doing, read across the whole wetted section.
     struct RiverSection {
-      float x = 0.0f; // the centreline, unwrapped as the alignment is
-      float z = 0.0f;
-      float tx = 1.0f; // downstream
-      float tz = 0.0f;
-      float regime_width = 0.0f;
-      float level = 0.0f;
-      float depth = 0.0f;   // at the centreline
-      float deepest = 0.0f; // anywhere across
-      float speed = 0.0f;   // of the current at the centreline
-      // How far the water reaches along the normal (-tz, tx), each way.
-      float bank[2] = { 0.0f, 0.0f };
+      // The centreline, unwrapped as the alignment is.
+      plan_position_t centreline {};
+      plan_direction_t downstream = plan_unit_direction (Vec2 (1.0f, 0.0f));
+      meters_t regime_width = 0.0f * u::m;
+      terrain::SurfaceElevation level {};
+      terrain::ElevationChange depth {};    // at the centreline
+      terrain::ElevationChange deepest {};  // anywhere across
+      speed_t speed = 0.0f * (u::m / u::s); // of the current at the centreline
+      // How far the water reaches along the normal, each way.
+      meters_t bank[2] = { 0.0f * u::m, 0.0f * u::m };
       bool bounded = false; // dry ground found on both sides
       bool running = false;
       bool falling = false; // over a waterfall
       // Over the reach around it.
-      float slope = 0.0f;
-      float competence = 0.0f; // metres
-      float curvature = 0.0f;  // 1/m, positive turning toward +normal
+      grade_t slope = 0.0f * grade[one];
+      meters_t competence = 0.0f * u::m;
+      per_metre_t curvature = 0.0f / u::m; // positive turning toward +normal
       // Nothing else is placed where stepping stones cross.
       bool crossing = false;
 
-      float nx () const {
-        return -tz;
+      // Across the stream: downstream turned a quarter toward +z from +x.
+      plan_direction_t normal () const {
+        return plan_unit_direction (
+          Vec2 (-plan_value (downstream).z (), plan_value (downstream).x ()));
       }
-      float nz () const {
-        return tx;
-      }
-      float wet_width () const {
+      meters_t wet_width () const {
         return bank[0] + bank[1];
       }
-      // The place `across` metres along the normal and `along` downstream.
-      float at_x (float across, float along) const {
-        return x + nx () * across + tx * along;
-      }
-      float at_z (float across, float along) const {
-        return z + nz () * across + tz * along;
+      // The place `across` metres along the normal and `forward` downstream.
+      plan_position_t at (meters_t across, meters_t forward) const {
+        return centreline + moppe::along (normal (), across) +
+               moppe::along (downstream, forward);
       }
     };
 
-    float river_mix (float a, float b, float t) {
-      return a + (b - a) * t;
+    float river_mix (float a, float b, blend_weight_t t) {
+      return a + (b - a) * t.numerical_value_in (one);
     }
 
     // Walks a reach's alignment a metre at a time and reads each section.
@@ -182,78 +192,95 @@ namespace moppe::game {
       std::vector<RiverSection> sections;
       if (points.size () < 2)
         return sections;
-      std::vector<float> along (points.size (), 0.0f);
+      std::vector<meters_t> along (points.size (), 0.0f * u::m);
       for (std::size_t i = 1; i < points.size (); ++i)
-        along[i] = along[i - 1] + cr::hypot (points[i].x_m - points[i - 1].x_m,
-                                             points[i].z_m - points[i - 1].z_m);
-      const float length = along.back ();
+        along[i] =
+          along[i - 1] + cr::hypot (points[i].x_m - points[i - 1].x_m,
+                                    points[i].z_m - points[i - 1].z_m) *
+                           u::m;
+      const meters_t length = along.back ();
       if (length < 4.0f * river_step)
         return sections;
       const std::size_t count =
-        static_cast<std::size_t> (std::floor (length / river_step)) + 1;
+        static_cast<std::size_t> (
+          std::floor ((length / river_step).numerical_value_in (one))) +
+        1;
       sections.resize (count);
-      std::vector<float> area (count);
-      std::vector<float> pooled (count);
+      std::vector<square_meters_t> area (count);
+      // Running on its own, not through a pool or into standing water.
+      std::vector<bool> unpooled (count);
       std::size_t segment = 0;
       for (std::size_t k = 0; k < count; ++k) {
-        const float s = std::min (static_cast<float> (k) * river_step, length);
+        const meters_t s =
+          std::min (static_cast<float> (k) * river_step, length);
         while (segment + 2 < points.size () && along[segment + 1] < s)
           ++segment;
         const auto& a = points[segment];
         const auto& b = points[segment + 1];
-        const float span = along[segment + 1] - along[segment];
-        const float t = span > 0.0f
-                          ? std::clamp ((s - along[segment]) / span, 0.0f, 1.0f)
-                          : 0.0f;
+        const meters_t span = along[segment + 1] - along[segment];
+        const blend_weight_t t =
+          span > 0.0f * u::m
+            ? std::clamp (
+                ((s - along[segment]) / span).numerical_value_in (one),
+                0.0f,
+                1.0f) *
+                blend_weight[one]
+            : 0.0f * blend_weight[one];
         RiverSection& section = sections[k];
-        section.x = river_mix (a.x_m, b.x_m, t);
-        section.z = river_mix (a.z_m, b.z_m, t);
-        area[k] = river_mix (a.contributing_area_m2, b.contributing_area_m2, t);
-        pooled[k] =
-          std::max ({ a.pooled, b.pooled, a.standing_water, b.standing_water });
+        section.centreline = plan_position (river_mix (a.x_m, b.x_m, t),
+                                            river_mix (a.z_m, b.z_m, t));
+        area[k] =
+          river_mix (a.contributing_area_m2, b.contributing_area_m2, t) * u::m *
+          u::m;
+        unpooled[k] =
+          std::max (
+            { a.pooled, b.pooled, a.standing_water, b.standing_water }) < 0.5f;
         section.falling = std::max (a.waterfall, b.waterfall) > 0.0f;
       }
 
       for (std::size_t k = 0; k < count; ++k) {
         RiverSection& section = sections[k];
-        section.regime_width = terrain::river_width (area[k] * u::m * u::m)
-                                 .numerical_value_in (u::m);
+        section.regime_width = terrain::river_width (area[k]);
         // The tangent over about half the channel's width, so the meanders
         // the alignment draws show and the cells it steps between do not.
         const auto reach_back = static_cast<std::ptrdiff_t> (
-          std::clamp (0.5f * section.regime_width, 1.5f, 8.0f) / river_step);
+          (std::clamp (0.5f * section.regime_width, 1.5f * u::m, 8.0f * u::m) /
+           river_step)
+            .numerical_value_in (one));
         const std::size_t before =
           static_cast<std::size_t> (std::max<std::ptrdiff_t> (
             0, static_cast<std::ptrdiff_t> (k) - reach_back));
         const std::size_t after = std::min (count - 1, k + reach_back);
-        const float dx = sections[after].x - sections[before].x;
-        const float dz = sections[after].z - sections[before].z;
-        const float run = cr::hypot (dx, dz);
-        if (run > 1e-4f) {
-          section.tx = dx / run;
-          section.tz = dz / run;
-        }
-        section.level = ground.level (section.x, section.z);
-        section.depth = section.level - ground.ground (section.x, section.z);
-        section.speed = ground.speed (section.x, section.z);
-        section.running =
-          section.depth > 0.02f && section.speed > 0.03f && pooled[k] < 0.5f;
-        if (!(section.depth > 0.0f))
+        const plan_displacement_t chord =
+          sections[after].centreline - sections[before].centreline;
+        const meters_t run = hypot (chord);
+        if (run > 1e-4f * u::m)
+          section.downstream =
+            plan_unit_direction (plan_value (chord) / meters_value (run));
+        section.level = ground.level (section.centreline);
+        section.depth = section.level - ground.ground (section.centreline);
+        section.speed = ground.speed (section.centreline);
+        section.running = section.depth > 0.02f * u::m &&
+                          section.speed > 0.03f * (u::m / u::s) && unpooled[k];
+        if (!(section.depth > 0.0f * u::m))
           continue;
         // Out each way across the section until the ground stands dry.
-        const float limit = 1.6f * section.regime_width + 6.0f;
+        const meters_t limit = 1.6f * section.regime_width + 6.0f * u::m;
         section.bounded = true;
         section.deepest = section.depth;
         for (int side = 0; side < 2; ++side) {
-          const float sign = side == 0 ? 1.0f : -1.0f;
-          float reached = limit;
-          float wet = section.depth;
-          for (float across = 0.5f; across <= limit; across += 0.5f) {
-            const float d = ground.depth (section.at_x (sign * across, 0.0f),
-                                          section.at_z (sign * across, 0.0f));
-            if (!(d > 0.0f)) {
+          meters_t reached = limit;
+          terrain::ElevationChange wet = section.depth;
+          for (meters_t across = 0.5f * u::m; across <= limit;
+               across += 0.5f * u::m) {
+            const terrain::ElevationChange d = ground.depth (
+              section.at (side == 0 ? across : -across, 0.0f * u::m));
+            if (!(d > 0.0f * u::m)) {
               // The waterline lies between the last wet probe and this one.
-              reached = across - 0.5f * d / std::min (d - wet, -1e-4f);
+              reached =
+                across -
+                0.5f * u::m * d /
+                  std::min (d - wet, -1e-4f * terrain::surface_elevation[u::m]);
               break;
             }
             wet = d;
@@ -261,7 +288,7 @@ namespace moppe::game {
           }
           if (reached >= limit)
             section.bounded = false;
-          section.bank[side] = std::max (0.0f, reached);
+          section.bank[side] = std::max (0.0f * u::m, reached);
         }
       }
 
@@ -270,16 +297,20 @@ namespace moppe::game {
       for (std::size_t k = 0; k < count; ++k) {
         RiverSection& section = sections[k];
         const auto window = static_cast<std::ptrdiff_t> (
-          std::clamp (1.5f * section.regime_width, 3.0f, 30.0f) / river_step);
+          (std::clamp (1.5f * section.regime_width, 3.0f * u::m, 30.0f * u::m) /
+           river_step)
+            .numerical_value_in (one));
         const auto first = static_cast<std::size_t> (std::max<std::ptrdiff_t> (
           0, static_cast<std::ptrdiff_t> (k) - window));
         const std::size_t last = std::min (count - 1, k + window);
         if (last > first)
           section.slope =
-            std::max (0.0f,
-                      (sections[first].level - sections[last].level) /
-                        (static_cast<float> (last - first) * river_step));
-        float depth = 0.0f;
+            std::max (0.0f * grade[one],
+                      ((sections[first].level - sections[last].level) /
+                       (static_cast<float> (last - first) * river_step))
+                          .numerical_value_in (one) *
+                        grade[one]);
+        terrain::ElevationChange depth {};
         int wet = 0;
         for (std::size_t i = first; i <= last; ++i)
           if (sections[i].running) {
@@ -288,21 +319,20 @@ namespace moppe::game {
           }
         // A section's mean depth is about two thirds of its deepest.
         if (section.running && wet)
-          section.competence =
-            bed_competence (0.67f * spate_depth_ratio () * depth /
-                              static_cast<float> (wet) * u::m,
-                            section.slope)
-              .numerical_value_in (u::m);
+          section.competence = bed_competence (
+            quantity_cast<isq::length> (0.67f * spate_depth_ratio () * depth /
+                                        static_cast<float> (wet)),
+            section.slope);
         const auto turn = static_cast<std::ptrdiff_t> (
-          std::clamp (section.regime_width, 2.0f, 20.0f) / river_step);
+          (std::clamp (section.regime_width, 2.0f * u::m, 20.0f * u::m) /
+           river_step)
+            .numerical_value_in (one));
         const std::size_t back = static_cast<std::size_t> (
           std::max<std::ptrdiff_t> (0, static_cast<std::ptrdiff_t> (k) - turn));
         const std::size_t ahead = std::min (count - 1, k + turn);
         if (ahead > back)
-          section.curvature = river_cross (sections[back].tx,
-                                           sections[back].tz,
-                                           sections[ahead].tx,
-                                           sections[ahead].tz) /
+          section.curvature = river_cross (sections[back].downstream,
+                                           sections[ahead].downstream) /
                               (static_cast<float> (ahead - back) * river_step);
       }
       return sections;
@@ -318,78 +348,81 @@ namespace moppe::game {
       // Settles a stone of `radius` at a place as the boulder planner does:
       // halfway between the lowest ground under its rim and the mean. False
       // where it would enter the trail's tread or the home base.
-      bool settle (
-        float x, float z, float radius, float turn, float& settled) const {
-        if (m_ground.home (x, z) > 0.02f)
+      bool settle (const plan_position_t& at,
+                   meters_t radius,
+                   radians_t turn,
+                   terrain::SurfaceElevation& settled) const {
+        if (m_ground.home (at) > 0.02f * map::home_base_influence[one])
           return false;
-        const float centre = m_ground.ground (x, z);
-        float lowest = centre;
-        float sum = centre;
+        const terrain::SurfaceElevation centre = m_ground.ground (at);
+        terrain::SurfaceElevation lowest = centre;
+        terrain::ElevationChange sum = centre.delta_from_zero ();
         for (int k = 0; k < 4; ++k) {
-          const float angle = turn + 0.25f * river_tau * static_cast<float> (k);
-          const float px = x + 0.85f * radius * cr::cos (angle);
-          const float pz = z + 0.85f * radius * cr::sin (angle);
-          if (m_ground.trail (px, pz) > river_trail_tread)
+          const radians_t angle =
+            turn + 0.25f * river_tau * static_cast<float> (k);
+          const plan_position_t rim =
+            at + plan_displacement (0.85f * radius * moppe::cos (angle),
+                                    0.85f * radius * moppe::sin (angle));
+          if (m_ground.trail (rim) > river_trail_tread)
             return false;
-          const float height = m_ground.ground (px, pz);
+          const terrain::SurfaceElevation height = m_ground.ground (rim);
           lowest = std::min (lowest, height);
-          sum += height;
+          sum += height.delta_from_zero ();
         }
-        settled = 0.5f * (lowest + 0.2f * sum);
+        settled = terrain::SurfaceElevation (
+          0.5f * (lowest.delta_from_zero () + 0.2f * sum));
         return true;
       }
 
       // A loose stone where it falls: kept only if it shows, its top at or
       // just under the surface. `least_top` is how far above the water its
       // top must stand.
-      void loose (float x,
-                  float z,
-                  float radius,
+      void loose (const plan_position_t& at,
+                  meters_t radius,
                   std::uint32_t identity,
-                  float least_top = -0.04f) {
-        float settled = 0.0f;
-        if (!settle (
-              x, z, radius, river_tau * hash_lane (identity, 3), settled))
+                  meters_t least_top = -0.04f * u::m) {
+        terrain::SurfaceElevation settled {};
+        if (!settle (at, radius, river_tau * hash_lane (identity, 3), settled))
           return;
-        const float level = m_ground.level (x, z);
-        const float top = settled + river_settled_top * radius;
+        const terrain::SurfaceElevation level = m_ground.level (at);
+        const meters_t stands =
+          quantity_cast<isq::length> (river_settled_top * radius);
+        const terrain::SurfaceElevation top = settled + stands;
         const bool wet = level > settled;
         if (wet && top < level + least_top)
           return;
-        emit (x,
-              settled + (boulder_squash - boulder_burial) * radius,
-              z,
-              radius,
-              identity,
-              wet && radius >= river_foothold_radius && top > level + 0.04f,
-              wet);
+        emit (
+          at,
+          settled +
+            (boulder_squash - boulder_burial).numerical_value_in (one) * radius,
+          radius,
+          identity,
+          wet && radius >= river_foothold_radius && top > level + 0.04f * u::m,
+          wet);
       }
 
-      void emit (float x,
-                 float centre_y,
-                 float z,
-                 float radius,
+      void emit (const plan_position_t& at,
+                 terrain::SurfaceElevation centre,
+                 meters_t radius,
                  std::uint32_t identity,
                  bool solid,
                  bool wet) {
         m_sites.push_back ({
-          .centre = position (
-            Vec3 (m_ground.wrap_x (x), centre_y, m_ground.wrap_z (z))),
-          .normal = m_ground.normal (x, z) * terrain::terrain_normal[one],
-          .radius = radius * u::m,
+          .centre = terrain::at_elevation (m_ground.wrap (at), centre),
+          .normal = m_ground.normal (at),
+          .radius = radius,
           .moisture = (wet ? 1.0f : 0.75f) * map::surface_moisture[one],
           .seed = identity,
           .solid = solid,
         });
       }
 
-      void cross (float from_x, float from_z, float to_x, float to_z) {
-        const auto bank = [&] (float x, float z) {
-          return position (Vec3 (
-            m_ground.wrap_x (x), m_ground.ground (x, z), m_ground.wrap_z (z)));
+      void cross (const plan_position_t& from, const plan_position_t& to) {
+        const auto bank = [&] (const plan_position_t& at) {
+          return terrain::at_elevation (m_ground.wrap (at),
+                                        m_ground.ground (at));
         };
-        m_crossings.push_back (
-          { .from = bank (from_x, from_z), .to = bank (to_x, to_z) });
+        m_crossings.push_back ({ .from = bank (from), .to = bank (to) });
       }
 
       const RiverGround& ground () const {
@@ -416,64 +449,73 @@ namespace moppe::game {
                               std::uint32_t identity) {
       const RiverGround& ground = layer.ground ();
       const std::size_t start = layer.size ();
-      const float from = -(section.bank[1] + 0.3f);
-      const float to = section.bank[0] + 0.3f;
+      const meters_t from = -(section.bank[1] + 0.3f * u::m);
+      const meters_t to = section.bank[0] + 0.3f * u::m;
       int stones = 0;
       std::uint32_t k = 0;
-      for (float across = from; across <= to; ++k) {
+      for (meters_t across = from; across <= to; ++k) {
         const std::uint32_t stone = lattice_hash (identity, k, 0x57e9u);
-        const float along = 0.08f * (2.0f * hash_lane (stone, 0) - 1.0f);
-        const float x = section.at_x (across, along);
-        const float z = section.at_z (across, along);
-        across += stepping_pitch + 0.04f * (2.0f * hash_lane (stone, 1) - 1.0f);
+        const meters_t along =
+          0.08f * u::m * (2.0f * hash_lane (stone, 0) - 1.0f);
+        const plan_position_t at = section.at (across, along);
+        across +=
+          stepping_pitch + 0.04f * u::m * (2.0f * hash_lane (stone, 1) - 1.0f);
         // Wherever the feet would be wet between this stone's neighbours;
         // where they would be dry the walker steps on the ground itself.
-        float wettest = -1.0f;
+        terrain::ElevationChange wettest = -1.0f * u::m;
+        // In pitches across the stream, either side of the stone.
         for (float reach = -0.5f; reach <= 0.5f; reach += 0.25f)
           wettest = std::max (
             wettest,
-            ground.depth (x + section.nx () * reach * stepping_pitch,
-                          z + section.nz () * reach * stepping_pitch));
-        if (!(wettest > 0.02f))
+            ground.depth (
+              at + plan_displacement (plan_value (section.normal ()) * reach *
+                                      meters_value (stepping_pitch))));
+        if (!(wettest > 0.02f * u::m))
           continue;
-        const float level =
-          std::max (ground.level (x, z), ground.ground (x, z));
+        const terrain::SurfaceElevation level =
+          std::max (ground.level (at), ground.ground (at));
         // The bed under the stone's footprint, at its lowest.
-        float bed = ground.ground (x, z);
+        terrain::SurfaceElevation bed = ground.ground (at);
         for (int rim = 0; rim < 4; ++rim) {
-          const float angle = 0.25f * river_tau * static_cast<float> (rim);
-          bed = std::min (bed,
-                          ground.ground (x + 0.4f * cr::cos (angle),
-                                         z + 0.4f * cr::sin (angle)));
+          const radians_t angle = 0.25f * river_tau * static_cast<float> (rim);
+          bed =
+            std::min (bed,
+                      ground.ground (at + plan_displacement (
+                                            0.4f * u::m * moppe::cos (angle),
+                                            0.4f * u::m * moppe::sin (angle))));
         }
-        const float top = level + 0.09f + 0.09f * hash_lane (stone, 2);
+        const terrain::SurfaceElevation top =
+          level + 0.09f * u::m + 0.09f * u::m * hash_lane (stone, 2);
         // Bedded a few centimetres below the lowest of the bed under it, so
         // it stands on the bottom rather than floating over a hollow.
-        const float radius =
-          std::max (stepping_least_radius + 0.06f * hash_lane (stone, 3),
-                    (top - bed + 0.06f) / (2.0f * boulder_squash));
-        float settled = 0.0f;
+        const meters_t radius = std::max (
+          stepping_least_radius + 0.06f * u::m * hash_lane (stone, 3),
+          meters_t ((top - bed + 0.06f * u::m) /
+                    (2.0f * boulder_squash.numerical_value_in (one))));
+        terrain::SurfaceElevation settled {};
         if (radius > stepping_greatest_radius ||
-            !layer.settle (x, z, radius, 0.0f, settled)) {
+            !layer.settle (at, radius, 0.0f * u::rad, settled)) {
           layer.truncate (start);
           return false;
         }
-        layer.emit (
-          x, top - boulder_squash * radius, z, radius, stone, true, true);
+        layer.emit (at,
+                    top - boulder_squash.numerical_value_in (one) * radius,
+                    radius,
+                    stone,
+                    true,
+                    true);
         ++stones;
       }
       if (stones == 0)
         return false;
-      layer.cross (section.at_x (from - 0.5f, 0.0f),
-                   section.at_z (from - 0.5f, 0.0f),
-                   section.at_x (to + 0.5f, 0.0f),
-                   section.at_z (to + 0.5f, 0.0f));
+      layer.cross (section.at (from - 0.5f * u::m, 0.0f * u::m),
+                   section.at (to + 0.5f * u::m, 0.0f * u::m));
       return true;
     }
 
     // A place a reach could be crossed on stones, and how good a one.
     struct CrossingSite {
-      float score = 0.0f;
+      scale_factor_t score = 0.0f * scale_factor[one];
       std::size_t reach = 0;
       std::size_t index = 0;
     };
@@ -489,32 +531,39 @@ namespace moppe::game {
       for (std::size_t k = 0; k < sections.size (); ++k) {
         const RiverSection& section = sections[k];
         if (!section.running || !section.bounded || section.falling ||
-            section.deepest > stepping_deepest || section.speed > 2.4f ||
-            section.slope > 0.06f || section.wet_width () < 1.5f ||
+            section.deepest > stepping_deepest ||
+            section.speed > 2.4f * (u::m / u::s) ||
+            section.slope > 0.06f * grade[one] ||
+            section.wet_width () < 1.5f * u::m ||
             section.wet_width () > stepping_widest)
           continue;
         // Both banks a step's height or less above the water.
         bool banks = true;
         for (int side = 0; side < 2 && banks; ++side) {
-          const float across =
-            (side == 0 ? 1.0f : -1.0f) * (section.bank[side] + 0.8f);
-          const float bank = ground.ground (section.at_x (across, 0.0f),
-                                            section.at_z (across, 0.0f));
-          banks = bank < section.level + 0.4f;
+          const meters_t out = section.bank[side] + 0.8f * u::m;
+          const terrain::SurfaceElevation bank =
+            ground.ground (section.at (side == 0 ? out : -out, 0.0f * u::m));
+          banks = bank < section.level + 0.4f * u::m;
         }
         if (!banks)
           continue;
-        float trail = 0.0f;
-        for (float along = -12.0f; along <= 12.0f; along += 3.0f)
-          trail = std::max (trail,
-                            ground.trail (section.at_x (0.0f, along),
-                                          section.at_z (0.0f, along)));
+        terrain::TrailInfluence trail = 0.0f * map::trail_influence[one];
+        for (meters_t along = -12.0f * u::m; along <= 12.0f * u::m;
+             along += 3.0f * u::m)
+          trail =
+            std::max (trail, ground.trail (section.at (0.0f * u::m, along)));
         const std::uint32_t identity = lattice_hash (
           reach_identity, static_cast<std::uint32_t> (k), 0xc705u);
+        const proportion_t riffle =
+          band (0.02f * u::m, 0.20f * u::m, section.competence);
+        const proportion_t trodden = band (0.15f * map::trail_influence[one],
+                                           0.55f * map::trail_influence[one],
+                                           trail);
         sites.push_back (
-          { .score = 0.6f * smoothstep (0.02f, 0.20f, section.competence) +
-                     1.2f * smoothstep (0.15f, 0.55f, trail) +
-                     0.4f * hash_lane (identity, 0),
+          { .score = (0.6f * riffle + 1.2f * trodden +
+                      0.4f * hash_lane (identity, 0) * proportion[one])
+                       .numerical_value_in (one) *
+                     scale_factor[one],
             .reach = reach,
             .index = k });
       }
@@ -531,21 +580,26 @@ namespace moppe::game {
     void lay_steps (StoneLayer& layer,
                     const std::vector<RiverSection>& sections,
                     std::uint32_t reach_identity) {
-      float last = -1e9f;
+      meters_t last = -1e9f * u::m;
       for (std::size_t k = 0; k < sections.size (); ++k) {
         const RiverSection& section = sections[k];
-        if (!section.running || section.slope < 0.035f ||
-            section.competence < 0.1f || section.crossing)
+        if (!section.running || section.slope < 0.035f * grade[one] ||
+            section.competence < 0.1f * u::m || section.crossing)
           continue;
-        const float s = static_cast<float> (k) * river_step;
-        const float keystone =
-          std::clamp (2.5f * section.competence, 0.5f, 1.6f);
-        const float spacing = std::clamp (
-          1.5f * keystone / section.slope, 3.0f + section.wet_width (), 40.0f);
+        const meters_t s = static_cast<float> (k) * river_step;
+        const meters_t keystone =
+          std::clamp (2.5f * section.competence, 0.5f * u::m, 1.6f * u::m);
+        const meters_t spacing =
+          std::clamp (meters_t (quantity_cast<isq::length> (1.5f * keystone /
+                                                            section.slope)),
+                      3.0f * u::m + section.wet_width (),
+                      40.0f * u::m);
         if (s - last < 0.5f * spacing)
           continue;
         const auto reach = std::max<std::size_t> (
-          2, static_cast<std::size_t> (spacing / (3.0f * river_step)));
+          2,
+          static_cast<std::size_t> (
+            (spacing / (3.0f * river_step)).numerical_value_in (one)));
         bool sill = true;
         for (std::size_t j = k > reach ? k - reach : 0;
              sill && j <= std::min (sections.size () - 1, k + reach);
@@ -556,20 +610,18 @@ namespace moppe::game {
         last = s;
         const std::uint32_t row = lattice_hash (
           reach_identity, static_cast<std::uint32_t> (k), 0x57e95u);
-        float across = -(section.bank[1] + 0.2f);
-        float previous = 0.0f;
-        for (std::uint32_t j = 0; across <= section.bank[0] + 0.2f; ++j) {
+        meters_t across = -(section.bank[1] + 0.2f * u::m);
+        meters_t previous = 0.0f * u::m;
+        for (std::uint32_t j = 0; across <= section.bank[0] + 0.2f * u::m;
+             ++j) {
           const std::uint32_t stone = lattice_hash (row, j, 0x6e75u);
-          const float radius =
+          const meters_t radius =
             0.5f * keystone * (0.75f + 0.5f * hash_lane (stone, 0));
           across += 0.9f * (previous + radius);
           previous = radius;
-          const float along = 0.2f * radius * river_gaussian (stone, 1);
-          layer.loose (section.at_x (across, along),
-                       section.at_z (across, along),
-                       radius,
-                       stone,
-                       -0.08f);
+          const meters_t along = 0.2f * radius * river_gaussian (stone, 1);
+          layer.loose (
+            section.at (across, along), radius, stone, -0.08f * u::m);
         }
       }
     }
@@ -581,28 +633,37 @@ namespace moppe::game {
                   std::uint32_t reach_identity) {
       for (std::size_t k = 0; k < sections.size (); ++k) {
         const RiverSection& section = sections[k];
-        if (!section.running || section.crossing || section.competence < 0.04f)
+        if (!section.running || section.crossing ||
+            section.competence < 0.04f * u::m)
           continue;
-        const float span = section.wet_width () + 2.0f;
-        const float density =
-          0.05f + 0.25f * smoothstep (0.04f, 0.4f, section.competence);
+        const meters_t span = section.wet_width () + 2.0f * u::m;
+        const stone_density_t density =
+          (0.05f * proportion[one] +
+           0.25f * band (0.04f * u::m, 0.4f * u::m, section.competence))
+            .numerical_value_in (one) *
+          per_square_metre;
         const std::uint32_t metre =
           lattice_hash (reach_identity, static_cast<std::uint32_t> (k), 0xbedu);
         const int count = static_cast<int> (
-          std::min (60.0f, density * span * river_step + hash_lane (metre, 0)));
+          std::min (60.0f,
+                    (density * span * river_step).numerical_value_in (one) +
+                      hash_lane (metre, 0)));
         for (int j = 0; j < count; ++j) {
           const std::uint32_t stone =
             lattice_hash (metre, static_cast<std::uint32_t> (j), 0xc0bu);
-          const float across =
-            -(section.bank[1] + 1.0f) + span * hash_lane (stone, 0);
-          const float along = river_step * (hash_lane (stone, 1) - 0.5f);
-          float radius = 0.5f * section.competence *
-                         cr::exp (0.6f * river_gaussian (stone, 4));
-          if (hash_lane (stone, 2) < 0.15f)
+          const meters_t across =
+            -(section.bank[1] + 1.0f * u::m) + span * hash_lane (stone, 0);
+          const meters_t along = river_step * (hash_lane (stone, 1) - 0.5f);
+          meters_t radius =
+            0.5f * section.competence *
+            cr::exp (
+              (0.6f * river_gaussian (stone, 4)).numerical_value_in (one));
+          // Now and then a lag stone, two to four times the rest.
+          const probability_t lag = hash_lane (stone, 2) * probability[one];
+          if (lag < 0.15f * probability[one])
             radius *= 2.0f + 2.0f * hash_lane (stone, 3);
-          layer.loose (section.at_x (across, along),
-                       section.at_z (across, along),
-                       std::clamp (radius, 0.06f, 1.2f),
+          layer.loose (section.at (across, along),
+                       std::clamp (radius, 0.06f * u::m, 1.2f * u::m),
                        stone);
         }
       }
@@ -614,53 +675,56 @@ namespace moppe::game {
     void lay_bar (StoneLayer& layer,
                   const RiverSection& section,
                   int side,
-                  float strength,
-                  float grain,
-                  float reach,
+                  stone_density_t strength,
+                  meters_t grain,
+                  meters_t reach,
                   std::uint32_t identity) {
       const RiverGround& ground = layer.ground ();
-      const float sign = side == 0 ? 1.0f : -1.0f;
-      const float inner = section.bank[side] - 0.3f * section.wet_width ();
-      const float outer = section.bank[side] + reach;
-      const float density = strength;
+      const meters_t inner = section.bank[side] - 0.3f * section.wet_width ();
+      const meters_t outer = section.bank[side] + reach;
+      const stone_density_t density = strength;
       const int count = static_cast<int> (std::min (
         60.0f,
-        density * (outer - inner) * river_step + hash_lane (identity, 0)));
+        (density * (outer - inner) * river_step).numerical_value_in (one) +
+          hash_lane (identity, 0)));
       for (int j = 0; j < count; ++j) {
         const std::uint32_t stone =
           lattice_hash (identity, static_cast<std::uint32_t> (j), 0xba5u);
-        const float across =
-          sign * (inner + (outer - inner) * hash_lane (stone, 0));
-        const float along = river_step * (hash_lane (stone, 1) - 0.5f);
-        const float x = section.at_x (across, along);
-        const float z = section.at_z (across, along);
+        const meters_t out = inner + (outer - inner) * hash_lane (stone, 0);
+        const meters_t across = side == 0 ? out : -out;
+        const meters_t along = river_step * (hash_lane (stone, 1) - 0.5f);
+        const plan_position_t at = section.at (across, along);
         // A bar is low ground the flood covers, not the valley side.
-        if (ground.ground (x, z) > section.level + 1.0f)
+        if (ground.ground (at) > section.level + 1.0f * u::m)
           continue;
         // What shows on a bar is its coarse armour, a few times the grain
         // the flood moves over it.
-        const float radius =
-          0.75f * grain * cr::exp (0.5f * river_gaussian (stone, 4));
-        layer.loose (x, z, std::clamp (radius, 0.05f, 0.3f), stone, -0.03f);
+        const meters_t radius =
+          0.75f * grain *
+          cr::exp ((0.5f * river_gaussian (stone, 4)).numerical_value_in (one));
+        layer.loose (at,
+                     std::clamp (radius, 0.05f * u::m, 0.3f * u::m),
+                     stone,
+                     -0.03f * u::m);
       }
     }
 
     // How far a strand runs out from the water's edge on one side: low
     // ground rising gently away from the water, which a flood spreads over
     // and leaves what it carried on. Zero where the bank rises at once.
-    float strand_reach (const RiverGround& ground,
-                        const RiverSection& section,
-                        int side) {
-      const float sign = side == 0 ? 1.0f : -1.0f;
-      const float farthest =
-        std::clamp (1.1f * section.regime_width, 3.0f, 25.0f);
-      float reached = 0.0f;
-      for (float out = 0.5f; out <= farthest; out += 0.5f) {
-        const float across = sign * (section.bank[side] + out);
-        const float rise = ground.ground (section.at_x (across, 0.0f),
-                                          section.at_z (across, 0.0f)) -
-                           section.level;
-        if (rise > 0.15f + 0.1f * out)
+    meters_t strand_reach (const RiverGround& ground,
+                           const RiverSection& section,
+                           int side) {
+      const meters_t farthest =
+        std::clamp (1.1f * section.regime_width, 3.0f * u::m, 25.0f * u::m);
+      meters_t reached = 0.0f * u::m;
+      for (meters_t out = 0.5f * u::m; out <= farthest; out += 0.5f * u::m) {
+        const meters_t beyond = section.bank[side] + out;
+        const terrain::ElevationChange rise =
+          ground.ground (
+            section.at (side == 0 ? beyond : -beyond, 0.0f * u::m)) -
+          section.level;
+        if (rise > 0.15f * u::m + 0.1f * out)
           break;
         reached = out;
       }
@@ -677,23 +741,30 @@ namespace moppe::game {
       for (std::size_t k = 0; k < sections.size (); ++k) {
         const RiverSection& section = sections[k];
         if (!section.running || !section.bounded || section.crossing ||
-            section.competence < 0.01f || section.wet_width () < 2.0f)
+            section.competence < 0.01f * u::m ||
+            section.wet_width () < 2.0f * u::m)
           continue;
-        const float bend = std::abs (section.curvature) * section.wet_width ();
-        const int inside = section.curvature > 0.0f ? 0 : 1;
+        // How far the river turns across its own width.
+        const auto bend = abs (section.curvature) * section.wet_width ();
+        const int inside = section.curvature > 0.0f / u::m ? 0 : 1;
         for (int side = 0; side < 2; ++side) {
-          const float reach = strand_reach (layer.ground (), section, side);
-          const float strength = std::max (
-            side == inside ? 0.5f * smoothstep (0.1f, 0.4f, bend) : 0.0f,
-            reach >= 2.0f ? 0.06f : 0.0f);
-          if (strength <= 0.0f)
+          const meters_t reach = strand_reach (layer.ground (), section, side);
+          const stone_density_t strength = std::max (
+            side == inside
+              ? 0.5f *
+                  band (0.1f * one, 0.4f * one, bend).numerical_value_in (one) *
+                  per_square_metre
+              : 0.0f * per_square_metre,
+            reach >= 2.0f * u::m ? 0.06f * per_square_metre
+                                 : 0.0f * per_square_metre);
+          if (strength <= 0.0f * per_square_metre)
             continue;
           lay_bar (layer,
                    section,
                    side,
                    strength,
-                   std::min (section.competence, 0.4f),
-                   std::max (reach, 1.5f),
+                   std::min (section.competence, 0.4f * u::m),
+                   std::max (reach, 1.5f * u::m),
                    lattice_hash (reach_identity,
                                  static_cast<std::uint32_t> (2 * k + side),
                                  0xbabu));
@@ -712,48 +783,56 @@ namespace moppe::game {
       const RiverGround& ground = layer.ground ();
       const RiverSection& mouth = tributary.back ();
       std::size_t nearest = 0;
-      float closest = std::numeric_limits<float>::infinity ();
+      square_meters_t closest =
+        std::numeric_limits<float>::infinity () * (u::m * u::m);
       for (std::size_t k = 0; k < main.size (); ++k) {
-        const float dx = ground.apart_x (mouth.x - main[k].x);
-        const float dz = ground.apart_z (mouth.z - main[k].z);
-        const float d2 = dx * dx + dz * dz;
+        const plan_displacement_t d =
+          ground.apart (mouth.centreline - main[k].centreline);
+        const square_meters_t d2 = x_of (d) * x_of (d) + z_of (d) * z_of (d);
         if (d2 < closest) {
           closest = d2;
           nearest = k;
         }
       }
       const RiverSection& junction = main[nearest];
-      if (!junction.running || closest > 30.0f * 30.0f)
+      if (!junction.running || closest > (30.0f * u::m) * (30.0f * u::m))
         return;
       // The tributary's own reading upstream of the mixing, where it last
       // ran on its own grade.
-      float carried = 0.0f;
+      meters_t carried = 0.0f * u::m;
       const std::size_t reach_back = std::min<std::size_t> (
-        tributary.size (), static_cast<std::size_t> (30.0f / river_step));
+        tributary.size (),
+        static_cast<std::size_t> (
+          (30.0f * u::m / river_step).numerical_value_in (one)));
       for (std::size_t k = tributary.size () - reach_back;
            k < tributary.size ();
            ++k)
         carried = std::max (carried, tributary[k].competence);
-      const float grain = std::max (junction.competence, 0.6f * carried);
-      if (grain < 0.05f)
+      const meters_t grain = std::max (junction.competence, 0.6f * carried);
+      if (grain < 0.05f * u::m)
         return;
-      const float dx = ground.apart_x (mouth.x - junction.x);
-      const float dz = ground.apart_z (mouth.z - junction.z);
-      const int side = dx * junction.nx () + dz * junction.nz () > 0.0f ? 0 : 1;
+      const plan_displacement_t d =
+        ground.apart (mouth.centreline - junction.centreline);
+      const Vec2& normal = plan_value (junction.normal ());
+      const int side =
+        x_of (d) * normal.x () + z_of (d) * normal.z () > 0.0f * u::m ? 0 : 1;
       const auto length = static_cast<std::size_t> (
-        std::clamp (3.0f * junction.wet_width (), 6.0f, 90.0f) / river_step);
+        (std::clamp (3.0f * junction.wet_width (), 6.0f * u::m, 90.0f * u::m) /
+         river_step)
+          .numerical_value_in (one));
       for (std::size_t i = 0; i < length && nearest + i < main.size (); ++i) {
         const RiverSection& section = main[nearest + i];
         if (!section.running || !section.bounded || section.crossing)
           continue;
-        const float fade =
-          0.6f * (1.0f - static_cast<float> (i) / static_cast<float> (length));
+        const stone_density_t fade =
+          0.6f * (1.0f - static_cast<float> (i) / static_cast<float> (length)) *
+          per_square_metre;
         lay_bar (layer,
                  section,
                  side,
                  fade,
-                 std::min (grain, 0.4f),
-                 1.5f,
+                 std::min (grain, 0.4f * u::m),
+                 1.5f * u::m,
                  lattice_hash (
                    reach_identity, static_cast<std::uint32_t> (i), 0xc0f1u));
       }
@@ -770,57 +849,63 @@ namespace moppe::game {
           continue;
         const std::uint32_t rock = lattice_hash (
           reach_identity, static_cast<std::uint32_t> (k), 0x6eaf7u);
-        if (hash_lane (rock, 0) * 110.0f >= river_step)
+        // About one to every 110 metres of river.
+        if (hash_lane (rock, 0) * 110.0f * u::m >= river_step)
           continue;
-        const float radius = 0.7f + 0.9f * cr::pow (hash_lane (rock, 1), 1.5f);
-        const float span = section.wet_width () + 5.0f;
-        const float across =
-          -(section.bank[1] + 2.5f) + span * hash_lane (rock, 2);
-        layer.loose (section.at_x (across, 0.0f),
-                     section.at_z (across, 0.0f),
-                     radius,
-                     rock,
-                     0.15f);
+        const meters_t radius =
+          0.7f * u::m + 0.9f * u::m * cr::pow (hash_lane (rock, 1), 1.5f);
+        const meters_t span = section.wet_width () + 5.0f * u::m;
+        const meters_t across =
+          -(section.bank[1] + 2.5f * u::m) + span * hash_lane (rock, 2);
+        layer.loose (
+          section.at (across, 0.0f * u::m), radius, rock, 0.15f * u::m);
       }
     }
   }
 
-  meters_t bed_competence (meters_t depth, float slope) noexcept {
-    const float d = std::max (0.0f, depth.numerical_value_in (u::m));
-    const float s = std::max (0.0f, slope);
-    if (!(d > 0.0f) || !(s > 0.0f))
+  meters_t bed_competence (meters_t depth, grade_t slope) noexcept {
+    const meters_t d = std::max (0.0f * u::m, depth);
+    const grade_t s = std::max (0.0f * grade[one], slope);
+    if (!(d > 0.0f * u::m) || !(s > 0.0f * grade[one]))
       return 0.0f * u::m;
-    const float shields = std::max (0.03f, 0.15f * cr::pow (s, 0.25f));
-    return d * s / (river_submerged_density * shields) * u::m;
+    const shields_number_t shields =
+      std::max (0.03f * shields_number[one],
+                0.15f * cr::pow (s.numerical_value_in (one), 0.25f) *
+                  shields_number[one]);
+    return quantity_cast<isq::length> (d * s /
+                                       (river_submerged_density * shields));
   }
 
-  float bed_fineness (meters_t competence) noexcept {
-    constexpr float sand = 0.002f;
-    constexpr float cobble = 0.064f;
-    const float grain = std::max (competence.numerical_value_in (u::m), 1e-5f);
-    return std::clamp ((cr::log (cobble) - cr::log (grain)) /
-                         (cr::log (cobble) - cr::log (sand)),
+  BedFineness bed_fineness (meters_t competence) noexcept {
+    constexpr meters_t sand = 0.002f * u::m;
+    constexpr meters_t cobble = 0.064f * u::m;
+    const meters_t grain = std::max (competence, 1e-5f * u::m);
+    return std::clamp ((cr::log (meters_value (cobble)) -
+                        cr::log (meters_value (grain))) /
+                         (cr::log (meters_value (cobble)) -
+                          cr::log (meters_value (sand))),
                        0.0f,
-                       1.0f);
+                       1.0f) *
+           terrain::bed_grain_fineness[one];
   }
 
   meters_t sheet_competence (const map::SurfaceGeometry& surface,
                              const terrain::WaterSheets& water,
                              std::size_t cell) noexcept {
-    const float depth =
-      terrain::surface_elevation_value (
-        spatial::get<terrain::surface_elevation> (water)[cell]) -
-      terrain::surface_elevation_value (
-        spatial::get<terrain::surface_elevation> (surface)[cell]);
-    const Vec3 current =
-      spatial::get<terrain::water_velocity> (water)[cell].numerical_value_in (
-        u::m / u::s);
-    const float speed = cr::hypot (current[0], current[2]);
-    if (!(depth > 0.0f) || !(speed > 0.03f))
+    const terrain::ElevationChange depth =
+      spatial::get<terrain::surface_elevation> (water)[cell] -
+      spatial::get<terrain::surface_elevation> (surface)[cell];
+    const terrain::WaterVelocity current =
+      spatial::get<terrain::water_velocity> (water)[cell];
+    const speed_t speed = plan_speed (current);
+    if (!(depth > 0.0f * u::m) || !(speed > 0.03f * (u::m / u::s)))
       return 0.0f * u::m;
     // The current descends the surface's grade as fast as it runs along it.
-    return bed_competence (0.67f * spate_depth_ratio () * depth * u::m,
-                           std::min (-current[1] / speed, 0.5f));
+    return bed_competence (
+      quantity_cast<isq::length> (0.67f * spate_depth_ratio () * depth),
+      std::min ((descent (current) / speed).numerical_value_in (one) *
+                  grade[one],
+                0.5f * grade[one]));
   }
 
   RiverBedReading read_river_bed (const map::SurfaceGeometry& surface,
@@ -834,25 +919,26 @@ namespace moppe::game {
     const auto& level = spatial::get<terrain::surface_elevation> (water);
     constexpr std::uint32_t none = std::numeric_limits<std::uint32_t>::max ();
     RiverBedReading bed {
-      .fineness = std::vector<float> (domain.size (), -1.0f),
-      .strand = std::vector<float> (domain.size (), -1.0f),
+      .fineness = std::vector<BedFineness> (
+        domain.size (), -1.0f * terrain::bed_grain_fineness[one]),
+      .strand = std::vector<StrandHeight> (domain.size (),
+                                           -1.0f * terrain::strand_height[one]),
     };
-    std::vector<float> competence (domain.size (), 0.0f);
+    std::vector<meters_t> competence (domain.size (), 0.0f * u::m);
     // Each cell the running water nearest it, found outward from the water
     // a ring of cells at a time, the first to arrive keeping it.
     std::vector<std::uint32_t> source (domain.size (), none);
     std::vector<std::uint32_t> front;
     for (std::size_t cell = 0; cell < domain.size (); ++cell) {
-      competence[cell] =
-        sheet_competence (surface, water, cell).numerical_value_in (u::m);
-      if (competence[cell] > 0.0f) {
+      competence[cell] = sheet_competence (surface, water, cell);
+      if (competence[cell] > 0.0f * u::m) {
         source[cell] = static_cast<std::uint32_t> (cell);
-        bed.fineness[cell] = bed_fineness (competence[cell] * u::m);
+        bed.fineness[cell] = bed_fineness (competence[cell]);
         front.push_back (static_cast<std::uint32_t> (cell));
       }
     }
-    const int rings = static_cast<int> (
-      std::ceil (12.0f / domain.spacing_x ().numerical_value_in (u::m)));
+    const int rings = static_cast<int> (std::ceil (
+      (12.0f * u::m / domain.spacing_x ()).numerical_value_in (one)));
     std::vector<std::uint32_t> next;
     for (int ring = 0; ring < rings && !front.empty (); ++ring) {
       next.clear ();
@@ -873,22 +959,25 @@ namespace moppe::game {
       }
       front.swap (next);
     }
-    const float spate = spate_depth_ratio () - 1.0f;
+    const scale_factor_t spate =
+      spate_depth_ratio () - 1.0f * scale_factor[one];
     for (std::size_t cell = 0; cell < domain.size (); ++cell) {
       const std::uint32_t from = source[cell];
       if (from == none || from == cell)
         continue;
       // A strand: level ground the spate stands over, which rises above
       // today's water by the share of the depth the day's flow lacks.
-      const float rise = terrain::surface_elevation_value (ground[cell]) -
-                         terrain::surface_elevation_value (level[from]);
-      const float flood =
-        spate * (terrain::surface_elevation_value (level[from]) -
-                 terrain::surface_elevation_value (ground[from]));
+      const terrain::ElevationChange rise = ground[cell] - level[from];
+      const terrain::ElevationChange flood =
+        quantity_cast<terrain::surface_elevation> (
+          spate * (level[from] - ground[from]));
       if (!(rise < flood) || normal[cell].numerical_value_in (one)[1] < 0.9f)
         continue;
-      bed.fineness[cell] = bed_fineness (competence[from] * u::m);
-      bed.strand[cell] = std::max (0.0f, rise) / flood;
+      bed.fineness[cell] = bed_fineness (competence[from]);
+      bed.strand[cell] =
+        (std::max (0.0f * terrain::surface_elevation[u::m], rise) / flood)
+          .numerical_value_in (one) *
+        terrain::strand_height[one];
     }
     return bed;
   }
@@ -946,15 +1035,17 @@ namespace moppe::game {
       std::ranges::stable_sort (candidates, [] (const auto& a, const auto& b) {
         return a.score > b.score;
       });
-      std::vector<Vec3> crossed;
+      std::vector<plan_position_t> crossed;
       for (const CrossingSite& candidate : candidates) {
         std::vector<RiverSection>& sections = surveys[candidate.reach];
         const RiverSection& section = sections[candidate.index];
-        const bool near = std::ranges::any_of (crossed, [&] (const Vec3& at) {
-          const float dx = ground.apart_x (section.x - at[0]);
-          const float dz = ground.apart_z (section.z - at[2]);
-          return dx * dx + dz * dz < stepping_spacing * stepping_spacing;
-        });
+        const bool near =
+          std::ranges::any_of (crossed, [&] (const plan_position_t& at) {
+            const plan_displacement_t d =
+              ground.apart (section.centreline - at);
+            return x_of (d) * x_of (d) + z_of (d) * z_of (d) <
+                   stepping_spacing * stepping_spacing;
+          });
         if (near)
           continue;
         StoneLayer layer (ground, laid[candidate.reach]);
@@ -965,9 +1056,10 @@ namespace moppe::game {
                             static_cast<std::uint32_t> (candidate.index),
                             0x5e9u)))
           continue;
-        crossed.push_back (Vec3 (section.x, 0.0f, section.z));
+        crossed.push_back (section.centreline);
         // Keep the way clear for a couple of metres up and down stream.
-        const auto clear = static_cast<std::size_t> (2.0f / river_step);
+        const auto clear = static_cast<std::size_t> (
+          (2.0f * u::m / river_step).numerical_value_in (one));
         for (std::size_t i = candidate.index > clear ? candidate.index - clear
                                                      : 0;
              i <= std::min (sections.size () - 1, candidate.index + clear);

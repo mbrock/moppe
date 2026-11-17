@@ -1,6 +1,8 @@
 #ifndef MOPPE_COLOR_HH
 #define MOPPE_COLOR_HH
 
+#include <moppe/gfx/math.hh>
+
 #include <algorithm>
 #include <cstddef>
 
@@ -32,16 +34,21 @@ namespace moppe {
   // These operations describe existing art direction, not physical light
   // transport.  Naming them keeps the chosen display-space approximation
   // visible at call sites until material and spectral models replace it.
+  // The channels stay floats: they are display-referred values on their
+  // way to the GPU. How far a mix goes and how much a colour is scaled
+  // are typed, and become floats here, at that edge.
   constexpr DisplayColor
-  mix_display (DisplayColor from, DisplayColor to, float amount) {
-    return DisplayColor (from.red + (to.red - from.red) * amount,
-                         from.green + (to.green - from.green) * amount,
-                         from.blue + (to.blue - from.blue) * amount);
+  mix_display (DisplayColor from, DisplayColor to, blend_weight_t amount) {
+    const float a = amount.numerical_value_in (mp_units::one);
+    return DisplayColor (from.red + (to.red - from.red) * a,
+                         from.green + (to.green - from.green) * a,
+                         from.blue + (to.blue - from.blue) * a);
   }
 
-  constexpr DisplayColor scale_display (DisplayColor color, float amount) {
-    return DisplayColor (
-      color.red * amount, color.green * amount, color.blue * amount);
+  constexpr DisplayColor scale_display (DisplayColor color,
+                                        scale_factor_t amount) {
+    const float a = amount.numerical_value_in (mp_units::one);
+    return DisplayColor (color.red * a, color.green * a, color.blue * a);
   }
 
   constexpr DisplayColor clamp_display (DisplayColor color) {

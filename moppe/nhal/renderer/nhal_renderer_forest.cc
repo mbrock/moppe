@@ -427,7 +427,7 @@ namespace moppe::nhal {
       open_scene ();
       constexpr float cell_metres = 1.2f;
       constexpr int side = 64;
-      const Vec3 camera = m_params.camera_pos;
+      const Vec3 camera = position_value (m_params.camera_pos);
       const auto& t = m_terrain.params;
       shaders::leaves::Leaves leaves {};
       leaves.window = { std::floor (camera[0] / cell_metres) - side / 2,

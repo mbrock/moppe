@@ -3,6 +3,8 @@
 #ifndef MOPPE_SITE_GEOLOGY_HH
 #define MOPPE_SITE_GEOLOGY_HH
 
+#include <moppe/gfx/math.hh>
+
 #include <cstdint>
 #include <functional>
 #include <span>
@@ -10,12 +12,15 @@
 
 namespace moppe::site {
   // The game's default world: 5 km across, its sea at 50 m.
-  inline constexpr float land_period_m = 5000.0f;
-  inline constexpr float land_sea_level_m = 50.0f;
+  inline constexpr meters_t land_period = 5000.0f * u::m;
+  inline constexpr meters_t land_sea_level = 50.0f * u::m;
 
-  // Heights in metres, `lattice` squared of them, rows from the north.
-  using GrowthStep = std::function<void (
-    int step, int steps, double years, std::span<const float> heights)>;
+  // Heights in metres, `lattice` squared of them, rows from the north
+  // (the raster the page and the GPU read); `years` since the land rose.
+  using GrowthStep = std::function<void (int step,
+                                         int steps,
+                                         julian_years_f64_t years,
+                                         std::span<const float> heights)>;
 
   // Raises the land of world `seed` and evolves it through the play
   // profile's two million years, calling `step` with the first heights

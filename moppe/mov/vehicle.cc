@@ -204,8 +204,8 @@ namespace moppe {
     }
 
     void Vehicle::substep (seconds_t h, bool first) {
-      m_yaw += (m_yaw_target - m_yaw) *
-               smoothing_alpha (vehicle_rig::steering_smoothing, h);
+      m_yaw += radians_t ((m_yaw_target - m_yaw) *
+                          smoothing_alpha (vehicle_rig::steering_smoothing, h));
       update_jets (h, m_rigid->grounded ());
 
       Vec3 ahead = m_rigid->forward ();

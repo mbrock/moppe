@@ -1,8 +1,10 @@
 #ifndef MOPPE_GAME_FINGERPOSTS_HH
 #define MOPPE_GAME_FINGERPOSTS_HH
 
+#include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/roads.hh>
 
 #include <cstddef>
@@ -21,14 +23,13 @@ namespace moppe::game {
     struct Board {
       // Into network.places.
       std::size_t place = 0;
-      float metres = 0.0f;
+      // How far along the network.
+      meters_t distance {};
     };
 
     struct Arm {
-      // The way the arm points across the ground from the post, a unit
-      // vector.
-      float direction_x = 1.0f;
-      float direction_z = 0.0f;
+      // The way the arm points across the ground from the post.
+      plan_direction_t direction = plan_unit_direction (Vec2 (1.0f, 0.0f));
       terrain::Road::Kind kind = terrain::Road::Kind::Road;
       // The way it points along is no longer used (roads.hh).
       bool abandoned = false;
@@ -38,10 +39,8 @@ namespace moppe::game {
 
     // Where the post stands, beside the junction and off the tread, and
     // the junction itself; both within one period of the world.
-    float x_m = 0.0f;
-    float z_m = 0.0f;
-    float junction_x_m = 0.0f;
-    float junction_z_m = 0.0f;
+    plan_position_t at {};
+    plan_position_t junction {};
     std::vector<Arm> arms;
   };
 
@@ -49,14 +48,14 @@ namespace moppe::game {
   // way (the planner lays each new way from or to an old one, so that is
   // where they all meet) and where each place lies on it -- and
   // plans a post at each junction that is not itself one of the places
-  // (they have their own landmarks). The periods are the world's.
-  [[nodiscard]] std::vector<Fingerpost> plan_fingerposts (
-    const terrain::RoadNetwork& network, float period_x, float period_z);
+  // (they have their own landmarks). The period is the world's.
+  [[nodiscard]] std::vector<Fingerpost>
+  plan_fingerposts (const terrain::RoadNetwork& network, plan_extent_t period);
 
   // A board's distance as a Swedish signpost gives it: metres to the
   // nearest ten under a kilometre ("320 m"), and beyond, kilometres as a
   // bare figure with a decimal comma ("2,4").
-  [[nodiscard]] std::string fingerpost_distance (float metres);
+  [[nodiscard]] std::string fingerpost_distance (meters_t distance);
 
   // The posts made: weathered square timber with a board for each place
   // an arm leads to, stacked down the post and pointed at the tip, as
@@ -68,7 +67,8 @@ namespace moppe::game {
   // boards; `lettering` is what is painted on each face of a board -- the
   // name and distance set in the HUD's face, and a border following the
   // board's edge -- as Slug glyphs placed in world metres, for
-  // Renderer::create_world_text.
+  // Renderer::create_world_text. `ground` is the ground's elevation, roads
+  // and all, under a point within one period.
   struct FingerpostSigns {
     render::DrawList mesh;
     render::TextList lettering;
@@ -79,22 +79,21 @@ namespace moppe::game {
                     const render::Font& font,
                     std::span<const Fingerpost> posts,
                     std::span<const std::string> names,
-                    const std::function<float (float x, float z)>& ground);
+                    const terrain::ElevationField& ground);
 
   // A world's posts, planned with it and made the first time they are
   // drawn, when the renderer and the HUD's face are up.
   class RoadSigns {
   public:
     // Plans the posts of a world just activated, to be made anew.
-    void
-    plan (const terrain::RoadNetwork& network, float period_x, float period_z);
+    void plan (const terrain::RoadNetwork& network, plan_extent_t period);
 
     // Makes the posts if they are not yet made and `hud_font` is up,
     // naming the places `names`, then draws them.
     void draw (render::Renderer& r,
                const render::Font* hud_font,
                std::span<const std::string> names,
-               const std::function<float (float x, float z)>& ground);
+               const terrain::ElevationField& ground);
 
     // The timber and boards in the sun's shadow.
     void cast_shadow (render::Renderer& r) const;

@@ -26,6 +26,15 @@
       "file": "land-v6-play-2048-123-446e21d0.arrows",
       "url": "https://github.com/mbrock/moppe/releases/download/land-v6/land-v6-play-2048-123-446e21d0.arrows.tar.zst",
       "sha256": "48bb0564db0b25b4c976bca36a4c2e444574d891cd6fab45594ca30c3e899299"
+    },
+    {
+      "version": 7,
+      "profile": "play",
+      "resolution": 2048,
+      "seed": 123,
+      "file": "land-v7-play-2048-123-446e21d0.arrows",
+      "url": "https://github.com/mbrock/moppe/releases/download/land-v7/land-v7-play-2048-123-446e21d0.arrows.tar.zst",
+      "sha256": "b0eb41ca8aeadfd6af2dba2450f1a0bf906b6af1310f5565f52bbbefcc85d953"
     }
   ]
 }

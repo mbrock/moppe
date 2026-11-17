@@ -24,10 +24,15 @@ int main (int argc, char** argv) {
   moppe::site::grow_land (
     lattice,
     seed,
-    [&] (int step, int steps, double years, std::span<const float> heights) {
+    [&] (int step,
+         int steps,
+         moppe::julian_years_f64_t years,
+         std::span<const float> heights) {
       const auto now = std::chrono::steady_clock::now ();
       std::cout
-        << "step " << step << "/" << steps << " at " << years << " years: "
+        << "step " << step << "/" << steps << " at "
+        << years.numerical_value_in (mp_units::astronomy::Julian_year)
+        << " years: "
         << std::chrono::duration<double, std::milli> (now - last).count ()
         << " ms\n";
       last = now;

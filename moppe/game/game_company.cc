@@ -12,13 +12,13 @@ namespace moppe {
     void MoppeGame::make_room (const CompanionSnapshot& theirs) {
       if (logic ().m_doing != Doing::on_foot ())
         return;
-      const double here = m_company.link->now ();
+      const link_time_t here = m_company.link->now ();
       if (here > theirs.sent ||
           (here == theirs.sent && m_company.link->player () < theirs.player))
         return;
       mov::Vehicle& bike = session ().bike ();
-      Vec3 apart =
-        position_value (bike.position ()) - theirs.fleet.bike.position;
+      Vec3 apart = position_value (bike.position ()) -
+                   position_value (theirs.fleet.bike.position);
       apart[1] = 0.0f;
       if (length2 (apart) > 2.5f * 2.5f)
         return;
@@ -44,8 +44,8 @@ namespace moppe {
       m_parking.park_tractor (parking_lot ());
       m_parking.park_mountain_bike (parking_lot ());
       m_parking.park_long_john (parking_lot ());
-      m_parking.park_helicopter (
-        parking_lot (), moppe::position (theirs.fleet.helicopter.position));
+      m_parking.park_helicopter (parking_lot (),
+                                 theirs.fleet.helicopter.position);
       if (logic ().m_doing != Doing::driving (Machine::boat))
         m_parking.park_boat (parking_lot ());
       if (logic ().m_doing != Doing::driving (Machine::jet_ski))
@@ -55,7 +55,7 @@ namespace moppe {
         return;
       session ().walker ().spawn (moppe::position (place + side * 1.8f),
                                   unit_direction (heading));
-      logic ().m_fp_eye = position_value (session ().walker ().eye_position ());
+      logic ().m_fp_eye = session ().walker ().eye_position ();
       m_opening.reaim (session (), surface ());
     }
 

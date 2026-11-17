@@ -6,40 +6,41 @@
 namespace moppe::terrain {
   namespace {
     // Cubic metres a second from each square metre of catchment: 2.5 from a
-    // square kilometre.
-    constexpr float discharge_per_m2 = 2.5e-6f;
-    // W = 7.59 sqrt(Q), which is 0.012 sqrt(A): a wide gravel bed.
-    constexpr float width_per_sqrt_m2 = 0.012f;
-    constexpr float depth_per_sqrt_m2 = 0.0015f;
-    constexpr float visible_river_width_m = 5.0f;
+    // square kilometre, a runoff of 2.5 mm a second.
+    constexpr quantity<u::m / u::s, float> spate_runoff = 2.5e-6f * u::m / u::s;
+    // W = 7.59 sqrt(Q), which is 0.012 sqrt(A): a wide gravel bed. The
+    // depth a nickpoint's sheet falls as grows the same way.
+    constexpr scale_factor_t width_per_root_area = 0.012f * scale_factor[one];
+    constexpr scale_factor_t depth_per_root_area = 0.0015f * scale_factor[one];
+    constexpr meters_t visible_river_width = 5.0f * u::m;
+
+    // The catchment's side: the root of its area, never negative.
+    meters_t root_area (square_meters_t contributing_area) {
+      return sqrt (std::max (0.0f * u::m * u::m, contributing_area));
+    }
   }
 
   cubic_meters_per_second_t
   river_discharge (square_meters_t contributing_area) noexcept {
-    const float area = std::max (
-      0.0f, (contributing_area).numerical_value_in (moppe::u::m * moppe::u::m));
-    return discharge_per_m2 * area * mp_units::si::metre * mp_units::si::metre *
-           mp_units::si::metre / mp_units::si::second;
+    return spate_runoff * std::max (0.0f * u::m * u::m, contributing_area);
   }
 
   meters_t river_width (square_meters_t contributing_area) noexcept {
-    const float area = std::max (
-      0.0f, (contributing_area).numerical_value_in (moppe::u::m * moppe::u::m));
-    return std::clamp (width_per_sqrt_m2 * std::sqrt (area), 1.5f, 60.0f) *
-           mp_units::si::metre;
+    return std::clamp (
+      meters_t (width_per_root_area * root_area (contributing_area)),
+      1.5f * u::m,
+      60.0f * u::m);
   }
 
   meters_t river_depth (square_meters_t contributing_area) noexcept {
-    const float area = std::max (
-      0.0f, (contributing_area).numerical_value_in (moppe::u::m * moppe::u::m));
-    return std::clamp (depth_per_sqrt_m2 * std::sqrt (area), 0.4f, 2.5f) *
-           mp_units::si::metre;
+    return std::clamp (
+      meters_t (depth_per_root_area * root_area (contributing_area)),
+      0.4f * u::m,
+      2.5f * u::m);
   }
 
   square_meters_t visible_river_minimum_area () noexcept {
-    constexpr float square_root_area_m =
-      visible_river_width_m / width_per_sqrt_m2;
-    return square_root_area_m * square_root_area_m * mp_units::si::metre *
-           mp_units::si::metre;
+    const meters_t square_root_area (visible_river_width / width_per_root_area);
+    return square_root_area * square_root_area;
   }
 }

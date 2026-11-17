@@ -18,68 +18,75 @@ namespace moppe::site {
     // The page's paper (moppe/site/index.html's --paper, #f3efe4).
     constexpr std::array<float, 4> paper { 0.953f, 0.937f, 0.894f, 1.0f };
     // A morning sun in the south-east, a third of the way up.
-    constexpr float sun_azimuth = 2.3f, sun_elevation = 0.5f;
+    constexpr heading_t sun_azimuth = 2.3f * heading[si::radian];
+    constexpr inclination_t sun_elevation = 0.5f * inclination[si::radian];
 
-    struct Vec3 {
-      float x = 0, y = 0, z = 0;
-      Vec3 operator- (Vec3 o) const {
-        return { x - o.x, y - o.y, z - o.z };
-      }
-      Vec3 operator* (float s) const {
-        return { x * s, y * s, z * s };
-      }
-    };
-
-    float dot (Vec3 a, Vec3 b) {
-      return a.x * b.x + a.y * b.y + a.z * b.z;
+    // The unit vector along V, as v * (1 / |v|).
+    direction_t unit (Vec3 v) {
+      return unit_direction (v * (1.0f / std::sqrt (dot (v, v))));
     }
-    Vec3 cross (Vec3 a, Vec3 b) {
-      return { a.y * b.z - a.z * b.y,
-               a.z * b.x - a.x * b.z,
-               a.x * b.y - a.y * b.x };
-    }
-    Vec3 normalize (Vec3 v) {
-      return v * (1.0f / std::sqrt (dot (v, v)));
-    }
-    std::array<float, 4> lanes (Vec3 v, float w) {
-      return { v.x, v.y, v.z, w };
+    // A GPU lane: three floats and a fourth.
+    std::array<float, 4> lanes (const Vec3& v, float w) {
+      return { v[0], v[1], v[2], w };
     }
 
-    float smooth (float low, float high, float value) {
-      const float t = std::clamp ((value - low) / (high - low), 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
+    blend_weight_t
+    smooth (proportion_t low, proportion_t high, proportion_t value) {
+      const float t = std::clamp (
+        static_cast<float> ((value - low) / (high - low)), 0.0f, 1.0f);
+      return t * t * (3.0f - 2.0f * t) * blend_weight[one];
     }
 
-    float mix (float a, float b, float t) {
-      return a + (b - a) * t;
+    template <typename Q>
+    Q mix (Q a, Q b, blend_weight_t t) {
+      return a + (b - a) * t.numerical_value_in (one);
     }
   }
 
-  GenesisView
-  genesis_choreography (float progress, double seconds, float aspect) {
-    const float t = std::clamp (progress, 0.0f, 1.0f);
+  GenesisView genesis_choreography (proportion_t progress,
+                                    seconds_f64_t seconds,
+                                    aspect_ratio_t aspect) {
+    const proportion_t t =
+      std::clamp (progress, 0.0f * proportion[one], 1.0f * proportion[one]);
+    const auto ramp = [&] (proportion_t low, proportion_t high) {
+      return smooth (low, high, t);
+    };
+    constexpr auto pitch = inclination[si::radian];
+    constexpr auto weight = blend_weight[one];
     GenesisView view;
-    view.fov_y = 0.75f;
+    view.fov_y = 0.75f * u::rad;
     // Straight down at the map, tipping to a relief model seen from on
     // high, then down over the land toward the horizon.
-    const float tip = smooth (0.15f, 0.55f, t);
-    const float lower = smooth (0.55f, 0.95f, t);
-    view.pitch = mix (mix (1.56f, 0.85f, tip), 0.26f, lower);
+    const blend_weight_t tip = ramp (0.15f, 0.55f);
+    const blend_weight_t lower = ramp (0.55f, 0.95f);
+    view.pitch =
+      mix (mix (1.56f * pitch, 0.85f * pitch, tip), 0.26f * pitch, lower);
     // From overhead some 2.6 km of the land fill the width, however
     // narrow the screen.
-    const float overhead = std::clamp (
-      1300.0f / (std::tan (0.5f * view.fov_y) * std::min (aspect, 1.6f)),
-      2500.0f,
-      9000.0f);
-    view.distance = mix (mix (overhead, 3400.0f, tip), 2300.0f, lower);
-    view.heading = 0.25f + 0.9f * t + static_cast<float> (seconds) * 0.01f;
-    view.exaggeration = mix (1.0f, 1.8f, smooth (0.2f, 0.6f, t));
-    view.target = { 2500.0f, 150.0f * view.exaggeration, 2500.0f };
-    view.map = 1.0f - smooth (0.18f, 0.42f, t);
-    view.land = smooth (0.58f, 0.74f, t);
-    view.relief = std::max (0.0f, 1.0f - view.map - view.land);
-    view.wire =
-      0.8f * smooth (0.25f, 0.38f, t) * (1.0f - smooth (0.42f, 0.58f, t));
+    const meters_t overhead = std::clamp (
+      1300.0f * u::m /
+        (std::tan ((0.5f * view.fov_y).numerical_value_in (u::rad)) *
+         std::min (aspect, 1.6f * aspect_ratio[one]).numerical_value_in (one)),
+      2500.0f * u::m,
+      9000.0f * u::m);
+    view.distance =
+      mix (mix (overhead, 3400.0f * u::m, tip), 2300.0f * u::m, lower);
+    // The swing: a turn across the scroll, and a slow drift with time.
+    const quantity<heading[si::radian] / si::second, float> drift =
+      0.01f * heading[si::radian] / u::s;
+    view.heading = 0.25f * heading[si::radian] +
+                   0.9f * heading[si::radian] * t.numerical_value_in (one) +
+                   value_cast<float> (seconds) * drift;
+    view.exaggeration = mix (
+      1.0f * scale_factor[one], 1.8f * scale_factor[one], ramp (0.2f, 0.6f));
+    view.target = position (Vec3 (
+      2500.0f, 150.0f * view.exaggeration.numerical_value_in (one), 2500.0f));
+    view.map = 1.0f * weight - ramp (0.18f, 0.42f);
+    view.land = ramp (0.58f, 0.74f);
+    view.relief =
+      std::max (0.0f * weight, 1.0f * weight - view.map - view.land);
+    view.wire = 0.8f * ramp (0.25f, 0.38f) *
+                (1.0f * weight - ramp (0.42f, 0.58f)).numerical_value_in (one);
     view.seconds = seconds;
     return view;
   }
@@ -87,10 +94,10 @@ namespace moppe::site {
   Genesis::Genesis (nhal::Device& device,
                     const GenesisShaders& shaders,
                     int lattice,
-                    float period_m,
-                    float sea_level_m)
-      : m_device (device), m_lattice (lattice), m_period (period_m),
-        m_sea_level (sea_level_m) {
+                    meters_t period,
+                    terrain::SurfaceElevation sea_level)
+      : m_device (device), m_lattice (lattice), m_period (period),
+        m_sea_level (sea_level) {
     const auto side = static_cast<std::uint32_t> (lattice);
     m_samples = device.create_buffer (
       { .size = std::uint64_t (side) * side * 16, .label = "genesis samples" });
@@ -166,7 +173,7 @@ namespace moppe::site {
                                          "genesis depth" });
   }
 
-  bool Genesis::render (const GenesisView& view, float mix) {
+  bool Genesis::render (const GenesisView& view, blend_weight_t mix) {
     if (!m_device.begin_frame ())
       return false;
     if (m_width != m_device.surface_width () ||
@@ -180,39 +187,68 @@ namespace moppe::site {
       m_dirty = false;
     }
 
-    const float aspect = float (m_width) / float (m_height);
-    const float pitch = std::clamp (view.pitch, -1.5f, 1.56f);
-    const Vec3 forward { std::cos (pitch) * std::sin (view.heading),
-                         -std::sin (pitch),
-                         -std::cos (pitch) * std::cos (view.heading) };
-    const Vec3 right = normalize (cross (forward, { 0.0f, 1.0f, 0.0f }));
-    const Vec3 up = cross (right, forward);
-    const Vec3 target { view.target[0], view.target[1], view.target[2] };
-    const Vec3 eye = target - forward * view.distance;
-    const float tan_y = std::tan (0.5f * view.fov_y);
-    const float tan_x = tan_y * aspect;
-    const Vec3 sun { std::sin (sun_azimuth) * std::cos (sun_elevation),
-                     std::sin (sun_elevation),
-                     -std::cos (sun_azimuth) * std::cos (sun_elevation) };
+    const aspect_ratio_t aspect =
+      float (m_width) / float (m_height) * aspect_ratio[one];
+    // The shaders' trigonometry is the platform's, not CORE-MATH's: the
+    // view is not generation, and its pictures are kept as they were.
+    const float pitch = std::clamp (view.pitch,
+                                    -1.5f * inclination[si::radian],
+                                    1.56f * inclination[si::radian])
+                          .numerical_value_in (si::radian);
+    const float heading = view.heading.numerical_value_in (si::radian);
+    const direction_t forward =
+      unit_direction (Vec3 (std::cos (pitch) * std::sin (heading),
+                            -std::sin (pitch),
+                            -std::cos (pitch) * std::cos (heading)));
+    const direction_t right =
+      unit (cross (direction_value (forward), Vec3 (0.0f, 1.0f, 0.0f)));
+    const direction_t up = unit_direction (
+      cross (direction_value (right), direction_value (forward)));
+    const position_t eye = view.target - quantity_cast<isq::position_vector> (
+                                           along (forward, view.distance));
+    // The frustum's half-extents at unit distance.
+    const float tan_y =
+      std::tan ((0.5f * view.fov_y).numerical_value_in (si::radian));
+    const float tan_x = tan_y * aspect.numerical_value_in (one);
+    const float azimuth = sun_azimuth.numerical_value_in (si::radian);
+    const float elevation = sun_elevation.numerical_value_in (si::radian);
+    const direction_t sun =
+      unit_direction (Vec3 (std::sin (azimuth) * std::cos (elevation),
+                            std::sin (elevation),
+                            -std::cos (azimuth) * std::cos (elevation)));
 
     Frame frame {};
-    frame.eye = lanes (eye, float (std::fmod (view.seconds, 100000.0)));
-    frame.right = lanes (right * (1.0f / tan_x), tan_x);
-    frame.up = lanes (up * (1.0f / tan_y), tan_y);
-    frame.forward = lanes (forward, 2.0f);
-    frame.sun = lanes (sun, 0.0f);
-    frame.grid = {
-      m_period / float (m_lattice), float (m_lattice), m_period, 3.0f
-    };
-    frame.look = { view.map, view.relief, view.wire, view.land };
-    frame.water = {
-      m_sea_level, 20.0f, std::clamp (mix, 0.0f, 1.0f), view.exaggeration
-    };
+    frame.eye =
+      lanes (position_value (eye),
+             float (std::fmod (view.seconds.numerical_value_in (si::second),
+                               100000.0)));
+    frame.right = lanes (direction_value (right) * (1.0f / tan_x), tan_x);
+    frame.up = lanes (direction_value (up) * (1.0f / tan_y), tan_y);
+    frame.forward = lanes (direction_value (forward), 2.0f);
+    frame.sun = lanes (direction_value (sun), 0.0f);
+    frame.grid = { meters_value (m_period / float (m_lattice)),
+                   float (m_lattice),
+                   meters_value (m_period),
+                   3.0f };
+    frame.look = { view.map.numerical_value_in (one),
+                   view.relief.numerical_value_in (one),
+                   view.wire.numerical_value_in (one),
+                   view.land.numerical_value_in (one) };
+    frame.water = { terrain::surface_elevation_value (m_sea_level),
+                    20.0f,
+                    std::clamp (
+                      mix, 0.0f * blend_weight[one], 1.0f * blend_weight[one])
+                      .numerical_value_in (one),
+                    view.exaggeration.numerical_value_in (one) };
     frame.paper = paper;
     frame.zenith = { 0.36f, 0.54f, 0.80f, 1.0f };
     // Fog thickens as the map becomes land and the horizon comes into
     // view, which hides where the tiles end.
-    frame.horizon = { 0.80f, 0.85f, 0.89f, 0.00002f + 0.00006f * view.land };
+    frame.horizon = { 0.80f,
+                      0.85f,
+                      0.89f,
+                      0.00002f +
+                        0.00006f * view.land.numerical_value_in (one) };
 
     nhal::RenderPassDesc pass;
     pass.colors[0] = { .texture = m_color,

@@ -99,7 +99,7 @@ namespace {
                                 water,
                                 terrain::RiverNetwork {},
                                 seed,
-                                50.0f * u::m,
+                                terrain::surface_elevation_point (50.0f * u::m),
                                 relief * u::m);
   }
 }
@@ -174,8 +174,10 @@ MOPPE_TEST (boulders_are_sized_and_settled_into_the_ground) {
     // On level ground the body's centre stands its half-height less its
     // burial above the soil.
     const float rise = position_value (site.centre)[1] - boulder_test_ground;
-    MOPPE_CHECK_NEAR (
-      rise, (game::boulder_squash - game::boulder_burial) * radius, 1e-3f);
+    MOPPE_CHECK_NEAR (rise,
+                      ((game::boulder_squash - game::boulder_burial) * radius)
+                        .numerical_value_in (mp_units::one),
+                      1e-3f);
   }
   // Mostly knee-high stones, with a tail of large ones.
   MOPPE_CHECK (small * 10 > plan.sites.size () * 8);

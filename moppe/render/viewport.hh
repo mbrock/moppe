@@ -1,6 +1,8 @@
 #ifndef MOPPE_RENDER_VIEWPORT_HH
 #define MOPPE_RENDER_VIEWPORT_HH
 
+#include <moppe/gfx/math.hh>
+
 #include <algorithm>
 #include <cstdint>
 
@@ -15,9 +17,11 @@ namespace moppe::render {
   // A nonpositive maximum leaves even an ultrawide surface whole.
   inline Viewport fit_viewport (std::uint32_t width,
                                 std::uint32_t height,
-                                float maximum_aspect) {
-    const double most = double (height) * maximum_aspect;
-    if (height > 0 && maximum_aspect > 0 && width > most) {
+                                aspect_ratio_t maximum_aspect) {
+    const double most =
+      double (height) * maximum_aspect.numerical_value_in (one);
+    if (height > 0 && maximum_aspect > 0.0f * aspect_ratio[one] &&
+        width > most) {
       const auto fitted = std::max (1u, std::uint32_t (most));
       return { (width - fitted) / 2, 0, fitted, height };
     }

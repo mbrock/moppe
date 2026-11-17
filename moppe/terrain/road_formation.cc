@@ -1,9 +1,11 @@
 #include <moppe/terrain/roads.hh>
 
 #include <moppe/correct_math.hh>
+#include <moppe/gfx/signal.hh>
 #include <moppe/parallel.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/river.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <algorithm>
 #include <array>
@@ -22,41 +24,97 @@
 // river beds (channel.cc) are cut the same way.
 namespace moppe::terrain {
   namespace {
-    constexpr float no_height = std::numeric_limits<float>::infinity ();
+    // No distance yet: nothing claims the cell, no culvert is near.
+    constexpr meters_t far = std::numeric_limits<float>::infinity () * u::m;
+    // Over and under every height: no pin, no floor.
+    constexpr SurfaceElevation above_all { far };
+    constexpr SurfaceElevation below_all { -far };
+
+    bool finite (SurfaceElevation height) {
+      return std::isfinite (surface_elevation_value (height));
+    }
+
+    // Overloads moppe::lerp rather than hiding it: unity builds put this
+    // file before others in moppe::terrain that call the general one.
+    using moppe::lerp;
+
+    SurfaceElevation
+    lerp (SurfaceElevation from, SurfaceElevation to, blend_weight_t t) {
+      return surface_elevation_point (std::lerp (surface_elevation_value (from),
+                                                 surface_elevation_value (to),
+                                                 t.numerical_value_in (one)) *
+                                      u::m);
+    }
+
+    meters_t lerp (meters_t from, meters_t to, blend_weight_t t) {
+      return std::lerp (meters_value (from),
+                        meters_value (to),
+                        t.numerical_value_in (one)) *
+             u::m;
+    }
+
+    // Half way between two heights, as 0.5 (a + b).
+    SurfaceElevation midpoint (SurfaceElevation a, SurfaceElevation b) {
+      return SurfaceElevation (0.5f *
+                               (a.delta_from_zero () + b.delta_from_zero ()));
+    }
+
+    // How far a grade climbs over a run: a grade is height over length,
+    // so over a length it is a height, here in the ground's frame.
+    ElevationChange rise (grade_t grade, meters_t run) {
+      return quantity_cast<surface_elevation> (isq::height (grade * run));
+    }
 
     struct FormationGround {
       const TerrainDomain& domain;
-      std::span<const float> heights;
+      std::span<const SurfaceElevation> elevations;
       int width;
       int height;
-      float spacing_x;
-      float spacing_z;
+      meters_t spacing_x;
+      meters_t spacing_z;
 
       std::size_t cell (int x, int z) const {
         return static_cast<std::size_t> (wrap_index (z, height)) * width +
                static_cast<std::size_t> (wrap_index (x, width));
       }
 
+      // A lane's length in lattice steps, the boundary into cells.
+      float steps_x (meters_t x) const {
+        return (x / spacing_x).numerical_value_in (one);
+      }
+
+      float steps_z (meters_t z) const {
+        return (z / spacing_z).numerical_value_in (one);
+      }
+
       // Bilinear, as the renderer and physics read it.
-      float at (float x_m, float z_m) const {
-        const float gx = x_m / spacing_x;
-        const float gz = z_m / spacing_z;
+      SurfaceElevation at (plan_position_t point) const {
+        const float gx = steps_x (x_of (point));
+        const float gz = steps_z (z_of (point));
         const float fx = std::floor (gx);
         const float fz = std::floor (gz);
         const int x = static_cast<int> (fx);
         const int z = static_cast<int> (fz);
         const float tx = gx - fx;
         const float tz = gz - fz;
-        const float north =
-          std::lerp (heights[cell (x, z)], heights[cell (x + 1, z)], tx);
-        const float south = std::lerp (
-          heights[cell (x, z + 1)], heights[cell (x + 1, z + 1)], tx);
-        return std::lerp (north, south, tz);
+        const auto value = [&] (int cx, int cz) {
+          return surface_elevation_value (elevations[cell (cx, cz)]);
+        };
+        const float north = std::lerp (value (x, z), value (x + 1, z), tx);
+        const float south =
+          std::lerp (value (x, z + 1), value (x + 1, z + 1), tx);
+        return surface_elevation_point (std::lerp (north, south, tz) * u::m);
       }
 
-      std::size_t nearest_cell (float x_m, float z_m) const {
-        return cell (static_cast<int> (std::lround (x_m / spacing_x)),
-                     static_cast<int> (std::lround (z_m / spacing_z)));
+      // The lattice point nearest a point, column then row.
+      std::array<int, 2> nearest (plan_position_t point) const {
+        return { static_cast<int> (std::lround (steps_x (x_of (point)))),
+                 static_cast<int> (std::lround (steps_z (z_of (point)))) };
+      }
+
+      std::size_t nearest_cell (plan_position_t point) const {
+        const auto [x, z] = nearest (point);
+        return cell (x, z);
       }
     };
 
@@ -64,42 +122,44 @@ namespace moppe::terrain {
     // below by the highest of `lower`'s cones, above by the lowest of
     // `upper`'s. Two passes, as each cone only widens along the line.
     void cones (std::span<const meters_t> along,
-                std::vector<meters_t>& lower,
-                std::vector<meters_t>& upper,
-                float grade) {
+                std::vector<SurfaceElevation>& lower,
+                std::vector<SurfaceElevation>& upper,
+                grade_t grade) {
       const std::size_t n = along.size ();
       for (std::size_t i = 1; i < n; ++i) {
-        const meters_t rise = grade * (along[i] - along[i - 1]);
-        lower[i] = std::max (lower[i], lower[i - 1] - rise);
-        upper[i] = std::min (upper[i], upper[i - 1] + rise);
+        const ElevationChange climb = rise (grade, along[i] - along[i - 1]);
+        lower[i] = std::max (lower[i], lower[i - 1] - climb);
+        upper[i] = std::min (upper[i], upper[i - 1] + climb);
       }
       for (std::size_t i = n - 1; i-- > 0;) {
-        const meters_t rise = grade * (along[i + 1] - along[i]);
-        lower[i] = std::max (lower[i], lower[i + 1] - rise);
-        upper[i] = std::min (upper[i], upper[i + 1] + rise);
+        const ElevationChange climb = rise (grade, along[i + 1] - along[i]);
+        lower[i] = std::max (lower[i], lower[i + 1] - climb);
+        upper[i] = std::min (upper[i], upper[i + 1] + climb);
       }
     }
 
-    // A mean over `half` metres either way along the line, nearer the ends
-    // over less. Averaging keeps any bound on the grade, so the eased
-    // profile climbs no steeper than the one it eases.
-    std::vector<meters_t> ease_profile (std::span<const meters_t> along,
-                                        std::span<const meters_t> values,
-                                        meters_t half) {
+    // A mean over `half` either way along the line, nearer the ends over
+    // less. Averaging keeps any bound on the grade, so the eased profile
+    // climbs no steeper than the one it eases.
+    std::vector<SurfaceElevation>
+    ease_profile (std::span<const meters_t> along,
+                  std::span<const SurfaceElevation> values,
+                  meters_t half) {
       const std::size_t n = values.size ();
-      std::vector<meters_t> result (n);
+      std::vector<SurfaceElevation> result (n);
       std::size_t first = 0;
       std::size_t last = 0;
+      // Metres above the datum, summed in double.
       double sum = 0.0;
       for (std::size_t i = 0; i < n; ++i) {
         const meters_t reach = std::min (
           { half, along[i] - along.front (), along.back () - along[i] });
         while (last < n && along[last] <= along[i] + reach + 1e-3f * u::m)
-          sum += values[last++].numerical_value_in (u::m);
+          sum += surface_elevation_value (values[last++]);
         while (first < last && along[first] < along[i] - reach - 1e-3f * u::m)
-          sum -= values[first++].numerical_value_in (u::m);
-        result[i] =
-          static_cast<float> (sum / static_cast<double> (last - first)) * u::m;
+          sum -= surface_elevation_value (values[first++]);
+        result[i] = surface_elevation_point (
+          static_cast<float> (sum / static_cast<double> (last - first)) * u::m);
       }
       return result;
     }
@@ -110,41 +170,30 @@ namespace moppe::terrain {
     // its worst point), eased over the vertical curves, held within the
     // cut and fill allowed, no lower than its floors, and through every
     // pinned height.
-    std::vector<float> solve_profile (std::span<const float> along_m,
-                                      std::span<const float> ground_m,
-                                      std::span<const float> pins_m,
-                                      std::span<const float> floors_m,
-                                      const RoadFormation& parameters) {
-      const auto metres = [] (std::span<const float> values) {
-        std::vector<meters_t> result;
-        result.reserve (values.size ());
-        for (float value : values)
-          result.push_back (value * u::m);
-        return result;
-      };
-      const auto along = metres (along_m);
-      const auto ground = metres (ground_m);
-      const auto pins = metres (pins_m);
-      const auto floors = metres (floors_m);
+    std::vector<SurfaceElevation>
+    solve_profile (std::span<const meters_t> along,
+                   std::span<const SurfaceElevation> ground,
+                   std::span<const SurfaceElevation> pins,
+                   std::span<const SurfaceElevation> floors,
+                   const RoadFormation& parameters) {
       const std::size_t n = ground.size ();
-      const float grade = parameters.maximum_grade;
-      std::vector<meters_t> lower (ground.begin (), ground.end ());
-      std::vector<meters_t> upper (ground.begin (), ground.end ());
+      const grade_t grade = parameters.maximum_grade;
+      std::vector<SurfaceElevation> lower (ground.begin (), ground.end ());
+      std::vector<SurfaceElevation> upper (ground.begin (), ground.end ());
       cones (along, lower, upper, grade);
-      std::vector<meters_t> profile (n);
+      std::vector<SurfaceElevation> profile (n);
       for (std::size_t i = 0; i < n; ++i)
-        profile[i] = 0.5f * (lower[i] + upper[i]);
-      profile =
-        ease_profile (along, profile, 0.5f * parameters.vertical_curve * u::m);
+        profile[i] = midpoint (lower[i], upper[i]);
+      profile = ease_profile (along, profile, 0.5f * parameters.vertical_curve);
       // The cut and fill allowed, as bounds that themselves keep the
       // grade: clamping into them keeps it too. Where a hump or a hollow
       // asks for more than they allow, the two cross, and the road cuts or
       // fills between them, deeper than allowed but at its grade.
-      std::vector<meters_t> deepest (n);
-      std::vector<meters_t> highest (n);
+      std::vector<SurfaceElevation> deepest (n);
+      std::vector<SurfaceElevation> highest (n);
       for (std::size_t i = 0; i < n; ++i) {
-        deepest[i] = ground[i] - parameters.maximum_cut * u::m;
-        highest[i] = ground[i] + parameters.maximum_fill * u::m;
+        deepest[i] = ground[i] - parameters.maximum_cut;
+        highest[i] = ground[i] + parameters.maximum_fill;
       }
       cones (along, deepest, highest, grade);
       for (std::size_t i = 0; i < n; ++i)
@@ -154,18 +203,18 @@ namespace moppe::terrain {
 
       // No lower than its floors, come up to at the road's grade.
       {
-        std::vector<meters_t> least (floors.begin (), floors.end ());
-        std::vector<meters_t> unbounded (n, no_height * u::m);
+        std::vector<SurfaceElevation> least (floors.begin (), floors.end ());
+        std::vector<SurfaceElevation> unbounded (n, above_all);
         cones (along, least, unbounded, grade);
         for (std::size_t i = 0; i < n; ++i)
           profile[i] = std::max (profile[i], least[i]);
       }
 
-      std::vector<meters_t> pin_lower (n, -no_height * u::m);
-      std::vector<meters_t> pin_upper (n, no_height * u::m);
+      std::vector<SurfaceElevation> pin_lower (n, below_all);
+      std::vector<SurfaceElevation> pin_upper (n, above_all);
       bool pinned = false;
       for (std::size_t i = 0; i < n; ++i)
-        if (std::isfinite (pins[i].numerical_value_in (u::m))) {
+        if (finite (pins[i])) {
           pin_lower[i] = pin_upper[i] = pins[i];
           pinned = true;
         }
@@ -174,77 +223,72 @@ namespace moppe::terrain {
         for (std::size_t i = 0; i < n; ++i)
           profile[i] = pin_lower[i] <= pin_upper[i]
                          ? std::clamp (profile[i], pin_lower[i], pin_upper[i])
-                         : 0.5f * (pin_lower[i] + pin_upper[i]);
+                         : midpoint (pin_lower[i], pin_upper[i]);
       }
-      std::vector<float> result;
-      result.reserve (n);
-      for (meters_t height : profile)
-        result.push_back (height.numerical_value_in (u::m));
-      return result;
+      return profile;
+    }
+
+    // Where along a segment, from 0 at its start to 1 at its end, lies
+    // its point nearest a point, given the segment's start from it.
+    blend_weight_t nearest_along (plan_displacement_t start,
+                                  plan_displacement_t step) {
+      const square_meters_t length2 = dot (step, step);
+      return (length2 > 0.0f * u::m * u::m
+                ? std::clamp (
+                    (-dot (start, step) / length2).numerical_value_in (one),
+                    0.0f,
+                    1.0f)
+                : 0.0f) *
+             blend_weight[one];
     }
 
     // An earlier road's tread height at the point of it nearest `at`, if
     // it passes within `reach`.
-    float height_on (const Road& road,
-                     RoadPoint at,
-                     float period_x,
-                     float period_z,
-                     float reach) {
-      float best = no_height;
-      float height = no_height;
+    SurfaceElevation height_on (const Road& road,
+                                plan_position_t at,
+                                plan_extent_t period,
+                                meters_t reach) {
+      meters_t best = far;
+      SurfaceElevation height = above_all;
       for (std::size_t i = 1; i < road.points.size (); ++i) {
-        const float ax =
-          minimum_image_delta (road.points[i - 1].x_m - at.x_m, period_x);
-        const float az =
-          minimum_image_delta (road.points[i - 1].z_m - at.z_m, period_z);
-        const float dx = road.points[i].x_m - road.points[i - 1].x_m;
-        const float dz = road.points[i].z_m - road.points[i - 1].z_m;
-        const float length2 = dx * dx + dz * dz;
-        const float t =
-          length2 > 0.0f
-            ? std::clamp (-(ax * dx + az * dz) / length2, 0.0f, 1.0f)
-            : 0.0f;
-        const float distance = cr::hypot (ax + dx * t, az + dz * t);
+        const plan_displacement_t start =
+          minimum_image (road.points[i - 1] - at, period);
+        const plan_displacement_t step = road.points[i] - road.points[i - 1];
+        const blend_weight_t t = nearest_along (start, step);
+        const meters_t distance =
+          hypot (start + step * t.numerical_value_in (one));
         if (distance < best) {
           best = distance;
-          height = std::lerp (road.heights[i - 1], road.heights[i], t);
+          height = lerp (road.heights[i - 1], road.heights[i], t);
         }
       }
-      return best <= reach ? height : no_height;
+      return best <= reach ? height : above_all;
     }
 
     // How near a road's line passes a point.
-    float offset_from (const Road& road,
-                       RoadPoint at,
-                       float period_x,
-                       float period_z) {
-      float best = no_height;
+    meters_t
+    offset_from (const Road& road, plan_position_t at, plan_extent_t period) {
+      meters_t best = far;
       for (std::size_t i = 1; i < road.points.size (); ++i) {
-        const float ax =
-          minimum_image_delta (road.points[i - 1].x_m - at.x_m, period_x);
-        const float az =
-          minimum_image_delta (road.points[i - 1].z_m - at.z_m, period_z);
-        const float dx = road.points[i].x_m - road.points[i - 1].x_m;
-        const float dz = road.points[i].z_m - road.points[i - 1].z_m;
-        const float length2 = dx * dx + dz * dz;
-        const float t =
-          length2 > 0.0f
-            ? std::clamp (-(ax * dx + az * dz) / length2, 0.0f, 1.0f)
-            : 0.0f;
-        best = std::min (best, cr::hypot (ax + dx * t, az + dz * t));
+        const plan_displacement_t start =
+          minimum_image (road.points[i - 1] - at, period);
+        const plan_displacement_t step = road.points[i] - road.points[i - 1];
+        const blend_weight_t t = nearest_along (start, step);
+        best =
+          std::min (best, hypot (start + step * t.numerical_value_in (one)));
       }
       return best;
     }
 
     // What the nearest road makes of one cell.
     struct FormationClaim {
-      float distance = no_height;
-      float height = 0.0f;
+      meters_t distance = far;
+      SurfaceElevation height {};
       bool built = false;
       // Under a bridge's span, which leaves the ground as it is.
       bool bridge = false;
       // How far along the road from its nearest culvert's line.
-      float culvert = no_height;
+      meters_t culvert = far;
     };
   }
 
@@ -255,20 +299,21 @@ namespace moppe::terrain {
                                   const DrainageGraph& drainage,
                                   const RoadFormation& parameters) {
     MOPPE_PROFILE_ZONE ("form_roads");
-    const FormationGround ground {
-      domain,
-      surface_elevation_values (elevations),
-      static_cast<int> (domain.width ()),
-      static_cast<int> (domain.height ()),
-      domain.spacing_x ().numerical_value_in (u::m),
-      domain.spacing_z ().numerical_value_in (u::m)
+    const FormationGround ground { domain,
+                                   elevations,
+                                   static_cast<int> (domain.width ()),
+                                   static_cast<int> (domain.height ()),
+                                   domain.spacing_x (),
+                                   domain.spacing_z () };
+    const plan_extent_t period = plan_extent (ground.width * ground.spacing_x,
+                                              ground.height * ground.spacing_z);
+    // The water standing in a cell, as a depth.
+    const auto standing = [&] (std::size_t cell) -> meters_t {
+      return flood.water_depths ()[cell];
     };
-    const float period_x = ground.width * ground.spacing_x;
-    const float period_z = ground.height * ground.spacing_z;
     const auto crosses_water = [&] (std::size_t cell) {
-      return flood.water_depth_m (cell) > 1e-3f ||
-             drainage.contributing_area_at (cell).numerical_value_in (
-               u::m * u::m) >= parameters.culvert_area_m2;
+      return standing (cell) > 1e-3f * u::m ||
+             drainage.contributing_area_at (cell) >= parameters.culvert_area;
     };
 
     RoadFormationResult result;
@@ -284,16 +329,15 @@ namespace moppe::terrain {
         constexpr std::size_t shortest = 8, most = 15;
         for (std::size_t cut = 0; cut < most && road.points.size () > shortest;
              ++cut) {
-          const RoadPoint end =
+          const plan_position_t end =
             back ? road.points.back () : road.points.front ();
-          if (!crosses_water (ground.nearest_cell (end.x_m, end.z_m)))
+          if (!crosses_water (ground.nearest_cell (end)))
             break;
           if (cut == 0) {
             bool met = false;
             for (std::size_t q = 0; q < network.roads.size () && !met; ++q)
-              met =
-                q != r &&
-                offset_from (network.roads[q], end, period_x, period_z) < 6.0f;
+              met = q != r &&
+                    offset_from (network.roads[q], end, period) < 6.0f * u::m;
             if (met)
               break;
           }
@@ -308,82 +352,73 @@ namespace moppe::terrain {
     // made level.
     std::vector<std::array<bool, 2>> turns (network.roads.size (),
                                             { false, false });
-    for (const RoadTurning& turning :
-         road_turnings (network, period_x, period_z))
+    for (const RoadTurning& turning : road_turnings (network, period))
       turns[turning.road][turning.back ? 1 : 0] = true;
-    const float tread = parameters.half_width + parameters.shoulder;
+    const meters_t tread = parameters.half_width + parameters.shoulder;
     // The profiles, in order.
     for (std::size_t r = 0; r < network.roads.size (); ++r) {
       Road& road = network.roads[r];
       const std::size_t n = road.points.size ();
-      std::vector<float> along (n, 0.0f);
-      std::vector<float> natural (n);
+      std::vector<meters_t> along (n, 0.0f * u::m);
+      std::vector<SurfaceElevation> natural (n);
       for (std::size_t i = 0; i < n; ++i) {
         if (i > 0)
-          along[i] = along[i - 1] +
-                     cr::hypot (road.points[i].x_m - road.points[i - 1].x_m,
-                                road.points[i].z_m - road.points[i - 1].z_m);
-        natural[i] = ground.at (road.points[i].x_m, road.points[i].z_m);
+          along[i] = along[i - 1] + hypot (road.points[i] - road.points[i - 1]);
+        natural[i] = ground.at (road.points[i]);
       }
       if (road.kind == Road::Kind::Footpath || n < 2) {
         road.heights = std::move (natural);
         continue;
       }
-      std::vector<float> pins (n, no_height);
+      std::vector<SurfaceElevation> pins (n, above_all);
 
       // The rivers it bridges. A river's line is a cell wide and the
       // points four metres apart, so each point reads the most any cell
       // within two of it drains.
-      std::vector<float> drains (n, 0.0f);
+      std::vector<square_meters_t> drains (n, 0.0f * u::m * u::m);
       for (std::size_t i = 0; i < n; ++i) {
-        const int cx = static_cast<int> (
-          std::lround (road.points[i].x_m / ground.spacing_x));
-        const int cz = static_cast<int> (
-          std::lround (road.points[i].z_m / ground.spacing_z));
+        const auto [cx, cz] = ground.nearest (road.points[i]);
         for (int dz = -2; dz <= 2; ++dz)
           for (int dx = -2; dx <= 2; ++dx)
             drains[i] = std::max (
               drains[i],
-              drainage.contributing_area_at (ground.cell (cx + dx, cz + dz))
-                .numerical_value_in (u::m * u::m));
+              drainage.contributing_area_at (ground.cell (cx + dx, cz + dz)));
       }
       road.bridges.clear ();
       for (std::size_t i = 0; i < n;) {
-        if (drains[i] < parameters.bridge_area_m2) {
+        if (drains[i] < parameters.bridge_area) {
           ++i;
           continue;
         }
         std::size_t j = i;
-        while (j + 1 < n && drains[j + 1] >= parameters.bridge_area_m2)
+        while (j + 1 < n && drains[j + 1] >= parameters.bridge_area)
           ++j;
-        float widest = 0.0f;
-        float bed = no_height;
+        square_meters_t area = 0.0f * u::m * u::m;
+        SurfaceElevation bed = above_all;
         for (std::size_t k = i; k <= j; ++k) {
-          widest = std::max (widest, drains[k]);
+          area = std::max (area, drains[k]);
           bed = std::min (bed, natural[k]);
         }
-        const square_meters_t area = widest * u::m * u::m;
         // A road that keeps beside a river for longer than it takes to
         // cross it runs along its bank, not over it.
         if (along[j] - along[i] >
-            river_width (area).numerical_value_in (u::m) + 16.0f +
+            river_width (area) + 16.0f * u::m +
               4.0f * std::max (ground.spacing_x, ground.spacing_z)) {
           i = j + 1;
           continue;
         }
         // Clear of the spate, its banks a little beyond its bed's width
         // and wherever the ground still lies below the deck.
-        const float deck = bed + river_depth (area).numerical_value_in (u::m) +
-                           parameters.clearance;
-        const float bank =
-          0.5f * river_width (area).numerical_value_in (u::m) + 2.0f;
+        const SurfaceElevation deck =
+          bed + river_depth (area) + parameters.clearance;
+        const meters_t bank = 0.5f * river_width (area) + 2.0f * u::m;
         // Over a floodplain lower than the deck, too wide for one span,
         // the bridge keeps to the river and its banks, and the road comes
         // to it on embankments.
         const auto abutments = [&] (bool low_ground) {
           const auto reaches = [&] (std::size_t k, std::size_t from) {
-            return std::fabs (along[k] - along[from]) < bank ||
-                   (low_ground && natural[k] < deck - 0.3f);
+            return abs (along[k] - along[from]) < bank ||
+                   (low_ground && natural[k] < deck - 0.3f * u::m);
           };
           std::size_t a = i;
           while (a > 0 && along[i] - along[a - 1] <= parameters.bridge_reach &&
@@ -436,30 +471,31 @@ namespace moppe::terrain {
       // there and the road is cut on through it, so no hill stands up
       // through the planks.
       for (RoadBridge& bridge : road.bridges) {
-        float lowest = no_height;
+        SurfaceElevation lowest = above_all;
         for (std::size_t k = bridge.first; k <= bridge.last; ++k)
           lowest = std::min (lowest, natural[k]);
-        float widest = 0.0f;
+        square_meters_t widest = 0.0f * u::m * u::m;
         for (std::size_t k = bridge.first; k <= bridge.last; ++k)
           widest = std::max (widest, drains[k]);
-        const float deck =
-          lowest +
-          river_depth (widest * u::m * u::m).numerical_value_in (u::m) +
-          parameters.clearance;
+        const SurfaceElevation deck =
+          lowest + river_depth (widest) + parameters.clearance;
         while (bridge.last > bridge.first + 1 &&
-               natural[bridge.last - 1] >= deck - 0.3f)
+               natural[bridge.last - 1] >= deck - 0.3f * u::m)
           --bridge.last;
         while (bridge.first + 1 < bridge.last &&
-               natural[bridge.first + 1] >= deck - 0.3f)
+               natural[bridge.first + 1] >= deck - 0.3f * u::m)
           ++bridge.first;
-        const float from = std::max (deck, natural[bridge.first]);
-        const float to = std::max (deck, natural[bridge.last]);
-        const float span = along[bridge.last] - along[bridge.first];
+        const SurfaceElevation from = std::max (deck, natural[bridge.first]);
+        const SurfaceElevation to = std::max (deck, natural[bridge.last]);
+        const meters_t span = along[bridge.last] - along[bridge.first];
         for (std::size_t k = bridge.first; k <= bridge.last; ++k)
-          pins[k] = std::lerp (
-            from,
-            to,
-            span > 0.0f ? (along[k] - along[bridge.first]) / span : 0.0f);
+          pins[k] = lerp (from,
+                          to,
+                          (span > 0.0f * u::m
+                             ? ((along[k] - along[bridge.first]) / span)
+                                 .numerical_value_in (one)
+                             : 0.0f) *
+                            blend_weight[one]);
         ++result.bridges;
       }
       // Each stretch over smaller water, a stream or a pond, is an
@@ -472,28 +508,25 @@ namespace moppe::terrain {
         for (std::size_t k = bridge.first; k <= bridge.last; ++k)
           spanned[k] = true;
       const auto water_at = [&] (std::size_t k) {
-        const std::size_t cell =
-          ground.nearest_cell (road.points[k].x_m, road.points[k].z_m);
-        const float still = flood.water_depth_m (cell);
+        const std::size_t cell = ground.nearest_cell (road.points[k]);
+        const meters_t still = standing (cell);
         const square_meters_t area = drainage.contributing_area_at (cell);
-        return std::pair (
-          still > 1e-3f ? still : river_depth (area).numerical_value_in (u::m),
-          area.numerical_value_in (u::m * u::m));
+        return std::pair (still > 1e-3f * u::m ? still : river_depth (area),
+                          area);
       };
       for (std::size_t i = 0; i < n;) {
-        if (spanned[i] || !crosses_water (ground.nearest_cell (
-                            road.points[i].x_m, road.points[i].z_m))) {
+        if (spanned[i] ||
+            !crosses_water (ground.nearest_cell (road.points[i]))) {
           ++i;
           continue;
         }
         std::size_t j = i;
         while (j + 1 < n && !spanned[j + 1] &&
-               crosses_water (ground.nearest_cell (road.points[j + 1].x_m,
-                                                   road.points[j + 1].z_m)))
+               crosses_water (ground.nearest_cell (road.points[j + 1])))
           ++j;
         std::size_t lowest = i;
-        float surface = -no_height;
-        float drains_most = 0.0f;
+        SurfaceElevation surface = below_all;
+        square_meters_t drains_most = 0.0f * u::m * u::m;
         for (std::size_t k = i; k <= j; ++k) {
           const auto [depth, area] = water_at (k);
           if (natural[k] < natural[lowest])
@@ -501,18 +534,16 @@ namespace moppe::terrain {
           surface = std::max (surface, natural[k] + depth);
           drains_most = std::max (drains_most, area);
         }
-        const float diameter = std::clamp (
-          1.2f *
-            river_depth (drains_most * u::m * u::m).numerical_value_in (u::m),
-          0.6f,
-          1.8f);
-        const float pipe_top = natural[lowest] + diameter + 0.3f;
-        const bool level = along[j] - along[i] <= 40.0f;
+        const meters_t diameter = std::clamp (
+          1.2f * river_depth (drains_most), 0.6f * u::m, 1.8f * u::m);
+        const SurfaceElevation pipe_top =
+          natural[lowest] + diameter + 0.3f * u::m;
+        const bool level = along[j] - along[i] <= 40.0f * u::m;
         for (std::size_t k = i; k <= j; ++k)
           pins[k] = level ? std::max (surface + parameters.freeboard, pipe_top)
                           : std::max (natural[k] + water_at (k).first +
                                         parameters.freeboard,
-                                      natural[k] + 0.9f);
+                                      natural[k] + 0.9f * u::m);
         road.culverts.push_back (
           { static_cast<std::uint32_t> (lowest), natural[lowest], diameter });
         i = j + 1;
@@ -520,47 +551,41 @@ namespace moppe::terrain {
       for (const std::size_t end : { std::size_t { 0 }, n - 1 })
         for (std::size_t earlier = 0; earlier < r; ++earlier)
           if (network.roads[earlier].kind == Road::Kind::Road) {
-            const float height = height_on (network.roads[earlier],
-                                            road.points[end],
-                                            period_x,
-                                            period_z,
-                                            2.0f);
-            if (std::isfinite (height)) {
+            const SurfaceElevation height = height_on (
+              network.roads[earlier], road.points[end], period, 2.0f * u::m);
+            if (finite (height)) {
               pins[end] = height;
               break;
             }
           }
       // The loop's ends are one point, at one height.
       if (road.loop)
-        pins[0] = pins[n - 1] = std::isfinite (pins[0])       ? pins[0]
-                                : std::isfinite (pins[n - 1]) ? pins[n - 1]
-                                                              : natural[0];
+        pins[0] = pins[n - 1] = finite (pins[0])       ? pins[0]
+                                : finite (pins[n - 1]) ? pins[n - 1]
+                                                       : natural[0];
       // The tread keeps a freeboard over standing water beside it too: a
       // lake a few metres off, behind a bank no higher than the road, is
       // let in when the formation cuts that bank down.
-      std::vector<float> floors (n, -no_height);
+      std::vector<SurfaceElevation> floors (n, below_all);
       {
-        const float reach = tread + 6.0f;
-        const int rx = static_cast<int> (std::ceil (reach / ground.spacing_x));
-        const int rz = static_cast<int> (std::ceil (reach / ground.spacing_z));
+        const meters_t reach = tread + 6.0f * u::m;
+        const int rx = static_cast<int> (std::ceil (ground.steps_x (reach)));
+        const int rz = static_cast<int> (std::ceil (ground.steps_z (reach)));
         for (std::size_t i = 0; i < n; ++i) {
           if (spanned[i])
             continue;
-          const int cx = static_cast<int> (
-            std::lround (road.points[i].x_m / ground.spacing_x));
-          const int cz = static_cast<int> (
-            std::lround (road.points[i].z_m / ground.spacing_z));
+          const auto [cx, cz] = ground.nearest (road.points[i]);
           for (int dz = -rz; dz <= rz; ++dz)
             for (int dx = -rx; dx <= rx; ++dx) {
-              if (cr::hypot (dx * ground.spacing_x, dz * ground.spacing_z) >
-                  reach)
+              if (hypot (plan_displacement (dx * ground.spacing_x,
+                                            dz * ground.spacing_z)) > reach)
                 continue;
               const std::size_t cell = ground.cell (cx + dx, cz + dz);
-              const float depth = flood.water_depth_m (cell);
-              const float level = ground.heights[cell] + depth;
+              const meters_t depth = standing (cell);
+              const SurfaceElevation level = elevations[cell] + depth;
               // Water standing well above the road is held by its own
               // ground, and is no business of the road's.
-              if (depth > 1e-3f && level < natural[i] + 1.5f)
+              if (depth > 1e-3f * u::m && level < natural[i] + 1.5f * u::m)
                 floors[i] = std::max (floors[i], level + parameters.freeboard);
             }
         }
@@ -573,25 +598,28 @@ namespace moppe::terrain {
         const std::array<std::size_t, 3> last =
           back ? std::array<std::size_t, 3> { n - 1, n - 2, n - 3 }
                : std::array<std::size_t, 3> { 0, 1, 2 };
-        float level = -no_height;
+        SurfaceElevation level = below_all;
         for (const std::size_t k : last)
-          if (std::isfinite (pins[k]))
+          if (finite (pins[k]))
             level = std::max (level, pins[k]);
-        if (!std::isfinite (level)) {
-          level =
-            (natural[last[0]] + natural[last[1]] + natural[last[2]]) / 3.0f;
+        if (!finite (level)) {
+          level = SurfaceElevation ((natural[last[0]].delta_from_zero () +
+                                     natural[last[1]].delta_from_zero () +
+                                     natural[last[2]].delta_from_zero ()) /
+                                    3.0f);
           for (const std::size_t k : last)
             level = std::max (level, floors[k]);
         }
         for (const std::size_t k : last)
-          if (!std::isfinite (pins[k]))
+          if (!finite (pins[k]))
             pins[k] = level;
       }
       road.heights = solve_profile (along, natural, pins, floors, parameters);
       for (std::size_t i = 1; i < n; ++i) {
         ++result.points;
-        if (std::fabs (road.heights[i] - road.heights[i - 1]) >
-            (parameters.maximum_grade + 1e-3f) * (along[i] - along[i - 1]))
+        if (abs (road.heights[i] - road.heights[i - 1]) >
+            rise (parameters.maximum_grade + 1e-3f * grade[one],
+                  along[i] - along[i - 1]))
           ++result.steep_points;
       }
     }
@@ -601,60 +629,63 @@ namespace moppe::terrain {
     // keeps at least a cell's width, so the tread stays continuous.
     const std::size_t count = domain.size ();
     std::vector<FormationClaim> claims (count);
-    const float spacing = std::max (ground.spacing_x, ground.spacing_z);
-    const float formation = std::max (tread, 1.01f * spacing);
-    const float path_reach =
-      std::max (parameters.footpath_half_width, 0.75f * spacing) + 1.2f;
-    constexpr float batter_reach = 24.0f;
-    constexpr float blend = 4.0f;
+    const meters_t spacing = std::max (ground.spacing_x, ground.spacing_z);
+    const meters_t formation = std::max (tread, 1.01f * spacing);
+    const meters_t path_reach =
+      std::max (parameters.footpath_half_width, 0.75f * spacing) + 1.2f * u::m;
+    constexpr meters_t batter_reach = 24.0f * u::m;
+    constexpr meters_t blend = 4.0f * u::m;
     // One line's claims: its points and their heights, whether it is
     // built, which of its points end a segment of a bridge's span, and
     // how far along it its culverts lie.
-    const auto claim_line = [&] (std::span<const RoadPoint> points,
-                                 std::span<const float> heights,
+    const auto claim_line = [&] (std::span<const plan_position_t> points,
+                                 std::span<const SurfaceElevation> heights,
                                  bool built,
                                  const std::vector<bool>& spans,
-                                 std::span<const float> culverts) {
-      const float reach = built ? formation + batter_reach : path_reach;
-      std::vector<float> along (points.size (), 0.0f);
+                                 std::span<const meters_t> culverts) {
+      const meters_t reach = built ? formation + batter_reach : path_reach;
+      std::vector<meters_t> along (points.size (), 0.0f * u::m);
       for (std::size_t i = 1; i < points.size (); ++i)
-        along[i] = along[i - 1] + cr::hypot (points[i].x_m - points[i - 1].x_m,
-                                             points[i].z_m - points[i - 1].z_m);
+        along[i] = along[i - 1] + hypot (points[i] - points[i - 1]);
       for (std::size_t i = 1; i < points.size (); ++i) {
-        const RoadPoint a = points[i - 1];
-        const RoadPoint b = points[i];
-        const float dx = b.x_m - a.x_m;
-        const float dz = b.z_m - a.z_m;
-        const float length2 = dx * dx + dz * dz;
+        const plan_position_t a = points[i - 1];
+        const plan_position_t b = points[i];
+        const plan_displacement_t step = b - a;
+        const square_meters_t length2 = dot (step, step);
         const int x0 = static_cast<int> (
-          std::floor ((std::min (a.x_m, b.x_m) - reach) / ground.spacing_x));
+          std::floor (ground.steps_x (std::min (x_of (a), x_of (b)) - reach)));
         const int x1 = static_cast<int> (
-          std::ceil ((std::max (a.x_m, b.x_m) + reach) / ground.spacing_x));
+          std::ceil (ground.steps_x (std::max (x_of (a), x_of (b)) + reach)));
         const int z0 = static_cast<int> (
-          std::floor ((std::min (a.z_m, b.z_m) - reach) / ground.spacing_z));
+          std::floor (ground.steps_z (std::min (z_of (a), z_of (b)) - reach)));
         const int z1 = static_cast<int> (
-          std::ceil ((std::max (a.z_m, b.z_m) + reach) / ground.spacing_z));
+          std::ceil (ground.steps_z (std::max (z_of (a), z_of (b)) + reach)));
         for (int z = z0; z <= z1; ++z)
           for (int x = x0; x <= x1; ++x) {
-            const float px = x * ground.spacing_x - a.x_m;
-            const float pz = z * ground.spacing_z - a.z_m;
-            const float t =
-              length2 > 0.0f
-                ? std::clamp ((px * dx + pz * dz) / length2, 0.0f, 1.0f)
-                : 0.0f;
-            const float distance = cr::hypot (px - dx * t, pz - dz * t);
+            const plan_displacement_t from =
+              plan_position (x * ground.spacing_x, z * ground.spacing_z) - a;
+            const blend_weight_t t =
+              (length2 > 0.0f * u::m * u::m
+                 ? std::clamp (
+                     (dot (from, step) / length2).numerical_value_in (one),
+                     0.0f,
+                     1.0f)
+                 : 0.0f) *
+              blend_weight[one];
+            const meters_t distance =
+              hypot (from - step * t.numerical_value_in (one));
             if (distance > reach)
               continue;
             FormationClaim& claim = claims[ground.cell (x, z)];
             // A built road's claim outranks a footpath's however near.
             if ((built && !claim.built) ||
                 (built == claim.built && distance < claim.distance)) {
-              const float here = std::lerp (along[i - 1], along[i], t);
-              float culvert = no_height;
-              for (const float at : culverts)
-                culvert = std::min (culvert, std::fabs (here - at));
+              const meters_t here = lerp (along[i - 1], along[i], t);
+              meters_t culvert = far;
+              for (const meters_t at : culverts)
+                culvert = std::min (culvert, abs (here - at));
               claim = { distance,
-                        std::lerp (heights[i - 1], heights[i], t),
+                        lerp (heights[i - 1], heights[i], t),
                         built,
                         spans[i],
                         culvert };
@@ -667,12 +698,10 @@ namespace moppe::terrain {
       for (const RoadBridge& bridge : road.bridges)
         for (std::size_t k = bridge.first + 1; k <= bridge.last; ++k)
           spans[k] = true;
-      std::vector<float> along (road.points.size (), 0.0f);
+      std::vector<meters_t> along (road.points.size (), 0.0f * u::m);
       for (std::size_t i = 1; i < road.points.size (); ++i)
-        along[i] = along[i - 1] +
-                   cr::hypot (road.points[i].x_m - road.points[i - 1].x_m,
-                              road.points[i].z_m - road.points[i - 1].z_m);
-      std::vector<float> culverts;
+        along[i] = along[i - 1] + hypot (road.points[i] - road.points[i - 1]);
+      std::vector<meters_t> culverts;
       for (const RoadCulvert& c : road.culverts)
         culverts.push_back (along[c.at]);
       claim_line (road.points,
@@ -682,8 +711,7 @@ namespace moppe::terrain {
                   culverts);
     }
     // The turning places at the roads' ends, built as the roads are.
-    for (const RoadTurning& turning :
-         road_turnings (network, period_x, period_z))
+    for (const RoadTurning& turning : road_turnings (network, period))
       if (turning.heights.size () == turning.points.size ())
         claim_line (turning.points,
                     turning.heights,
@@ -691,29 +719,35 @@ namespace moppe::terrain {
                     std::vector<bool> (turning.points.size (), false),
                     {});
 
-    const std::span<const float> original = ground.heights;
+    const std::span<const SurfaceElevation> original = elevations;
     result.heights.assign (elevations.begin (), elevations.end ());
-    result.change_m.assign (count, 0.0f);
-    result.influence.assign (count, 0.0f);
-    const float cell_area = ground.spacing_x * ground.spacing_z;
-    const auto smooth = [] (float t) {
-      t = std::clamp (t, 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
+    result.change.assign (count, ElevationChange (0.0f * u::m));
+    result.influence.assign (count, 0.0f * proportion[one]);
+    const square_meters_t cell_area = ground.spacing_x * ground.spacing_z;
+    // Smoothstep over a span's fraction, clamped to it.
+    const auto smooth = [] (quantity<one, float> fraction) {
+      const float t =
+        std::clamp (fraction.numerical_value_in (one), 0.0f, 1.0f);
+      return t * t * (3.0f - 2.0f * t) * blend_weight[one];
     };
-    const auto shape = [&] (std::size_t cell, float shaped) {
-      const float change = shaped - original[cell];
-      if (std::fabs (change) < 1e-4f)
+    // How much of a cell the tread covers, as its edge fades out.
+    const auto covered = [] (blend_weight_t fade) {
+      return (1.0f - fade.numerical_value_in (one)) * proportion[one];
+    };
+    const auto shape = [&] (std::size_t cell, SurfaceElevation shaped) {
+      const ElevationChange change = shaped - original[cell];
+      if (abs (change) < 1e-4f * u::m)
         return;
-      result.heights[cell] = surface_elevation_point (shaped * u::m);
-      result.change_m[cell] = change;
-      (change < 0.0f ? result.cut_m3 : result.fill_m3) +=
-        std::fabs (change) * cell_area;
+      result.heights[cell] = shaped;
+      result.change[cell] = change;
+      (change < 0.0f * u::m ? result.cut : result.fill) +=
+        isq::height (abs (change)) * cell_area;
     };
     for (std::size_t cell = 0; cell < count; ++cell) {
       const FormationClaim& claim = claims[cell];
-      if (!std::isfinite (claim.distance))
+      if (!std::isfinite (meters_value (claim.distance)))
         continue;
-      const float d = claim.distance;
+      const meters_t d = claim.distance;
       // Under a bridge's span the ground is left as it is, but for a knoll
       // of the floodplain that would stand up through the planks: out to
       // a lattice step past the tread it is cut down clear of the deck's
@@ -726,20 +760,20 @@ namespace moppe::terrain {
         // Under the deck the ground is trodden bare: nothing grows up
         // through the planks.
         if (claim.built)
-          result.influence[cell] =
-            1.0f - smooth ((d - (parameters.deck_half_width + 0.5f)) / 1.2f);
+          result.influence[cell] = covered (smooth (
+            (d - (parameters.deck_half_width + 0.5f * u::m)) / (1.2f * u::m)));
         continue;
       }
-      if (!claim.built && flood.water_depth_m (cell) > 1e-3f)
+      if (!claim.built && standing (cell) > 1e-3f * u::m)
         continue;
       if (!claim.built) {
-        const float half =
+        const meters_t half =
           std::max (parameters.footpath_half_width, 0.75f * spacing);
-        result.influence[cell] = 1.0f - smooth ((d - half) / 1.2f);
+        result.influence[cell] = covered (smooth ((d - half) / (1.2f * u::m)));
         continue;
       }
-      result.influence[cell] =
-        1.0f - smooth ((d - std::max (tread, 0.75f * spacing)) / 1.5f);
+      result.influence[cell] = covered (
+        smooth ((d - std::max (tread, 0.75f * spacing)) / (1.5f * u::m)));
       // The embankment is built through standing water and over a
       // stream, but along a culvert's line the ground is left as it was,
       // for the water to pass under the tread; and a stream beside the
@@ -747,25 +781,24 @@ namespace moppe::terrain {
       if (claim.culvert < 0.75f * spacing)
         continue;
       if (d > formation &&
-          drainage.contributing_area_at (cell).numerical_value_in (
-            u::m * u::m) >= parameters.culvert_area_m2)
+          drainage.contributing_area_at (cell) >= parameters.culvert_area)
         continue;
-      const float g = original[cell];
-      const float edge =
+      const SurfaceElevation g = original[cell];
+      const SurfaceElevation edge =
         claim.height - parameters.crown * parameters.half_width;
-      float shaped = 0.0f;
+      SurfaceElevation shaped;
       if (d <= formation) {
         shaped =
           claim.height - parameters.crown * std::min (d, parameters.half_width);
       } else {
-        const float out = d - formation;
+        const meters_t out = d - formation;
         shaped = std::clamp (g,
                              edge - parameters.fill_slope * out,
                              edge + parameters.cut_slope * out);
         // The last few metres of reach ease_profile back to the ground, so
         // where a batter has not met it no step is left.
-        shaped = std::lerp (
-          shaped, g, smooth ((out - (batter_reach - blend)) / blend));
+        shaped =
+          lerp (shaped, g, smooth ((out - (batter_reach - blend)) / blend));
       }
       shape (cell, shaped);
     }

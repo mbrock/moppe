@@ -58,9 +58,9 @@ namespace moppe::game {
                                     std::vector<std::uint8_t> wet) {
       const Vec3& extent = extent_value (world_extent);
       return {
-        .level = (water_datum).numerical_value_in (moppe::u::m),
-        .center = Vec3 (0.5f * extent[0], 0.0f, 0.5f * extent[2]),
-        .half_extent = (ocean_half_extent).numerical_value_in (moppe::u::m),
+        .level = water_datum,
+        .center = position (Vec3 (0.5f * extent[0], 0.0f, 0.5f * extent[2])),
+        .half_extent = ocean_half_extent,
         .cells = 300,
         .wet_patches = std::move (wet),
       };

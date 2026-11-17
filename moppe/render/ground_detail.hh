@@ -1,6 +1,8 @@
 #ifndef MOPPE_RENDER_GROUND_DETAIL_HH
 #define MOPPE_RENDER_GROUND_DETAIL_HH
 
+#include <moppe/gfx/math.hh>
+
 #include <cstdint>
 #include <vector>
 
@@ -22,9 +24,9 @@ namespace moppe::render {
     // Texels a side; cells a side of the stone mosaic; the least tone a
     // stone's face has.
     static constexpr int size = 512, cells = 32;
-    static constexpr float stone_floor = 0.4f;
+    static constexpr proportion_t stone_floor = 0.4f * proportion[one];
     // The slope lanes' unit: a stored 1 is this many root-mean-squares.
-    static constexpr float slope_range = 4.0f;
+    static constexpr scale_factor_t slope_range = 4.0f * scale_factor[one];
 
     std::vector<std::uint8_t> pixels; // size * size * 4, rows of RGBA
   };

@@ -285,14 +285,12 @@ namespace moppe::game {
       }
     }
 
-    Vec3 trail_alignment_position (const terrain::TrailAlignmentPoint& point,
+    Vec3 trail_alignment_position (const plan_position_t& point,
                                    const map::SurfaceGeometry& surface) {
-      return Vec3 (
-        point.x_m,
-        terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface, moppe::position (Vec3 (point.x_m, 0.0f, point.z_m)))),
-        point.z_m);
+      return lift (plan_value (point),
+                   terrain::surface_elevation_value (
+                     spatial::sample<terrain::surface_elevation> (
+                       surface, moppe::position (lift (plan_value (point))))));
     }
 
     void add_trail_reveal (CinematicFlightPlan& plan,
@@ -923,17 +921,16 @@ namespace moppe::game {
     const float eased = t * t * (3.0f - 2.0f * t);
     const CinematicFlightWaypoint& from = m_waypoints[segment];
     const CinematicFlightWaypoint& to = m_waypoints[segment + 1];
-    return {
-      .position = position,
-      .subject = linear_vector_interpolate (from.subject, to.subject, eased),
-      .cruise_speed =
-        std::min (curve_speed_limit,
-                  speed_value (from.cruise_speed +
-                               (to.cruise_speed - from.cruise_speed) * eased)),
-      .field_of_view =
-        (from.field_of_view + (to.field_of_view - from.field_of_view) * eased)
-          .numerical_value_in (u::deg)
-    };
+    return { .position = position,
+             .subject = linear_vector_interpolate (
+               from.subject, to.subject, eased * blend_weight[one]),
+             .cruise_speed = std::min (
+               curve_speed_limit,
+               speed_value (from.cruise_speed +
+                            (to.cruise_speed - from.cruise_speed) * eased)),
+             .field_of_view = (from.field_of_view +
+                               (to.field_of_view - from.field_of_view) * eased)
+                                .numerical_value_in (u::deg) };
   }
 
   void
@@ -1099,9 +1096,10 @@ namespace moppe::game {
         const CinematicFlightWaypoint& to = m_waypoints[i + 1];
         const auto blend = [&] (float t) {
           return CinematicFlightWaypoint {
-            .position =
-              linear_vector_interpolate (from.position, to.position, t),
-            .subject = linear_vector_interpolate (from.subject, to.subject, t),
+            .position = linear_vector_interpolate (
+              from.position, to.position, t * blend_weight[one]),
+            .subject = linear_vector_interpolate (
+              from.subject, to.subject, t * blend_weight[one]),
             .cruise_speed =
               from.cruise_speed + (to.cruise_speed - from.cruise_speed) * t,
             .field_of_view =

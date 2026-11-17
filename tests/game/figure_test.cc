@@ -39,7 +39,7 @@ MOPPE_TEST (figure_rest_pose_reproduces_the_rest_mesh) {
   // The standing pose is close to the rig's rest pose, so nothing moves
   // far and nothing tears.
   game::WalkerPose walker;
-  walker.position = Vec3 (3, 2, 1);
+  walker.position = position (Vec3 (3, 2, 1));
   std::vector<Vec3> points, normals;
   game::figure::skin (game::pose_avatar (walker, 0.0f * u::s), points, normals);
   MOPPE_CHECK (points.size () == game::figure::vertices.size ());
@@ -50,14 +50,14 @@ MOPPE_TEST (figure_skin_never_tears_through_a_stride) {
   // Far from the origin, as in a real world, where any error in the blend
   // weights scales with the coordinates.
   game::WalkerPose walker;
-  walker.position = Vec3 (700, 80, 650);
-  walker.heading = Vec3 (0.6f, 0, 0.8f);
+  walker.position = position (Vec3 (700, 80, 650));
+  walker.heading = unit_direction (Vec3 (0.6f, 0, 0.8f));
   std::vector<Vec3> points, normals;
   for (float speed : { 1.4f, 3.0f, 6.5f })
     for (int i = 0; i < 16; ++i) {
-      walker.stride_speed = speed;
-      walker.velocity = walker.heading * speed;
-      walker.stride_phase = i / 16.0f;
+      walker.stride_speed = speed * u::m / u::s;
+      walker.velocity = velocity (direction_value (walker.heading) * speed);
+      walker.stride_phase = i / 16.0f * proportion[one];
       game::figure::skin (
         game::pose_avatar (walker, 0.0f * u::s), points, normals);
       const float stretch = worst_stretch (points);

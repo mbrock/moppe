@@ -38,7 +38,10 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
   MOPPE_CHECK (options.config.fullscreen);
   MOPPE_CHECK (!parsed ({ "--windowed" }).config.fullscreen);
   MOPPE_CHECK (!options.config.capture_frames);
-  MOPPE_CHECK_NEAR (options.graphics.render_scale_override, 0.5f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    options.graphics.render_scale_override.numerical_value_in (one),
+    0.5f,
+    0.0f);
   MOPPE_CHECK (options.graphics.motion_blur);
   MOPPE_CHECK (options.screenshot_path.empty ());
   // Unresolved: main recalls the last played seed for an ordinary launch.
@@ -87,14 +90,22 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
   MOPPE_CHECK (!parsed ({ "--graphics-quality", "low" }).graphics.bloom);
   MOPPE_CHECK (parsed ({ "--graphics-quality", "high" }).graphics.bloom);
   const game::LaunchOptions high = parsed ({ "--graphics-quality", "high" });
-  MOPPE_CHECK_NEAR (high.graphics.render_scale_override, 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    high.graphics.render_scale_override.numerical_value_in (one), 0.0f, 0.0f);
   MOPPE_CHECK (high.graphics.motion_blur);
   const game::LaunchOptions scales = parsed ({ "--render-scale", "0.375" });
-  MOPPE_CHECK_NEAR (scales.graphics.render_scale_override, 0.375f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    scales.graphics.render_scale_override.numerical_value_in (one),
+    0.375f,
+    0.0f);
   // Play sheds resolution to hold 60 frames a second, unless a scale is
   // asked for outright.
-  MOPPE_CHECK_NEAR (parsed ({}).graphics.target_frame_rate, 60.0f, 0.0f);
-  MOPPE_CHECK_NEAR (scales.graphics.target_frame_rate, 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    parsed ({}).graphics.target_frame_rate.numerical_value_in (u::Hz),
+    60.0f,
+    0.0f);
+  MOPPE_CHECK_NEAR (
+    scales.graphics.target_frame_rate.numerical_value_in (u::Hz), 0.0f, 0.0f);
 }
 
 MOPPE_TEST (launch_rejects_malformed_command_lines) {

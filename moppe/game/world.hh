@@ -31,9 +31,9 @@ namespace moppe {
     struct FrameEnv {
       DisplayColor fog_color;
       attenuation_t fog_scale;
-      Vec3 sun_dir; // world space, toward the sun
+      direction_t sun_dir; // world space, toward the sun
       position_t camera_pos;
-      Vec3 cam_right, cam_up, cam_forward;
+      direction_t cam_right, cam_up, cam_forward;
       seconds_t time; // total game time (animation clock)
     };
   }

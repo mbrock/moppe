@@ -33,8 +33,11 @@ MOPPE_TEST (waterline_finds_the_exact_bilinear_crossing) {
     TerrainDomain (3, 3, 2.0f * mp_units::si::metre), ground);
   const ElevationMap surface =
     elevation_map (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
-  const Waterline waterline = extract_waterline (
-    terrain, surface, uniform_membership (9, WaterBodyId { 4 }), 0.0f);
+  const Waterline waterline =
+    extract_waterline (terrain,
+                       surface,
+                       uniform_membership (9, WaterBodyId { 4 }),
+                       0.0f * surface_elevation[u::m]);
 
   // The wrap gives the wet column a second shoreline where the ground
   // falls from 8 back toward the water: level 1 meets that slope at
@@ -45,8 +48,10 @@ MOPPE_TEST (waterline_finds_the_exact_bilinear_crossing) {
     MOPPE_CHECK (contour.body == 4u);
     MOPPE_CHECK (contour.size () >= 3);
     for (std::size_t i = 1; i < contour.size (); ++i)
-      MOPPE_CHECK_NEAR (contour.points[2 * i], contour.points[0], 1e-6f);
-    shorelines.push_back (contour.points[0]);
+      MOPPE_CHECK_NEAR (meters_value (x_of (contour.points[i])),
+                        meters_value (x_of (contour.points[0])),
+                        1e-6f);
+    shorelines.push_back (meters_value (x_of (contour.points[0])));
   }
   std::ranges::sort (shorelines);
   MOPPE_CHECK_NEAR (shorelines[0], 0.5f, 1e-6f);
@@ -69,7 +74,10 @@ MOPPE_TEST (waterline_closes_a_loop_around_a_pond) {
   const WaterBodyMembership membership (std::move (body_at_cell),
                                         WaterBodyDomain (8));
   const Waterline waterline =
-    extract_waterline (terrain, elevation_map (5, 5, level), membership, 0.0f);
+    extract_waterline (terrain,
+                       elevation_map (5, 5, level),
+                       membership,
+                       0.0f * surface_elevation[u::m]);
 
   MOPPE_CHECK (waterline.contours.size () == 1);
   const WaterlineContour& contour = waterline.contours.front ();
@@ -78,8 +86,8 @@ MOPPE_TEST (waterline_closes_a_loop_around_a_pond) {
   MOPPE_CHECK (contour.size () == 4);
   // All four points half a cell from the wet node.
   for (std::size_t i = 0; i < contour.size (); ++i) {
-    const float dx = contour.points[2 * i] - 2.0f;
-    const float dy = contour.points[2 * i + 1] - 2.0f;
+    const float dx = meters_value (x_of (contour.points[i])) - 2.0f;
+    const float dy = meters_value (z_of (contour.points[i])) - 2.0f;
     MOPPE_CHECK_NEAR (std::abs (dx) + std::abs (dy), 0.5f, 1e-6f);
   }
 }
@@ -100,7 +108,7 @@ MOPPE_TEST (waterline_wraps_around_the_torus) {
     extract_waterline (terrain,
                        elevation_map (unique, unique, level),
                        uniform_membership (unique * unique, WaterBodyId { 0 }),
-                       0.0f);
+                       0.0f * surface_elevation[u::m]);
 
   MOPPE_CHECK (waterline.contours.size () == 2);
   for (const WaterlineContour& contour : waterline.contours) {
@@ -108,7 +116,9 @@ MOPPE_TEST (waterline_wraps_around_the_torus) {
     MOPPE_CHECK (contour.size () == 4);
     // Each loop is a straight line of constant x.
     for (std::size_t i = 1; i < contour.size (); ++i)
-      MOPPE_CHECK_NEAR (contour.points[2 * i], contour.points[0], 1e-6f);
+      MOPPE_CHECK_NEAR (meters_value (x_of (contour.points[i])),
+                        meters_value (x_of (contour.points[0])),
+                        1e-6f);
   }
 }
 
@@ -122,8 +132,8 @@ MOPPE_TEST (waterline_proximity_measures_the_band_exactly) {
     elevation_map (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
   const WaterBodyMembership membership =
     uniform_membership (9, WaterBodyId { 0 });
-  const Waterline waterline =
-    extract_waterline (terrain, surface, membership, 0.0f);
+  const Waterline waterline = extract_waterline (
+    terrain, surface, membership, 0.0f * surface_elevation[u::m]);
   const WaterlineProximity proximity =
     waterline_proximity (waterline, 2.5f * u::m);
   const auto& distance = spatial::get<waterline_distance> (proximity);

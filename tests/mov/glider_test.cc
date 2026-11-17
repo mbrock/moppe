@@ -183,7 +183,7 @@ namespace {
     session.bike ().restore (flight);
 
     const bool trace = std::getenv ("MOPPE_GLIDER_TRACE") != nullptr;
-    const float health = session.logic ().m_health;
+    const float health = session.logic ().m_health.numerical_value_in (one);
     game::InputFrame input;
     input.use = true;
     GlideOutcome outcome {};
@@ -219,7 +219,8 @@ namespace {
         world, surface, session, input, glider_test_step);
     outcome.mode = session.logic ().m_doing;
     outcome.upright = direction_value (session.bike ().up ())[1];
-    outcome.health_lost = health - session.logic ().m_health;
+    outcome.health_lost =
+      health - session.logic ().m_health.numerical_value_in (one);
     const Vec3 v = velocity_value (session.bike ().velocity ());
     if (trace)
       std::printf ("landed after %.1f s at %.1f m/s sinking %.2f; "

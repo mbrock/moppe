@@ -31,10 +31,11 @@ namespace moppe::game {
     const terrain::SurfaceElevation h = elevation (at);
     terrain::SurfaceElevation low = h, high = h;
     for (int i = 0; i < 12; ++i) {
-      const float b = 6.2831853f * i / 12.0f;
+      const radians_t b = 6.2831853f * i / 12.0f * u::rad;
       const plan_position_t p =
-        at +
-        along (plan_unit_direction (Vec2 (std::cos (b), std::sin (b))), room);
+        at + along (plan_unit_direction (Vec2 (std::cos (radians_value (b)),
+                                               std::sin (radians_value (b)))),
+                    room);
       const terrain::SurfaceElevation g = elevation (p);
       if (still_water (p) > g - 0.6f * u::m)
         return false;
@@ -59,13 +60,18 @@ namespace moppe::game {
                                           meters_t relief,
                                           meters_t search) const {
     for (meters_t r = 0.0f * u::m; r <= search; r += 1.5f * u::m) {
+      // The ring's circumference in steps of a metre and a half.
       const int around =
-        std::max (1, static_cast<int> (6.2831853f * meters_value (r) / 1.5f));
+        std::max (1,
+                  static_cast<int> (
+                    (6.2831853f * r / (1.5f * u::m)).numerical_value_in (one)));
       for (int k = 0; k < around; ++k) {
-        const float a = 6.2831853f * k / around;
+        const radians_t a = 6.2831853f * k / around * u::rad;
         const plan_position_t at =
           want +
-          along (plan_unit_direction (Vec2 (std::cos (a), std::sin (a))), r);
+          along (plan_unit_direction (Vec2 (std::cos (radians_value (a)),
+                                            std::sin (radians_value (a)))),
+                 r);
         if (open (at, room, relief))
           return at;
       }
@@ -77,71 +83,72 @@ namespace moppe::game {
                              meters_t reach,
                              bool decks) const {
     const terrain::RoadSurface& roads = generated.road_surface ();
-    const Vec2& p = plan_value (at);
-    const terrain::RoadSample road = roads.nearest (p.x (), p.z ());
+    const terrain::RoadSample road = roads.nearest (at);
     const terrain::RoadFormation& formation = roads.formation ();
     return road.found && road.kind == terrain::Road::Kind::Road &&
            (decks || !road.bridge) &&
-           std::abs (road.across) <
-             formation.half_width + formation.shoulder + meters_value (reach);
+           abs (road.across) <
+             formation.half_width + formation.shoulder + reach;
   }
 
-  Vec3 WorldGround::trail_cell (terrain::CellIndex cell) const {
+  position_t WorldGround::trail_cell (terrain::CellIndex cell) const {
     if (cell == terrain::no_cell)
       return {};
     const terrain::TerrainDomain& grid = generated.trails ().domain;
     const std::size_t width = grid.width ();
-    const float x =
-      (cell.value % width) * (grid.spacing_x ()).numerical_value_in (u::m);
-    const float z =
-      (cell.value / width) * (grid.spacing_z ()).numerical_value_in (u::m);
-    return Vec3 (x, height (Vec3 (x, 0.0f, z)), z);
+    const plan_position_t at = plan_position (
+      static_cast<float> (cell.value % width) * grid.spacing_x (),
+      static_cast<float> (cell.value / width) * grid.spacing_z ());
+    return terrain::at_elevation (at, elevation (at));
   }
 
-  Vec3
-  WorldGround::trail_point (const terrain::TrailAlignmentPoint& point) const {
-    return Vec3 (
-      point.x_m, height (Vec3 (point.x_m, 0.0f, point.z_m)), point.z_m);
+  position_t WorldGround::trail_point (const plan_position_t& point) const {
+    return terrain::at_elevation (point, elevation (point));
   }
 
-  Vec3 WorldGround::trail_heading () const {
+  direction_t WorldGround::trail_heading () const {
     const auto& points = generated.trails ().alignment.points;
     if (points.size () < 2)
-      return Vec3 (0, 0, 1);
-    Vec3 direction = trail_point (points[1]) - trail_point (points[0]);
-    direction[1] = 0.0f;
-    return length2 (direction) > 1e-5f ? normalized (direction)
-                                       : Vec3 (0, 0, 1);
+      return unit_direction (Vec3 (0, 0, 1));
+    // Levelled, then normalized as a vector of the world.
+    Vec3 level =
+      displacement_value (trail_point (points[1]) - trail_point (points[0]));
+    level[1] = 0.0f;
+    return unit_direction (length2 (level) > 1e-5f ? normalized (level)
+                                                   : Vec3 (0, 0, 1));
   }
 
   PlaceGround WorldGround::place_ground () const {
+    // PlaceGround is planned in bare metres; each reading crosses into it
+    // here, from the typed queries. Each keeps a copy of this view, which
+    // may not outlive it.
     const terrain::WaterSheets& sheets = generated.water_surface ();
-    const float sea = world.water_level.numerical_value_in (u::m);
+    const terrain::SurfaceElevation sea =
+      terrain::surface_elevation_point (world.water_level);
     // Each reading keeps a copy of this view, which may not outlive it.
-    const auto level = [g = *this] (float x, float z) {
-      return g.still_level (Vec3 (x, 0.0f, z));
+    const auto level = [g = *this] (const plan_position_t& at) {
+      return g.still_water (at);
     };
     return {
-      .ground = reader (),
+      .ground = elevation_field (),
       .water = level,
-      .sea = [level, sea] (float x,
-                           float z) { return level (x, z) <= sea + 0.05f; },
+      .sea =
+        [level, sea] (const plan_position_t& at) {
+          return level (at) <= sea + 0.05f * u::m;
+        },
       .current =
-        [&sheets] (float x, float z) {
+        [&sheets] (const plan_position_t& at) {
           return spatial::sample<terrain::water_velocity> (
-                   sheets, moppe::position (Vec3 (x, 0.0f, z)))
-            .numerical_value_in (u::m / u::s);
+            sheets, at_height (at, 0.0f * u::m));
         },
       .forest =
-        [&readings = generated.readings ()] (float x, float z) {
+        [&readings = generated.readings ()] (const plan_position_t& at) {
           return spatial::sample<map::forest_cover> (
-                   readings, moppe::position (Vec3 (x, 0.0f, z)))
-            .numerical_value_in (one);
+            readings, at_height (at, 0.0f * u::m));
         },
       .roads = &generated.road_surface (),
       .sea_level = sea,
-      .period_x = period_x (),
-      .period_z = period_z (),
+      .period = period (),
     };
   }
 }

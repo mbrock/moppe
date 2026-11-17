@@ -64,15 +64,18 @@ int main (int argc, char** argv) {
     std::uint32_t width = 390 * 2, height = 844 * 2;
     if (argc > 2 && std::sscanf (argv[2], "%ux%u", &width, &height) != 2)
       throw std::invalid_argument ("size must be WIDTHxHEIGHT");
-    std::vector<float> progresses;
+    std::vector<proportion_t> progresses;
     for (int i = 3; i < argc; ++i)
-      progresses.push_back (std::stof (argv[i]));
+      progresses.push_back (std::stof (argv[i]) * proportion[one]);
     if (progresses.empty ())
-      progresses = { 0.0f, 0.3f, 0.45f, 0.7f, 1.0f };
+      for (const float progress : { 0.0f, 0.3f, 0.45f, 0.7f, 1.0f })
+        progresses.push_back (progress * proportion[one]);
 
     std::vector<std::vector<float>> steps;
     site::grow_land (
-      lattice, 123, [&] (int, int, double, std::span<const float> heights) {
+      lattice,
+      123,
+      [&] (int, int, julian_years_f64_t, std::span<const float> heights) {
         steps.emplace_back (heights.begin (), heights.end ());
       });
     std::cerr << "genesis: grew " << steps.size () << " steps" << std::endl;
@@ -89,25 +92,31 @@ int main (int argc, char** argv) {
       read_spirv (shaders + "/genesis_sky.fragment.spv"),
     };
     auto stage = [&] (int i) { return nhal::StageCode { {}, {}, code[i] }; };
-    site::Genesis genesis (*device,
-                           { stage (0), stage (1), stage (2), stage (3) },
-                           lattice,
-                           site::land_period_m,
-                           site::land_sea_level_m);
+    site::Genesis genesis (
+      *device,
+      { stage (0), stage (1), stage (2), stage (3) },
+      lattice,
+      site::land_period,
+      terrain::surface_elevation_point (site::land_sea_level));
 
-    for (const float progress : progresses) {
+    for (const proportion_t progress : progresses) {
       // The age runs with the progress over its first half, as if the
-      // reader had scrolled while the land grew.
+      // reader had scrolled while the land grew: a step, and how far on
+      // toward the next.
       const float age =
-        std::clamp (progress / 0.6f, 0.0f, 1.0f) * float (steps.size () - 1);
+        std::clamp (progress.numerical_value_in (one) / 0.6f, 0.0f, 1.0f) *
+        float (steps.size () - 1);
       const std::size_t step = std::min (std::size_t (age), steps.size () - 2);
       genesis.set_heights (steps[step], steps[step + 1]);
-      const float aspect = float (width) / float (height);
-      if (!genesis.render (site::genesis_choreography (progress, 30.0, aspect),
-                           age - float (step)))
+      const site::aspect_ratio_t aspect =
+        float (width) / float (height) * aspect_ratio[one];
+      if (!genesis.render (
+            site::genesis_choreography (progress, 30.0 * u::s, aspect),
+            (age - float (step)) * blend_weight[one]))
         throw std::runtime_error ("no drawable");
       char name[32];
-      std::snprintf (name, sizeof name, "-%.2f.ppm", progress);
+      std::snprintf (
+        name, sizeof name, "-%.2f.ppm", progress.numerical_value_in (one));
       const std::string path = output + name;
       device->capture_frame ([path] (const nhal::Capture& capture) {
         write_ppm (capture, path);

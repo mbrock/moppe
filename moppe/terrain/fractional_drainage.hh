@@ -193,7 +193,7 @@ namespace moppe::terrain {
 
     virtual void
     select_dry_routes (const TerrainDomain& domain,
-                       std::span<const float> routing_surface_levels,
+                       std::span<const SurfaceElevation> routing_surface_levels,
                        std::span<const ChannelTangent> previous_tangent,
                        ChannelPersistence persistence,
                        std::span<const std::uint8_t> ocean,

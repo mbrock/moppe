@@ -15,15 +15,17 @@ namespace moppe::game {
     // with the game loop while moving them behind the presentation seam.
     constexpr float ART_PI = 3.14159f;
 
-    float sun_elevation_for (float sun_height) {
-      return std::sin ((sun_height - 0.5f) * ART_PI);
+    // The sine of the sun's elevation, which the light's art direction
+    // reads.
+    float sun_elevation_for (proportion_t sun_height) {
+      return std::sin ((sun_height.numerical_value_in (one) - 0.5f) * ART_PI);
     }
 
-    float daylight_for (float sun_height) {
+    float daylight_for (proportion_t sun_height) {
       return daylight_for_elevation (sun_elevation_for (sun_height));
     }
 
-    float golden_light_for (float sun_height) {
+    float golden_light_for (proportion_t sun_height) {
       return golden_light_for_elevation (sun_elevation_for (sun_height));
     }
 
@@ -37,9 +39,11 @@ namespace moppe::game {
       visibility.ocean = input.graphics.ocean;
       visibility.underwater =
         visibility.ocean && view.camera_water_level &&
-        view.camera.position[1] < *view.camera_water_level;
+        position_value (view.camera.position)[1] <
+          terrain::surface_elevation_value (*view.camera_water_level);
       visibility.motion_blur =
-        input.graphics.motion_blur && view.motion_blur_amount > 0.01f;
+        input.graphics.motion_blur &&
+        view.motion_blur_amount > 0.01f * proportion[one];
       visibility.vehicle_effects = input.graphics.vehicle_effects;
       visibility.star_effects = input.graphics.star_effects;
       visibility.game_hud = !cinematic;
@@ -53,125 +57,131 @@ namespace moppe::game {
         return *input.capture_field_of_view;
       if (logic.m_cam_mode == CAM_HELMET)
         return input.selected_camera.field_of_view;
-      return CHASE_FIELD_OF_VIEW + CHASE_SPEED_WIDENING * logic.m_fov_k;
+      return CHASE_FIELD_OF_VIEW +
+             CHASE_SPEED_WIDENING * logic.m_fov_k.numerical_value_in (one);
     }
   }
 
-  Vec3 sun_direction_for (float sun_height) {
-    return authored_sun_direction (sun_height);
+  direction_t sun_direction_for (proportion_t sun_height) {
+    return unit_direction (
+      authored_sun_direction (sun_height.numerical_value_in (one)));
   }
 
-  void sun_light_colors_for (float sun_height,
+  void sun_light_colors_for (proportion_t sun_height,
                              DisplayColor& diffuse,
                              DisplayColor& specular) {
     const float daylight = daylight_for (sun_height);
     const float golden = golden_light_for (sun_height);
     const DisplayColor warm (1.0f, 0.60f, 0.30f);
     const DisplayColor ivory (1.0f, 0.96f, 0.84f);
-    const DisplayColor sun_color = mix_display (ivory, warm, golden);
+    const DisplayColor sun_color =
+      mix_display (ivory, warm, golden * blend_weight[one]);
 
-    diffuse = scale_display (sun_color, 0.10f + 0.98f * daylight);
+    diffuse =
+      scale_display (sun_color, (0.10f + 0.98f * daylight) * scale_factor[one]);
     specular = scale_display (mix_display (DisplayColor (0.92f, 0.95f, 1.0f),
                                            DisplayColor (1.0f, 0.86f, 0.70f),
-                                           golden),
-                              0.15f + 0.85f * daylight);
+                                           golden * blend_weight[one]),
+                              (0.15f + 0.85f * daylight) * scale_factor[one]);
   }
 
-  DisplayColor horizon_color_for (float sun_height) {
+  DisplayColor horizon_color_for (proportion_t sun_height) {
     const float daylight = daylight_for (sun_height);
     const float warmth = golden_light_for (sun_height) * 0.16f;
     const DisplayColor day_horizon (0.55f, 0.68f, 0.84f);
     const DisplayColor night_horizon (0.035f, 0.045f, 0.09f);
     const DisplayColor warm_horizon (0.92f, 0.58f, 0.32f);
     return mix_display (
-      mix_display (night_horizon, day_horizon, daylight), warm_horizon, warmth);
+      mix_display (night_horizon, day_horizon, daylight * blend_weight[one]),
+      warm_horizon,
+      warmth * blend_weight[one]);
   }
 
   VehiclePose pose (const mov::Vehicle& vehicle) {
     return {
-      .position = position_value (vehicle.render_position ()),
-      .render_orientation = direction_value (vehicle.render_orientation ()),
-      .render_normal = direction_value (vehicle.render_normal ()),
-      .rear_wheel_drop = meters_value (vehicle.rear_wheel_drop ()),
-      .front_wheel_drop = meters_value (vehicle.front_wheel_drop ()),
-      .wheel_spin_radians = radians_value (vehicle.wheel_spin ()),
-      .fork_radians = radians_value (vehicle.fork_angle ()),
-      .thrust = vehicle.thrust ().numerical_value_in (one),
-      .boost_level = vehicle.boost_level ().numerical_value_in (one),
-      .boost_drive = vehicle.boost_drive ().numerical_value_in (one),
-      .crank_radians = radians_value (vehicle.crank ()),
-      .rider_lean = vehicle.rider_lean ().numerical_value_in (one),
+      .position = vehicle.render_position (),
+      .render_orientation = vehicle.render_orientation (),
+      .render_normal = vehicle.render_normal (),
+      .rear_wheel_drop = vehicle.rear_wheel_drop (),
+      .front_wheel_drop = vehicle.front_wheel_drop (),
+      .wheel_spin = vehicle.wheel_spin (),
+      .fork = vehicle.fork_angle (),
+      .thrust = vehicle.thrust (),
+      .boost_level = vehicle.boost_level (),
+      .boost_drive = quantity_cast<proportion> (vehicle.boost_drive ()),
+      .crank = vehicle.crank (),
+      .rider_lean = vehicle.rider_lean (),
     };
   }
 
   CarPose pose (const mov::Car& car) {
     return {
-      .position = position_value (car.position ()),
-      .forward = direction_value (car.forward ()),
-      .up = direction_value (car.up ()),
-      .wheel_drop = { meters_value (car.wheel_drop (0)),
-                      meters_value (car.wheel_drop (1)),
-                      meters_value (car.wheel_drop (2)),
-                      meters_value (car.wheel_drop (3)) },
-      .steer_radians = radians_value (car.steer ()),
-      .wheel_spin_radians = radians_value (car.wheel_spin ()),
-      .velocity = velocity_value (car.velocity ()),
+      .position = car.position (),
+      .forward = car.forward (),
+      .up = car.up (),
+      .wheel_drop = { car.wheel_drop (0),
+                      car.wheel_drop (1),
+                      car.wheel_drop (2),
+                      car.wheel_drop (3) },
+      .steer = car.steer (),
+      .wheel_spin = car.wheel_spin (),
+      .velocity = car.velocity (),
     };
   }
 
   BoatPose pose (const mov::Boat& boat) {
     return {
-      .position = position_value (boat.position ()),
-      .forward = direction_value (boat.forward ()),
-      .up = direction_value (boat.up ()),
-      .swing_radians = radians_value (boat.swing ()),
-      .tilt_radians = radians_value (boat.tilt ()),
-      .propeller_radians = radians_value (boat.propeller_angle ()),
-      .rpm = scalar_value (boat.rpm ()),
-      .velocity = velocity_value (boat.velocity ()),
+      .position = boat.position (),
+      .forward = boat.forward (),
+      .up = boat.up (),
+      .swing = boat.swing (),
+      .tilt = boat.tilt (),
+      .propeller = boat.propeller_angle (),
+      .rpm = boat.rpm (),
+      .velocity = boat.velocity (),
     };
   }
 
   JetSkiPose pose (const mov::JetSki& ski) {
     return {
-      .position = position_value (ski.position ()),
-      .forward = direction_value (ski.forward ()),
-      .up = direction_value (ski.up ()),
-      .steer_radians = radians_value (ski.steer ()),
-      .lean_radians = radians_value (ski.lean ()),
-      .rpm = scalar_value (ski.rpm ()),
-      .velocity = velocity_value (ski.velocity ()),
+      .position = ski.position (),
+      .forward = ski.forward (),
+      .up = ski.up (),
+      .steer = ski.steer (),
+      .lean = ski.lean (),
+      .rpm = ski.rpm (),
+      .velocity = ski.velocity (),
     };
   }
 
   TractorPose pose (const mov::Tractor& tractor) {
     return {
-      .position = position_value (tractor.position ()),
-      .forward = direction_value (tractor.forward ()),
-      .up = direction_value (tractor.up ()),
-      .wheel_drop = { meters_value (tractor.wheel_drop (0)),
-                      meters_value (tractor.wheel_drop (1)),
-                      meters_value (tractor.wheel_drop (2)),
-                      meters_value (tractor.wheel_drop (3)) },
-      .steer_radians = radians_value (tractor.steer ()),
-      .front_spin_radians = radians_value (tractor.front_spin ()),
-      .rear_spin_radians = radians_value (tractor.rear_spin ()),
-      .trailer_position = tractor.trailer_position (),
-      .trailer_forward = tractor.trailer_forward (),
-      .trailer_up = tractor.trailer_up (),
-      .trailer_wheel_drop = { meters_value (tractor.trailer_wheel_drop (0)),
-                              meters_value (tractor.trailer_wheel_drop (1)) },
-      .trailer_spin_radians = radians_value (tractor.trailer_spin ()),
+      .position = tractor.position (),
+      .forward = tractor.forward (),
+      .up = tractor.up (),
+      .wheel_drop = { tractor.wheel_drop (0),
+                      tractor.wheel_drop (1),
+                      tractor.wheel_drop (2),
+                      tractor.wheel_drop (3) },
+      .steer = tractor.steer (),
+      .front_spin = tractor.front_spin (),
+      .rear_spin = tractor.rear_spin (),
+      .trailer_position = position (tractor.trailer_position ()),
+      .trailer_forward = unit_direction (tractor.trailer_forward ()),
+      .trailer_up = unit_direction (tractor.trailer_up ()),
+      .trailer_wheel_drop = { tractor.trailer_wheel_drop (0),
+                              tractor.trailer_wheel_drop (1) },
+      .trailer_spin = tractor.trailer_spin (),
     };
   }
 
   HelicopterPose pose (const mov::Helicopter& helicopter) {
     return {
-      .position = position_value (helicopter.position ()),
-      .forward = direction_value (helicopter.forward ()),
-      .up = direction_value (helicopter.up ()),
-      .rotor_radians = radians_value (helicopter.rotor_angle ()),
-      .tail_radians = radians_value (helicopter.tail_angle ()),
+      .position = helicopter.position (),
+      .forward = helicopter.forward (),
+      .up = helicopter.up (),
+      .rotor = helicopter.rotor_angle (),
+      .tail = helicopter.tail_angle (),
     };
   }
 
@@ -186,31 +196,31 @@ namespace moppe::game {
 
   GliderPose glider_pose (const mov::Glider& glider) {
     return {
-      .position = position_value (glider.position ()),
-      .heading = glider.nose (),
-      .bank_radians = radians_value (glider.bank ()),
+      .position = glider.position (),
+      .heading = unit_direction (glider.nose ()),
+      .bank = glider.bank (),
       .bike_attached = glider.bike_attached (),
     };
   }
 
-  WalkerPose walker_pose (const Walker& walker, float look_pitch) {
+  WalkerPose walker_pose (const Walker& walker, inclination_t look_pitch) {
     const Walker::State state = walker.state ();
     const mov::Character::State& body = state.body;
     const Vec3 velocity = velocity_value (body.velocity);
     return {
-      .position = position_value (body.position) +
-                  Vec3 (0, body.step_offset.numerical_value_in (u::m), 0),
-      .heading = direction_value (state.facing),
-      .look_aside = radians_value (state.lag),
-      .turn_speed = state.turn_speed.numerical_value_in (u::rad / u::s),
-      .velocity = velocity,
-      .ground_normal = direction_value (body.ground_normal),
-      .stride_phase = state.stride_phase.numerical_value_in (one),
-      .stride_speed = state.stride_speed.numerical_value_in (u::m / u::s),
+      .position = position (position_value (body.position) +
+                            Vec3 (0, meters_value (body.step_offset), 0)),
+      .heading = state.facing,
+      .look_aside = state.lag,
+      .turn_speed = state.turn_speed,
+      .velocity = body.velocity,
+      .ground_normal = body.ground_normal,
+      .stride_phase = state.stride_phase,
+      .stride_speed = state.stride_speed,
       .grounded = body.grounded,
-      .airborne_seconds = seconds_value (body.airborne_time),
-      .vertical_speed = velocity[1],
-      .landing_dip = meters_value (walker.landing_dip ()),
+      .airborne = body.airborne_time,
+      .vertical_speed = velocity[1] * u::m / u::s,
+      .landing_dip = walker.landing_dip (),
       .look_pitch = look_pitch,
     };
   }
@@ -227,44 +237,50 @@ namespace moppe::game {
     result.camera.field_of_view = cinematic
                                     ? input.selected_camera.field_of_view
                                     : gameplay_field_of_view (input);
-    result.camera.aspect = std::max (0.01f, input.aspect);
+    result.camera.aspect = std::max (0.01f * aspect_ratio[one], input.aspect);
     result.camera.view = input.selected_camera.view;
 
     // Hard landings rotate only the reading of the riding camera.  The camera
     // body stays where simulation placed it, and cinematics/inspection views
     // are explicitly stable reference views.
-    if (input.scene == FrameSceneMode::Gameplay && logic.m_shake > 0.005f) {
-      const Vec3& camera = result.camera.position;
-      const float ground = terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (
-          input.surface, moppe::position (Vec3 (camera[0], 0.0f, camera[2]))));
-      const float clearance = camera[1] - ground;
-      const float room =
-        std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
-      const float pulse = logic.m_shake * room;
-      const float roll =
-        pulse * std::sin (2.0f * PI * 15.0f * logic.m_shake_time);
-      const float pitch =
-        pulse * 0.55f *
-        std::sin (2.0f * PI * 19.0f * logic.m_shake_time + 0.7f);
+    if (input.scene == FrameSceneMode::Gameplay &&
+        logic.m_shake > 0.005f * u::deg) {
+      const position_t& camera = result.camera.position;
+      const meters_t ground =
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            input.surface, at_height (plan (camera), 0.0f * u::m))) *
+        u::m;
+      const meters_t clearance = position_value (camera)[1] * u::m - ground;
+      const proportion_t room =
+        std::min (
+          1.0f,
+          std::max (0.0f, meters_value (clearance - 2.0f * u::m) / 8.0f)) *
+        proportion[one];
+      // Degrees of roll and pitch the landing shakes the view by.
+      const float pulse = logic.m_shake.numerical_value_in (u::deg) *
+                          room.numerical_value_in (one);
+      const float shaken = seconds_value (logic.m_shake_time);
+      const degrees_t roll =
+        pulse * std::sin (2.0f * PI * 15.0f * shaken) * u::deg;
+      const degrees_t pitch =
+        pulse * 0.55f * std::sin (2.0f * PI * 19.0f * shaken + 0.7f) * u::deg;
       result.camera.view = result.camera.view *
-                           Mat4::rotation (roll * u::deg, Vec3 (0, 0, 1)) *
-                           Mat4::rotation (pitch * u::deg, Vec3 (1, 0, 0));
+                           Mat4::rotation (roll, Vec3 (0, 0, 1)) *
+                           Mat4::rotation (pitch, Vec3 (1, 0, 0));
     }
 
-    result.camera.right = Vec3 (result.camera.view.element (0),
-                                result.camera.view.element (4),
-                                result.camera.view.element (8));
-    result.camera.up = Vec3 (result.camera.view.element (1),
-                             result.camera.view.element (5),
-                             result.camera.view.element (9));
-    result.camera.frame_forward = Vec3 (-result.camera.view.element (2),
-                                        -result.camera.view.element (6),
-                                        -result.camera.view.element (10));
+    const Mat4& view = result.camera.view;
+    result.camera.right = unit_direction (
+      Vec3 (view.element (0), view.element (4), view.element (8)));
+    result.camera.up = unit_direction (
+      Vec3 (view.element (1), view.element (5), view.element (9)));
+    result.camera.frame_forward = unit_direction (
+      Vec3 (-view.element (2), -view.element (6), -view.element (10)));
 
     result.camera.projection =
       Mat4::perspective_reversed (result.camera.field_of_view,
-                                  result.camera.aspect,
+                                  result.camera.aspect.numerical_value_in (one),
                                   render::camera_near_m,
                                   render::camera_far_m);
 
@@ -272,73 +288,79 @@ namespace moppe::game {
     // Lightning lights the cloud and the haze, and everything under it.
     const float flash = lightning_flash (
       weather.lightning, seconds_into_play (logic.m_total_time));
-    const DisplayColor flashed_fog = mix_display (
-      logic.m_fog, DisplayColor (0.62f, 0.64f, 0.76f), 0.75f * flash);
-    result.lighting.fog_color = flashed_fog;
-    result.lighting.clear_color = flashed_fog;
-    result.lighting.fog_scale = input.world.fog_scale * weather.fog_density;
-    result.lighting.mist = weather.mist;
-    result.lighting.rain = weather.rain;
+    const DisplayColor flashed_fog =
+      mix_display (logic.m_fog,
+                   DisplayColor (0.62f, 0.64f, 0.76f),
+                   0.75f * flash * blend_weight[one]);
+    FrameLighting& lighting = result.lighting;
+    lighting.fog_color = flashed_fog;
+    lighting.clear_color = flashed_fog;
+    lighting.fog_scale = input.world.fog_scale * weather.fog_density;
+    lighting.mist = weather.mist * proportion[one];
+    lighting.rain = weather.rain * scale_factor[one];
     const SkyReading sky =
-      input.sky ? *input.sky : Almanac ().held (input.graphics.sun_height);
-    result.lighting.sun_direction = sky.light;
-    result.lighting.sun_specular =
-      scale_display (sky.light_specular, 0.5f * weather.sunlight);
-    result.lighting.sun_diffuse =
-      scale_display (sky.light_diffuse, weather.sunlight);
-    result.lighting.ambient =
-      mix_display (scale_display (sky.ambient, weather.skylight),
-                   DisplayColor (0.85f, 0.88f, 1.05f),
-                   0.7f * flash);
-    result.lighting.sky_sun = sky.sun;
-    result.lighting.sky_moon = sky.moon;
-    result.lighting.sky_pole = sky.pole;
-    result.lighting.sky_turn = radians_value (sky.turn);
-    result.lighting.moonlight = sky.moonlight;
-    result.lighting.daylight = sky.daylight;
-    result.lighting.time =
+      input.sky
+        ? *input.sky
+        : Almanac ().held (input.graphics.sun_height.numerical_value_in (one));
+    lighting.sun_direction = unit_direction (sky.light);
+    lighting.sun_specular = scale_display (
+      sky.light_specular, 0.5f * weather.sunlight * scale_factor[one]);
+    lighting.sun_diffuse =
+      scale_display (sky.light_diffuse, weather.sunlight * scale_factor[one]);
+    lighting.ambient = mix_display (
+      scale_display (sky.ambient, weather.skylight * scale_factor[one]),
+      DisplayColor (0.85f, 0.88f, 1.05f),
+      0.7f * flash * blend_weight[one]);
+    lighting.sky_sun = unit_direction (sky.sun);
+    lighting.sky_moon = unit_direction (sky.moon);
+    lighting.sky_pole = unit_direction (sky.pole);
+    lighting.sky_turn = sky.turn;
+    lighting.moonlight = sky.moonlight * proportion[one];
+    lighting.daylight = sky.daylight * proportion[one];
+    const float time =
       static_cast<float> (seconds_into_play (logic.m_total_time));
+    lighting.time = time * u::s;
     // The campfire lights what stands round it, most of all at night.
-    if (const float burn = fire_burn (logic.m_camp, logic.m_total_time);
-        burn > 0.01f) {
-      result.lighting.lamp_position = fire_light_position (logic.m_camp);
-      result.lighting.lamp_reach = meters_value (fire_light_reach);
-      result.lighting.lamp_color =
-        scale_display (fire_light_color (burn, result.lighting.time),
-                       1.0f - 0.25f * sky.daylight);
+    if (const proportion_t burn = fire_burn (logic.m_camp, logic.m_total_time);
+        burn > 0.01f * proportion[one]) {
+      lighting.lamp_position = fire_light_position (logic.m_camp);
+      lighting.lamp_reach = fire_light_reach;
+      lighting.lamp_color =
+        scale_display (fire_light_color (burn, time * u::s),
+                       (1.0f - 0.25f * sky.daylight) * scale_factor[one]);
     }
-    result.lighting.sun_height = sky.sun_height;
-    result.lighting.cloudiness = logic.m_cloudiness;
-    result.lighting.sun_visibility = logic.m_flare;
+    lighting.sun_height = sky.sun_height * proportion[one];
+    lighting.cloudiness = logic.m_cloudiness;
+    lighting.sun_visibility = logic.m_flare;
 
-    result.environment.fog_color = result.lighting.fog_color;
-    result.environment.fog_scale = result.lighting.fog_scale;
-    result.environment.sun_dir = result.lighting.sun_direction;
-    result.environment.camera_pos = position (result.camera.position);
+    result.environment.fog_color = lighting.fog_color;
+    result.environment.fog_scale = lighting.fog_scale;
+    result.environment.sun_dir = lighting.sun_direction;
+    result.environment.camera_pos = result.camera.position;
     result.environment.cam_right = result.camera.right;
     result.environment.cam_up = result.camera.up;
     result.environment.cam_forward = result.camera.frame_forward;
-    result.environment.time = seconds (result.lighting.time);
+    result.environment.time = lighting.time;
 
     // Dry sheet cells sit at or below the ground; they must not fall back
     // to the sea. Waves use the same time as the frame being drawn.
-    const Vec3& camera = result.camera.position;
-    const position_t where = position (Vec3 (camera[0], 0.0f, camera[2]));
-    const float ground = terrain::surface_elevation_value (
-      spatial::sample<terrain::surface_elevation> (input.surface, where));
+    const position_t where =
+      at_height (plan (result.camera.position), 0.0f * u::m);
+    const terrain::SurfaceElevation ground =
+      spatial::sample<terrain::surface_elevation> (input.surface, where);
     const float still_water =
       input.water
         ? terrain::surface_elevation_value (
             spatial::sample<terrain::surface_elevation> (*input.water, where))
         : input.world.water_level.numerical_value_in (u::m);
     const float local_water =
-      still_water + meters_value (water_waves_at (input.surface,
-                                                  input.water,
-                                                  position (camera),
-                                                  result.lighting.time)
-                                    .height);
-    if (local_water > ground)
-      result.camera_water_level = local_water;
+      still_water +
+      meters_value (water_waves_at (
+                      input.surface, input.water, result.camera.position, time)
+                      .height);
+    if (local_water > terrain::surface_elevation_value (ground))
+      result.camera_water_level =
+        terrain::surface_elevation_point (local_water * u::m);
 
     result.graphics = {
       .scene_scale = input.graphics.scene_scale,
@@ -355,12 +377,11 @@ namespace moppe::game {
       const Machine load = logic.m_sling.load;
       const MachineBody body = input.session.machine_body (load);
       SlingPose sling;
-      sling.hook =
-        position_value (input.session.helicopter ().point (sling_hook ()));
-      sling.ring = position_value (body.point (machine_kind (load).ring));
+      sling.hook = input.session.helicopter ().point (sling_hook ());
+      sling.ring = body.point (machine_kind (load).ring);
       const std::array<displacement_t, 4> legs = machine_kind (load).legs;
       for (std::size_t i = 0; i < legs.size (); ++i)
-        sling.legs[i] = position_value (body.point (legs[i]));
+        sling.legs[i] = body.point (legs[i]);
       sling.taut = logic.m_sling.stretch > -0.05f * u::m;
       result.actors.sling = sling;
     }
@@ -370,79 +391,86 @@ namespace moppe::game {
       result.actors.walker =
         walker_pose (input.session.walker (), logic.m_look_pitch);
     if (result.actors.walker && input.session.hauling ())
-      result.actors.walker->rope_end = input.session.rope_end ();
+      result.actors.walker->rope_end = position (input.session.rope_end ());
     if (result.actors.walker)
-      result.actors.walker->rod = rod_pose (
-        logic.m_fishing.line, logic.m_total_time, result.lighting.time);
+      result.actors.walker->rod =
+        rod_pose (logic.m_fishing.line, logic.m_total_time, time);
     if (logic.m_doing == Doing::driving (Machine::boat))
-      result.actors.helm_rod = rod_pose (
-        logic.m_fishing.line, logic.m_total_time, result.lighting.time);
+      result.actors.helm_rod =
+        rod_pose (logic.m_fishing.line, logic.m_total_time, time);
     result.actors.active_mode = logic.m_doing;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera =
       logic.m_cam_mode == CAM_HELMET && !input.reveal_player;
 
+    const kilometres_per_hour_t speed =
+      input.session.subject_speed_kmh () * si::kilo<si::metre> / si::hour;
     FrameHud& hud = result.hud;
-    hud.speed_kmh = input.session.subject_speed_kmh ();
+    hud.speed = speed;
     if (logic.m_doing == Doing::gliding ()) {
       const float lift =
         input.session.glider ().air_mass_lift ().numerical_value_in (u::m /
                                                                      u::s);
-      hud.boost_ready01 = std::clamp (lift / 4.0f, 0.0f, 1.0f);
-      hud.vertical_speed_mps =
-        input.session.glider ().vertical_speed ().numerical_value_in (u::m /
-                                                                      u::s);
+      hud.boost_ready = std::clamp (lift / 4.0f, 0.0f, 1.0f) * proportion[one];
+      hud.vertical_speed = input.session.glider ().vertical_speed ();
     } else {
-      hud.boost_ready01 =
-        logic.m_doing == Doing::driving (Machine::bike)
-          ? input.session.bike ().boost_charge ().numerical_value_in (one)
-          : 1.0f;
+      hud.boost_ready = logic.m_doing == Doing::driving (Machine::bike)
+                          ? input.session.bike ().boost_charge ()
+                          : 1.0f * proportion[one];
     }
-    hud.health01 = logic.m_health / 100.0f;
-    hud.odometer_m = static_cast<float> (logic.m_odometer);
+    hud.health =
+      logic.m_health.numerical_value_in (one) / 100.0f * proportion[one];
+    hud.odometer =
+      static_cast<float> (logic.m_odometer.numerical_value_in (u::m)) * u::m;
     hud.lives = logic.m_lives;
     hud.stars = input.session.stars ().collected ();
     hud.score = logic.m_score;
-    hud.airtime_s = logic.m_jump_airtime;
-    hud.spin_degrees = logic.m_jump_peak_spin_radians * 180.0f / 3.14159265f;
-    hud.landed_airtime_s = logic.m_landed_airtime;
-    hud.landed_spin_degrees = logic.m_landed_spin_degrees;
+    hud.airtime = logic.m_jump_airtime;
+    hud.spin = radians_value (logic.m_jump_peak_spin_radians) * 180.0f /
+               3.14159265f * u::deg;
+    hud.landed_airtime = logic.m_landed_airtime;
+    hud.landed_spin = logic.m_landed_spin_degrees;
     hud.landed_points = logic.m_landed_points;
     hud.landed_clean = logic.m_landed_clean;
-    hud.landed_age_s = logic.m_landed_age;
-    hud.wheelie_m = logic.m_wheelie_m;
-    hud.last_wheelie_m = logic.m_last_wheelie_m;
+    hud.landed_age = logic.m_landed_age;
+    hud.wheelie = logic.m_wheelie_m;
+    hud.last_wheelie = logic.m_last_wheelie_m;
     hud.last_wheelie_points = logic.m_last_wheelie_points;
-    hud.best_wheelie_m = logic.m_best_wheelie_m;
-    hud.wheelie_age_s = logic.m_wheelie_age;
+    hud.best_wheelie = logic.m_best_wheelie_m;
+    hud.wheelie_age = logic.m_wheelie_age;
     hud.on_foot = logic.m_doing == Doing::on_foot ();
     hud.gliding = logic.m_doing == Doing::gliding ();
-    hud.frame_time_s = logic.m_frame_time;
-    hud.subject_position = input.session.subject_position ();
-    hud.subject_heading = input.session.subject_heading ();
-    hud.heading_radians =
-      std::atan2 (hud.subject_heading[0], hud.subject_heading[2]);
+    hud.frame_time = logic.m_frame_time;
+    hud.subject_position = position (input.session.subject_position ());
+    const Vec3 facing = input.session.subject_heading ();
+    hud.subject_heading = unit_direction (facing);
+    hud.heading = std::atan2 (facing[0], facing[2]) * moppe::heading[u::rad];
 
-    result.motion_blur_amount =
-      cinematic
-        ? input.cinematic_motion_blur
-        : motion_blur_for (logic.m_doing, input.session.subject_speed_kmh ());
+    result.motion_blur_amount = cinematic
+                                  ? input.cinematic_motion_blur
+                                  : motion_blur_for (logic.m_doing, speed);
 
     if (cinematic) {
-      result.overlay.cinematic_prompt_alpha = std::clamp (
-        1.0f - std::max (0.0f, input.cinematic_elapsed - 4.0f) / 2.0f,
-        0.0f,
-        0.72f);
+      result.overlay.cinematic_prompt_alpha =
+        std::clamp (
+          1.0f -
+            std::max (0.0f, seconds_value (input.cinematic_elapsed) - 4.0f) /
+              2.0f,
+          0.0f,
+          0.72f) *
+        proportion[one];
     }
 
     const float fog = attenuation_value (input.world.fog_scale);
     result.terrain_distance =
-      fog > 0.0f ? 3.0f / fog : std::numeric_limits<float>::infinity ();
+      (fog > 0.0f ? 3.0f / fog : std::numeric_limits<float>::infinity ()) *
+      u::m;
     result.visibility = visibility_for (input, result);
     return result;
   }
 
-  float motion_blur_for (Doing mode, float kmh) {
+  proportion_t motion_blur_for (Doing mode, kilometres_per_hour_t speed) {
+    const float kmh = speed.numerical_value_in (si::kilo<si::metre> / si::hour);
     // From the speed it begins at to the speed at which it is whole, and
     // how long it is then.
     struct Ramp {
@@ -452,7 +480,7 @@ namespace moppe::game {
     switch (mode.way) {
     case Doing::Way::foot:
     case Doing::Way::glider:
-      return 0.0f;
+      return 0.0f * proportion[one];
     case Doing::Way::passenger:
     case Doing::Way::bus:
       ramp = { 80.0f, 140.0f, 0.6f };
@@ -481,25 +509,27 @@ namespace moppe::game {
         break;
       case Machine::helicopter:
       case Machine::tractor:
-        return 0.0f;
+        return 0.0f * proportion[one];
       }
       break;
     }
     return ramp.share *
-           std::clamp ((kmh - ramp.from) / (ramp.to - ramp.from), 0.0f, 1.0f);
+           std::clamp ((kmh - ramp.from) / (ramp.to - ramp.from), 0.0f, 1.0f) *
+           proportion[one];
   }
 
-  float sun_visibility_target (const FrameView& view,
-                               const WorldParams&,
-                               const map::SurfaceGeometry& surface) {
-    const Vec3& camera = view.camera.position;
+  proportion_t sun_visibility_target (const FrameView& view,
+                                      const WorldParams&,
+                                      const map::SurfaceGeometry& surface) {
+    const Vec3& camera = position_value (view.camera.position);
+    const Vec3& sun = direction_value (view.lighting.sun_direction);
     float visibility = 1.0f;
     if (view.visibility.underwater)
       visibility = 0.0f;
     else {
       for (int i = 1; i <= 40; ++i) {
         const float distance = 90.0f * i;
-        const Vec3 sample = camera + view.lighting.sun_direction * distance;
+        const Vec3 sample = camera + sun * distance;
         if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
           break;
         if (terrain::surface_elevation_value (
@@ -512,7 +542,8 @@ namespace moppe::game {
       }
     }
     // The moon dazzles no one.
-    return visibility * view.lighting.daylight *
-           (1.0f - 0.65f * view.lighting.cloudiness.numerical_value_in (one));
+    return visibility * view.lighting.daylight.numerical_value_in (one) *
+           (1.0f - 0.65f * view.lighting.cloudiness.numerical_value_in (one)) *
+           proportion[one];
   }
 }
