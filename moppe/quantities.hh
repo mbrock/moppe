@@ -104,6 +104,12 @@ namespace moppe {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+  // A spring's damping over the critical damping that would just stop it
+  // overshooting: below one it rings, above one it creeps back.
+  QUANTITY_SPEC (damping_ratio,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
   // Which way, and nothing of how far: a unit-length vector. A normal, a
   // forward, an axis; the plan's version is a unit Vec2.
   QUANTITY_SPEC (direction,

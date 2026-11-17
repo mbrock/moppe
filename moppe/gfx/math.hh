@@ -69,6 +69,18 @@ namespace moppe {
   using blend_weight_t = quantity<blend_weight[one], float>;
   using scale_factor_t = quantity<scale_factor[one], float>;
   using froude_number_t = quantity<froude_number[one], float>;
+  using damping_ratio_t = quantity<damping_ratio[one], float>;
+
+  // The ISQ's coefficients of contact and of flow: a tyre's grip, what
+  // rolling costs a loaded wheel as a share of its load, a body's drag,
+  // what share of an engine's power reaches the water or the ground.
+  using friction_coefficient_t =
+    quantity<isq::static_friction_coefficient[one], float>;
+  using kinetic_friction_t = quantity<isq::kinetic_friction_factor[one], float>;
+  using rolling_resistance_t =
+    quantity<isq::rolling_resistance_factor[one], float>;
+  using drag_coefficient_t = quantity<isq::drag_coefficient[one], float>;
+  using efficiency_t = quantity<isq::mechanical_efficiency[one], float>;
 
   // Angles with a role (moppe/quantities.hh).
   using heading_t = quantity<heading[si::radian], float>;
