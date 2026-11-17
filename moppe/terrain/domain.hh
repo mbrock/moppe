@@ -349,26 +349,35 @@ namespace moppe::terrain {
       // A position divided by a spacing is a count of cells: both are
       // lengths, so the ratio carries no unit and the lattice coordinate
       // falls out of the quantity algebra rather than out of a raw division.
-      const Vec3 where = position_value (position);
+      const plan_position_t where = plan (position);
       const auto cells = [] (meters_t along, meters_t spacing) {
         return (along / spacing).numerical_value_in (mp_units::one);
       };
-      const float x = wrap_coordinate (cells (where[0] * u::m, m_spacing_x),
+      // Lattice coordinates, in cells.
+      const float x = wrap_coordinate (cells (x_of (where), m_spacing_x),
                                        static_cast<float> (m_width));
-      const float z = wrap_coordinate (cells (where[2] * u::m, m_spacing_z),
+      const float z = wrap_coordinate (cells (z_of (where), m_spacing_z),
                                        static_cast<float> (m_height));
 
       const std::size_t x0 = static_cast<std::size_t> (std::floor (x));
       const std::size_t z0 = static_cast<std::size_t> (std::floor (z));
       const std::size_t x1 = (x0 + 1) % m_width;
       const std::size_t z1 = (z0 + 1) % m_height;
-      const float tx = x - static_cast<float> (x0);
-      const float tz = z - static_cast<float> (z0);
+      const blend_weight_t tx =
+        (x - static_cast<float> (x0)) * blend_weight[one];
+      const blend_weight_t tz =
+        (z - static_cast<float> (z0)) * blend_weight[one];
+      const blend_weight_t sx = 1.0f * blend_weight[one] - tx;
+      const blend_weight_t sz = 1.0f * blend_weight[one] - tz;
+      // The stencil hands its weights on as the bundle's float lane.
+      const auto weight = [] (blend_weight_t a, blend_weight_t b) {
+        return (a * b).numerical_value_in (one);
+      };
 
-      visitor (TerrainIndex { x0, z0 }, (1.0f - tx) * (1.0f - tz));
-      visitor (TerrainIndex { x1, z0 }, tx * (1.0f - tz));
-      visitor (TerrainIndex { x0, z1 }, (1.0f - tx) * tz);
-      visitor (TerrainIndex { x1, z1 }, tx * tz);
+      visitor (TerrainIndex { x0, z0 }, weight (sx, sz));
+      visitor (TerrainIndex { x1, z0 }, weight (tx, sz));
+      visitor (TerrainIndex { x0, z1 }, weight (sx, tz));
+      visitor (TerrainIndex { x1, z1 }, weight (tx, tz));
     }
 
   private:
@@ -414,12 +423,21 @@ namespace moppe::terrain {
     return result;
   }
 
+  inline SurfaceElevation
+  elevation_point_at (const TerrainDomain& domain,
+                      std::span<const SurfaceElevation> values,
+                      std::size_t column,
+                      std::size_t row) {
+    return values[domain.offset ({ .column = column, .row = row })];
+  }
+
+  // The metre number of the same, for numeric kernels not yet typed.
   inline float elevation_at (const TerrainDomain& domain,
                              std::span<const SurfaceElevation> values,
                              std::size_t column,
                              std::size_t row) {
     return surface_elevation_value (
-      values[domain.offset ({ .column = column, .row = row })]);
+      elevation_point_at (domain, values, column, row));
   }
 }
 

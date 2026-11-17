@@ -158,7 +158,7 @@ MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
   const std::vector<float> depth { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                    0.0f, 0.0f, 0.0f, 0.0f };
   const FloodField flood { .surface = make_flood_surface (grid, level, depth),
-                           .sea_level = 0.0f,
+                           .sea_level = surface_elevation_point (0.0f * u::m),
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (9, 0),
                            .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 } };
@@ -187,7 +187,7 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
   std::vector<CellIndex> receiver (count, CellIndex { 0 });
   const std::vector<float> level (count, 10.0f);
   const FloodField flood { .surface = make_flood_surface (grid, level, depth),
-                           .sea_level = 0.0f,
+                           .sea_level = surface_elevation_point (0.0f * u::m),
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (count, 0),
                            .spill_receiver = std::move (receiver) };

@@ -278,6 +278,15 @@ namespace moppe::terrain {
   QUANTITY_SPEC (fractional_contributing_area,
                  mp_units::isq::area,
                  mp_units::non_negative);
+  // A ratio's base-2 logarithm, counted in doublings: how many octaves of
+  // catchment a cell gathers, or how far a wetness index runs.
+  QUANTITY_SPEC (octave_span, mp_units::dimensionless, mp_units::subkind);
+  // The power catchment area is raised to in a stream-power law: how much
+  // faster a bigger river cuts.
+  QUANTITY_SPEC (stream_power_exponent,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
 
   // A horizontal, unit-length representative of the directed flow carried by
   // a lattice sample. Unlike drainage_direction, this can be averaged across

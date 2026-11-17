@@ -39,7 +39,7 @@ namespace {
 
     FlightFixture ()
         : flood { .surface = constant_flood_surface (grid, count, 0.1f, 0.0f),
-                  .sea_level = 0.1f,
+                  .sea_level = terrain::surface_elevation_point (0.1f * u::m),
                   .has_ocean = false,
                   .ocean = std::vector<std::uint8_t> (count, 0),
                   .spill_receiver = std::vector<terrain::CellIndex> (count) },
@@ -247,7 +247,7 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
     receiver[cell] = terrain::CellIndex (cell);
   const terrain::FloodField flood {
     .surface = constant_flood_surface (grid, count, 0.0f, 0.0f),
-    .sea_level = 0.0f,
+    .sea_level = terrain::surface_elevation_point (0.0f * u::m),
     .has_ocean = false,
     .ocean = std::vector<std::uint8_t> (count, 0),
     .spill_receiver = receiver

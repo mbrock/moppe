@@ -192,11 +192,8 @@ namespace moppe::terrain {
                                  const ChannelGeometry& channels) {
       const TerrainDomain& grid = drainage.domain ();
       const int width = static_cast<int> (grid.width ());
-      const int height = static_cast<int> (grid.height ());
-      const float period_x =
-        width * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-      const float period_z =
-        height * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
+      const meters_t period_x = grid.period_x ();
+      const meters_t period_z = grid.period_z ();
       std::vector<std::uint8_t> waterfall_cells (grid.size (), 0);
       for (const Waterfall& waterfall : network.waterfalls)
         waterfall_cells[waterfall.lip_cell] = 1;
@@ -266,10 +263,14 @@ namespace moppe::terrain {
           knot_tangents.reserve (cells.size ());
         for (std::size_t knot = 0; knot < cells.size (); ++knot) {
           const CellIndex cell = cells[knot];
-          float x = static_cast<float> (cell % width) *
-                    (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-          float z = static_cast<float> (cell / width) *
-                    (grid.spacing_z ()).numerical_value_in (moppe::u::m);
+          const auto cell_x = [&] (CellIndex at) {
+            return static_cast<float> (at % width) * grid.spacing_x ();
+          };
+          const auto cell_z = [&] (CellIndex at) {
+            return static_cast<float> (at / width) * grid.spacing_z ();
+          };
+          meters_t x = cell_x (cell);
+          meters_t z = cell_z (cell);
           // Interior knots leave the lattice: the previous cell's D-infinity
           // route records where its continuous flow ray crosses the segment
           // between its two receivers, and pinning the knot to that crossing
@@ -283,46 +284,37 @@ namespace moppe::terrain {
                                          route.arcs[1].receiver == cell)) {
               const CellIndex cardinal = route.arcs[0].receiver;
               const CellIndex diagonal = route.arcs[1].receiver;
-              const float t =
-                route.receiver_interpolation.numerical_value_in (mp_units::one);
-              const float cardinal_x =
-                static_cast<float> (cardinal % width) *
-                (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-              const float cardinal_z =
-                static_cast<float> (cardinal / width) *
-                (grid.spacing_z ()).numerical_value_in (moppe::u::m);
-              const float diagonal_x =
-                static_cast<float> (diagonal % width) *
-                (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-              const float diagonal_z =
-                static_cast<float> (diagonal / width) *
-                (grid.spacing_z ()).numerical_value_in (moppe::u::m);
+              const auto t = route.receiver_interpolation;
+              const meters_t cardinal_x = cell_x (cardinal);
+              const meters_t cardinal_z = cell_z (cardinal);
+              const meters_t diagonal_x = cell_x (diagonal);
+              const meters_t diagonal_z = cell_z (diagonal);
               x = cardinal_x +
-                  minimum_image_delta (diagonal_x - cardinal_x, period_x) * t;
+                  minimum_image_delta (diagonal_x - cardinal_x, period_x) *
+                    t.numerical_value_in (one);
               z = cardinal_z +
-                  minimum_image_delta (diagonal_z - cardinal_z, period_z) * t;
+                  minimum_image_delta (diagonal_z - cardinal_z, period_z) *
+                    t.numerical_value_in (one);
             }
           }
           if (!raw.empty ()) {
-            x = raw.back ().x_m +
-                minimum_image_delta (x - raw.back ().x_m, period_x);
-            z = raw.back ().z_m +
-                minimum_image_delta (z - raw.back ().z_m, period_z);
+            const meters_t last_x = raw.back ().x_m * u::m;
+            const meters_t last_z = raw.back ().z_m * u::m;
+            x = last_x + minimum_image_delta (x - last_x, period_x);
+            z = last_z + minimum_image_delta (z - last_z, period_z);
           }
           const bool terminating = terminating_water_cell (cell);
           const bool pooled = !terminating && water_cell (cell);
           // Fractional contributing area varies smoothly along a reach where
           // the all-or-nothing receiver accumulation steps, so widths from
           // it taper instead of popping between cells.
-          const float area_m2 =
-            channels.empty ()
-              ? drainage.contributing_area_at (cell).numerical_value_in (u::m *
-                                                                         u::m)
-              : channels.area[cell].numerical_value_in (u::m * u::m);
+          const square_meters_t area =
+            channels.empty () ? drainage.contributing_area_at (cell)
+                              : square_meters_t (channels.area[cell]);
           raw.push_back (
-            { .x_m = x,
-              .z_m = z,
-              .contributing_area_m2 = area_m2,
+            { .x_m = meters_value (x),
+              .z_m = meters_value (z),
+              .contributing_area_m2 = area.numerical_value_in (u::m * u::m),
               .slope =
                 drainage.slope_at (cell).numerical_value_in (mp_units::one),
               .waterfall = waterfall_cells[cell] ? 1.0f : 0.0f,
@@ -378,26 +370,30 @@ namespace moppe::terrain {
     };
 
     std::vector<CellIndex> receiver (count, no_cell);
-    std::vector<float> slope (count, 0.0f);
+    std::vector<slope_t> slope (count, 0.0f * terrain_slope[one]);
     {
       MOPPE_PROFILE_ZONE ("drainage.choose_receivers");
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const std::size_t cell = index (x, y);
           receiver[cell] = static_cast<std::uint32_t> (cell);
-          const float elevation = elevation_at (domain, elevations, x, y);
-          float steepest = 0.0f;
+          const SurfaceElevation elevation =
+            elevation_point_at (domain, elevations, x, y);
+          slope_t steepest = 0.0f * terrain_slope[one];
           for (const Offset offset : neighbors) {
             const int raw_x = static_cast<int> (x) + offset.x;
             const int raw_y = static_cast<int> (y) + offset.y;
             const std::size_t nx = wrapped (raw_x, width);
             const std::size_t ny = wrapped (raw_y, height);
-            const float neighbor_elevation =
-              elevation_at (domain, elevations, nx, ny);
-            const float distance = cr::hypot (
-              offset.x * domain.spacing_x ().numerical_value_in (u::m),
-              offset.y * domain.spacing_z ().numerical_value_in (u::m));
-            const float candidate = (elevation - neighbor_elevation) / distance;
+            const SurfaceElevation neighbor_elevation =
+              elevation_point_at (domain, elevations, nx, ny);
+            const meters_t distance =
+              cr::hypot (
+                offset.x * domain.spacing_x ().numerical_value_in (u::m),
+                offset.y * domain.spacing_z ().numerical_value_in (u::m)) *
+              u::m;
+            const slope_t candidate = quantity_cast<terrain_slope> (
+              (elevation - neighbor_elevation) / distance);
             if (candidate > steepest) {
               steepest = candidate;
               receiver[cell] = static_cast<std::uint32_t> (index (nx, ny));
@@ -413,13 +409,13 @@ namespace moppe::terrain {
       order.begin (), order.end (), [&] (std::uint32_t a, std::uint32_t b) {
         const std::size_t ax = a % width, ay = a / width;
         const std::size_t bx = b % width, by = b / width;
-        return elevation_at (domain, elevations, ax, ay) >
-               elevation_at (domain, elevations, bx, by);
+        return elevation_point_at (domain, elevations, ax, ay) >
+               elevation_point_at (domain, elevations, bx, by);
       });
 
-    const float cell_area =
-      (domain.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
-    std::vector<float> area (count, cell_area);
+    const ContributingArea cell_area =
+      quantity_cast<contributing_area> (domain.cell_area ());
+    std::vector<ContributingArea> area (count, cell_area);
     for (const std::uint32_t cell : order)
       if (receiver[cell] != cell)
         area[receiver[cell]] += area[cell];
@@ -444,15 +440,17 @@ namespace moppe::terrain {
     };
 
     std::vector<CellIndex> receiver (count, no_cell);
-    std::vector<float> slope (count, 0.0f);
+    std::vector<slope_t> slope (count, 0.0f * terrain_slope[one]);
     {
       MOPPE_PROFILE_ZONE ("wet_drainage.choose_receivers");
-      std::array<float, neighbors.size ()> distance;
+      std::array<meters_t, neighbors.size ()> distance;
       for (std::size_t n = 0; n < neighbors.size (); ++n)
-        distance[n] = cr::hypot (
-          neighbors[n].x * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
-          neighbors[n].y *
-            (grid.spacing_z ()).numerical_value_in (moppe::u::m));
+        distance[n] =
+          cr::hypot (neighbors[n].x *
+                       (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+                     neighbors[n].y *
+                       (grid.spacing_z ()).numerical_value_in (moppe::u::m)) *
+          u::m;
       // Each cell reads its neighbours and writes only itself, so the rows
       // divide among threads without changing a bit.
       parallel_for (height, 16, [&] (std::size_t first, std::size_t last) {
@@ -460,17 +458,15 @@ namespace moppe::terrain {
           for (std::size_t x = 0; x < width; ++x) {
             const std::size_t cell = index (x, y);
             receiver[cell] = flood.spill_receiver[cell];
-            float steepest = 0.0f;
+            slope_t steepest = 0.0f * terrain_slope[one];
             for (std::size_t n = 0; n < neighbors.size (); ++n) {
               const int raw_x = static_cast<int> (x) + neighbors[n].x;
               const int raw_y = static_cast<int> (y) + neighbors[n].y;
               const std::size_t nx = wrapped (raw_x, width);
               const std::size_t ny = wrapped (raw_y, height);
               const std::size_t next = index (nx, ny);
-              const float candidate =
-                (surface_elevation_value (surface[cell]) -
-                 surface_elevation_value (surface[next])) /
-                distance[n];
+              const slope_t candidate = quantity_cast<terrain_slope> (
+                (surface[cell] - surface[next]) / distance[n]);
               if (candidate > steepest) {
                 steepest = candidate;
                 receiver[cell] = static_cast<std::uint32_t> (next);
@@ -534,9 +530,9 @@ namespace moppe::terrain {
     // Equal-height lake routes cannot be accumulated by elevation order.
     // Receiver edges either lower the filled surface or follow the acyclic
     // priority-flood forest, so a general topological pass handles both.
-    const float cell_area =
-      (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
-    std::vector<float> area (count, cell_area);
+    const ContributingArea cell_area =
+      quantity_cast<contributing_area> (grid.cell_area ());
+    std::vector<ContributingArea> area (count, cell_area);
     std::vector<std::uint32_t> order;
     order.reserve (count);
     {
@@ -685,13 +681,13 @@ namespace moppe::terrain {
       Waterfall selected {};
       bool has_selected = false;
       std::size_t last_candidate = 0;
-      float selected_score = 0.0f;
+      meters_t selected_score = 0.0f * u::m;
       const auto emit_selected = [&] {
         if (!has_selected)
           return;
         network.waterfalls.push_back (selected);
         has_selected = false;
-        selected_score = 0.0f;
+        selected_score = 0.0f * u::m;
       };
       for (std::size_t i = 0; i < reach.cells.size (); ++i) {
         const std::uint32_t cell = reach.cells[i];
@@ -710,8 +706,10 @@ namespace moppe::terrain {
           emit_selected ();
         last_candidate = i;
         const square_meters_t area = drainage.contributing_area_at (cell);
-        const float score =
-          (drop).numerical_value_in (moppe::u::m) *
+        // The drop, weighted up by the square root of how many times the
+        // reference catchment feeds it.
+        const meters_t score =
+          drop *
           std::sqrt (std::max (
             1.0f, (area / reference_area).numerical_value_in (mp_units::one)));
         if (!has_selected || score > selected_score ||

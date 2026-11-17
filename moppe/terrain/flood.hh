@@ -37,7 +37,7 @@ namespace moppe::terrain {
   // global-minimum fallback when the world has no ocean).
   struct FloodField {
     FloodSurface surface;
-    float sea_level;
+    SurfaceElevation sea_level;
     bool has_ocean;
     std::vector<std::uint8_t> ocean;
     std::vector<CellIndex> spill_receiver;
@@ -62,12 +62,21 @@ namespace moppe::terrain {
       return spatial::get<standing_water_depth> (surface);
     }
 
+    SurfaceElevation water_level (std::size_t cell) const {
+      return water_levels ()[cell];
+    }
+
+    StandingWaterDepth water_depth (std::size_t cell) const {
+      return water_depths ()[cell];
+    }
+
+    // The same in bare metres, for callers not yet typed.
     float water_level_m (std::size_t cell) const {
-      return surface_elevation_value (water_levels ()[cell]);
+      return surface_elevation_value (water_level (cell));
     }
 
     float water_depth_m (std::size_t cell) const {
-      return water_depths ()[cell].numerical_value_in (u::m);
+      return water_depth (cell).numerical_value_in (u::m);
     }
   };
 
@@ -194,15 +203,33 @@ namespace moppe::terrain {
     FloodField
     analyze_standing_water (const TerrainDomain& domain,
                             std::span<const SurfaceElevation> elevations,
-                            float sea_level);
+                            SurfaceElevation sea_level);
+
+    // The sea level in bare metres, for callers not yet typed.
+    inline FloodField
+    analyze_standing_water (const TerrainDomain& domain,
+                            std::span<const SurfaceElevation> elevations,
+                            float sea_level) {
+      return analyze_standing_water (
+        domain, elevations, surface_elevation_point (sea_level * u::m));
+    }
   }
 
+  template <TerrainElevations Terrain>
+  FloodField analyze_standing_water (const Terrain& terrain,
+                                     SurfaceElevation sea_level) {
+    return detail::analyze_standing_water (
+      terrain.domain (), elevations (terrain), sea_level);
+  }
+
+  // The sea level in bare metres, for callers not yet typed.
   template <TerrainElevations Terrain>
   FloodField analyze_standing_water (const Terrain& terrain, float sea_level) {
     return detail::analyze_standing_water (
       terrain.domain (), elevations (terrain), sea_level);
   }
-  LakeCensus census_lakes (const FloodField& flood, float wet_epsilon = 1e-7f);
+  LakeCensus census_lakes (const FloodField& flood,
+                           meters_t wet_epsilon = 1e-7f * u::m);
   ElevationMap permanent_water_surface (const FloodField& flood,
                                         const LakeCensus& census,
                                         const WaterPermanence& permanence = {});

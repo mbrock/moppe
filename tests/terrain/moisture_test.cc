@@ -19,7 +19,7 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
   std::vector<WaterBodyId> body_at_cell (count, WaterBodyMembership::dry);
   body_at_cell[40] = 0;
   const FloodField flood { .surface = make_flood_surface (grid, levels, depths),
-                           .sea_level = -1.0f,
+                           .sea_level = surface_elevation_point (-1.0f * u::m),
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (count, 0),
                            .spill_receiver =

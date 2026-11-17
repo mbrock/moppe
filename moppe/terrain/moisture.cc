@@ -19,9 +19,7 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
-    const float spacing =
-      0.5f * ((grid.spacing_x ()).numerical_value_in (moppe::u::m) +
-              (grid.spacing_z ()).numerical_value_in (moppe::u::m));
+    const meters_t spacing = 0.5f * (grid.spacing_x () + grid.spacing_z ());
 
     // Multi-source BFS distance (in grid steps) from every standing-water
     // cell. Grid distance is close enough to metric distance here: the
@@ -44,7 +42,7 @@ namespace moppe::terrain {
         const int x = static_cast<int> (cell) % width;
         const int y = static_cast<int> (cell) / width;
         const std::uint16_t next = steps[cell] + 1;
-        if (next * spacing > 4.0f * parameters.water_reach_m)
+        if (next * spacing > 4.0f * parameters.water_reach)
           continue;
         for (int dy = -1; dy <= 1; ++dy)
           for (int dx = -1; dx <= 1; ++dx) {
@@ -62,38 +60,53 @@ namespace moppe::terrain {
       }
     }
 
-    const float cell_area =
-      (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
+    const square_meters_t cell_area = grid.cell_area ();
     std::vector<SurfaceMoisture> moisture (count);
     std::vector<SoilWetness> wetness (count);
     {
       MOPPE_PROFILE_ZONE ("moisture.combine_water_and_drainage");
       for (std::size_t cell = 0; cell < count; ++cell) {
-        const float distance = steps[cell] == far_away
-                                 ? 4.0f * parameters.water_reach_m
-                                 : steps[cell] * spacing;
-        const float near_water = cr::exp (-distance / parameters.water_reach_m);
-        const float area =
-          drainage.contributing_area_at (cell).numerical_value_in (u::m * u::m);
+        const meters_t distance = steps[cell] == far_away
+                                    ? 4.0f * parameters.water_reach
+                                    : steps[cell] * spacing;
+        const proportion_t near_water =
+          cr::exp (
+            (-distance / parameters.water_reach).numerical_value_in (one)) *
+          proportion[one];
+        const ContributingArea area = drainage.contributing_area_at (cell);
         // How many cells' worth of ground drains through this one. A cell
         // that drains only itself counts once, which is where the logarithm
         // starts.
-        const float upstream = std::max (area / cell_area, 1.0f);
-        const float damp = std::clamp (
-          cr::log2 (upstream) / parameters.drainage_span_log2, 0.0f, 1.0f);
+        const scale_factor_t upstream =
+          std::max ((area / cell_area).numerical_value_in (one), 1.0f) *
+          scale_factor[one];
+        const OctaveSpan gathered =
+          cr::log2 (upstream.numerical_value_in (one)) * octave_span[one];
+        const proportion_t damp =
+          std::clamp (
+            (gathered / parameters.drainage_span).numerical_value_in (one),
+            0.0f,
+            1.0f) *
+          proportion[one];
+        const blend_weight_t weight = parameters.drainage_weight;
         moisture[cell] =
-          std::clamp ((1.0f - parameters.drainage_weight) * near_water +
-                        parameters.drainage_weight * damp,
-                      0.0f,
-                      1.0f) *
+          std::clamp (
+            ((1.0f * blend_weight[one] - weight) * near_water + weight * damp)
+              .numerical_value_in (one),
+            0.0f,
+            1.0f) *
           surface_moisture[one];
 
-        const float fall =
-          std::max (drainage.slope_at (cell).numerical_value_in (one),
-                    parameters.flattest_believable_slope);
-        const float index = cr::log2 (upstream) - cr::log2 (fall);
+        const slope_t fall = std::max (drainage.slope_at (cell),
+                                       parameters.flattest_believable_slope);
+        const OctaveSpan index =
+          gathered -
+          cr::log2 (fall.numerical_value_in (one)) * octave_span[one];
         wetness[cell] =
-          std::clamp (index / parameters.wetness_span_octaves, 0.0f, 1.0f) *
+          std::clamp (
+            (index / parameters.wetness_span).numerical_value_in (one),
+            0.0f,
+            1.0f) *
           soil_wetness[one];
       }
     }
