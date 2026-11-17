@@ -131,7 +131,7 @@ namespace moppe::game {
     Surroundings around;
     const WorldPlaces& places;
     const MushroomPatch& mushrooms;
-    Vec3 spawn;
+    position_t spawn;
     CaptureCameras& cameras;
     render::Renderer* renderer;
   };

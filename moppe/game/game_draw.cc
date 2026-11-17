@@ -12,6 +12,16 @@
 
 namespace moppe {
   namespace game {
+    namespace {
+      // The ground as the scan reads it, in bare metres.
+      GroundHeight scan_ground (const WorldGround& ground) {
+        return [ground] (float x, float z) {
+          return terrain::surface_elevation_value (
+            ground.elevation (plan_position (x, z)));
+        };
+      }
+    }
+
     void MoppeGame::draw_home_base_marker (render::DrawList& dl) const {
       dl.append (m_home_base_marker);
     }
@@ -21,7 +31,7 @@ namespace moppe {
                     logic ().m_total_time - ago,
                     m_mushrooms,
                     m_trunk_field,
-                    world_ground ().reader ());
+                    scan_ground (world_ground ()));
     }
 
     void MoppeGame::draw_scan (render::Renderer& r, const FrameView& frame) {
@@ -45,7 +55,7 @@ namespace moppe {
                    logic ().m_total_time,
                    view,
                    session ().walker ().position (),
-                   world_ground ().reader ());
+                   scan_ground (world_ground ()));
     }
 
     render::FrameParams MoppeGame::frame_params_for (const FrameView& frame) {
@@ -91,14 +101,11 @@ namespace moppe {
     // The ground the animals stand on: the land, or a floor built on it.
     terrain::ElevationField MoppeGame::animal_ground () const {
       return [this] (plan_position_t at) {
-        const float x = meters_value (x_of (at)), z = meters_value (z_of (at));
-        const float ground = world_ground ().height (Vec3 (x, 0.0f, z));
+        const terrain::SurfaceElevation ground = world_ground ().elevation (at);
         if (const std::optional<terrain::SurfaceElevation> floor =
               floor_at (m_places.layout, at))
-          return terrain::surface_elevation_point (
-            std::max (terrain::surface_elevation_value (*floor), ground) *
-            u::m);
-        return terrain::surface_elevation_point (ground * u::m);
+          return std::max (*floor, ground);
+        return ground;
       };
     }
 
@@ -502,7 +509,9 @@ namespace moppe {
         theirs ? &theirs->fleet.jet_ski : nullptr,
         level,
         [&] (const position_t& at) {
-          return world_ground ().height (position_value (at)) * u::m;
+          return terrain::surface_elevation_value (
+                   world_ground ().elevation (plan (at))) *
+                 u::m;
         },
         time,
         m_sky.sky ().daylight);

@@ -349,7 +349,8 @@ namespace moppe::game {
       Vec3 floor = position_value (hammock_middle (theirs.hammock)) +
                    direction_value (hammock_across (theirs.hammock)) * 0.75f -
                    direction_value (hammock_along (theirs.hammock)) * 0.5f;
-      floor[1] = ground.height (floor);
+      floor[1] = terrain::surface_elevation_value (
+        ground.elevation (plan (position (floor))));
       render_basket_set_down (
         dl, position (floor), hammock_along (theirs.hammock), basket);
     } else if (theirs.walker && theirs.mode != Doing::on_the_bus ()) {

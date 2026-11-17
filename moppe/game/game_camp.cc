@@ -40,7 +40,7 @@ namespace moppe {
                .places = m_places.layout,
                .bus = m_places.bus,
                .place_names = m_place_names,
-               .home_base = position (m_home_base_position),
+               .home_base = m_home_base_position,
                .sky = m_sky.sky () };
     }
 
@@ -103,7 +103,8 @@ namespace moppe {
       Vec3 floor = position_value (hammock_middle (camp.hammock)) +
                    direction_value (across) * 0.75f -
                    direction_value (way) * 0.5f;
-      floor[1] = world_ground ().height (floor);
+      floor[1] = terrain::surface_elevation_value (
+        world_ground ().elevation (plan (position (floor))));
       render_basket_set_down (dl, position (floor), way, m_basket_contents);
     }
   }

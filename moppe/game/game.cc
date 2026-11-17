@@ -15,8 +15,8 @@ namespace moppe {
           m_recipe (std::move (recipe)),
           m_loading (this->recipe (), options.world_cache),
           m_graphics (options.graphics), m_sky (m_graphics.sun_height),
-          m_spawn_position (position_value (this->world ().spawn_position ())),
-          m_renderer (0), m_capture (options.screenshot_path), m_ready (false) {
+          m_spawn_position (this->world ().spawn_position ()), m_renderer (0),
+          m_capture (options.screenshot_path), m_ready (false) {
       if (options.multiplayer)
         m_company.seek (*options.multiplayer);
     }
@@ -339,14 +339,12 @@ namespace moppe {
       // over it.
       const meters_t ground =
         spatial::sample<terrain::surface_elevation> (
-          surface (),
-          position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
+          surface (), at_height (plan (m_spawn_position), 0.0f * u::m))
           .delta_from_zero ()
           .numerical_value_in (u::m) *
         u::m;
-      session ().bike ().reset (Vec3 (m_spawn_position[0],
-                                      meters_value (ground + 1.2f * u::m),
-                                      m_spawn_position[2]));
+      session ().bike ().reset (position_value (
+        at_height (plan (m_spawn_position), ground + 1.2f * u::m)));
       // Key releases were swallowed during the game-over screen;
       // don't resume with the throttle stuck open.
       m_live_input.clear ();

@@ -63,7 +63,7 @@ namespace moppe {
     void MoppeGame::build_home_base_marker () {
       m_home_base_marker.clear ();
       build_cairn (m_home_base_marker,
-                   moppe::position (m_home_base_position),
+                   m_home_base_position,
                    world_ground ().trail_heading (),
                    static_cast<std::uint32_t> (recipe ().seed ().value),
                    world_ground ().elevation_field ());
@@ -125,16 +125,16 @@ namespace moppe {
       m_company.forget ();
       const position_t home = world_ground ().trail_cell (
         generated_world ().trails ().plan.home_base);
-      m_home_base_position = position_value (home);
+      m_home_base_position = home;
       build_home_base_marker ();
       // Eight metres back down the trail, a little above its ground.
       const direction_t heading = world_ground ().trail_heading ();
       const plan_position_t spawn =
         plan (home - quantity_cast<isq::position_vector> (
                        along (heading, 8.0f * u::m)));
-      m_spawn_position = position_value (terrain::at_elevation (
-        spawn, world_ground ().elevation (spawn) + 1.2f * u::m));
-      session ().bike ().reset (m_spawn_position);
+      m_spawn_position = terrain::at_elevation (
+        spawn, world_ground ().elevation (spawn) + 1.2f * u::m);
+      session ().bike ().reset (position_value (m_spawn_position));
       session ().bike ().set_heading (direction_value (heading));
       const char* demo = moppe::environment ("MOPPE_DEMO");
       if (demo && std::string_view (demo) == "forest")
@@ -198,11 +198,12 @@ namespace moppe {
       const plan_position_t spot =
         plan_position ((static_cast<float> (densest % nx) + 0.5f) * cell,
                        (static_cast<float> (densest / nx) + 0.5f) * cell);
-      m_spawn_position = position_value (terrain::at_elevation (
-        spot, world_ground ().elevation (spot) + 1.2f * u::m));
-      session ().bike ().reset (m_spawn_position);
-      std::cerr << "forest demo: densest conifer stand at " << m_spawn_position
-                << " (" << conifers[densest] << " spruce in 40 m)\n";
+      m_spawn_position = terrain::at_elevation (
+        spot, world_ground ().elevation (spot) + 1.2f * u::m);
+      session ().bike ().reset (position_value (m_spawn_position));
+      std::cerr << "forest demo: densest conifer stand at "
+                << position_value (m_spawn_position) << " ("
+                << conifers[densest] << " spruce in 40 m)\n";
     }
 
     void MoppeGame::grow_global_forest () {
@@ -255,7 +256,7 @@ namespace moppe {
       });
       m_boulders.rebuild (*m_renderer, plan);
       // Where to cross a river dry-shod, for whoever wants to find one.
-      const position_t spawn = moppe::position (m_spawn_position);
+      const position_t spawn = m_spawn_position;
       const auto nearest = std::ranges::min_element (
         plan.crossings, {}, [&] (const StoneCrossing& crossing) {
           return plan_distance (crossing.from, spawn);
@@ -279,11 +280,11 @@ namespace moppe {
                         generated_world ().water_surface (),
                         recipe ().seed ().value ^ 0x3c5f00d5U,
                         world ().water_level,
-                        position (m_home_base_position)));
+                        m_home_base_position));
       if (const auto first =
-            m_mushrooms.nearest (position (m_spawn_position), 400.0f * u::m)) {
+            m_mushrooms.nearest (m_spawn_position, 400.0f * u::m)) {
         const position_t at = m_mushrooms.site (*first).base;
-        const position_t spawn = moppe::position (m_spawn_position);
+        const position_t spawn = m_spawn_position;
         std::cerr << "moppe: nearest mushrooms ("
                   << mushroom_plural (m_mushrooms.site (*first).kind) << ") "
                   << meters_value (plan_distance (at, spawn))
@@ -351,10 +352,8 @@ namespace moppe {
       m_places.build (m_renderer, world_ground ());
       if (m_renderer && !m_places.landscape.colliders ().empty ())
         settle_obstacles (true);
-      m_places.let_out_animals (world_ground (),
-                                session (),
-                                moppe::position (m_home_base_position),
-                                moppe::position (m_spawn_position));
+      m_places.let_out_animals (
+        world_ground (), session (), m_home_base_position, m_spawn_position);
       m_parking.park_jeep (parking_lot ());
       m_parking.park_tractor (parking_lot ());
       m_parking.park_mountain_bike (parking_lot ());
@@ -407,8 +406,8 @@ namespace moppe {
                       world_ground (),
                       m_sky.sky (),
                       session (),
-                      position (m_home_base_position),
-                      position (m_spawn_position));
+                      m_home_base_position,
+                      m_spawn_position);
       remember_seed (world (),
                      recipe ().generation_profile (),
                      static_cast<int> (recipe ().seed ().value));

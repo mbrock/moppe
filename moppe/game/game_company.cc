@@ -33,13 +33,15 @@ namespace moppe {
       // Far enough that this jeep, parked beyond the bike, clears
       // theirs.
       Vec3 place = position_value (bike.position ()) - side * 7.0f;
-      place[1] = world_ground ().height (place) + 1.2f;
+      place[1] = terrain::surface_elevation_value (
+                   world_ground ().elevation (plan (position (place)))) +
+                 1.2f;
       bike.reset (place);
       bike.set_heading (heading);
-      Vec3 aside = place - m_spawn_position;
+      Vec3 aside = place - position_value (m_spawn_position);
       aside[1] = 0.0f;
       m_parking.set_aside (moppe::displacement (aside));
-      m_spawn_position = place;
+      m_spawn_position = position (place);
       m_parking.park_jeep (parking_lot ());
       m_parking.park_tractor (parking_lot ());
       m_parking.park_mountain_bike (parking_lot ());

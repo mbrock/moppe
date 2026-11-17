@@ -139,10 +139,8 @@ leaves the bits unchanged.
 
 Typed: `period ()`, `elevation (plan)`, `still_water (plan)`,
 `water_depth (plan)`, `open (plan, room, relief)`, `open_near (...)`,
-`on_road (plan, reach, decks)`, `elevation_field ()`. The float/`Vec3`
-overloads (`height`, `still_level`, `depth`, `reader`, `period_x/z`) are
-adapters for callers not yet typed; delete each when its last caller
-moves.
+`on_road (plan, reach, decks)`, `elevation_field ()`. It has no float or
+`Vec3` adapters; a caller with a bare `Vec3` takes its `plan` first.
 
 ## Trig and its rounding
 

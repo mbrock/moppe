@@ -101,12 +101,15 @@ namespace moppe::game {
     }
     for (const OpeningShot& shot : reel->shots) {
       const Vec3& eye = position_value (shot.eye);
-      if (eye[1] < ground.height (eye) + 0.2f) {
+      if (eye[1] < terrain::surface_elevation_value (
+                     ground.elevation (moppe::plan (shot.eye))) +
+                     0.2f) {
         std::cerr << "moppe: opening: shot " << shot.name
                   << " stands underground in this world\n";
         return std::nullopt;
       }
-      if (shot.sun && abs (*shot.sun - sky.sun_height) > 0.01f)
+      if (shot.sun &&
+          abs (*shot.sun - sky.sun_height) > 0.01f * proportion[one])
         std::cerr << "moppe: opening: shot " << shot.name
                   << " was composed under sun "
                   << shot.sun->numerical_value_in (one)
@@ -123,7 +126,8 @@ namespace moppe::game {
     const direction_t along = ground.trail_heading ();
     position_t eye =
       position (position_value (home_base) + direction_value (along) * 20.0f);
-    position_value (eye)[1] = ground.height (position_value (eye)) + 3.6f;
+    eye = terrain::at_elevation (
+      moppe::plan (eye), ground.elevation (moppe::plan (eye)) + 3.6f * u::m);
     Vec3 look = position_value (spawn) - position_value (eye);
     look[1] = 0.0f;
     OpeningShot still;
@@ -238,9 +242,9 @@ namespace moppe::game {
         return { .left = true };
       }
       const CinematicFlightControls controls {
-        .lateral = input_value (input.turn),
-        .lift = input_value (input.boost),
-        .pace = input_value (input.drive),
+        .lateral = input.turn,
+        .lift = input_value (input.boost) * control_signal[one],
+        .pace = input.drive,
       };
       m_flight.tick (interval, surface, controls);
       return { .left = !m_flight.active (), .played = true };
@@ -296,7 +300,8 @@ namespace moppe::game {
                                      int height_pts) const {
     if (!m_reel.active ())
       return;
-    if (const proportion_t veil = m_reel.veil (); veil > 0.002f) {
+    if (const proportion_t veil = m_reel.veil ();
+        veil > 0.002f * proportion[one]) {
       render::DrawState over;
       over.blend = true;
       over.depth_test = false;

@@ -128,7 +128,7 @@ namespace moppe {
                  world_ground (),
                  m_places.layout,
                  m_trunk_field,
-                 moppe::position (m_spawn_position) };
+                 m_spawn_position };
       }
 
       // MOPPE_DEMO=forest: park the bike in the forest's densest conifer
@@ -267,10 +267,10 @@ namespace moppe {
       GraphicsSettings m_graphics;
       // The day and its weather.
       SkyClock m_sky;
-      Vec3 m_spawn_position;
+      position_t m_spawn_position;
       // Where the machines were parked, and the boat moored.
       Parking m_parking;
-      Vec3 m_home_base_position;
+      position_t m_home_base_position;
       render::DrawList m_home_base_marker;
       // Each road place's name (place_names.hh), and the fingerposts.
       std::vector<std::string> m_place_names;
