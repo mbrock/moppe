@@ -1189,13 +1189,15 @@ namespace moppe::game {
             if (x * x + z * z > (R - post) * (R - post))
               continue;
             mov::Trunk drum;
-            const Vec3 root (middle[0] + x,
-                             g.ground (middle[0] + x, middle[2] + z) - 0.2f,
-                             middle[2] + z);
-            drum.root = position (root);
+            drum.root =
+              position (Vec3 (middle[0] + x,
+                              g.ground (middle[0] + x, middle[2] + z) - 0.2f,
+                              middle[2] + z));
             drum.axis = unit_direction (up);
             drum.radius = post * u::m;
-            drum.height = std::max (0.01f, top - post - root[1]) * u::m;
+            drum.height =
+              std::max (0.01f, top - post - position_value (drum.root)[1]) *
+              u::m;
             colliders.push_back (drum);
           }
 
@@ -1240,10 +1242,11 @@ namespace moppe::game {
           a = frame.transform_point (a);
           b = frame.transform_point (b);
           mov::Trunk t;
-          const float span = length (b - a);
+          const meters_t span = length (b - a) * u::m;
           t.root = position (a);
-          t.height = span * u::m;
-          t.axis = unit_direction ((b - a) / std::max (span, 1e-3f));
+          t.height = span;
+          t.axis =
+            unit_direction ((b - a) / std::max (meters_value (span), 1e-3f));
           t.radius = radius * u::m;
           colliders.push_back (t);
         };
@@ -1356,10 +1359,11 @@ namespace moppe::game {
             a = frame.transform_point (a);
             b = frame.transform_point (b);
             mov::Trunk t;
-            const float span = length (b - a);
+            const meters_t span = length (b - a) * u::m;
             t.root = position (a);
-            t.height = span * u::m;
-            t.axis = unit_direction ((b - a) / std::max (span, 1e-3f));
+            t.height = span;
+            t.axis =
+              unit_direction ((b - a) / std::max (meters_value (span), 1e-3f));
             t.radius = radius * u::m;
             colliders.push_back (t);
           };
