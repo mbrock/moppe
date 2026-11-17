@@ -14,8 +14,8 @@ namespace moppe {
                                     Vec3 heading) const {
       if (width_pts < 480 || height_pts < 360)
         return;
-      const terrain::TerrainDomain& grid = trail_network ().domain;
-      const auto& alignment = trail_network ().alignment.points;
+      const terrain::TerrainDomain& grid = generated_world ().trails ().domain;
+      const auto& alignment = generated_world ().trails ().alignment.points;
       if (alignment.size () < 2)
         return;
       const float period_x =
@@ -477,17 +477,18 @@ namespace moppe {
           }
         }
         if (name)
-          add_waymark (state,
-                       frame,
-                       width,
-                       height,
-                       name,
-                       HudState::Waymark::Place,
-                       Vec3 (x, ground_height (Vec3 (x, 0, z)) + 4.0f, z),
-                       40.0f,
-                       70.0f,
-                       DisplayColor (1.0f, 0.86f, 0.55f),
-                       place_waymark_m);
+          add_waymark (
+            state,
+            frame,
+            width,
+            height,
+            name,
+            HudState::Waymark::Place,
+            Vec3 (x, world_ground ().height (Vec3 (x, 0, z)) + 4.0f, z),
+            40.0f,
+            70.0f,
+            DisplayColor (1.0f, 0.86f, 0.55f),
+            place_waymark_m);
       }
       // Every machine but the one being driven, and the bike while it
       // hangs under the wing.
@@ -588,10 +589,10 @@ namespace moppe {
       const int size = std::min (limit, 2 * recipe ().resolution ());
       m_map.set (r,
                  paint_relief_map (surface (),
-                                   surface_readings (),
+                                   generated_world ().readings (),
                                    generated_world ().water_surface (),
-                                   rivers (),
-                                   trail_network (),
+                                   generated_world ().rivers (),
+                                   generated_world ().trails (),
                                    generated_world ().roads (),
                                    world ().water_level,
                                    size));

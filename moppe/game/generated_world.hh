@@ -114,6 +114,22 @@ namespace moppe::game {
       return m_hydrology;
     }
 
+    const terrain::FloodField& standing_water () const noexcept {
+      return std::get<terrain::FloodField> (m_hydrology);
+    }
+
+    const terrain::LakeCensus& lake_census () const noexcept {
+      return std::get<terrain::LakeCensus> (m_hydrology);
+    }
+
+    const terrain::DrainageGraph& drainage () const noexcept {
+      return std::get<terrain::DrainageGraph> (m_hydrology);
+    }
+
+    const terrain::RiverNetwork& rivers () const noexcept {
+      return std::get<terrain::RiverNetwork> (m_hydrology);
+    }
+
     const map::SurfaceReadings& readings () const noexcept {
       return m_readings;
     }

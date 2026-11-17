@@ -480,7 +480,9 @@ set(MOPPE_ENGINE_SOURCES
 )
 
 set(MOPPE_APPLICATION_SOURCES
+  moppe/game/capture_cameras.cc
   moppe/game/companionship.cc
+  moppe/game/demo_pilot.cc
   moppe/game/frame_capture.cc
   moppe/game/game.cc
   moppe/game/game_camp.cc
@@ -488,7 +490,6 @@ set(MOPPE_APPLICATION_SOURCES
   moppe/game/game_company.cc
   moppe/game/game_draw.cc
   moppe/game/game_hud.cc
-  moppe/game/game_machines.cc
   moppe/game/game_render.cc
   moppe/game/game_scripts.cc
   moppe/game/game_world.cc

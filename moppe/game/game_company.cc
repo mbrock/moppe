@@ -116,7 +116,7 @@ namespace moppe {
       // Far enough that this jeep, parked beyond the bike, clears
       // theirs.
       Vec3 place = bike.position () - side * 7.0f;
-      place[1] = ground_height (place) + 1.2f;
+      place[1] = world_ground ().height (place) + 1.2f;
       bike.reset (place);
       bike.set_heading (heading);
       Vec3 aside = place - m_spawn_position;
@@ -485,7 +485,7 @@ namespace moppe {
         Vec3 floor = hammock_middle (theirs.hammock) +
                      hammock_across (theirs.hammock) * 0.75f -
                      hammock_along (theirs.hammock) * 0.5f;
-        floor[1] = ground_height (floor);
+        floor[1] = world_ground ().height (floor);
         render_basket_set_down (
           dl, floor, hammock_along (theirs.hammock), m_company.basket);
       } else if (theirs.walker) {

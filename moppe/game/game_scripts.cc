@@ -14,7 +14,7 @@ namespace moppe {
       const auto depth_at = [&] (const Vec3& at) {
         return still_water_at (world (), surface (), &sheets, at)
                  .numerical_value_in (u::m) -
-               ground_height (at);
+               world_ground ().height (at);
       };
       constexpr float step = 4.0f;
       for (int ring = 0; ring < 160; ++ring) {
@@ -33,7 +33,7 @@ namespace moppe {
             if (depth_at (stand + out * 4.5f) < 0.5f ||
                 depth_at (stand + out * 8.0f) < 0.8f)
               continue;
-            stand[1] = ground_height (stand) + 0.1f;
+            stand[1] = world_ground ().height (stand) + 0.1f;
             session ().walker ().spawn (moppe::position (stand), out);
             logic ().m_fp_eye = session ().walker ().eye_position ();
             std::cerr << "moppe: fish script: a bank "
@@ -126,13 +126,16 @@ namespace moppe {
             if (g.dry (at[0], at[2]))
               stand = { at, middle };
           }
-          m_capture_camera.watched = static_cast<std::size_t> (
-            best - session ().animals ().animals ().data ());
+          std::optional<Vec3> side;
           if (stand) {
             const Vec3 in = normalized (Vec3 (
               middle[0] - stand->first[0], 0.0f, middle[2] - stand->first[2]));
-            m_capture_camera.watch_side = Vec3 (in[2], 0.0f, -in[0]);
+            side = Vec3 (in[2], 0.0f, -in[0]);
           }
+          m_capture_camera.watch (
+            static_cast<std::size_t> (best -
+                                      session ().animals ().animals ().data ()),
+            side);
         }
       } else if (script == "barn" || script == "byre" || script == "eggs" ||
                  script == "hens") {
@@ -177,7 +180,7 @@ namespace moppe {
       if (!stand)
         return;
       Vec3 at = stand->first;
-      at[1] = ground_height (at) + 0.1f;
+      at[1] = world_ground ().height (at) + 0.1f;
       if (const std::optional<float> floor =
             floor_at (m_places.layout, at[0], at[2]))
         at[1] = std::max (static_cast<float> (at[1]), *floor + 0.1f);
@@ -198,8 +201,8 @@ namespace moppe {
       const std::vector<mov::Trunk> near =
         m_trunk_field.gather (m_spawn_position, 700.0f);
       // Under open sky, so there are stars to lie and look at.
-      m_walk.camp.site =
-        nearest_hammock_site (near, m_spawn_position, ground_reader (), 60.0f);
+      m_walk.camp.site = nearest_hammock_site (
+        near, m_spawn_position, world_ground ().reader (), 60.0f);
       if (!m_walk.camp.site) {
         std::cerr << "moppe: camp script: no two trees near the spawn "
                      "would take a hammock\n";
@@ -224,7 +227,7 @@ namespace moppe {
       m_walk.camp.side = clearance (1.0f) >= clearance (-1.0f) ? 1.0f : -1.0f;
       Vec3 stand = middle + across * (m_walk.camp.side * 8.5f) +
                    hammock_along (site) * 1.5f;
-      stand[1] = ground_height (stand) + 0.1f;
+      stand[1] = world_ground ().height (stand) + 0.1f;
       Vec3 facing = middle - stand;
       facing[1] = 0.0f;
       session ().walker ().spawn (moppe::position (stand), normalized (facing));
@@ -269,7 +272,7 @@ namespace moppe {
         return false;
       };
       Vec3 middle = hammock_middle (site);
-      middle[1] = ground_height (middle);
+      middle[1] = world_ground ().height (middle);
       const Vec3 fireside = middle +
                             hammock_across (site) * (script.side * 3.6f) -
                             hammock_along (site) * 0.6f;

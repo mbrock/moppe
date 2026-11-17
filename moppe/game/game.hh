@@ -32,6 +32,7 @@
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/companionship.hh>
 #include <moppe/game/daylight.hh>
+#include <moppe/game/demo_pilot.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/farm_model.hh>
 #include <moppe/game/figure.hh>
@@ -165,42 +166,6 @@ namespace moppe {
       // fallen leaves lie wherever the turned groves have dropped them.
       GroundCover ground_cover (const Vec3& at) const;
 
-      const map::SurfaceReadings& surface_readings () const noexcept {
-        return generated_world ().readings ();
-      }
-
-      template <typename Artifact>
-      const Artifact& hydrology_artifact () const noexcept {
-        return std::get<Artifact> (generated_world ().hydrology ());
-      }
-
-      const terrain::FloodField& standing_water () const noexcept {
-        return hydrology_artifact<terrain::FloodField> ();
-      }
-
-      const terrain::LakeCensus& lake_census () const noexcept {
-        return hydrology_artifact<terrain::LakeCensus> ();
-      }
-
-      const terrain::DrainageGraph& drainage () const noexcept {
-        return hydrology_artifact<terrain::DrainageGraph> ();
-      }
-
-      const terrain::RiverNetwork& rivers () const noexcept {
-        return hydrology_artifact<terrain::RiverNetwork> ();
-      }
-
-      const terrain::TrailNetwork& trail_network () const noexcept {
-        return generated_world ().trails ();
-      }
-
-      Vec3 trail_cell_position (terrain::CellIndex cell) const;
-
-      Vec3 trail_alignment_position (
-        const terrain::TrailAlignmentPoint& point) const;
-
-      Vec3 trail_direction_from_home () const;
-
       // The trailhead is marked by a cairn at the path's edge, built once
       // per world.
       void build_home_base_marker ();
@@ -251,27 +216,9 @@ namespace moppe {
                  m_spawn_position };
       }
 
-      // The boat autopilot (MOPPE_DEMO=boat): down the river's course
-      // where it has one, and otherwise a lazy weave over open water;
-      // either way it steers clear of shallows it sees ahead.
-      InputFrame boat_autopilot (float t);
-
-      // The jet ski's (MOPPE_DEMO=jet_ski): the same weave, but it makes
-      // for the widest water it can see, looks as far ahead as it covers
-      // in a few seconds, and shuts the throttle to come round when the
-      // shallows are near.
-      InputFrame jet_ski_autopilot (float t);
-
       // MOPPE_DEMO=forest: park the bike in the forest's densest conifer
       // stand.
       void move_spawn_to_forest ();
-
-      // Whether something `reach` metres round stands on a cart road's
-      // tread (or, with `decks`, under a bridge's deck). The forest and
-      // the rocks know the roads only through the coarse trail field,
-      // which a burn's snags and a floodplain's trees under a bridge slip
-      // through: they stood in the road, and stopped whatever rode it.
-      bool on_road (const Vec3& at, float reach, bool decks) const;
 
       void grow_global_forest ();
 
@@ -290,17 +237,10 @@ namespace moppe {
 
       // -- camp --------------------------------------------------------
 
-      GroundHeight ground_reader () const;
-
       // -- fishing -------------------------------------------------------
 
       // What there is to do about the line here, and the last fish.
       void add_fishing_readings (HudState& state) const;
-
-      // Someone in the hammock sees through eyes that lie back in it; any
-      // other camera stands off and can be walked round with the look.
-      // Both ease from and to where the walker stood.
-      void rest_camera ();
 
       // What there is to do about the camp where the walker stands.
       void add_camp_readings (HudState& state) const;
@@ -341,8 +281,6 @@ namespace moppe {
       // greatest watercourse from its divide to the sea (at a watching
       // pace, or in MOPPE_FLYOVER_SECONDS), or `none` to begin in play.
       void plan_opening_journey ();
-
-      float ground_height (const Vec3& at) const;
 
       // Reads the authored shots, keeping them only if they were composed
       // in this world and every camera stands above its ground.
@@ -493,31 +431,6 @@ namespace moppe {
       // sides, and "forage" starts beside the mushrooms nearest the spawn
       // and picks its way from one to the next.
       InputFrame scripted_walk (std::string_view script, seconds_t interval);
-
-      // MOPPE_WALK_CAMERA=side: a camera locked beside the walking figure,
-      // so the gait can be judged against the ground passing beneath it.
-      void walk_side_camera ();
-
-      // MOPPE_ANIMAL_CAMERA=<metres>, with MOPPE_WALK=animals[:SPECIES]:
-      // a camera that far from the animal the walk began by, square to the
-      // walker's way in so both show, following it as it goes.
-      void animal_camera (seconds_t interval);
-
-      // MOPPE_RIDE_CAMERA=side|front: a camera locked beside or ahead of the
-      // ridden bike or mountainbike, the glider, the driven jeep or boat,
-      // or whatever hangs under the helicopter, to judge the rider and the
-      // machine.
-      void ride_capture_camera (seconds_t interval);
-
-      // Cameras for filming the boat (MOPPE_RIDE_CAMERA): `drone` follows
-      // high behind, `aerial` far off with a long lens, `orbit` circles it,
-      // `top` looks straight down on it, `fpv` races close behind and low,
-      // `hull` is mounted low on its side looking back at the helmsman,
-      // `stern` over the long-tail looking ahead, `helm` is the
-      // helmsman's eyes, and `flyby` stands on the water ahead of it and
-      // watches it pass on a long lens. MOPPE_RIDE_CAMERA_ANGLE
-      // swings the following ones round, degrees to the right of behind.
-      bool boat_film_camera (std::string_view view, seconds_t interval);
 
       void tick_simulation (seconds_t interval);
 
@@ -673,9 +586,11 @@ namespace moppe {
       OpeningArrival m_opening_arrival;
       BlobShadow m_blob;
       mov::TrunkField m_trunk_field;
-      // The automated captures' walk scripts and cameras.
+      // The automated captures' walk scripts and cameras, and the demo
+      // autopilot.
       WalkScriptState m_walk;
-      CaptureCameraState m_capture_camera;
+      CaptureCameras m_capture_camera;
+      DemoPilot m_demo;
       // What the HUD's prompts remember from frame to frame.
       mutable HudPrompts m_prompts;
       Hud m_hud;

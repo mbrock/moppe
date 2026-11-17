@@ -18,15 +18,15 @@ namespace moppe {
         // further.
         if (!m_sign_font)
           m_sign_font = render::Font::load (r, "fonts/Geomini-SemiBold.ttf");
-        FingerpostSigns signs =
-          make_fingerposts (r,
-                            m_sign_font->ok () ? *m_sign_font : *m_hud.font (),
-                            m_fingerposts,
-                            m_place_names,
-                            [this] (float x, float z) {
-                              return generated_world ().road_surface ().ground (
-                                x, z, ground_height (Vec3 (x, 0.0f, z)));
-                            });
+        FingerpostSigns signs = make_fingerposts (
+          r,
+          m_sign_font->ok () ? *m_sign_font : *m_hud.font (),
+          m_fingerposts,
+          m_place_names,
+          [this] (float x, float z) {
+            return generated_world ().road_surface ().ground (
+              x, z, world_ground ().height (Vec3 (x, 0.0f, z)));
+          });
         m_fingerpost_mesh =
           signs.mesh.empty () ? nullptr : r.create_mesh (signs.mesh);
         m_fingerpost_lettering = signs.lettering.empty ()
@@ -44,8 +44,8 @@ namespace moppe {
       std::vector<ScanFind> finds = scan_mushrooms (m_mushrooms, feet);
       const std::vector<mov::Trunk> trunks =
         m_trunk_field.gather (feet, scan_reach + 6.0f);
-      const std::vector<ScanFind> trees = scan_hammocks (
-        hammock_sites_near (trunks, feet, scan_reach, ground_reader ()));
+      const std::vector<ScanFind> trees = scan_hammocks (hammock_sites_near (
+        trunks, feet, scan_reach, world_ground ().reader ()));
       finds.insert (finds.end (), trees.begin (), trees.end ());
       std::cerr << "moppe: scan from " << feet[0] << " " << feet[1] << " "
                 << feet[2] << " found " << finds.size () << "\n";
@@ -61,8 +61,11 @@ namespace moppe {
       if (!m_scan_marks.set)
         m_scan_marks = make_scan_marks (r);
       m_scan_dl.clear ();
-      draw_scan_glow (
-        m_scan_dl, m_scan, now, frame.camera.position, ground_reader ());
+      draw_scan_glow (m_scan_dl,
+                      m_scan,
+                      now,
+                      frame.camera.position,
+                      world_ground ().reader ());
       r.draw_list (m_scan_dl, 0);
       m_scan_text.clear ();
       const FrameCamera& camera = frame.camera;
@@ -154,7 +157,7 @@ namespace moppe {
         r,
         session ().animals ().animals (),
         [this] (float x, float z) {
-          const float ground = ground_height (Vec3 (x, 0.0f, z));
+          const float ground = world_ground ().height (Vec3 (x, 0.0f, z));
           if (const std::optional<float> floor =
                 floor_at (m_places.layout, x, z))
             return std::max (*floor, ground);
@@ -431,7 +434,7 @@ namespace moppe {
         r,
         session ().animals ().animals (),
         [this] (float x, float z) {
-          const float ground = ground_height (Vec3 (x, 0.0f, z));
+          const float ground = world_ground ().height (Vec3 (x, 0.0f, z));
           if (const std::optional<float> floor =
                 floor_at (m_places.layout, x, z))
             return std::max (*floor, ground);
@@ -578,7 +581,7 @@ namespace moppe {
           .numerical_value_in (u::m);
       };
       const auto depth = [&] (const Vec3& at) {
-        return level (at) - ground_height (at);
+        return level (at) - world_ground ().height (at);
       };
       // The jet ski leaves a wake as a boat of its place and heading.
       const auto as_boat = [] (const JetSkiPose& ski) {

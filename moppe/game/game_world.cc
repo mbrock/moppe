@@ -8,7 +8,7 @@ namespace moppe {
   namespace game {
     GroundCover MoppeGame::ground_cover (const Vec3& at) const {
       const auto read = [&] (auto quantity) {
-        return spatial::sample<quantity> (surface_readings (),
+        return spatial::sample<quantity> (generated_world ().readings (),
                                           moppe::position (at))
           .numerical_value_in (one);
       };
@@ -39,51 +39,14 @@ namespace moppe {
       return ground;
     }
 
-    Vec3 MoppeGame::trail_cell_position (terrain::CellIndex cell) const {
-      if (cell == terrain::no_cell)
-        return {};
-      const terrain::TerrainDomain& grid = trail_network ().domain;
-      const std::size_t width = grid.width ();
-      const float x = (cell.value % width) *
-                      (grid.spacing_x ()).numerical_value_in (moppe::u::m);
-      const float z = (cell.value / width) *
-                      (grid.spacing_z ()).numerical_value_in (moppe::u::m);
-      return Vec3 (x,
-                   terrain::surface_elevation_value (
-                     spatial::sample<terrain::surface_elevation> (
-                       surface (), moppe::position (Vec3 (x, 0.0f, z)))),
-                   z);
-    }
-
-    Vec3 MoppeGame::trail_alignment_position (
-      const terrain::TrailAlignmentPoint& point) const {
-      return Vec3 (
-        point.x_m,
-        terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface (), moppe::position (Vec3 (point.x_m, 0.0f, point.z_m)))),
-        point.z_m);
-    }
-
-    Vec3 MoppeGame::trail_direction_from_home () const {
-      if (trail_network ().alignment.points.size () < 2)
-        return Vec3 (0, 0, 1);
-      Vec3 direction =
-        trail_alignment_position (trail_network ().alignment.points[1]) -
-        trail_alignment_position (trail_network ().alignment.points[0]);
-      direction[1] = 0.0f;
-      return length2 (direction) > 1e-5f ? normalized (direction)
-                                         : Vec3 (0, 0, 1);
-    }
-
     void MoppeGame::build_home_base_marker () {
       m_home_base_marker.clear ();
       build_cairn (m_home_base_marker,
                    m_home_base_position,
-                   trail_direction_from_home (),
+                   world_ground ().trail_heading (),
                    static_cast<std::uint32_t> (recipe ().seed ().value),
                    [this] (float x, float z) {
-                     return ground_height (Vec3 (x, 0.0f, z));
+                     return world_ground ().height (Vec3 (x, 0.0f, z));
                    });
     }
 
@@ -131,7 +94,7 @@ namespace moppe {
       // Horizontal water was prepared with the world on the loading worker.
       // The render handoff builds only the few vertical nickpoint curtains,
       // never a dense mesh along every river reach.
-      m_waterfall_surface.rebuild (r, surface (), rivers ());
+      m_waterfall_surface.rebuild (r, surface (), generated_world ().rivers ());
       m_bridges.rebuild (r,
                          surface (),
                          generated_world ().roads (),
@@ -148,11 +111,11 @@ namespace moppe {
       session ().stars ().generate (surface (), world (), 80);
       begin_day ();
       m_company.forget ();
-      m_home_base_position =
-        trail_cell_position (trail_network ().plan.home_base);
+      m_home_base_position = world_ground ().trail_cell (
+        generated_world ().trails ().plan.home_base);
       build_home_base_marker ();
       m_spawn_position =
-        m_home_base_position - trail_direction_from_home () * 8.0f;
+        m_home_base_position - world_ground ().trail_heading () * 8.0f;
       m_spawn_position[1] =
         terrain::surface_elevation_value (
           spatial::sample<terrain::surface_elevation> (
@@ -161,7 +124,7 @@ namespace moppe {
               Vec3 (m_spawn_position[0], 0.0f, m_spawn_position[2])))) +
         1.2f;
       session ().bike ().reset (m_spawn_position);
-      session ().bike ().set_heading (trail_direction_from_home ());
+      session ().bike ().set_heading (world_ground ().trail_heading ());
       const char* demo = moppe::environment ("MOPPE_DEMO");
       if (demo && std::string_view (demo) == "forest")
         move_spawn_to_forest ();
@@ -220,20 +183,10 @@ namespace moppe {
         Vec3 ((static_cast<float> (densest % nx) + 0.5f) * cell,
               0.0f,
               (static_cast<float> (densest / nx) + 0.5f) * cell);
-      m_spawn_position[1] = ground_height (m_spawn_position) + 1.2f;
+      m_spawn_position[1] = world_ground ().height (m_spawn_position) + 1.2f;
       session ().bike ().reset (m_spawn_position);
       std::cerr << "forest demo: densest conifer stand at " << m_spawn_position
                 << " (" << conifers[densest] << " spruce in 40 m)\n";
-    }
-
-    bool MoppeGame::on_road (const Vec3& at, float reach, bool decks) const {
-      const terrain::RoadSurface& roads = generated_world ().road_surface ();
-      const terrain::RoadSample road = roads.nearest (at[0], at[2]);
-      const terrain::RoadFormation& formation = roads.formation ();
-      return road.found && road.kind == terrain::Road::Kind::Road &&
-             (decks || !road.bridge) &&
-             std::abs (road.across) <
-               formation.half_width + formation.shoulder + reach;
     }
 
     void MoppeGame::grow_global_forest () {
@@ -242,7 +195,8 @@ namespace moppe {
       ForestPlan plan = generated_world ().forest ();
       std::erase_if (plan.sites, [this] (const ForestSite& site) {
         const Vec3 at = position_value (site.position);
-        return cleared (m_places.layout, at) || on_road (at, 0.6f, true);
+        return cleared (m_places.layout, at) ||
+               world_ground ().on_road (at, 0.6f, true);
       });
       m_forest.rebuild (*m_renderer, plan);
       std::cerr << "global forest: " << m_forest.tree_count ()
@@ -258,9 +212,9 @@ namespace moppe {
       const float highest = terrain::measure_height_range (surface ()).maximum;
       const auto start = std::chrono::steady_clock::now ();
       BoulderPlan plan = plan_boulders (surface (),
-                                        surface_readings (),
+                                        generated_world ().readings (),
                                         generated_world ().water_surface (),
-                                        rivers (),
+                                        generated_world ().rivers (),
                                         recipe ().seed ().value ^ 0x6b0d1e55U,
                                         sea_level,
                                         std::max (highest - sea, 1.0f) * u::m);
@@ -276,7 +230,8 @@ namespace moppe {
         const Vec3 at = position_value (site.centre);
         return !site.solid &&
                (cleared (m_places.layout, at) ||
-                on_road (at, site.radius.numerical_value_in (u::m), false));
+                world_ground ().on_road (
+                  at, site.radius.numerical_value_in (u::m), false));
       });
       m_boulders.rebuild (*m_renderer, plan);
       // Where to cross a river dry-shod, for whoever wants to find one.
@@ -302,7 +257,7 @@ namespace moppe {
       m_mushrooms.rebuild (
         plan_mushrooms (generated_world ().forest (),
                         surface (),
-                        surface_readings (),
+                        generated_world ().readings (),
                         generated_world ().water_surface (),
                         recipe ().seed ().value ^ 0x3c5f00d5U,
                         world ().water_level,
@@ -324,7 +279,7 @@ namespace moppe {
           away[1] = 0.0f;
           away = length2 (away) > 1e-4f ? normalized (away) : Vec3 (1, 0, 0);
           Vec3 stand = at + away * 4.0f;
-          stand[1] = ground_height (stand) + 0.1f;
+          stand[1] = world_ground ().height (stand) + 0.1f;
           session ().walker ().spawn (moppe::position (stand), away * -1.0f);
           logic ().m_fp_eye = session ().walker ().eye_position ();
         }
@@ -346,17 +301,6 @@ namespace moppe {
         std::cerr << "moppe: obstacle colliders: "
                   << m_trunk_field.trunk_count ()
                   << " (Box3D, streamed around the rider)" << std::endl;
-    }
-
-    GroundHeight MoppeGame::ground_reader () const {
-      return
-        [this] (float x, float z) { return ground_height (Vec3 (x, 0.0f, z)); };
-    }
-
-    float MoppeGame::ground_height (const Vec3& at) const {
-      return terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (
-          surface (), moppe::position (Vec3 (at[0], 0.0f, at[2]))));
     }
 
     void MoppeGame::finish_loading (render::Renderer& r,
@@ -476,7 +420,7 @@ namespace moppe {
                     world ().map_size);
       upload_surface_readings (r,
                                surface (),
-                               surface_readings (),
+                               generated_world ().readings (),
                                generated_world ().water_surface ());
     }
 
