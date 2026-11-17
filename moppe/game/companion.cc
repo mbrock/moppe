@@ -241,27 +241,19 @@ namespace moppe::game {
     }
 
     // Between two fractions of a cycle, the short way round.
-    float mix_phase (float a, float b, blend_weight_t t) {
-      float step = b - a;
-      step -= std::round (step);
-      const float phase = a + step * t.numerical_value_in (one);
-      return phase - std::floor (phase);
-    }
-
     proportion_t mix_phase (proportion_t a, proportion_t b, blend_weight_t t) {
-      return mix_phase (
-               a.numerical_value_in (one), b.numerical_value_in (one), t) *
-             proportion[one];
+      const float from = a.numerical_value_in (one);
+      float step = b.numerical_value_in (one) - from;
+      step -= std::round (step);
+      const float phase = from + step * t.numerical_value_in (one);
+      return (phase - std::floor (phase)) * proportion[one];
     }
 
-    // Between two angles in radians, the short way round.
-    float mix_angle (float a, float b, blend_weight_t t) {
-      return a +
-             std::remainder (b - a, 6.2831853f) * t.numerical_value_in (one);
-    }
-
+    // Between two angles, the short way round.
     radians_t mix_angle (radians_t a, radians_t b, blend_weight_t t) {
-      return mix_angle (radians_value (a), radians_value (b), t) * u::rad;
+      return a + std::remainder (radians_value (b) - radians_value (a),
+                                 6.2831853f) *
+                   u::rad * t.numerical_value_in (one);
     }
 
     bool leapt (const Vec3& a, const Vec3& b) {
@@ -485,6 +477,18 @@ namespace moppe::game {
       return curve (p1, p2, m1, m2, t);
     }
 
+    position_t travel (const Moments& w,
+                       const position_t* p0,
+                       const position_t& p1,
+                       const position_t& p2,
+                       const position_t* p3) {
+      return position (travel (w,
+                               p0 ? &position_value (*p0) : nullptr,
+                               position_value (p1),
+                               position_value (p2),
+                               p3 ? &position_value (*p3) : nullptr));
+    }
+
     // A pose blended from `p1` to `p2`, knowing `p0` and `p3` either
     // side when the moments have them. Only what travels or turns is
     // carried on past `p2`; the rest holds as last told.
@@ -496,12 +500,11 @@ namespace moppe::game {
       const Pose* p3;
 
       position_t travel (const Moments& w, position_t Pose::* place) const {
-        return position (
-          game::travel (w,
-                        p0 ? &position_value (p0->*place) : nullptr,
-                        position_value (p1.*place),
-                        position_value (p2.*place),
-                        p3 ? &position_value (p3->*place) : nullptr));
+        return game::travel (w,
+                             p0 ? &(p0->*place) : nullptr,
+                             p1.*place,
+                             p2.*place,
+                             p3 ? &(p3->*place) : nullptr);
       }
     };
 
@@ -881,28 +884,24 @@ namespace moppe::game {
     if (a.glider && b.glider &&
         !leapt (a.glider->position, b.glider->position)) {
       GliderPose& glider = *result.glider;
-      glider.position = position (travel (
-        w,
-        before && before->glider ? &position_value (before->glider->position)
-                                 : nullptr,
-        position_value (a.glider->position),
-        position_value (b.glider->position),
-        after && after->glider ? &position_value (after->glider->position)
-                               : nullptr));
+      glider.position =
+        travel (w,
+                before && before->glider ? &before->glider->position : nullptr,
+                a.glider->position,
+                b.glider->position,
+                after && after->glider ? &after->glider->position : nullptr);
       glider.heading = mix_direction (a.glider->heading, b.glider->heading, t);
       glider.bank = mix (a.glider->bank, b.glider->bank, within);
     }
     if (a.walker && b.walker &&
         !leapt (a.walker->position, b.walker->position)) {
       WalkerPose& walker = *result.walker;
-      walker.position = position (travel (
-        w,
-        before && before->walker ? &position_value (before->walker->position)
-                                 : nullptr,
-        position_value (a.walker->position),
-        position_value (b.walker->position),
-        after && after->walker ? &position_value (after->walker->position)
-                               : nullptr));
+      walker.position =
+        travel (w,
+                before && before->walker ? &before->walker->position : nullptr,
+                a.walker->position,
+                b.walker->position,
+                after && after->walker ? &after->walker->position : nullptr);
       walker.heading = mix_direction (a.walker->heading, b.walker->heading, t);
       walker.ground_normal =
         mix_direction (a.walker->ground_normal, b.walker->ground_normal, t);
@@ -1033,11 +1032,11 @@ namespace moppe::game {
 
     CompanionSnapshot seen = look (m_snapshots.size (), m_play);
     const auto places = [] (CompanionSnapshot& each) {
-      return std::array<Vec3*, 4> {
-        &position_value (each.fleet.bike.position),
-        &position_value (each.fleet.jeep.position),
-        each.walker ? &position_value (each.walker->position) : nullptr,
-        each.glider ? &position_value (each.glider->position) : nullptr
+      return std::array<position_t*, 4> {
+        &each.fleet.bike.position,
+        &each.fleet.jeep.position,
+        each.walker ? &each.walker->position : nullptr,
+        each.glider ? &each.glider->position : nullptr
       };
     };
     // Word that came late shows where they really were while this
@@ -1047,11 +1046,11 @@ namespace moppe::game {
       const std::size_t had = m_snapshots.size () - m_fresh;
       if (m_play > m_snapshots[had - 1].sent) {
         CompanionSnapshot guessed = look (had, m_play);
-        const std::array<Vec3*, 4> was = places (guessed);
-        const std::array<Vec3*, 4> is = places (seen);
+        const std::array<position_t*, 4> was = places (guessed);
+        const std::array<position_t*, 4> is = places (seen);
         for (std::size_t i = 0; i < m_slip.size (); ++i)
           if (was[i] && is[i])
-            m_slip[i] += displacement (*was[i] - *is[i]);
+            m_slip[i] += quantity_cast<isq::displacement> (*was[i] - *is[i]);
       }
     }
     m_fresh = 0;
@@ -1060,7 +1059,7 @@ namespace moppe::game {
       static_cast<float> (
         std::exp ((-elapsed / slip_seconds).numerical_value_in (one))) *
       proportion[one];
-    const std::array<Vec3*, 4> shown = places (seen);
+    const std::array<position_t*, 4> shown = places (seen);
     for (std::size_t i = 0; i < m_slip.size (); ++i) {
       const square_meters_t slid =
         length2 (displacement_value (m_slip[i])) * (si::metre * si::metre);
@@ -1068,7 +1067,7 @@ namespace moppe::game {
                     ? displacement (Vec3 ())
                     : m_slip[i] * keep.numerical_value_in (one);
       if (shown[i])
-        *shown[i] += displacement_value (m_slip[i]);
+        *shown[i] += quantity_cast<isq::position_vector> (m_slip[i]);
     }
     return seen;
   }
@@ -1087,12 +1086,11 @@ namespace moppe::game {
     // How a machine as told lies: its way forward and its up. The bikes
     // tell theirs as drawn.
     template <class Pose>
-    std::pair<Vec3, Vec3> lie_of (const Pose& pose) {
+    std::pair<direction_t, direction_t> lie_of (const Pose& pose) {
       if constexpr (requires { pose.render_orientation; })
-        return { direction_value (pose.render_orientation),
-                 direction_value (pose.render_normal) };
+        return { pose.render_orientation, pose.render_normal };
       else
-        return { direction_value (pose.forward), direction_value (pose.up) };
+        return { pose.forward, pose.up };
     }
   }
 
@@ -1102,7 +1100,9 @@ namespace moppe::game {
         displacement (Vec3 (0, 1, 0))));
     return position (
       visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
-        const auto [forward, up] = lie_of (pose);
+        const auto [heading, normal] = lie_of (pose);
+        const Vec3& forward = direction_value (heading);
+        const Vec3& up = direction_value (normal);
         const Vec3 left = normalized (cross (up, forward));
         return position_value (pose.position) + left * seat[0] + up * seat[1] +
                forward * seat[2];
@@ -1114,8 +1114,8 @@ namespace moppe::game {
     state.m_seat_position = passenger_seat (theirs, machine);
     visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
       const auto [forward, up] = lie_of (pose);
-      state.m_seat_heading = unit_direction (forward);
-      state.m_seat_up = unit_direction (up);
+      state.m_seat_heading = forward;
+      state.m_seat_up = up;
       if constexpr (requires { pose.velocity; })
         state.m_seat_velocity = pose.velocity;
       else
