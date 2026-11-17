@@ -81,8 +81,8 @@ code used, since they round differently.
 ## Dimensionless values are typed too
 
 mp-units keeps quantities of dimension one apart by *kind*. A kind
-(`subkind`, which mp-units 2.6 calls what was `is_kind`) cannot be added to, compared with, or assigned from another
-kind; crossing needs `quantity_cast`, which a reviewer sees. Pick the
+(`subkind`, which mp-units 2.6 calls what was `is_kind`) cannot be
+added to, compared with, or assigned from another kind; crossing needs `quantity_cast`, which a reviewer sees. Pick the
 narrowest that fits, or add a spec to `quantities.hh`:
 
 | Meaning | Spec / alias |
@@ -110,12 +110,21 @@ grade_t maximum_grade = 0.08f * grade[one];
 blend_weight_t blend = smoothing_alpha (k, dt) * blend_weight[one];
 ```
 
-`proportion`, `probability`, `control_signal`, and `noise_signal` are
-still plain children of `dimensionless`, not kinds, so a bare float converts into
-them silently. Making each its own kind (`subkind`) breaks ~170 call sites
-that build them from floats (`tests/mov/*`, `input_frame_adapter.hh`,
-`map/surface.cc`); that is an area task: type the call sites, then add
-`subkind` to the spec in the same commit.
+All of these, `proportion`, `probability`, `control_signal`, and
+`noise_signal` included, are kinds, so a bare float never converts into
+one. The idioms that keep the bits the same:
+
+- A share of a length or an angle is named explicitly:
+  `meters_t (share * length)`, `radians_t (share * angle)`.
+- A product of shares goes back through `quantity_cast<proportion> (...)`;
+  `1.0f - p` is `whole - p`.
+- Crossing to another kind of one goes through `dimensionless`:
+  `quantity_cast<probability> (quantity_cast<dimensionless> (x))`.
+- A literal compared with a kind carries that kind:
+  `p > 0.5f * proportion[one]`.
+- Where a share feeds a raw `Vec3` lane, a `std::` random distribution, or
+  another storage boundary, read it with `.numerical_value_in (one)`
+  at that spot.
 
 ## Fields and callbacks
 

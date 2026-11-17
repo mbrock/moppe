@@ -57,16 +57,25 @@ namespace moppe {
 
   // ---- Signals ----
 
-  QUANTITY_SPEC (control_signal, mp_units::dimensionless);
-  QUANTITY_SPEC (noise_signal, mp_units::dimensionless);
+  // A stick or throttle, and a noise sample: kinds of their own, so a
+  // bare float never becomes one and neither becomes a share.
+  QUANTITY_SPEC (control_signal, mp_units::dimensionless, mp_units::subkind);
+  QUANTITY_SPEC (noise_signal, mp_units::dimensionless, mp_units::subkind);
 
   // theoretically we could distinguish e.g. single-octave noise signals
   // so that fBm noise is constructed from such signals, which would be
   // a nice example of how to get semantic type safety from dimensionless
   // quantity types... so many interesting possibilities...
 
-  QUANTITY_SPEC (proportion, mp_units::dimensionless, mp_units::non_negative);
-  QUANTITY_SPEC (probability, mp_units::dimensionless, mp_units::non_negative);
+  // A share of a whole, and a chance: kinds of their own too.
+  QUANTITY_SPEC (proportion,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  QUANTITY_SPEC (probability,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
 
   // ---- Kinds of one ----
   //

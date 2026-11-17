@@ -51,14 +51,15 @@ namespace moppe::site {
     const auto ramp = [&] (proportion_t low, proportion_t high) {
       return smooth (low, high, t);
     };
+    constexpr auto share = proportion[one];
     constexpr auto pitch = inclination[si::radian];
     constexpr auto weight = blend_weight[one];
     GenesisView view;
     view.fov_y = 0.75f * u::rad;
     // Straight down at the map, tipping to a relief model seen from on
     // high, then down over the land toward the horizon.
-    const blend_weight_t tip = ramp (0.15f, 0.55f);
-    const blend_weight_t lower = ramp (0.55f, 0.95f);
+    const blend_weight_t tip = ramp (0.15f * share, 0.55f * share);
+    const blend_weight_t lower = ramp (0.55f * share, 0.95f * share);
     view.pitch =
       mix (mix (1.56f * pitch, 0.85f * pitch, tip), 0.26f * pitch, lower);
     // From overhead some 2.6 km of the land fill the width, however
@@ -77,16 +78,18 @@ namespace moppe::site {
     view.heading = 0.25f * heading[si::radian] +
                    0.9f * heading[si::radian] * t.numerical_value_in (one) +
                    value_cast<float> (seconds) * drift;
-    view.exaggeration = mix (
-      1.0f * scale_factor[one], 1.8f * scale_factor[one], ramp (0.2f, 0.6f));
+    view.exaggeration = mix (1.0f * scale_factor[one],
+                             1.8f * scale_factor[one],
+                             ramp (0.2f * share, 0.6f * share));
     view.target = position (Vec3 (
       2500.0f, 150.0f * view.exaggeration.numerical_value_in (one), 2500.0f));
-    view.map = 1.0f * weight - ramp (0.18f, 0.42f);
-    view.land = ramp (0.58f, 0.74f);
+    view.map = 1.0f * weight - ramp (0.18f * share, 0.42f * share);
+    view.land = ramp (0.58f * share, 0.74f * share);
     view.relief =
       std::max (0.0f * weight, 1.0f * weight - view.map - view.land);
-    view.wire = 0.8f * ramp (0.25f, 0.38f) *
-                (1.0f * weight - ramp (0.42f, 0.58f)).numerical_value_in (one);
+    view.wire = 0.8f * ramp (0.25f * share, 0.38f * share) *
+                (1.0f * weight - ramp (0.42f * share, 0.58f * share))
+                  .numerical_value_in (one);
     view.seconds = seconds;
     return view;
   }
