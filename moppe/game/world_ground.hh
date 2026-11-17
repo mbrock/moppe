@@ -101,16 +101,13 @@ namespace moppe::game {
           plan_of (want), room * u::m, relief * u::m, search * u::m)),
         want[1]);
     }
-    bool on_road (const Vec3& at, float reach, bool decks) const {
-      return on_road (plan_of (at), reach * u::m, decks);
-    }
 
     // Where a trail cell and a point of the trail's alignment stand.
-    Vec3 trail_cell (terrain::CellIndex cell) const;
-    Vec3 trail_point (const plan_position_t& point) const;
+    position_t trail_cell (terrain::CellIndex cell) const;
+    position_t trail_point (const plan_position_t& point) const;
 
     // The way the trail leaves its home base, on the level.
-    Vec3 trail_heading () const;
+    direction_t trail_heading () const;
 
     // What the places are planned and built on.
     PlaceGround place_ground () const;

@@ -19,14 +19,15 @@ namespace moppe::game {
     // datum, and evolution settings can come from the command line. Floats
     // as their bits, since a rounded decimal would blur the key.
     std::string recipe_key (const terrain::WorldRecipe& recipe) {
-      const Vec3 extent = extent_value (recipe.extent ());
+      const spatial_extent_t extent = recipe.extent ();
       const auto bits = [] (float value) {
         return std::bit_cast<std::uint32_t> (value);
       };
       const terrain::StreamPowerEvolution& evolution = recipe.evolution ();
       std::ostringstream key;
-      key << std::hex << bits (extent[0]) << '-' << bits (extent[1]) << '-'
-          << bits (extent[2]) << '-'
+      key << std::hex << bits (extent_value (extent)[0]) << '-'
+          << bits (extent_value (extent)[1]) << '-'
+          << bits (extent_value (extent)[2]) << '-'
           << bits (recipe.water_datum ().numerical_value_in (u::m)) << '-'
           << bits (evolution.uplift_duration.numerical_value_in (
                mp_units::astronomy::Julian_year))

@@ -74,13 +74,15 @@ namespace moppe::game {
     const float golden = golden_light_for (sun_height);
     const DisplayColor warm (1.0f, 0.60f, 0.30f);
     const DisplayColor ivory (1.0f, 0.96f, 0.84f);
-    const DisplayColor sun_color = mix_display (ivory, warm, golden);
+    const DisplayColor sun_color =
+      mix_display (ivory, warm, golden * blend_weight[one]);
 
-    diffuse = scale_display (sun_color, 0.10f + 0.98f * daylight);
+    diffuse =
+      scale_display (sun_color, (0.10f + 0.98f * daylight) * scale_factor[one]);
     specular = scale_display (mix_display (DisplayColor (0.92f, 0.95f, 1.0f),
                                            DisplayColor (1.0f, 0.86f, 0.70f),
-                                           golden),
-                              0.15f + 0.85f * daylight);
+                                           golden * blend_weight[one]),
+                              (0.15f + 0.85f * daylight) * scale_factor[one]);
   }
 
   DisplayColor horizon_color_for (proportion_t sun_height) {
@@ -90,7 +92,9 @@ namespace moppe::game {
     const DisplayColor night_horizon (0.035f, 0.045f, 0.09f);
     const DisplayColor warm_horizon (0.92f, 0.58f, 0.32f);
     return mix_display (
-      mix_display (night_horizon, day_horizon, daylight), warm_horizon, warmth);
+      mix_display (night_horizon, day_horizon, daylight * blend_weight[one]),
+      warm_horizon,
+      warmth * blend_weight[one]);
   }
 
   VehiclePose pose (const mov::Vehicle& vehicle) {
@@ -284,8 +288,10 @@ namespace moppe::game {
     // Lightning lights the cloud and the haze, and everything under it.
     const float flash = lightning_flash (
       weather.lightning, seconds_into_play (logic.m_total_time));
-    const DisplayColor flashed_fog = mix_display (
-      logic.m_fog, DisplayColor (0.62f, 0.64f, 0.76f), 0.75f * flash);
+    const DisplayColor flashed_fog =
+      mix_display (logic.m_fog,
+                   DisplayColor (0.62f, 0.64f, 0.76f),
+                   0.75f * flash * blend_weight[one]);
     FrameLighting& lighting = result.lighting;
     lighting.fog_color = flashed_fog;
     lighting.clear_color = flashed_fog;
@@ -297,13 +303,14 @@ namespace moppe::game {
         ? *input.sky
         : Almanac ().held (input.graphics.sun_height.numerical_value_in (one));
     lighting.sun_direction = unit_direction (sky.light);
-    lighting.sun_specular =
-      scale_display (sky.light_specular, 0.5f * weather.sunlight);
-    lighting.sun_diffuse = scale_display (sky.light_diffuse, weather.sunlight);
-    lighting.ambient =
-      mix_display (scale_display (sky.ambient, weather.skylight),
-                   DisplayColor (0.85f, 0.88f, 1.05f),
-                   0.7f * flash);
+    lighting.sun_specular = scale_display (
+      sky.light_specular, 0.5f * weather.sunlight * scale_factor[one]);
+    lighting.sun_diffuse =
+      scale_display (sky.light_diffuse, weather.sunlight * scale_factor[one]);
+    lighting.ambient = mix_display (
+      scale_display (sky.ambient, weather.skylight * scale_factor[one]),
+      DisplayColor (0.85f, 0.88f, 1.05f),
+      0.7f * flash * blend_weight[one]);
     lighting.sky_sun = unit_direction (sky.sun);
     lighting.sky_moon = unit_direction (sky.moon);
     lighting.sky_pole = unit_direction (sky.pole);
@@ -318,8 +325,9 @@ namespace moppe::game {
         burn > 0.01f) {
       lighting.lamp_position = position (fire_light_position (logic.m_camp));
       lighting.lamp_reach = fire_light_reach;
-      lighting.lamp_color = scale_display (fire_light_color (burn, time),
-                                           1.0f - 0.25f * sky.daylight);
+      lighting.lamp_color =
+        scale_display (fire_light_color (burn, time),
+                       (1.0f - 0.25f * sky.daylight) * scale_factor[one]);
     }
     lighting.sun_height = sky.sun_height * proportion[one];
     lighting.cloudiness = logic.m_cloudiness;
@@ -327,12 +335,11 @@ namespace moppe::game {
 
     result.environment.fog_color = lighting.fog_color;
     result.environment.fog_scale = lighting.fog_scale;
-    result.environment.sun_dir = direction_value (lighting.sun_direction);
+    result.environment.sun_dir = lighting.sun_direction;
     result.environment.camera_pos = result.camera.position;
-    result.environment.cam_right = direction_value (result.camera.right);
-    result.environment.cam_up = direction_value (result.camera.up);
-    result.environment.cam_forward =
-      direction_value (result.camera.frame_forward);
+    result.environment.cam_right = result.camera.right;
+    result.environment.cam_up = result.camera.up;
+    result.environment.cam_forward = result.camera.frame_forward;
     result.environment.time = lighting.time;
 
     // Dry sheet cells sit at or below the ground; they must not fall back

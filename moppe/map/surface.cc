@@ -90,25 +90,24 @@ namespace moppe::map {
                          Vec3 (0, 0, 0) *
                            terrain::terrain_normal[mp_units::one]);
 
-      // One lattice step in world space. This is the only place the cell
-      // spacing becomes a number, and it does so once for the whole sweep
+      // One lattice step in world space, read once for the whole sweep
       // rather than per corner.
-      const float step_x = domain.spacing_x ().numerical_value_in (u::m);
-      const float step_z = domain.spacing_z ().numerical_value_in (u::m);
+      const meters_t step_x = domain.spacing_x ();
+      const meters_t step_z = domain.spacing_z ();
 
       // A cell corner as a place in the world. The elevation is read at the
       // wrapped position, but the horizontal coordinate does not wrap: a face
       // spanning the seam has to stay continuous, or its normal would fold
       // back on itself there.
       const auto corner = [&] (terrain::TerrainIndex site, int dx, int dz) {
-        const float along_x =
+        const meters_t along_x =
           step_x * static_cast<float> (static_cast<int> (site.column) + dx);
-        const float along_z =
+        const meters_t along_z =
           step_z * static_cast<float> (static_cast<int> (site.row) + dz);
-        const float height = terrain::surface_elevation_value (
+        const SurfaceElevation height =
           spatial::get<terrain::surface_elevation> (
-            geometry[domain.shifted (site, dx, dz)]));
-        return position (Vec3 (along_x, height, along_z));
+            geometry[domain.shifted (site, dx, dz)]);
+        return terrain::at_elevation (plan_position (along_x, along_z), height);
       };
 
       // The normal of the triangle spanned by two corners and the origin.
@@ -221,8 +220,9 @@ namespace moppe::map {
       const auto ground = geology[site];
       const auto land =
         spatial::get<terrain::continent_shape> (ground) - coastline;
-      const meters_t relief =
-        land < 0.0f ? initial_bathymetric_relief : initial_land_relief;
+      const meters_t relief = land < 0.0f * terrain::continent_shape[one]
+                                ? initial_bathymetric_relief
+                                : initial_land_relief;
       spatial::get<terrain::surface_elevation> (surface[site]) =
         terrain::surface_elevation_point (water_datum + relief * land);
       uplift.push_back (spatial::get<terrain::uplift_weight> (ground) *
@@ -269,24 +269,25 @@ namespace moppe::map {
     const terrain::TerrainDomain& domain = surface.domain ();
     for (const terrain::TerrainIndex site : spatial::sites (surface)) {
       const std::size_t offset = domain.offset (site);
-      const float change = result.change[offset].numerical_value_in (u::m);
-      if (change == 0.0f)
+      const meters_t change =
+        quantity_cast<isq::length> (result.change[offset]);
+      if (change == 0.0f * u::m)
         continue;
       const auto row = surface[site];
       spatial::get<terrain::surface_elevation> (row) = result.heights[offset];
       // What a river lays down is loose; what it cuts, it cuts from the
       // loose cover first.
       auto& sediment = spatial::get<terrain::sediment_thickness> (row);
-      if (change > 0.0f) {
-        sediment += change * terrain::sediment_thickness[u::m];
+      if (change > 0.0f * u::m) {
+        sediment += quantity_cast<terrain::sediment_thickness> (change);
         spatial::get<deposited_surface_material> (row) +=
-          change * deposited_surface_material[u::m];
+          quantity_cast<deposited_surface_material> (change);
       } else {
-        sediment =
-          std::max (sediment + change * terrain::sediment_thickness[u::m],
-                    0.0f * terrain::sediment_thickness[u::m]);
+        sediment = std::max (
+          sediment + quantity_cast<terrain::sediment_thickness> (change),
+          0.0f * terrain::sediment_thickness[u::m]);
         spatial::get<eroded_surface_material> (row) +=
-          -change * eroded_surface_material[u::m];
+          quantity_cast<eroded_surface_material> (-change);
       }
     }
     return result;
@@ -309,24 +310,25 @@ namespace moppe::map {
     const terrain::TerrainDomain& domain = surface.domain ();
     for (const terrain::TerrainIndex site : spatial::sites (surface)) {
       const std::size_t offset = domain.offset (site);
-      const float change = result.change[offset].numerical_value_in (u::m);
-      if (change == 0.0f)
+      const meters_t change =
+        quantity_cast<isq::length> (result.change[offset]);
+      if (change == 0.0f * u::m)
         continue;
       const auto row = surface[site];
       spatial::get<terrain::surface_elevation> (row) = result.heights[offset];
       // A cutting bares what lay under the cover; an embankment is made
       // ground.
       auto& sediment = spatial::get<terrain::sediment_thickness> (row);
-      if (change > 0.0f) {
-        sediment += change * terrain::sediment_thickness[u::m];
+      if (change > 0.0f * u::m) {
+        sediment += quantity_cast<terrain::sediment_thickness> (change);
         spatial::get<deposited_surface_material> (row) +=
-          change * deposited_surface_material[u::m];
+          quantity_cast<deposited_surface_material> (change);
       } else {
-        sediment =
-          std::max (sediment + change * terrain::sediment_thickness[u::m],
-                    0.0f * terrain::sediment_thickness[u::m]);
+        sediment = std::max (
+          sediment + quantity_cast<terrain::sediment_thickness> (change),
+          0.0f * terrain::sediment_thickness[u::m]);
         spatial::get<eroded_surface_material> (row) +=
-          -change * eroded_surface_material[u::m];
+          quantity_cast<eroded_surface_material> (-change);
       }
     }
     return result;
@@ -403,7 +405,8 @@ namespace moppe::map {
     // a box along each axis, which is close to a tent of twice the radius.
     // A plant answers to a stand's ground, not a sample's, so vegetation
     // reads the ground through this rather than cell by cell.
-    std::vector<float> smoothed (std::vector<float> field,
+    template <typename Value>
+    std::vector<Value> smoothed (std::vector<Value> field,
                                  const terrain::TerrainDomain& domain,
                                  meters_t radius) {
       const int width = static_cast<int> (domain.width ());
@@ -415,22 +418,24 @@ namespace moppe::map {
       };
       const int rx = cells (radius, domain.spacing_x ());
       const int rz = cells (radius, domain.spacing_z ());
-      std::vector<float> line;
+      std::vector<Value> line;
       const auto pass =
         [&] (int count, int stride, int lines, int step, int reach) {
           line.resize (static_cast<std::size_t> (count));
+          // Each sample's weight in the box's mean: the filter's own
+          // arithmetic, which keeps the sum's kind.
           const float scale = 1.0f / static_cast<float> (2 * reach + 1);
           const auto wrap = [count] (int at) {
             at %= count;
             return at < 0 ? at + count : at;
           };
           for (int l = 0; l < lines; ++l) {
-            float* base =
+            Value* base =
               field.data () + static_cast<std::ptrdiff_t> (l) * step;
-            const auto at = [&] (int i) -> float& {
+            const auto at = [&] (int i) -> Value& {
               return base[static_cast<std::ptrdiff_t> (wrap (i)) * stride];
             };
-            float sum = 0.0f;
+            Value sum = Value::zero ();
             for (int k = -reach; k <= reach; ++k)
               sum += at (k);
             for (int i = 0; i < count; ++i) {
@@ -448,51 +453,66 @@ namespace moppe::map {
       return field;
     }
 
-    // Value noise of OCTAVES octaves from PATCHES a lap, 0 to 1.
-    float layered_noise (terrain::TerrainDomain::LapPosition where,
-                         std::uint32_t patches,
-                         std::uint32_t seed,
-                         std::uint32_t octaves = 4) {
-      float sum = 0.0f;
+    // Value noise of OCTAVES octaves from PATCHES a lap, 0 to 1. The
+    // octaves' weights are the noise's own arithmetic.
+    noise_signal_t layered_noise (terrain::TerrainDomain::LapPosition where,
+                                  std::uint32_t patches,
+                                  std::uint32_t seed,
+                                  std::uint32_t octaves = 4) {
+      noise_signal_t sum = 0.0f * noise_signal[one];
       float amplitude = 1.0f;
       float norm = 0.0f;
       for (std::uint32_t octave = 0; octave < octaves; ++octave) {
-        sum += amplitude *
-               periodic_noise (
-                 where.along_x, where.along_z, patches << octave, seed + octave)
-                 .numerical_value_in (one);
+        sum += amplitude * periodic_noise (where.along_x,
+                                           where.along_z,
+                                           patches << octave,
+                                           seed + octave);
         norm += amplitude;
         amplitude *= 0.5f;
       }
       return sum / norm;
     }
 
-    float rises (float edge0, float edge1, float value) {
-      return smoothstep (edge0, edge1, value);
+    // What the plants read of a site is a share of it, none to all, and so
+    // is each tolerance and claim made from those.
+    constexpr auto part = proportion[one];
+    constexpr proportion_t whole = 1.0f * part;
+
+    // Shares multiplied are a soft "and": a share of a share, which is
+    // still a share.
+    template <typename Product>
+    proportion_t together (Product product) {
+      return quantity_cast<proportion> (product);
     }
 
-    float falls (float edge0, float edge1, float value) {
-      return 1.0f - smoothstep (edge0, edge1, value);
+    proportion_t
+    rises (proportion_t edge0, proportion_t edge1, proportion_t value) {
+      return band (edge0, edge1, value);
+    }
+
+    proportion_t
+    falls (proportion_t edge0, proportion_t edge1, proportion_t value) {
+      return whole - band (edge0, edge1, value);
     }
 
     // The hidden quantities at one place, each 0 to 1, as the plants read
     // them: a stand's worth of ground, not a sample's.
     struct Site {
-      float wet;       // soil water: the wetness index, smoothed
-      float dry;       // share of the stand that is dry
-      float soaked;    // share of the stand that is soaked
-      float thin;      // share of the stand with bedrock within a span
-      float peat;      // share of the stand under deep wet soil
-      float poor;      // thin and dry together: sand and rock
-      float level;     // flat enough to hold water
-      float limestone; // on the limestone sheet
-      float cold;      // height, north aspect, and frost hollows
-      float exposure;  // ridges and high ground, open to the wind
-      float grazed;    // cropped by the beasts of a place still lived in
-      float recovery;  // come back since last opened, 0 to the old stand
-      float burnt;     // how recently fire went over it
-      float spring;    // fed by a spring at the limestone's foot
-      float rock;      // the basement scoured bare
+      proportion_t wet;       // soil water: the wetness index, smoothed
+      proportion_t dry;       // share of the stand that is dry
+      proportion_t soaked;    // share of the stand that is soaked
+      proportion_t thin;      // share of the stand with bedrock within a span
+      proportion_t peat;      // share of the stand under deep wet soil
+      proportion_t poor;      // thin and dry together: sand and rock
+      proportion_t level;     // flat enough to hold water
+      proportion_t limestone; // on the limestone sheet
+      proportion_t cold;      // height, north aspect, and frost hollows
+      proportion_t exposure;  // ridges and high ground, open to the wind
+      proportion_t grazed;    // cropped by the beasts of a place still lived in
+      proportion_t recovery;  // come back since last opened, 0 to the old stand
+      proportion_t burnt;     // how recently fire went over it
+      proportion_t spring;    // fed by a spring at the limestone's foot
+      proportion_t rock;      // the basement scoured bare
     };
 
     // How far each tree has come back on ground that was opened: birch
@@ -500,15 +520,18 @@ namespace moppe::map {
     // sprouts again from its stump; pine, whose seed wants the bare
     // mineral soil a fire leaves; spruce last, in the shade of the others.
     // Grazing keeps all of them off.
-    float returned (const Site& at, float early, float late) {
-      return rises (early, late, at.recovery) * falls (0.15f, 0.75f, at.grazed);
+    proportion_t
+    returned (const Site& at, proportion_t early, proportion_t late) {
+      return together (rises (early, late, at.recovery) *
+                       falls (0.15f * part, 0.75f * part, at.grazed));
     }
 
     // A species' tolerance of a site, 0 to 1. Each curve is wide where the
     // species will grow at all; where it wins is decided by competition.
     struct Species {
-      float strength; // how hard it pushes the others out where both grow
-      float (*tolerance) (const Site&, float light);
+      // How hard it pushes the others out where both grow.
+      scale_factor_t strength;
+      proportion_t (*tolerance) (const Site&, proportion_t light);
       std::uint32_t lane;
     };
 
@@ -518,136 +541,164 @@ namespace moppe::map {
     // and in the bog; birch grows wherever it is not too dry or cold and
     // wins at the edges; the fell birch holds the treeline.
     constexpr Species canopy[] = {
-      { 1.00f,
-        [] (const Site& at, float) {
-          return rises (0.20f, 0.65f, 1.0f - at.thin) *
-                 rises (0.08f, 0.18f, at.wet) * falls (0.45f, 0.75f, at.wet) *
-                 falls (0.30f, 0.55f, at.cold) * falls (0.30f, 0.80f, at.peat) *
-                 (1.0f - 0.85f * at.poor) *
-                 (1.0f - 0.6f * at.limestone * at.thin) *
-                 returned (at, 0.30f, 0.75f);
+      { 1.00f * scale_factor[one],
+        [] (const Site& at, proportion_t) {
+          return together (rises (0.20f * part, 0.65f * part, whole - at.thin) *
+                           rises (0.08f * part, 0.18f * part, at.wet) *
+                           falls (0.45f * part, 0.75f * part, at.wet) *
+                           falls (0.30f * part, 0.55f * part, at.cold) *
+                           falls (0.30f * part, 0.80f * part, at.peat) *
+                           (whole - 0.85f * at.poor) *
+                           (whole - together (0.6f * at.limestone * at.thin)) *
+                           returned (at, 0.30f * part, 0.75f * part));
         },
         0x5b1ceU },
-      { 0.80f,
-        [] (const Site& at, float) {
-          const float poor = std::max (at.poor, rises (0.20f, 0.60f, at.peat));
-          return falls (0.55f, 0.80f, at.cold) * (0.40f + 0.60f * poor) *
-                 returned (at, 0.06f, 0.30f) * (1.0f + 0.5f * at.burnt);
+      { 0.80f * scale_factor[one],
+        [] (const Site& at, proportion_t) {
+          const proportion_t poor =
+            std::max (at.poor, rises (0.20f * part, 0.60f * part, at.peat));
+          return together (falls (0.55f * part, 0.80f * part, at.cold) *
+                           (0.40f * part + 0.60f * poor) *
+                           returned (at, 0.06f * part, 0.30f * part) *
+                           (whole + 0.5f * at.burnt));
         },
         0x9a1e5U },
-      { 0.52f,
-        [] (const Site& at, float) {
-          return 0.9f * falls (0.45f, 0.75f, at.cold) *
-                 rises (0.05f, 0.14f, at.wet) * falls (0.50f, 0.90f, at.peat) *
-                 (1.0f - 0.6f * at.poor) * returned (at, 0.01f, 0.08f);
+      { 0.52f * scale_factor[one],
+        [] (const Site& at, proportion_t) {
+          return together (0.9f * falls (0.45f * part, 0.75f * part, at.cold) *
+                           rises (0.05f * part, 0.14f * part, at.wet) *
+                           falls (0.50f * part, 0.90f * part, at.peat) *
+                           (whole - 0.6f * at.poor) *
+                           returned (at, 0.01f * part, 0.08f * part));
         },
         0xb12c4U },
-      { 0.95f,
-        [] (const Site& at, float) {
-          return rises (0.25f, 0.50f, at.cold) * falls (0.65f, 0.85f, at.cold) *
-                 (1.0f - 0.5f * at.exposure) * falls (0.6f, 0.95f, at.soaked) *
-                 returned (at, 0.02f, 0.12f);
+      { 0.95f * scale_factor[one],
+        [] (const Site& at, proportion_t) {
+          return together (rises (0.25f * part, 0.50f * part, at.cold) *
+                           falls (0.65f * part, 0.85f * part, at.cold) *
+                           (whole - 0.5f * at.exposure) *
+                           falls (0.6f * part, 0.95f * part, at.soaked) *
+                           returned (at, 0.02f * part, 0.12f * part));
         },
         0x3f3b1U },
     };
     // How much light each tree's canopy takes from the ground.
-    constexpr float canopy_shade[] = { 0.90f, 0.40f, 0.55f, 0.45f };
+    constexpr proportion_t canopy_shade[] = {
+      0.90f * part, 0.40f * part, 0.55f * part, 0.45f * part
+    };
 
     // The field layer, in the light the trees leave.
     constexpr Species field[] = {
       // Reindeer lichen: dry, thin, acid ground in good light.
-      { 0.75f,
-        [] (const Site& at, float light) {
-          return at.poor * (1.0f - 0.85f * at.limestone) *
-                 rises (0.30f, 0.65f, light) *
-                 rises (0.15f, 0.50f, at.recovery);
+      { 0.75f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (at.poor * (whole - 0.85f * at.limestone) *
+                           rises (0.30f * part, 0.65f * part, light) *
+                           rises (0.15f * part, 0.50f * part, at.recovery));
         },
         0x11c4e5U },
       // Heather and crowberry: open, poor, acid ground, and the wind.
-      { 0.85f,
-        [] (const Site& at, float light) {
-          return rises (0.45f, 0.75f, light) * falls (0.30f, 0.55f, at.wet) *
-                 (1.0f - 0.7f * at.limestone) *
-                 (0.35f + 0.65f * std::max ({ at.thin,
-                                              at.exposure,
-                                              rises (0.4f, 0.7f, at.cold),
-                                              at.grazed * (1.0f - at.wet) })) *
-                 rises (0.04f, 0.15f, at.recovery);
+      { 0.85f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (
+            rises (0.45f * part, 0.75f * part, light) *
+            falls (0.30f * part, 0.55f * part, at.wet) *
+            (whole - 0.7f * at.limestone) *
+            (0.35f * part +
+             0.65f * std::max ({ at.thin,
+                                 at.exposure,
+                                 rises (0.4f * part, 0.7f * part, at.cold),
+                                 together (at.grazed * (whole - at.wet)) })) *
+            rises (0.04f * part, 0.15f * part, at.recovery));
         },
         0x4ea74U },
       // Bilberry: the half-shade of the conifers, damp acid humus.
-      { 0.70f,
-        [] (const Site& at, float light) {
-          return rises (0.08f, 0.25f, light) * falls (0.55f, 0.85f, light) *
-                 rises (0.08f, 0.18f, at.wet) * falls (0.45f, 0.70f, at.wet) *
-                 (1.0f - 0.6f * at.limestone) * falls (0.82f, 1.0f, at.cold) *
-                 rises (0.08f, 0.35f, at.recovery);
+      { 0.70f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (rises (0.08f * part, 0.25f * part, light) *
+                           falls (0.55f * part, 0.85f * part, light) *
+                           rises (0.08f * part, 0.18f * part, at.wet) *
+                           falls (0.45f * part, 0.70f * part, at.wet) *
+                           (whole - 0.6f * at.limestone) *
+                           falls (0.82f * part, 1.0f * part, at.cold) *
+                           rises (0.08f * part, 0.35f * part, at.recovery));
         },
         0xb1bb3U },
       // Sphagnum: level ground the water cannot leave. It grows its own
       // ground, so once it is there little else holds.
-      { 1.25f,
-        [] (const Site& at, float light) {
-          return at.level *
-                 std::max (rises (0.20f, 0.50f, at.soaked),
-                           rises (0.25f, 0.60f, at.peat)) *
-                 rises (0.20f, 0.50f, light) *
-                 std::max (1.0f - at.limestone, at.peat) *
-                 (1.0f - 0.8f * at.spring);
+      { 1.25f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (
+            at.level *
+            std::max (rises (0.20f * part, 0.50f * part, at.soaked),
+                      rises (0.25f * part, 0.60f * part, at.peat)) *
+            rises (0.20f * part, 0.50f * part, light) *
+            std::max (whole - at.limestone, at.peat) *
+            (whole - 0.8f * at.spring));
         },
         0x5a6c1U },
       // Dwarf birch: cold, damp, open ground of the fjäll.
-      { 0.90f,
-        [] (const Site& at, float light) {
-          return rises (0.40f, 0.70f, at.cold) * rises (0.12f, 0.28f, at.wet) *
-                 rises (0.40f, 0.70f, light);
+      { 0.90f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (rises (0.40f * part, 0.70f * part, at.cold) *
+                           rises (0.12f * part, 0.28f * part, at.wet) *
+                           rises (0.40f * part, 0.70f * part, light));
         },
         0xdb1c7U },
       // Sedge: the wet margins in the open.
-      { 0.75f,
-        [] (const Site& at, float light) {
-          return rises (0.15f, 0.45f, at.soaked) * rises (0.40f, 0.70f, light);
+      { 0.75f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (rises (0.15f * part, 0.45f * part, at.soaked) *
+                           rises (0.40f * part, 0.70f * part, light));
         },
         0x5ed6eU },
       // The alvar's short turf on bare limestone, which drains through its
       // karst.
-      { 0.92f,
-        [] (const Site& at, float light) {
-          return at.limestone * rises (0.42f, 0.62f, at.thin) *
-                 rises (0.25f, 0.50f, at.dry) *
-                 falls (0.15f, 0.45f, at.soaked) * rises (0.40f, 0.70f, light) *
-                 falls (0.70f, 0.90f, at.cold);
+      { 0.92f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (at.limestone *
+                           rises (0.42f * part, 0.62f * part, at.thin) *
+                           rises (0.25f * part, 0.50f * part, at.dry) *
+                           falls (0.15f * part, 0.45f * part, at.soaked) *
+                           rises (0.40f * part, 0.70f * part, light) *
+                           falls (0.70f * part, 0.90f * part, at.cold));
         },
         0xa17a2U },
       // Fireweed: the ground something has just opened -- a burn, a felled
       // verge, a pasture let go -- in the light, until the birch closes over
       // it; the beasts eat it where they still graze.
-      { 1.10f,
-        [] (const Site& at, float light) {
-          return falls (0.12f, 0.35f, at.recovery) *
-                 rises (0.35f, 0.65f, light) * rises (0.06f, 0.16f, at.wet) *
-                 falls (0.55f, 0.85f, at.wet) * falls (0.60f, 0.85f, at.cold) *
-                 (1.0f - 0.85f * at.grazed) * (0.6f + 0.4f * at.burnt);
+      { 1.10f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (falls (0.12f * part, 0.35f * part, at.recovery) *
+                           rises (0.35f * part, 0.65f * part, light) *
+                           rises (0.06f * part, 0.16f * part, at.wet) *
+                           falls (0.55f * part, 0.85f * part, at.wet) *
+                           falls (0.60f * part, 0.85f * part, at.cold) *
+                           (whole - 0.85f * at.grazed) *
+                           (0.6f * part + 0.4f * at.burnt));
         },
         0xf13e7dU },
       // The spring fen: hard water seeping out of the limestone's foot
       // keeps the ground soaked and rich all year, which suits brown moss,
       // sedge, and marsh marigold and starves the sphagnum.
-      { 1.30f,
-        [] (const Site& at, float light) {
-          return rises (0.12f, 0.45f, at.spring) * rises (0.20f, 0.50f, light) *
-                 falls (0.75f, 0.95f, at.cold);
+      { 1.30f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (rises (0.12f * part, 0.45f * part, at.spring) *
+                           rises (0.20f * part, 0.50f * part, light) *
+                           falls (0.75f * part, 0.95f * part, at.cold));
         },
         0x5f1e9eU },
       // Grass and herbs: deep, moist, fertile soil in the light, and the
       // grazed turf of a pasture. Not stored: the ground draws turf
       // wherever nothing else holds it.
-      { 0.90f,
-        [] (const Site& at, float light) {
-          return rises (0.25f, 0.70f, 1.0f - at.thin) *
-                 rises (0.08f, 0.22f, at.wet) * falls (0.50f, 0.80f, at.wet) *
-                 rises (0.30f, 0.60f, light) * falls (0.60f, 0.85f, at.cold) *
-                 (1.0f + 0.4f * at.grazed);
+      { 0.90f * scale_factor[one],
+        [] (const Site& at, proportion_t light) {
+          return together (rises (0.25f * part, 0.70f * part, whole - at.thin) *
+                           rises (0.08f * part, 0.22f * part, at.wet) *
+                           falls (0.50f * part, 0.80f * part, at.wet) *
+                           rises (0.30f * part, 0.60f * part, light) *
+                           falls (0.60f * part, 0.85f * part, at.cold) *
+                           (whole + 0.4f * at.grazed));
         },
         0x9a55eU },
     };
@@ -658,19 +709,25 @@ namespace moppe::map {
     // strongest dominates without the others vanishing at its edge. What a
     // species holds is its share times how well it grows there.
     template <std::size_t N>
-    std::array<float, N> compete (const std::array<float, N>& tolerance,
-                                  const Species (&species)[N],
-                                  const std::array<float, N>& chance) {
-      std::array<float, N> claim {};
-      float total = 1e-6f;
+    std::array<proportion_t, N>
+    compete (const std::array<proportion_t, N>& tolerance,
+             const Species (&species)[N],
+             const std::array<scale_factor_t, N>& chance) {
+      // A claim is a cube: it is weighed only against the others' claims.
+      const auto claim_of = [&] (std::size_t s) {
+        const auto c = tolerance[s] * species[s].strength * chance[s];
+        return c * c * c;
+      };
+      using Claim = decltype (claim_of (0));
+      std::array<Claim, N> claim {};
+      Claim total = 1e-6f * Claim::reference;
       for (std::size_t s = 0; s < N; ++s) {
-        const float c = tolerance[s] * species[s].strength * chance[s];
-        claim[s] = c * c * c;
+        claim[s] = claim_of (s);
         total += claim[s];
       }
-      std::array<float, N> held {};
+      std::array<proportion_t, N> held {};
       for (std::size_t s = 0; s < N; ++s)
-        held[s] = claim[s] / total * tolerance[s];
+        held[s] = together (claim[s] / total * tolerance[s]);
       return held;
     }
   }
@@ -695,8 +752,10 @@ namespace moppe::map {
       throw std::invalid_argument (
         "Wetness or disturbance does not share the surface domain");
     using spatial::get;
+    using terrain::ElevationChange;
     const terrain::TerrainDomain& domain = geometry.domain ();
     const std::size_t count = domain.size ();
+    constexpr auto signal = noise_signal[one];
 
     // How deep the world's history cut each place: what it took away less
     // what it laid back. The limestone's thickness is counted against the
@@ -707,38 +766,41 @@ namespace moppe::map {
     const auto& sediment = get<terrain::sediment_thickness> (geometry);
     const auto& normals = get<terrain::terrain_normal> (geometry);
     const auto& elevation = get<terrain::surface_elevation> (geometry);
-    std::vector<float> cut (count), wet (count), thin (count), dry (count),
-      soaked (count), peat (count), up (count), south (count), height (count),
-      bare (count);
+    std::vector<ElevationChange> cut (count), height (count);
+    std::vector<proportion_t> wet (count), thin (count), dry (count),
+      soaked (count), peat (count), bare (count);
+    // The ground normal's upward and southward lanes, each a share of its
+    // unit length; a north face's southward share is negative.
+    std::vector<proportion_t> up (count), south (count);
     for (std::size_t i = 0; i < count; ++i) {
-      cut[i] = eroded[i].numerical_value_in (u::m) -
-               deposited[i].numerical_value_in (u::m);
-      const float soil = sediment[i].numerical_value_in (u::m);
-      wet[i] = wetness[i].numerical_value_in (one);
+      cut[i] = eroded[i] - deposited[i];
+      const meters_t soil = sediment[i];
+      wet[i] = wetness[i];
       // Under a span of soil a root reaches bedrock; over two and a half
       // metres of it the ground is peat if it is also wet.
-      thin[i] = 1.0f - smoothstep (0.15f, 0.60f, soil);
-      bare[i] = 1.0f - smoothstep (0.08f, 0.45f, soil);
-      peat[i] =
-        smoothstep (0.80f, 2.50f, soil) * smoothstep (0.2f, 0.4f, wet[i]);
-      dry[i] = 1.0f - smoothstep (0.12f, 0.28f, wet[i]);
-      soaked[i] = smoothstep (0.30f, 0.60f, wet[i]);
+      thin[i] = whole - band (0.15f * u::m, 0.60f * u::m, soil);
+      bare[i] = whole - band (0.08f * u::m, 0.45f * u::m, soil);
+      peat[i] = together (band (0.80f * u::m, 2.50f * u::m, soil) *
+                          band (0.2f * part, 0.4f * part, wet[i]));
+      dry[i] = whole - band (0.12f * part, 0.28f * part, wet[i]);
+      soaked[i] = band (0.30f * part, 0.60f * part, wet[i]);
+      // The stored normal's lanes, read once.
       const Vec3 normal = normals[i].numerical_value_in (one);
-      up[i] = normal[1];
+      up[i] = normal[1] * part;
       // North is -z, so a slope facing the sun leans its normal toward +z.
-      south[i] = normal[2];
-      height[i] = terrain::surface_elevation_value (elevation[i]);
+      south[i] = normal[2] * part;
+      height[i] = elevation[i].delta_from_zero ();
     }
-    std::vector<float> positive;
+    std::vector<ElevationChange> positive;
     positive.reserve (count);
-    for (const float value : cut)
-      if (value > 0.0f)
+    for (const ElevationChange value : cut)
+      if (value > ElevationChange::zero ())
         positive.push_back (value);
-    float median_cut = 1.0f;
+    ElevationChange median_cut = 1.0f * terrain::surface_elevation[u::m];
     if (!positive.empty ()) {
       const auto middle = positive.begin () + positive.size () / 2;
       std::nth_element (positive.begin (), middle, positive.end ());
-      median_cut = std::max (*middle, 0.5f);
+      median_cut = std::max (*middle, 0.5f * terrain::surface_elevation[u::m]);
     }
     cut = smoothed (std::move (cut), domain, 10.0f * u::m);
     wet = smoothed (std::move (wet), domain, 12.0f * u::m);
@@ -750,35 +812,40 @@ namespace moppe::map {
     south = smoothed (std::move (south), domain, 25.0f * u::m);
     // The ground's height against its neighbourhood's: a ridge stands
     // above it, a hollow below, where cold air settles on still nights.
-    const std::vector<float> around = smoothed (height, domain, 75.0f * u::m);
+    const std::vector<ElevationChange> around =
+      smoothed (height, domain, 75.0f * u::m);
     // A knoll's height over the ground a stone's throw round it: the ice
     // ground its way over these and scoured them to the rock.
-    const std::vector<float> nearby = smoothed (height, domain, 18.0f * u::m);
+    const std::vector<ElevationChange> nearby =
+      smoothed (height, domain, 18.0f * u::m);
     bare = smoothed (std::move (bare), domain, 5.0f * u::m);
 
-    const auto laps = [&] (float patch_m) {
+    const auto laps = [&] (meters_t patch) {
       return std::max<std::uint32_t> (
         1,
-        static_cast<std::uint32_t> (std::lround (
-          domain.period_x ().numerical_value_in (u::m) / patch_m)));
+        static_cast<std::uint32_t> (
+          std::lround ((domain.period_x () / patch).numerical_value_in (one))));
     };
-    const std::uint32_t sheet_laps = laps (1700.0f);
-    const std::uint32_t chance_laps = laps (160.0f);
-    const float sea = water_level.numerical_value_in (u::m);
-    const float relief =
-      std::max ((land_top - water_level).numerical_value_in (u::m), 1.0f);
-    const float edge = std::max (0.06f * median_cut, 0.5f);
+    const std::uint32_t sheet_laps = laps (1700.0f * u::m);
+    const std::uint32_t chance_laps = laps (160.0f * u::m);
+    const ElevationChange sea =
+      quantity_cast<terrain::surface_elevation> (water_level);
+    const meters_t relief = std::max (land_top - water_level, 1.0f * u::m);
+    const ElevationChange edge =
+      std::max (0.06f * median_cut, 0.5f * terrain::surface_elevation[u::m]);
 
     // The limestone first, everywhere, since a spring answers to the sheet
     // above it on the slope.
-    std::vector<float> limestone (count);
+    std::vector<proportion_t> limestone (count);
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const std::size_t i = domain.offset (site);
-      const float thickness =
-        median_cut * (0.25f + 1.0f * layered_noise (domain.lap_position (site),
-                                                    sheet_laps,
-                                                    seed ^ 0x11a7c0deU));
-      limestone[i] = smoothstep (-edge, edge, thickness - cut[i]);
+      const ElevationChange thickness =
+        quantity_cast<terrain::surface_elevation> (
+          median_cut *
+          (0.25f * signal + 1.0f * layered_noise (domain.lap_position (site),
+                                                  sheet_laps,
+                                                  seed ^ 0x11a7c0deU)));
+      limestone[i] = band (-edge, edge, thickness - cut[i]);
     }
     // The limestone is a sponge: the rain sinks through its joints and
     // runs along its foot, over the basement it cannot get into, until
@@ -787,47 +854,57 @@ namespace moppe::map {
     // a few tens of metres up, is limestone; its water keeps the ground
     // below soaked for a stone's throw down the slope, and the line of
     // them breaks into separate seeps, each with its own tongue of fen.
-    std::vector<float> spring (count), rock (count);
+    std::vector<proportion_t> spring (count), rock (count);
     {
-      const std::vector<float> slope_height =
+      const std::vector<ElevationChange> slope_height =
         smoothed (height, domain, 12.0f * u::m);
-      const float sx = domain.spacing_x ().numerical_value_in (u::m);
-      const float sz = domain.spacing_z ().numerical_value_in (u::m);
-      const std::uint32_t seep_laps = laps (45.0f);
-      constexpr float reach[] = { 6.0f, 15.0f, 26.0f, 40.0f };
-      constexpr float fade[] = { 1.0f, 0.90f, 0.70f, 0.45f };
+      const meters_t sx = domain.spacing_x ();
+      const meters_t sz = domain.spacing_z ();
+      const std::uint32_t seep_laps = laps (45.0f * u::m);
+      constexpr meters_t reach[] = {
+        6.0f * u::m, 15.0f * u::m, 26.0f * u::m, 40.0f * u::m
+      };
+      constexpr proportion_t fade[] = {
+        1.0f * part, 0.90f * part, 0.70f * part, 0.45f * part
+      };
       for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
         const std::size_t i = domain.offset (site);
         const auto at = [&] (int columns, int rows) {
           return domain.offset (domain.shifted (site, columns, rows));
         };
-        const float gx =
-          (slope_height[at (1, 0)] - slope_height[at (-1, 0)]) / (2.0f * sx);
-        const float gz =
-          (slope_height[at (0, 1)] - slope_height[at (0, -1)]) / (2.0f * sz);
-        const float grade = std::sqrt (gx * gx + gz * gz);
-        float above = 0.0f;
-        if (grade > 1e-4f)
+        // The slope's rise over its run along each axis.
+        const auto rise_over = [] (ElevationChange rise, meters_t run) {
+          return quantity_cast<grade> (quantity_cast<isq::height> (rise) / run);
+        };
+        const grade_t gx = rise_over (
+          slope_height[at (1, 0)] - slope_height[at (-1, 0)], 2.0f * sx);
+        const grade_t gz = rise_over (
+          slope_height[at (0, 1)] - slope_height[at (0, -1)], 2.0f * sz);
+        const grade_t steepness = sqrt (gx * gx + gz * gz);
+        proportion_t upslope = 0.0f * part;
+        if (steepness > 1e-4f * grade[one])
           for (std::size_t k = 0; k < std::size (reach); ++k) {
-            const int columns =
-              static_cast<int> (std::lround (gx / grade * reach[k] / sx));
-            const int rows =
-              static_cast<int> (std::lround (gz / grade * reach[k] / sz));
-            above = std::max (above, fade[k] * limestone[at (columns, rows)]);
+            const int columns = static_cast<int> (std::lround (
+              (gx / steepness * reach[k] / sx).numerical_value_in (one)));
+            const int rows = static_cast<int> (std::lround (
+              (gz / steepness * reach[k] / sz).numerical_value_in (one)));
+            upslope = std::max (
+              upslope, together (fade[k] * limestone[at (columns, rows)]));
           }
-        const float seeps = layered_noise (
+        const noise_signal_t seeps = layered_noise (
           domain.lap_position (site), seep_laps, seed ^ 0x5ee95U);
-        spring[i] = (1.0f - limestone[i]) * above * above *
-                    smoothstep (0.03f, 0.10f, grade) *
-                    smoothstep (0.45f, 0.62f, seeps) *
-                    smoothstep (1.0f, 4.0f, height[i] - sea);
+        spring[i] =
+          together ((whole - limestone[i]) * upslope * upslope *
+                    band (0.03f * grade[one], 0.10f * grade[one], steepness) *
+                    band (0.45f * signal, 0.62f * signal, seeps) *
+                    band (1.0f * u::m, 4.0f * u::m, height[i] - sea));
         // Bare rock: basement under hardly any soil, on a knoll or ridge
         // and dry enough that no peat grows over it.
-        const float knoll =
-          smoothstep (-0.5f, 2.5f, height[i] - nearby[i]) +
-          0.5f * smoothstep (2.0f, 10.0f, height[i] - around[i]);
-        rock[i] = (1.0f - limestone[i]) * bare[i] * std::min (knoll, 1.0f) *
-                  (1.0f - soaked[i]);
+        const proportion_t knoll =
+          band (-0.5f * u::m, 2.5f * u::m, height[i] - nearby[i]) +
+          0.5f * band (2.0f * u::m, 10.0f * u::m, height[i] - around[i]);
+        rock[i] = together ((whole - limestone[i]) * bare[i] *
+                            std::min (knoll, whole) * (whole - soaked[i]));
       }
       spring = smoothed (std::move (spring), domain, 6.0f * u::m);
       // The ice left the rock in whalebacks, not in the lines of the
@@ -836,10 +913,12 @@ namespace moppe::map {
       rock = smoothed (std::move (rock), domain, 9.0f * u::m);
       for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
         const std::size_t i = domain.offset (site);
-        const float whaleback = layered_noise (
-          domain.lap_position (site), laps (60.0f), seed ^ 0x9a817eU, 3);
-        rock[i] =
-          smoothstep (0.22f, 0.48f, rock[i] + 0.7f * (whaleback - 0.5f));
+        const noise_signal_t whaleback = layered_noise (
+          domain.lap_position (site), laps (60.0f * u::m), seed ^ 0x9a817eU, 3);
+        rock[i] = band (0.22f * part,
+                        0.48f * part,
+                        rock[i] + quantity_cast<proportion> (
+                                    0.7f * (whaleback - 0.5f * signal)));
       }
     }
 
@@ -847,84 +926,101 @@ namespace moppe::map {
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const std::size_t i = domain.offset (site);
       const auto where = domain.lap_position (site);
-      const float rise = (height[i] - sea) / relief;
-      const float above = height[i] - around[i];
-      const float fed = std::clamp (2.0f * spring[i], 0.0f, 1.0f);
+      // How far up the land's relief the place stands; under the sea,
+      // below none of it.
+      const proportion_t rise =
+        quantity_cast<proportion> ((height[i] - sea) / relief);
+      const ElevationChange above = height[i] - around[i];
+      const proportion_t fed =
+        std::clamp (2.0f * spring[i], 0.0f * part, whole);
       const Site at {
-        .wet = std::min (wet[i] + 0.35f * fed, 1.0f),
-        .dry = dry[i] * (1.0f - fed),
+        .wet = std::min (wet[i] + 0.35f * fed, whole),
+        .dry = together (dry[i] * (whole - fed)),
         .soaked = std::max (soaked[i], 0.8f * fed),
         .thin = thin[i],
         .peat = peat[i],
-        .poor = smoothstep (0.44f, 0.60f, 0.5f * (thin[i] + dry[i])),
-        .level = smoothstep (0.95f, 0.985f, up[i]),
+        .poor = band (0.44f * part, 0.60f * part, 0.5f * (thin[i] + dry[i])),
+        .level = band (0.95f * part, 0.985f * part, up[i]),
         .limestone = limestone[i],
-        .cold = smoothstep (0.40f,
-                            0.90f,
-                            rise - 0.20f * south[i] +
-                              0.05f * smoothstep (0.0f, 8.0f, -above)),
-        .exposure = std::clamp (0.7f * smoothstep (0.0f, 8.0f, above) +
-                                  0.6f * smoothstep (0.45f, 0.9f, rise),
-                                0.0f,
-                                1.0f),
-        .grazed =
-          get<grazing_pressure> (disturbance[site]).numerical_value_in (one),
-        .recovery =
-          get<stand_recovery> (disturbance[site]).numerical_value_in (one),
-        .burnt = get<burn_recency> (disturbance[site]).numerical_value_in (one),
+        .cold = band (0.40f * part,
+                      0.90f * part,
+                      rise - 0.20f * south[i] +
+                        0.05f * band (0.0f * u::m, 8.0f * u::m, -above)),
+        .exposure = std::clamp (0.7f * band (0.0f * u::m, 8.0f * u::m, above) +
+                                  0.6f * band (0.45f * part, 0.9f * part, rise),
+                                0.0f * part,
+                                whole),
+        .grazed = get<grazing_pressure> (disturbance[site]),
+        .recovery = get<stand_recovery> (disturbance[site]),
+        .burnt = get<burn_recency> (disturbance[site]),
         .spring = fed,
         .rock = rock[i],
       };
       // Steep ground holds little of anything rooted.
-      const float footing = smoothstep (0.70f, 0.85f, up[i]);
+      const proportion_t footing = band (0.70f * part, 0.85f * part, up[i]);
+      // How a stand's seed happened to land and take: a multiplier on each
+      // species' strength, drawn from noise.
       const auto chances = [&] (const auto& species) {
-        std::array<float,
+        std::array<scale_factor_t,
                    std::extent_v<std::remove_reference_t<decltype (species)>>>
           chance {};
         for (std::size_t s = 0; s < chance.size (); ++s)
           chance[s] =
-            0.75f + 0.5f * layered_noise (
-                             where, chance_laps, seed ^ species[s].lane, 2);
+            0.75f * scale_factor[one] +
+            quantity_cast<scale_factor> (quantity_cast<dimensionless> (
+              0.5f *
+              layered_noise (where, chance_laps, seed ^ species[s].lane, 2)));
         return chance;
       };
 
-      std::array<float, std::size (canopy)> trees {};
+      std::array<proportion_t, std::size (canopy)> trees {};
       for (std::size_t s = 0; s < trees.size (); ++s)
         // Only pine finds the cracks in bare rock.
-        trees[s] = canopy[s].tolerance (at, 1.0f) * footing *
-                   (1.0f - (s == 1 ? 0.6f : 0.92f) * at.rock);
+        trees[s] = together (canopy[s].tolerance (at, whole) * footing *
+                             (whole - (s == 1 ? 0.6f : 0.92f) * at.rock));
       const auto held = compete (trees, canopy, chances (canopy));
-      float shade = 0.0f;
+      proportion_t shade = 0.0f * part;
       for (std::size_t s = 0; s < held.size (); ++s)
-        shade += canopy_shade[s] * held[s];
-      const float light = std::clamp (1.0f - shade, 0.0f, 1.0f);
+        shade += together (canopy_shade[s] * held[s]);
+      const proportion_t light = std::clamp (whole - shade, 0.0f * part, whole);
 
-      std::array<float, std::size (field)> plants {};
+      std::array<proportion_t, std::size (field)> plants {};
       for (std::size_t s = 0; s < plants.size (); ++s)
         // Lichen takes the thin skin of soil in the rock's hollows.
-        plants[s] = field[s].tolerance (at, light) * std::max (footing, 0.3f) *
-                    (1.0f - (s == 0 ? 0.25f : 0.85f) * at.rock);
+        plants[s] = together (field[s].tolerance (at, light) *
+                              std::max (footing, 0.3f * part) *
+                              (whole - (s == 0 ? 0.25f : 0.85f) * at.rock));
       const auto ground = compete (plants, field, chances (field));
 
       const auto reading = values[site];
-      get<limestone_cover> (reading) = at.limestone * limestone_cover[one];
-      get<bedrock_exposure> (reading) = at.rock * bedrock_exposure[one];
-      get<spruce_abundance> (reading) = held[0] * spruce_abundance[one];
-      get<pine_abundance> (reading) = held[1] * pine_abundance[one];
-      get<birch_abundance> (reading) = held[2] * birch_abundance[one];
+      get<limestone_cover> (reading) =
+        quantity_cast<limestone_cover> (at.limestone);
+      get<bedrock_exposure> (reading) =
+        quantity_cast<bedrock_exposure> (at.rock);
+      get<spruce_abundance> (reading) =
+        quantity_cast<spruce_abundance> (held[0]);
+      get<pine_abundance> (reading) = quantity_cast<pine_abundance> (held[1]);
+      get<birch_abundance> (reading) = quantity_cast<birch_abundance> (held[2]);
       get<mountain_birch_abundance> (reading) =
-        held[3] * mountain_birch_abundance[one];
-      get<lichen_abundance> (reading) = ground[0] * lichen_abundance[one];
-      get<heather_abundance> (reading) = ground[1] * heather_abundance[one];
-      get<bilberry_abundance> (reading) = ground[2] * bilberry_abundance[one];
-      get<sphagnum_abundance> (reading) = ground[3] * sphagnum_abundance[one];
+        quantity_cast<mountain_birch_abundance> (held[3]);
+      get<lichen_abundance> (reading) =
+        quantity_cast<lichen_abundance> (ground[0]);
+      get<heather_abundance> (reading) =
+        quantity_cast<heather_abundance> (ground[1]);
+      get<bilberry_abundance> (reading) =
+        quantity_cast<bilberry_abundance> (ground[2]);
+      get<sphagnum_abundance> (reading) =
+        quantity_cast<sphagnum_abundance> (ground[3]);
       get<dwarf_birch_abundance> (reading) =
-        ground[4] * dwarf_birch_abundance[one];
-      get<sedge_abundance> (reading) = ground[5] * sedge_abundance[one];
-      get<alvar_abundance> (reading) = ground[6] * alvar_abundance[one];
-      get<fireweed_abundance> (reading) = ground[7] * fireweed_abundance[one];
+        quantity_cast<dwarf_birch_abundance> (ground[4]);
+      get<sedge_abundance> (reading) =
+        quantity_cast<sedge_abundance> (ground[5]);
+      get<alvar_abundance> (reading) =
+        quantity_cast<alvar_abundance> (ground[6]);
+      get<fireweed_abundance> (reading) =
+        quantity_cast<fireweed_abundance> (ground[7]);
       get<spring_fen_abundance> (reading) =
-        ground[8] * spring_fen_abundance[one];
+        quantity_cast<spring_fen_abundance> (ground[8]);
     }
     return values;
   }
@@ -961,18 +1057,18 @@ namespace moppe::map {
 
       const auto ground_horizontality = dot (ground_normal, world_up);
 
-      const auto soil_stability =
+      const proportion_t soil_stability =
         band (0.72f * level_ground, 0.96f * level_ground, ground_horizontality);
 
-      const auto soil_dryness =
+      const proportion_t soil_dryness =
         band (water_level + 3.0f * m, water_level + 18.0f * m, ground_level);
 
       // Trees thin out as the ground approaches the tree line and stop at
       // it. The band rises from 0 to 1 across the last 35 m of climb, so one
       // minus it is the headroom still left below the line: full well down
       // the slope, nothing at the top.
-      const auto tree_line_headroom =
-        1 - band (tree_tops - 35.0f * m, tree_tops, ground_level);
+      const proportion_t tree_line_headroom =
+        whole - band (tree_tops - 35.0f * m, tree_tops, ground_level);
 
       // What the ground holds, not how near it is to open water: a bank a
       // step from the river can be a dry cut, and a flat two hundred metres
@@ -984,13 +1080,16 @@ namespace moppe::map {
       // the median hillside near a fifth, and the wettest tenth is standing
       // water and the flats around it. So trees want more than a bare ridge
       // and less than a bog, and almost every hillside qualifies.
-      const auto hydrated = band (0.05f * one, 0.20f * one, wetness);
-      const auto not_sodden = 1 - band (0.60f * one, 0.88f * one, wetness);
-      const auto water_response = 0.28f + 0.72f * hydrated * not_sodden;
-      const auto treeishness =
-        soil_dryness * tree_line_headroom * soil_stability * water_response;
+      const proportion_t hydrated = band (0.05f * part, 0.20f * part, wetness);
+      const proportion_t not_sodden =
+        whole - band (0.60f * part, 0.88f * part, wetness);
+      const proportion_t water_response =
+        0.28f * part + together (0.72f * hydrated * not_sodden);
+      const proportion_t treeishness = together (
+        soil_dryness * tree_line_headroom * soil_stability * water_response);
 
-      get<tree_habitat> (values[site]) = treeishness * tree_habitat[one];
+      get<tree_habitat> (values[site]) =
+        quantity_cast<tree_habitat> (treeishness);
     }
     return values;
   }
@@ -1036,8 +1135,10 @@ namespace moppe::map {
 
       // Habitat raised slightly above one: good ground stays good, and
       // marginal ground gives up a little faster than it otherwise would.
-      const auto habitable = cr::pow (
-        get<tree_habitat> (habitat[site]).numerical_value_in (one), 1.15f);
+      const proportion_t habitable =
+        cr::pow (get<tree_habitat> (habitat[site]).numerical_value_in (one),
+                 1.15f) *
+        part;
 
       // The ground decides how hard the mosaic has to try. Multiplying the
       // two instead would make the noise an equal author of where the forest
@@ -1045,24 +1146,27 @@ namespace moppe::map {
       // sheltered damp hollow closes canopy on a low roll and a dry shoulder
       // needs a high one, so the stands land where the water does and the
       // noise only says where their edges fall.
-      const auto reluctant = 0.74f * signal;
-      const auto eager = 0.30f * signal;
-      const auto gate = reluctant + (eager - reluctant) * habitable;
+      const noise_signal_t reluctant = 0.74f * signal;
+      const noise_signal_t eager = 0.30f * signal;
+      const noise_signal_t gate =
+        reluctant + quantity_cast<noise_signal> (quantity_cast<dimensionless> (
+                      (eager - reluctant) * habitable));
 
       // Most of the mosaic is either forest or clearing; the band is narrow
       // so the edges between them stay edges instead of a long gradient.
-      const auto seeded =
+      const proportion_t seeded =
         band (gate - 0.085f * signal, gate + 0.085f * signal, mosaic);
 
       // A route keeps almost all canopy off a corridor about its formed
       // width; a settlement clears its ground completely.
       const auto trodden = use[site];
       constexpr auto trail = map::trail_influence[one];
-      const auto route_clearance =
-        1 - 0.96f * band (0.35f * trail,
-                          0.65f * trail,
-                          get<trail_influence> (trodden));
-      const auto settled_clearance = 1 - get<home_base_influence> (trodden);
+      const proportion_t route_clearance =
+        whole - 0.96f * band (0.35f * trail,
+                              0.65f * trail,
+                              get<trail_influence> (trodden));
+      const proportion_t settled_clearance =
+        whole - get<home_base_influence> (trodden);
 
       // Every factor is a soft yes between 0 and 1, and multiplying them is
       // a soft "and": canopy needs habitable ground AND a seeded patch AND no
@@ -1073,25 +1177,23 @@ namespace moppe::map {
       // Habitat has already chosen where the stands are; here it only says
       // how thickly they grow, which is what placement reads for density,
       // height, and tint.
-      const auto thickness = 0.45f + 0.55f * habitable;
+      const proportion_t thickness = 0.45f * part + 0.55f * habitable;
       // How closed a canopy the trees that hold this place make: spruce
       // closes it, birch nearly, while pine and the fell birch stand open
       // and the forest plan plants them itself.
       const auto plants = vegetation[site];
-      const float closing =
-        get<spruce_abundance> (plants).numerical_value_in (one) +
-        0.8f * get<birch_abundance> (plants).numerical_value_in (one);
-      const auto wanted = thickness * seeded * route_clearance *
-                          settled_clearance *
-                          smoothstep (0.08f, 0.45f, closing);
+      const proportion_t closing =
+        get<spruce_abundance> (plants) + 0.8f * get<birch_abundance> (plants);
+      const proportion_t wanted =
+        together (thickness * seeded * route_clearance * settled_clearance *
+                  band (0.08f * part, 0.45f * part, closing));
 
       // The bands are in range by construction, but the trail and home-base
       // readings are stored data, and a clearance is one minus one of those.
       // The clamp guards the inputs this rule did not compute, not its own
       // arithmetic.
       get<forest_cover> (values[site]) =
-        std::clamp (wanted.numerical_value_in (one), 0.0f, 1.0f) *
-        forest_cover[one];
+        quantity_cast<forest_cover> (std::clamp (wanted, 0.0f * part, whole));
     }
     return values;
   }

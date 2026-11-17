@@ -15,23 +15,34 @@
 
 namespace moppe {
   namespace game {
+    namespace {
+      // How far apart two places stand on the map, as std::hypot measures.
+      meters_t plan_distance (const position_t& from, const position_t& to) {
+        const plan_displacement_t apart = plan (from) - plan (to);
+        return hypot (x_of (apart), z_of (apart));
+      }
+    }
+
     GroundCover MoppeGame::ground_cover (const Vec3& at) const {
       const auto read = [&] (auto quantity) {
         return spatial::sample<quantity> (generated_world ().readings (),
-                                          moppe::position (at))
-          .numerical_value_in (one);
+                                          moppe::position (at));
       };
-      const float tread =
-        smoothstep (0.80f, 0.88f, read (map::trail_influence));
-      const float bare =
-        smoothstep (0.50f, 0.70f, read (map::erosion_exposure));
-      const float wet = smoothstep (0.45f, 0.80f, read (map::surface_moisture));
+      constexpr auto part = proportion[one];
+      const proportion_t tread =
+        band (0.80f * part, 0.88f * part, read (map::trail_influence));
+      const proportion_t bare =
+        band (0.50f * part, 0.70f * part, read (map::erosion_exposure));
+      const proportion_t wet =
+        band (0.45f * part, 0.80f * part, read (map::surface_moisture));
       GroundCover ground;
       ground.leaves =
         m_forest.litter_at (plan_position (plan (at))).numerical_value_in (one);
-      const float loose = std::max (tread, bare);
-      ground.dust = (0.2f + 0.8f * loose) * (1.0f - 0.6f * wet) *
-                    (1.0f - 0.7f * ground.leaves);
+      const proportion_t loose = std::max (tread, bare);
+      const proportion_t whole = 1.0f * part;
+      ground.dust = ((0.2f * part + 0.8f * loose) * (whole - 0.6f * wet) *
+                     (1.0f - 0.7f * ground.leaves))
+                      .numerical_value_in (one);
       const auto blend = [] (DisplayColor a, DisplayColor b, float t) {
         return DisplayColor (a.red + (b.red - a.red) * t,
                              a.green + (b.green - a.green) * t,
@@ -39,10 +50,10 @@ namespace moppe {
       };
       ground.dust_color = blend (DisplayColor (0.56f, 0.53f, 0.43f),
                                  DisplayColor (0.60f, 0.52f, 0.40f),
-                                 loose);
+                                 loose.numerical_value_in (one));
       ground.clod_color = blend (DisplayColor (0.27f, 0.32f, 0.16f),
                                  DisplayColor (0.42f, 0.34f, 0.24f),
-                                 loose);
+                                 loose.numerical_value_in (one));
       // Under fallen leaves the wheel digs up dark forest soil.
       ground.clod_color = blend (
         ground.clod_color, DisplayColor (0.34f, 0.26f, 0.17f), ground.leaves);
@@ -53,10 +64,11 @@ namespace moppe {
       m_home_base_marker.clear ();
       build_cairn (m_home_base_marker,
                    m_home_base_position,
-                   world_ground ().trail_heading (),
+                   direction_value (world_ground ().trail_heading ()),
                    static_cast<std::uint32_t> (recipe ().seed ().value),
                    [this] (float x, float z) {
-                     return world_ground ().height (Vec3 (x, 0.0f, z));
+                     return terrain::surface_elevation_value (
+                       world_ground ().elevation (plan_position (x, z)));
                    });
     }
 
@@ -114,20 +126,19 @@ namespace moppe {
       m_sky.begin (logic (),
                    static_cast<std::uint32_t> (recipe ().seed ().value));
       m_company.forget ();
-      m_home_base_position = world_ground ().trail_cell (
+      const position_t home = world_ground ().trail_cell (
         generated_world ().trails ().plan.home_base);
+      m_home_base_position = position_value (home);
       build_home_base_marker ();
-      m_spawn_position =
-        m_home_base_position - world_ground ().trail_heading () * 8.0f;
-      m_spawn_position[1] =
-        terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (
-            surface (),
-            moppe::position (
-              Vec3 (m_spawn_position[0], 0.0f, m_spawn_position[2])))) +
-        1.2f;
+      // Eight metres back down the trail, a little above its ground.
+      const direction_t heading = world_ground ().trail_heading ();
+      const plan_position_t spawn =
+        plan (home - quantity_cast<isq::position_vector> (
+                       along (heading, 8.0f * u::m)));
+      m_spawn_position = position_value (terrain::at_elevation (
+        spawn, world_ground ().elevation (spawn) + 1.2f * u::m));
       session ().bike ().reset (m_spawn_position);
-      session ().bike ().set_heading (world_ground ().trail_heading ());
+      session ().bike ().set_heading (direction_value (heading));
       const char* demo = moppe::environment ("MOPPE_DEMO");
       if (demo && std::string_view (demo) == "forest")
         move_spawn_to_forest ();
@@ -168,27 +179,30 @@ namespace moppe {
     void MoppeGame::move_spawn_to_forest () {
       // The fullest 40-metre cell of the forest plan's conifers.
       const ForestPlan& plan = generated_world ().forest ();
-      const Vec3 period = extent_value (plan.period);
-      constexpr float cell = 40.0f;
-      const int nx = std::max (1, static_cast<int> (period[0] / cell));
-      const int nz = std::max (1, static_cast<int> (period[2] / cell));
+      constexpr meters_t cell = 40.0f * u::m;
+      // Whole cells along a span.
+      const auto cells = [&] (meters_t span) {
+        return static_cast<int> ((span / cell).numerical_value_in (one));
+      };
+      const int nx = std::max (1, cells (extent_value (plan.period)[0] * u::m));
+      const int nz = std::max (1, cells (extent_value (plan.period)[2] * u::m));
       std::vector<int> conifers (static_cast<std::size_t> (nx) * nz, 0);
       for (const ForestSite& site : plan.sites) {
         if (site.form != ForestForm::Conifer)
           continue;
-        const Vec3 at = position_value (site.position);
-        const int x = std::clamp (static_cast<int> (at[0] / cell), 0, nx - 1);
-        const int z = std::clamp (static_cast<int> (at[2] / cell), 0, nz - 1);
+        const plan_position_t at = moppe::plan (site.position);
+        const int x = std::clamp (cells (x_of (at)), 0, nx - 1);
+        const int z = std::clamp (cells (z_of (at)), 0, nz - 1);
         ++conifers[static_cast<std::size_t> (z) * nx + x];
       }
       const auto densest =
         std::max_element (conifers.begin (), conifers.end ()) -
         conifers.begin ();
-      m_spawn_position =
-        Vec3 ((static_cast<float> (densest % nx) + 0.5f) * cell,
-              0.0f,
-              (static_cast<float> (densest / nx) + 0.5f) * cell);
-      m_spawn_position[1] = world_ground ().height (m_spawn_position) + 1.2f;
+      const plan_position_t spot =
+        plan_position ((static_cast<float> (densest % nx) + 0.5f) * cell,
+                       (static_cast<float> (densest / nx) + 0.5f) * cell);
+      m_spawn_position = position_value (terrain::at_elevation (
+        spot, world_ground ().elevation (spot) + 1.2f * u::m));
       session ().bike ().reset (m_spawn_position);
       std::cerr << "forest demo: densest conifer stand at " << m_spawn_position
                 << " (" << conifers[densest] << " spruce in 40 m)\n";
@@ -199,9 +213,9 @@ namespace moppe {
       // Nothing grows where the places stand, nor on a road.
       ForestPlan plan = generated_world ().forest ();
       std::erase_if (plan.sites, [this] (const ForestSite& site) {
-        const Vec3 at = position_value (site.position);
-        return cleared (m_places.layout, at) ||
-               world_ground ().on_road (at, 0.6f, true);
+        return cleared (m_places.layout, position_value (site.position)) ||
+               world_ground ().on_road (
+                 moppe::plan (site.position), 0.6f * u::m, true);
       });
       m_forest.rebuild (*m_renderer, plan);
       std::cerr << "global forest: " << m_forest.tree_count ()
@@ -213,8 +227,12 @@ namespace moppe {
     void MoppeGame::scatter_boulders () {
       MOPPE_PROFILE_ZONE ("startup.scatter_boulders");
       const meters_t sea_level = world ().water_level;
-      const float sea = sea_level.numerical_value_in (u::m);
-      const float highest = terrain::measure_height_range (surface ()).maximum;
+      // The land's own relief over the sea, never under a metre.
+      const meters_t relief = std::max<meters_t> (
+        quantity_cast<isq::length> (
+          terrain::measure_elevation_range (surface ()).maximum -
+          terrain::surface_elevation_point (sea_level)),
+        1.0f * u::m);
       const auto start = std::chrono::steady_clock::now ();
       BoulderPlan plan =
         plan_boulders (surface (),
@@ -223,7 +241,7 @@ namespace moppe {
                        generated_world ().rivers (),
                        recipe ().seed ().value ^ 0x6b0d1e55U,
                        terrain::surface_elevation_point (sea_level),
-                       std::max (highest - sea, 1.0f) * u::m);
+                       relief);
       std::cerr << "moppe: boulder plan: "
                 << std::chrono::duration_cast<std::chrono::milliseconds> (
                      std::chrono::steady_clock::now () - start)
@@ -233,28 +251,25 @@ namespace moppe {
       // roads; the stones laid across running water stay, under the
       // bridges too.
       std::erase_if (plan.sites, [this] (const BoulderSite& site) {
-        const Vec3 at = position_value (site.centre);
         return !site.solid &&
-               (cleared (m_places.layout, at) ||
+               (cleared (m_places.layout, position_value (site.centre)) ||
                 world_ground ().on_road (
-                  at, site.radius.numerical_value_in (u::m), false));
+                  moppe::plan (site.centre), site.radius, false));
       });
       m_boulders.rebuild (*m_renderer, plan);
       // Where to cross a river dry-shod, for whoever wants to find one.
+      const position_t spawn = moppe::position (m_spawn_position);
       const auto nearest = std::ranges::min_element (
-        plan.crossings, {}, [this] (const StoneCrossing& crossing) {
-          const Vec3 at = position_value (crossing.from);
-          return std::hypot (at[0] - m_spawn_position[0],
-                             at[2] - m_spawn_position[2]);
+        plan.crossings, {}, [&] (const StoneCrossing& crossing) {
+          return plan_distance (crossing.from, spawn);
         });
       if (nearest != plan.crossings.end ()) {
-        const Vec3 at = position_value (nearest->from);
+        const plan_position_t at = moppe::plan (nearest->from);
         std::cerr << "moppe: stepping stones: " << plan.crossings.size ()
                   << " crossings, the nearest "
-                  << std::hypot (at[0] - m_spawn_position[0],
-                                 at[2] - m_spawn_position[2])
-                  << " m from the spawn, at " << at[0] << ' ' << at[2]
-                  << std::endl;
+                  << meters_value (plan_distance (nearest->from, spawn))
+                  << " m from the spawn, at " << meters_value (x_of (at)) << ' '
+                  << meters_value (z_of (at)) << std::endl;
       }
     }
 
@@ -270,11 +285,11 @@ namespace moppe {
                         position (m_home_base_position)));
       if (const auto first =
             m_mushrooms.nearest (position (m_spawn_position), 400.0f * u::m)) {
-        const Vec3 at = position_value (m_mushrooms.site (*first).base);
+        const position_t at = m_mushrooms.site (*first).base;
+        const position_t spawn = moppe::position (m_spawn_position);
         std::cerr << "moppe: nearest mushrooms ("
                   << mushroom_plural (m_mushrooms.site (*first).kind) << ") "
-                  << std::hypot (at[0] - m_spawn_position[0],
-                                 at[2] - m_spawn_position[2])
+                  << meters_value (plan_distance (at, spawn))
                   << " m from the spawn" << std::endl;
         // The foraging script starts a few steps from them.
         const char* walk = moppe::environment ("MOPPE_WALK");
@@ -282,12 +297,18 @@ namespace moppe {
             (std::string_view (walk) == "forage" ||
              std::string_view (walk) == "supper") &&
             logic ().m_doing == Doing::on_foot ()) {
-          Vec3 away = m_spawn_position - at;
-          away[1] = 0.0f;
-          away = length2 (away) > 1e-4f ? normalized (away) : Vec3 (1, 0, 0);
-          Vec3 stand = at + away * 4.0f;
-          stand[1] = world_ground ().height (stand) + 0.1f;
-          session ().walker ().spawn (moppe::position (stand), away * -1.0f);
+          // Levelled, then normalized as a vector of the world.
+          Vec3 level = displacement_value (spawn - at);
+          level[1] = 0.0f;
+          const direction_t away = unit_direction (
+            length2 (level) > 1e-4f ? normalized (level) : Vec3 (1, 0, 0));
+          const plan_position_t stand =
+            moppe::plan (at + quantity_cast<isq::position_vector> (
+                                along (away, 4.0f * u::m)));
+          session ().walker ().spawn (
+            terrain::at_elevation (
+              stand, world_ground ().elevation (stand) + 0.1f * u::m),
+            direction_value (away) * -1.0f);
           logic ().m_fp_eye = position (session ().walker ().eye_position ());
         }
       }
@@ -305,8 +326,10 @@ namespace moppe {
         const std::vector<mov::Trunk> stops = bus_stop_colliders (m_places.bus);
         obstacles.insert (obstacles.end (), stops.begin (), stops.end ());
       }
-      const Vec3 period = extent_value (generated_world ().forest ().period);
-      m_trunk_field.set_trunks (std::move (obstacles), period[0], period[2]);
+      const spatial_extent_t& period = generated_world ().forest ().period;
+      m_trunk_field.set_trunks (std::move (obstacles),
+                                extent_value (period)[0],
+                                extent_value (period)[2]);
       if (m_trunk_field.trunk_count () && !with_places)
         std::cerr << "moppe: obstacle colliders: "
                   << m_trunk_field.trunk_count ()
@@ -398,7 +421,8 @@ namespace moppe {
         m_heads_up.paint_map (r, generated_world ());
       m_ready = true;
       MOPPE_PROFILE_PLOT ("startup.ready", 1);
-      std::cerr << "moppe: world ready " << m_loading.status ().elapsed
+      std::cerr << "moppe: world ready "
+                << seconds_value (m_loading.status ().elapsed)
                 << " s after loading began" << std::endl;
 
       // A screenshot plays a shot list it names (MOPPE_OPENING=file),

@@ -26,10 +26,10 @@ namespace moppe {
       };
       const float LOD_END[LOD_COUNT - 1] = { 96.0f, 384.0f, 768.0f, 1536.0f };
 
-      constexpr float MAX_WAVE_HEIGHT = [] {
-        float height = 0.0f;
+      constexpr meters_t MAX_WAVE_HEIGHT = [] {
+        meters_t height = 0.0f * u::m;
         for (const auto& train : terrain::sea_wave_trains)
-          height += train.amplitude.numerical_value_in (u::m);
+          height += train.amplitude;
         return height;
       }();
 
@@ -49,13 +49,20 @@ namespace moppe {
 
         // Whether any part of the box can be on screen.  `margin` widens
         // each plane by that many metres for jitter and horizontal waves.
-        bool admits (const Vec3& lo, const Vec3& hi, float margin) const {
+        // The planes are the matrix's rows, so the box meets them in
+        // metres.
+        bool admits (const position_t& low,
+                     const position_t& high,
+                     meters_t margin) const {
+          const Vec3& lo = position_value (low);
+          const Vec3& hi = position_value (high);
           for (const auto& p : plane) {
             const float x = p[0] >= 0 ? hi[0] : lo[0];
             const float y = p[1] >= 0 ? hi[1] : lo[1];
             const float z = p[2] >= 0 ? hi[2] : lo[2];
             const float reach =
-              margin * std::sqrt (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+              meters_value (margin) *
+              std::sqrt (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
             if (p[0] * x + p[1] * y + p[2] * z + p[3] + reach < 0)
               return false;
           }
@@ -89,24 +96,26 @@ namespace moppe {
                          const GraphicsSettings& graphics,
                          const terrain::WaterSheets* water) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
-      m_scale = Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
-                      1.0f,
-                      surface.domain ().spacing_z ().numerical_value_in (u::m));
-      m_extent = extent_value (world.map_size);
-      m_period = Vec3 (m_extent[0], 0.0f, m_extent[2]);
-      m_lod_scale = std::max (m_scale[0], m_scale[2]);
+      m_cell_x = surface.domain ().spacing_x ();
+      m_cell_z = surface.domain ().spacing_z ();
+      m_period = plan (extent_value (world.map_size)) * spatial_extent[u::m];
+      m_lod_scale = std::max (m_cell_x, m_cell_z);
+
+      // The material bands grade over this world's own land, so ask the
+      // surface how high it actually reaches instead of assuming a range.
+      const terrain::ElevationChange land_relief =
+        terrain::measure_elevation_range (surface).maximum -
+        terrain::surface_elevation_point (world.water_level);
 
       render::TerrainParams params;
       params.width = static_cast<int> (surface.domain ().width ());
       params.height = static_cast<int> (surface.domain ().height ());
-      params.scale = m_scale;
-      params.sea_level = (world.water_level).numerical_value_in (moppe::u::m);
-      // The material bands grade over this world's own land, so ask the
-      // surface how high it actually reaches instead of assuming a range.
-      params.land_relief = std::max (
-        terrain::measure_height_range (surface).maximum - params.sea_level,
-        1.0f);
-      params.tex_scale = 0.5f / m_scale[0];
+      params.scale =
+        Vec3 (meters_value (m_cell_x), 1.0f, meters_value (m_cell_z));
+      params.sea_level = meters_value (world.water_level);
+      params.land_relief =
+        std::max (land_relief.numerical_value_in (u::m), 1.0f);
+      params.tex_scale = 0.5f / meters_value (m_cell_x);
       params.shadow_strength = graphics.terrain_shadows ? 0.92f : 0.0f;
       params.fog_scale = attenuation_value (world.fog_scale);
       {
@@ -131,10 +140,14 @@ namespace moppe {
       for (int cz = 0; cz < chunks_per_side; ++cz)
         for (int cx = 0; cx < chunks_per_side; ++cx) {
           Chunk c;
-          std::fill_n (c.patch_ymin, PATCHES * PATCHES, 1e9f);
-          std::fill_n (c.patch_ymax, PATCHES * PATCHES, -1e9f);
+          const terrain::SurfaceElevation lowest =
+            terrain::surface_elevation_point (-1e9f * u::m);
+          const terrain::SurfaceElevation highest =
+            terrain::surface_elevation_point (1e9f * u::m);
+          std::fill_n (c.patch_ymin, PATCHES * PATCHES, highest);
+          std::fill_n (c.patch_ymax, PATCHES * PATCHES, lowest);
           std::array<bool, PATCHES * PATCHES> wet {};
-          std::array<float, PATCHES * PATCHES> waves {};
+          std::array<meters_t, PATCHES * PATCHES> waves {};
           for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
             for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
               const terrain::TerrainIndex at {
@@ -143,18 +156,19 @@ namespace moppe {
                 static_cast<std::size_t> (terrain::wrap_index (
                   z, static_cast<int> (surface.domain ().height ())))
               };
-              const float h = terrain::surface_elevation_value (
-                spatial::get<terrain::surface_elevation> (surface[at]));
-              float top = h, wave = 0.0f;
+              const terrain::SurfaceElevation h =
+                spatial::get<terrain::surface_elevation> (surface[at]);
+              terrain::SurfaceElevation top = h;
+              meters_t wave = 0.0f * u::m;
               if (water) {
                 const auto site = (*water)[at];
-                const float level = terrain::surface_elevation_value (
-                  spatial::get<terrain::surface_elevation> (site));
+                const terrain::SurfaceElevation level =
+                  spatial::get<terrain::surface_elevation> (site);
                 top = std::max (h, level);
-                const float amplitude =
-                  spatial::get<terrain::wave_amplitude> (site)
-                    .numerical_value_in (mp_units::one);
-                wave = MAX_WAVE_HEIGHT * amplitude * amplitude;
+                const terrain::WaveAmplitude amplitude =
+                  spatial::get<terrain::wave_amplitude> (site);
+                wave = quantity_cast<isq::length> (MAX_WAVE_HEIGHT * amplitude *
+                                                   amplitude);
               }
               // Samples on a patch border belong to both patches.
               const int px = x - cx * CHUNK, pz = z - cz * CHUNK;
@@ -165,8 +179,8 @@ namespace moppe {
                      i <= std::min (PATCHES - 1, px / PATCH);
                      ++i) {
                   const int k = j * PATCHES + i;
-                  float& lo = c.patch_ymin[k];
-                  float& hi = c.patch_ymax[k];
+                  terrain::SurfaceElevation& lo = c.patch_ymin[k];
+                  terrain::SurfaceElevation& hi = c.patch_ymax[k];
                   lo = std::min (lo, h);
                   hi = std::max (hi, top);
                   wet[k] = wet[k] || top > h;
@@ -177,9 +191,9 @@ namespace moppe {
           // Amplitude and depth interpolate separately. Omitting the
           // shallow-water damping bounds their product between samples
           // too, where it can exceed either sample's displaced height.
-          float ymin = 1e9f, ymax = -1e9f;
+          terrain::SurfaceElevation ymin = highest, ymax = lowest;
           for (int k = 0; k < PATCHES * PATCHES; ++k) {
-            const float wave = wet[k] ? waves[k] : 0.0f;
+            const meters_t wave = wet[k] ? waves[k] : 0.0f * u::m;
             c.patch_ymin[k] -= wave;
             c.patch_ymax[k] += wave;
             ymin = std::min (ymin, c.patch_ymin[k]);
@@ -191,14 +205,18 @@ namespace moppe {
 
           c.x0 = cx * CHUNK;
           c.z0 = cz * CHUNK;
-          const float x0 = c.x0 * m_scale[0];
-          const float x1 = (c.x0 + CHUNK) * m_scale[0];
-          const float z0 = c.z0 * m_scale[2];
-          const float z1 = (c.z0 + CHUNK) * m_scale[2];
-          c.center = Vec3 ((x0 + x1) / 2, (ymin + ymax) / 2, (z0 + z1) / 2);
-          const float hx = (x1 - x0) / 2, hy = (ymax - ymin) / 2,
-                      hz = (z1 - z0) / 2;
-          c.radius = std::sqrt (hx * hx + hy * hy + hz * hz) + c.wave_reach;
+          const meters_t x0 = c.x0 * m_cell_x;
+          const meters_t x1 = (c.x0 + CHUNK) * m_cell_x;
+          const meters_t z0 = c.z0 * m_cell_z;
+          const meters_t z1 = (c.z0 + CHUNK) * m_cell_z;
+          c.center = terrain::at_elevation (
+            plan_position ((x0 + x1) / 2, (z0 + z1) / 2),
+            terrain::SurfaceElevation (
+              (ymin.delta_from_zero () + ymax.delta_from_zero ()) / 2));
+          const meters_t hx = (x1 - x0) / 2,
+                         hy = quantity_cast<isq::length> (ymax - ymin) / 2,
+                         hz = (z1 - z0) / 2;
+          c.radius = sqrt (hx * hx + hy * hy + hz * hz) + c.wave_reach;
           c.ymin = ymin;
           c.ymax = ymax;
           m_chunks.push_back (c);
@@ -225,14 +243,18 @@ namespace moppe {
       // keeps one angle to that axis all day, so the lattice simply turns
       // with it; squared to the zenith it would spin fastest at noon.
       render::ShadowCascade shadow_cascade (position_t camera,
-                                            const Vec3& horizontal,
-                                            const Vec3& sun_dir,
-                                            const Vec3& pole,
+                                            const direction_t& horizontal,
+                                            const direction_t& sun,
+                                            const direction_t& pole_way,
                                             meters_t radius,
                                             meters_t look_ahead,
                                             Terrain::ShadowAnchor& anchor) {
         constexpr int shadow_texels = 2048;
-        const Vec3 wanted = position_value (camera + horizontal * look_ahead);
+        const position_t wanted = camera + quantity_cast<isq::position_vector> (
+                                             along (horizontal, look_ahead));
+        // The light's frame is matrix arithmetic, on the directions' lanes.
+        const Vec3& sun_dir = direction_value (sun);
+        const Vec3& pole = direction_value (pole_way);
         const float reach = radius.numerical_value_in (u::m);
         const Vec3 light_forward = normalized (-sun_dir);
         Vec3 light_right = cross (light_forward, pole);
@@ -244,29 +266,37 @@ namespace moppe {
         light_right = normalized (light_right);
         const Vec3 light_up = cross (light_right, light_forward);
 
-        const double texel = 2.0 * reach / shadow_texels;
-        const std::array<double, 3> start =
+        const meters_f64_t texel = 2.0 * meters_f64_t (radius) / shadow_texels;
+        // Each lane of where the cascade wants to be, in double precision.
+        const auto lane = [&] (std::size_t i) -> meters_f64_t {
+          return static_cast<double> (position_value (wanted)[i]) * u::m;
+        };
+        const std::array<meters_f64_t, 3> start =
           anchor ? *anchor
-                 : std::array<double, 3> { wanted[0], wanted[1], wanted[2] };
-        const auto along = [&] (const Vec3& axis) {
-          double sum = 0.0;
+                 : std::array<meters_f64_t, 3> { lane (0), lane (1), lane (2) };
+        const auto along_axis = [&] (const Vec3& axis) {
+          meters_f64_t sum = 0.0 * u::m;
           for (std::size_t i = 0; i < 3; ++i)
-            sum += (static_cast<double> (wanted[i]) - start[i]) *
-                   static_cast<double> (axis[i]);
+            sum += (lane (i) - start[i]) * static_cast<double> (axis[i]);
           return sum;
         };
-        const double right_steps = std::round (along (light_right) / texel);
-        const double up_steps = std::round (along (light_up) / texel);
-        const double forward_way = along (light_forward);
-        std::array<double, 3> walked;
+        const auto steps = [&] (const Vec3& axis) {
+          return std::round (
+            (along_axis (axis) / texel).numerical_value_in (one));
+        };
+        const double right_steps = steps (light_right);
+        const double up_steps = steps (light_up);
+        const meters_f64_t forward_way = along_axis (light_forward);
+        std::array<meters_f64_t, 3> walked;
         for (std::size_t i = 0; i < 3; ++i)
           walked[i] = start[i] + right_steps * texel * light_right[i] +
                       up_steps * texel * light_up[i] +
                       forward_way * light_forward[i];
         anchor = walked;
-        const Vec3 centre (static_cast<float> (walked[0]),
-                           static_cast<float> (walked[1]),
-                           static_cast<float> (walked[2]));
+        const auto narrowed = [&] (std::size_t i) {
+          return static_cast<float> (walked[i].numerical_value_in (u::m));
+        };
+        const Vec3 centre (narrowed (0), narrowed (1), narrowed (2));
 
         const Vec3 light_position = centre + sun_dir * (reach * 4.0f);
         const Mat4 view = Mat4::look_at (light_position, centre, light_up);
@@ -280,15 +310,13 @@ namespace moppe {
 
     void Terrain::render_local_shadow (render::Renderer& r,
                                        position_t camera,
-                                       const Vec3& view_dir,
-                                       const Vec3& sun_dir,
-                                       const Vec3& sky_pole) {
+                                       const direction_t& view_dir,
+                                       const direction_t& sun_dir,
+                                       const direction_t& sky_pole) {
       MOPPE_PROFILE_ZONE ("Terrain::render_local_shadow");
-      Vec3 horizontal (view_dir[0], 0.0f, view_dir[2]);
-      if (length2 (horizontal) < 1e-6f)
-        horizontal = Vec3 (0, 0, 1);
-      else
-        horizontal = normalized (horizontal);
+      const Vec3 level = lift (plan (direction_value (view_dir)));
+      const direction_t horizontal = unit_direction (
+        length2 (level) < 1e-6f ? Vec3 (0, 0, 1) : normalized (level));
 
       // The near cascade keeps the rider's surroundings sharp; the far one,
       // ten times coarser, reaches out to where the haze closes, mostly
@@ -312,73 +340,102 @@ namespace moppe {
     }
 
     void Terrain::render (render::Renderer& r,
-                          const Vec3& cam,
+                          position_t cam,
                           const Mat4& view_proj,
-                          float max_dist) {
+                          meters_t max_dist) {
       m_draws.clear ();
       const SidePlanes frustum (view_proj);
-      constexpr float frustum_margin = 1.0f;
+      constexpr meters_t frustum_margin = 1.0f * u::m;
+      const plan_position_t eye = plan (cam);
+      const meters_t period_x = plan_value (m_period).x () * u::m;
+      const meters_t period_z = plan_value (m_period).z () * u::m;
 
       // The level for a box whose nearest point is `nearest` away, and the
       // draw that renders it.
-      const auto lod_for = [&] (float nearest) {
+      const auto lod_for = [&] (meters_t nearest) {
         for (int level = 0; level < LOD_COUNT - 1; ++level)
           if (nearest < LOD_END[level] * m_lod_scale)
             return level;
         return LOD_COUNT - 1;
       };
-      const auto emit =
-        [&] (int x0, int z0, int cells, int lod, const Vec3& offset) {
-          render::ChunkDraw draw;
-          draw.x0 = (uint16_t)x0;
-          draw.z0 = (uint16_t)z0;
-          draw.cells = (uint16_t)cells;
-          draw.lod = (render::TerrainLod)lod;
-          draw.morph_start =
-            lod < LOD_COUNT - 1 ? LOD_MORPH_START[lod] * m_lod_scale : 0.0f;
-          draw.morph_end =
-            lod < LOD_COUNT - 1 ? LOD_END[lod] * m_lod_scale : 0.0f;
-          draw.offset_x = offset[0];
-          draw.offset_z = offset[2];
-          m_draws.push_back (draw);
-        };
+      const auto emit = [&] (int x0,
+                             int z0,
+                             int cells,
+                             int lod,
+                             meters_t offset_x,
+                             meters_t offset_z) {
+        render::ChunkDraw draw;
+        draw.x0 = (uint16_t)x0;
+        draw.z0 = (uint16_t)z0;
+        draw.cells = (uint16_t)cells;
+        draw.lod = (render::TerrainLod)lod;
+        draw.morph_start = lod < LOD_COUNT - 1
+                             ? meters_value (LOD_MORPH_START[lod] * m_lod_scale)
+                             : 0.0f;
+        draw.morph_end = lod < LOD_COUNT - 1
+                           ? meters_value (LOD_END[lod] * m_lod_scale)
+                           : 0.0f;
+        draw.offset_x = meters_value (offset_x);
+        draw.offset_z = meters_value (offset_z);
+        m_draws.push_back (draw);
+      };
       // Horizontal distance from the camera to the nearest point of a
       // world-space rectangle.
-      const auto nearest_to = [&] (float x0, float z0, float x1, float z1) {
-        const float dx = std::max ({ 0.0f, x0 - cam[0], cam[0] - x1 });
-        const float dz = std::max ({ 0.0f, z0 - cam[2], cam[2] - z1 });
-        return std::sqrt (dx * dx + dz * dz);
+      const auto nearest_to =
+        [&] (meters_t x0, meters_t z0, meters_t x1, meters_t z1) {
+          const meters_t dx =
+            std::max ({ 0.0f * u::m, x0 - x_of (eye), x_of (eye) - x1 });
+          const meters_t dz =
+            std::max ({ 0.0f * u::m, z0 - z_of (eye), z_of (eye) - z1 });
+          return sqrt (dx * dx + dz * dz);
+        };
+      // How many whole periods from `from` to `to`, rounded by `whole`.
+      const auto tiles = [] (auto whole, meters_t span, meters_t period) {
+        return static_cast<int> (
+          whole ((span / period).numerical_value_in (one)));
       };
+      const auto up = [] (float value) { return std::ceil (value); };
+      const auto down = [] (float value) { return std::floor (value); };
 
-      const float chunk_x = CHUNK * m_scale[0];
-      const float chunk_z = CHUNK * m_scale[2];
-      const float patch_x = PATCH * m_scale[0];
-      const float patch_z = PATCH * m_scale[2];
+      const meters_t chunk_x = CHUNK * m_cell_x;
+      const meters_t chunk_z = CHUNK * m_cell_z;
+      const meters_t patch_x = PATCH * m_cell_x;
+      const meters_t patch_z = PATCH * m_cell_z;
       for (size_t i = 0; i < m_chunks.size (); ++i) {
         const Chunk& c = m_chunks[i];
-        const float reach = max_dist + c.radius;
-        const int min_tile_x = static_cast<int> (
-          std::ceil ((cam[0] - reach - c.center[0]) / m_period[0]));
-        const int max_tile_x = static_cast<int> (
-          std::floor ((cam[0] + reach - c.center[0]) / m_period[0]));
-        const int min_tile_z = static_cast<int> (
-          std::ceil ((cam[2] - reach - c.center[2]) / m_period[2]));
-        const int max_tile_z = static_cast<int> (
-          std::floor ((cam[2] + reach - c.center[2]) / m_period[2]));
+        const meters_t reach = max_dist + c.radius;
+        const plan_position_t centre = plan (c.center);
+        const int min_tile_x =
+          tiles (up, x_of (eye) - reach - x_of (centre), period_x);
+        const int max_tile_x =
+          tiles (down, x_of (eye) + reach - x_of (centre), period_x);
+        const int min_tile_z =
+          tiles (up, z_of (eye) - reach - z_of (centre), period_z);
+        const int max_tile_z =
+          tiles (down, z_of (eye) + reach - z_of (centre), period_z);
 
         for (int tile_z = min_tile_z; tile_z <= max_tile_z; ++tile_z)
           for (int tile_x = min_tile_x; tile_x <= max_tile_x; ++tile_x) {
-            const Vec3 offset (tile_x * m_period[0], 0, tile_z * m_period[2]);
-            const Vec3 d = c.center + offset - cam;
+            const meters_t offset_x = tile_x * period_x;
+            const meters_t offset_z = tile_z * period_z;
+            const displacement_t offset = displacement (
+              lift (plan_value (plan_displacement (offset_x, offset_z))));
+            const displacement_t d =
+              (c.center + quantity_cast<isq::position_vector> (offset)) - cam;
 
             // Too far: the haze has swallowed it.
-            if (length2 (d) > reach * reach)
+            if (length2 (displacement_value (d)) * u::m * u::m > reach * reach)
               continue;
 
-            const float x0 = c.x0 * m_scale[0] + offset[0];
-            const float z0 = c.z0 * m_scale[2] + offset[2];
-            if (!frustum.admits (Vec3 (x0, c.ymin, z0),
-                                 Vec3 (x0 + chunk_x, c.ymax, z0 + chunk_z),
+            const meters_t x0 = c.x0 * m_cell_x + offset_x;
+            const meters_t z0 = c.z0 * m_cell_z + offset_z;
+            // The box from a corner on the plan up to two elevations.
+            const auto corner =
+              [] (meters_t x, meters_t z, terrain::SurfaceElevation y) {
+                return terrain::at_elevation (plan_position (x, z), y);
+              };
+            if (!frustum.admits (corner (x0, z0, c.ymin),
+                                 corner (x0 + chunk_x, z0 + chunk_z, c.ymax),
                                  frustum_margin + c.wave_reach))
               continue;
 
@@ -387,7 +444,7 @@ namespace moppe {
             const int lod =
               lod_for (nearest_to (x0, z0, x0 + chunk_x, z0 + chunk_z));
             if (lod != (int)render::TerrainLod::Subdivided) {
-              emit (c.x0, c.z0, CHUNK, lod, offset);
+              emit (c.x0, c.z0, CHUNK, lod, offset_x, offset_z);
               continue;
             }
 
@@ -400,12 +457,12 @@ namespace moppe {
             // morphed fully onto the native surface there.
             for (int pz = 0; pz < PATCHES; ++pz)
               for (int px = 0; px < PATCHES; ++px) {
-                const float px0 = x0 + px * patch_x;
-                const float pz0 = z0 + pz * patch_z;
+                const meters_t px0 = x0 + px * patch_x;
+                const meters_t pz0 = z0 + pz * patch_z;
                 const int k = pz * PATCHES + px;
                 if (!frustum.admits (
-                      Vec3 (px0, c.patch_ymin[k], pz0),
-                      Vec3 (px0 + patch_x, c.patch_ymax[k], pz0 + patch_z),
+                      corner (px0, pz0, c.patch_ymin[k]),
+                      corner (px0 + patch_x, pz0 + patch_z, c.patch_ymax[k]),
                       frustum_margin + c.wave_reach))
                   continue;
                 emit (
@@ -413,7 +470,8 @@ namespace moppe {
                   c.z0 + pz * PATCH,
                   PATCH,
                   lod_for (nearest_to (px0, pz0, px0 + patch_x, pz0 + patch_z)),
-                  offset);
+                  offset_x,
+                  offset_z);
               }
           }
       }

@@ -695,7 +695,7 @@ namespace moppe::game {
       if (best && r > 380.0f)
         break;
     }
-    Vec3 heading = lot.ground.trail_heading ();
+    Vec3 heading = direction_value (lot.ground.trail_heading ());
     Vec3 at;
     if (best) {
       at = *best;

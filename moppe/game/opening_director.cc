@@ -117,7 +117,7 @@ namespace moppe::game {
 
   std::vector<OpeningShot> OpeningDirector::generated (
     const WorldGround& ground, const Vec3& home_base, const Vec3& spawn) {
-    const Vec3 along = ground.trail_heading ();
+    const Vec3 along = direction_value (ground.trail_heading ());
     Vec3 eye = home_base + along * 20.0f;
     eye[1] = ground.height (eye) + 3.6f;
     Vec3 look = spawn - eye;

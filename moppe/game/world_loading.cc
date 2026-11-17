@@ -70,7 +70,7 @@ namespace moppe::game {
     struct Shared {
       std::string title;
       std::string detail;
-      float progress = -1.0f;
+      std::optional<proportion_t> progress;
       std::vector<LoadingEvent> events;
       std::unique_ptr<GeneratedWorld> completed_world;
     };
@@ -87,14 +87,16 @@ namespace moppe::game {
               "Preparing terrain storage and compute");
     }
 
-    float elapsed () const {
+    seconds_t elapsed () const {
       return static_cast<float> (
-        (platform::now () - clock_start).numerical_value_in (u::s));
+               (platform::now () - clock_start).numerical_value_in (u::s)) *
+             u::s;
     }
 
-    void
-    report (std::string title, std::string detail, float progress = -1.0f) {
-      const double now = elapsed ();
+    void report (std::string title,
+                 std::string detail,
+                 std::optional<proportion_t> progress = std::nullopt) {
+      const seconds_t now = elapsed ();
       const std::lock_guard<std::mutex> lock (mutex);
       if (shared.events.empty () || shared.events.back ().title != title)
         shared.events.push_back ({ title, now });
@@ -168,7 +170,8 @@ namespace moppe::game {
             "Running geological time",
             detail.str (),
             static_cast<float> (terrain::count_value (completed_steps)) /
-              std::max (1, terrain::count_value (total_steps)));
+              std::max (1, terrain::count_value (total_steps)) *
+              proportion[one]);
         };
 
       std::atomic<int> row_watermark { 0 };
@@ -182,7 +185,8 @@ namespace moppe::game {
         state.report ("Drawing the continents",
                       detail.str (),
                       static_cast<float> (completed_rows) /
-                        std::max<std::size_t> (1, total_rows));
+                        std::max<std::size_t> (1, total_rows) *
+                        proportion[one]);
       };
 
       std::vector<meters_per_julian_year_t> uplift = map::initialize_terrain (
@@ -250,7 +254,7 @@ namespace moppe::game {
         if (std::unique_ptr<GeneratedWorld> world =
               try_load_world_cache (job.params, recipe, bundled)) {
           std::cerr << "moppe: world cache: bundled=" << bundled << " in "
-                    << state.elapsed () << " s" << std::endl;
+                    << seconds_value (state.elapsed ()) << " s" << std::endl;
           state.publish_completed (std::move (world));
           return;
         }
@@ -428,8 +432,9 @@ namespace moppe::game {
       run_generation_job, finish_generation_job, std::move (job));
   }
 
-  void
-  WorldLoading::report (std::string title, std::string detail, float progress) {
+  void WorldLoading::report (std::string title,
+                             std::string detail,
+                             std::optional<proportion_t> progress) {
     m_state->report (std::move (title), std::move (detail), progress);
   }
 

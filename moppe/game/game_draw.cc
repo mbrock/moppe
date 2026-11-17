@@ -142,12 +142,11 @@ namespace moppe {
       if (m_graphics.terrain_shadows)
         cast_actor_shadows (r, frame);
       if (m_graphics.terrain_shadows)
-        m_terrain.render_local_shadow (
-          r,
-          frame.camera.position,
-          direction_value (frame.camera.frame_forward),
-          direction_value (frame.lighting.sun_direction),
-          direction_value (frame.lighting.sky_pole));
+        m_terrain.render_local_shadow (r,
+                                       frame.camera.position,
+                                       frame.camera.frame_forward,
+                                       frame.lighting.sun_direction,
+                                       frame.lighting.sky_pole);
       const auto draw_world_sky = [&] {
         render::SkyParams sky;
         sky.time = frame.lighting.time;
@@ -167,9 +166,9 @@ namespace moppe {
 
       // Terrain first, chunk-culled to the haze horizon.
       m_terrain.render (r,
-                        camera,
+                        frame.camera.position,
                         frame.camera.projection * frame.camera.view,
-                        meters_value (frame.terrain_distance));
+                        frame.terrain_distance);
       m_bridges.draw (r, frame.camera.position);
 
       // Sky AFTER the terrain: depth testing kills the expensive

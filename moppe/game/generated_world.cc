@@ -130,16 +130,11 @@ namespace moppe::game {
             continue;
           ++dry;
           std::size_t best = n;
-          float most = 0.15f;
+          proportion_t most = 0.15f * proportion[one];
           std::size_t s = 0;
           std::apply (
             [&] (const auto&... each) {
-              ((each[i].numerical_value_in (mp_units::one) > most
-                  ? (most = each[i].numerical_value_in (mp_units::one),
-                     best = s)
-                  : 0,
-                ++s),
-               ...);
+              ((each[i] > most ? (most = each[i], best = s) : 0, ++s), ...);
             },
             columns);
           ++leads[best];
@@ -166,7 +161,7 @@ namespace moppe::game {
       for (std::size_t i = 0; i < ground.size (); ++i)
         if (level[i] <= ground[i]) {
           ++dry;
-          bare += rock[i].numerical_value_in (mp_units::one) > 0.5f;
+          bare += rock[i] > 0.5f * map::bedrock_exposure[one];
         }
       std::cerr << "; bare rock "
                 << std::lround (100.0 * bare / std::max<std::size_t> (dry, 1))
@@ -195,17 +190,19 @@ namespace moppe::game {
     // tree line, and they do not want the same one in metres. This fraction
     // sits just under where the terrain shader begins to hold snow, so the
     // last trees thin out into the snowfields instead of ending under them.
-    constexpr float tree_line_share_of_relief = 0.62f;
-    const meters_t land_relief =
-      terrain::measure_height_range (geometry).maximum * u::m - water_level;
+    constexpr proportion_t tree_line_share_of_relief = 0.62f * proportion[one];
+    const meters_t land_relief = quantity_cast<isq::length> (
+      terrain::measure_elevation_range (geometry).maximum -
+      terrain::surface_elevation_point (water_level));
     // A near-flat world (the grass laboratory's rolling plain, or any
     // low-forcing recipe) still deserves a terrestrial habitat band: clamp
     // the tree line above the analysis floor instead of refusing to finish
     // the world. Everything on such a plain simply lies below the trees'
     // altitude limit, which is the truthful reading.
-    const meters_t tree_line =
-      std::max (water_level + tree_line_share_of_relief * land_relief,
-                water_level + 21.0f * u::m);
+    const meters_t tree_line = std::max<meters_t> (
+      water_level +
+        quantity_cast<isq::length> (tree_line_share_of_relief * land_relief),
+      water_level + 21.0f * u::m);
     map::TreeHabitatMap habitat =
       map::analyze_tree_habitat (geometry, moisture, water_level, tree_line);
     map::DisturbanceMap disturbance = map::undisturbed (geometry.domain ());

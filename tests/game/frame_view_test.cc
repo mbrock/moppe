@@ -186,11 +186,11 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
     1e-6f);
   frame_view_check_vector (position_value (first.environment.camera_pos),
                            position_value (first.camera.position));
-  frame_view_check_vector (first.environment.cam_right,
+  frame_view_check_vector (direction_value (first.environment.cam_right),
                            direction_value (first.camera.right));
-  frame_view_check_vector (first.environment.cam_up,
+  frame_view_check_vector (direction_value (first.environment.cam_up),
                            direction_value (first.camera.up));
-  frame_view_check_vector (first.environment.cam_forward,
+  frame_view_check_vector (direction_value (first.environment.cam_forward),
                            direction_value (first.camera.frame_forward));
 }
 
@@ -315,11 +315,11 @@ MOPPE_TEST (frame_view_applies_shake_to_the_reading_not_the_camera_body) {
     !frame_view_same_matrix (shaken.camera.view, steady.camera.view));
   MOPPE_CHECK (length2 (direction_value (shaken.camera.frame_forward) -
                         direction_value (steady.camera.frame_forward)) > 1e-7f);
-  frame_view_check_vector (shaken.environment.cam_right,
+  frame_view_check_vector (direction_value (shaken.environment.cam_right),
                            direction_value (shaken.camera.right));
-  frame_view_check_vector (shaken.environment.cam_up,
+  frame_view_check_vector (direction_value (shaken.environment.cam_up),
                            direction_value (shaken.camera.up));
-  frame_view_check_vector (shaken.environment.cam_forward,
+  frame_view_check_vector (direction_value (shaken.environment.cam_forward),
                            direction_value (shaken.camera.frame_forward));
 }
 

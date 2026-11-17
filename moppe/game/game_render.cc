@@ -96,7 +96,7 @@ namespace moppe {
       sun_light_colors_for (
         loading_sun_height, fp.sun_diffuse, fp.sun_specular);
       fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
-      fp.time = loading.elapsed * u::s;
+      fp.time = loading.elapsed;
       fp.exposure_bias = 1.0f * scale_factor[one];
       fp.sun_visibility = 0.32f * proportion[one];
       if (!r.begin_frame (fp)) {
@@ -182,14 +182,17 @@ namespace moppe {
         const float rail_y = bottom - 44.0f;
         m_heads_up.dl.color (0.96f, 0.96f, 0.96f, 0.16f);
         fill_rect (left, rail_y, content_width, 1.0f);
-        if (loading.progress >= 0.0f) {
+        if (loading.progress) {
+          const proportion_t done = *loading.progress;
           m_heads_up.dl.color (0.96f, 0.96f, 0.96f, 0.78f);
           fill_rect (left,
                      rail_y,
-                     content_width * std::clamp (loading.progress, 0.0f, 1.0f),
+                     content_width *
+                       std::clamp (done.numerical_value_in (one), 0.0f, 1.0f),
                      1.0f);
           std::ostringstream percent;
-          percent << static_cast<int> (std::lround (loading.progress * 100.0f))
+          percent << static_cast<int> (
+                       std::lround (done.numerical_value_in (one) * 100.0f))
                   << '%';
           m_heads_up.hud.draw_shaded (m_heads_up.text,
                                       left + content_width,
@@ -206,8 +209,9 @@ namespace moppe {
         for (std::size_t i = history_begin; i < history_end; ++i) {
           const LoadingEvent& event = loading.events[i];
           std::ostringstream line;
-          line << std::fixed << std::setprecision (1) << event.elapsed
-               << " s   " << event.title;
+          line << std::fixed << std::setprecision (1)
+               << event.elapsed.numerical_value_in (si::second) << " s   "
+               << event.title;
           m_heads_up.hud.draw_shaded (m_heads_up.text,
                                       left,
                                       line_y,
