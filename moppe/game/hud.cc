@@ -1254,9 +1254,20 @@ namespace moppe {
         live.push_back (who (group));
       for (unsigned members : live)
         if (std::ranges::none_of (
-              m_markers, [&] (const Marker& m) { return m.who == members; }))
-          m_markers.push_back (
-            { members, m_markers.empty () ? 1.0f : 0.0f, true });
+              m_markers, [&] (const Marker& m) { return m.who == members; })) {
+          // A group that has gained or lost a member takes over the
+          // marker of the group it was, as far faded in, rather than
+          // fading in under its fading copy: the same name is never
+          // drawn twice.
+          float alpha = m_markers.empty () ? 1.0f : 0.0f;
+          std::erase_if (m_markers, [&] (const Marker& m) {
+            if (!(m.who & members) || std::ranges::count (live, m.who))
+              return false;
+            alpha = std::max (alpha, m.alpha);
+            return true;
+          });
+          m_markers.push_back ({ members, alpha, true });
+        }
       for (Marker& marker : m_markers) {
         marker.live = std::ranges::count (live, marker.who) > 0;
         marker.alpha =
