@@ -31,15 +31,16 @@ namespace moppe {
       if (m_opening.take_cut ())
         r.reset_temporal_state ();
 
-      const bool captured = m_capture.before_frame (
-        r,
-        frame,
-        static_cast<float> (seconds_into_play (logic ().m_total_time)),
-        m_sky.sky ().sun_height,
-        m_opening.active ());
+      const bool captured =
+        m_capture.before_frame (r,
+                                frame,
+                                seconds (static_cast<float> (
+                                  seconds_into_play (logic ().m_total_time))),
+                                m_sky.sky ().sun_height * proportion[one],
+                                m_opening.active ());
       render::FrameParams params = frame_params_for (frame);
       if (!m_capture.keeping_pace ())
-        params.frame_rate_target = 0.0f;
+        params.frame_rate_target = 0.0f * u::Hz;
       if (!r.begin_frame (params))
         return;
 
@@ -73,8 +74,8 @@ namespace moppe {
 
       // A fixed camera watching the sky is the whole scene; the panel
       // below carries the actual information.
-      const Vec3 eye (0.0f, 34.0f, 0.0f);
-      const Vec3 target (0.0f, 27.0f, -100.0f);
+      const position_t eye = position (Vec3 (0.0f, 34.0f, 0.0f));
+      const position_t target = position (Vec3 (0.0f, 27.0f, -100.0f));
       render::FrameParams fp;
       // The loading screen sizes the same render targets the game will use.
       // Leaving the budget off here would build a full-drawable set only to
@@ -82,21 +83,22 @@ namespace moppe {
       fp.scene_scale = m_graphics.scene_scale;
       fp.render_scale_override = m_graphics.render_scale_override;
       fp.scene_megapixel_budget = m_graphics.scene_megapixel_budget;
-      fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
+      fp.view = Mat4::look_at (
+        position_value (eye), position_value (target), Vec3 (0, 1, 0));
       fp.proj = Mat4::perspective_reversed (64.0f * u::deg,
                                             width / std::max (1.0f, height),
                                             render::camera_near_m,
                                             render::camera_far_m);
       fp.camera_pos = eye;
-      constexpr float loading_sun_height = 0.70f;
+      const proportion_t loading_sun_height = 0.70f * proportion[one];
       fp.clear_color = horizon_color_for (loading_sun_height);
-      fp.sun_dir = normalized (Vec3 (0.82f, 0.58f, 0.0f));
+      fp.sun_dir = direction_of (displacement (Vec3 (0.82f, 0.58f, 0.0f)));
       sun_light_colors_for (
         loading_sun_height, fp.sun_diffuse, fp.sun_specular);
       fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
-      fp.time = loading.elapsed;
-      fp.exposure_bias = 1.0f;
-      fp.sun_visibility = 0.32f;
+      fp.time = loading.elapsed * u::s;
+      fp.exposure_bias = 1.0f * scale_factor[one];
+      fp.sun_visibility = 0.32f * proportion[one];
       if (!r.begin_frame (fp)) {
         // The world must not be dropped just because no frame started.
         if (completed)
@@ -105,9 +107,9 @@ namespace moppe {
       }
 
       render::SkyParams sky;
-      sky.time = loading.elapsed;
+      sky.time = fp.time;
       sky.sun_height = loading_sun_height;
-      sky.cloudiness = 0.14f;
+      sky.cloudiness = 0.14f * proportion[one];
       sky.sun_dir = fp.sun_dir;
       sky.fog_color = fp.clear_color;
       r.draw_sky (sky);

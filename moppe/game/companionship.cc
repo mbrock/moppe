@@ -50,18 +50,16 @@ namespace moppe::game {
     if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
     if (state.m_doing == Doing::on_foot ())
-      mine.walker = walker_pose (
-        session.walker (), state.m_look_pitch.numerical_value_in (u::rad));
+      mine.walker = walker_pose (session.walker (), state.m_look_pitch);
     // On the bus, where they sit, which is all the other game can know of
     // a bus on another clock.
     if (state.m_doing == Doing::on_the_bus ()) {
       mine.bus = state.m_bus;
       mine.bus_seat = state.m_bus_seat;
-      mine.walker = walker_pose (
-        session.walker (), state.m_look_pitch.numerical_value_in (u::rad));
-      mine.walker->position = position_value (state.m_seat_position);
-      mine.walker->heading = direction_value (state.m_seat_heading);
-      mine.walker->velocity = velocity_value (state.m_seat_velocity);
+      mine.walker = walker_pose (session.walker (), state.m_look_pitch);
+      mine.walker->position = state.m_seat_position;
+      mine.walker->heading = state.m_seat_heading;
+      mine.walker->velocity = state.m_seat_velocity;
     }
     const Camp& camp = state.m_camp;
     mine.hung = camp.hung;
@@ -172,19 +170,19 @@ namespace moppe::game {
       MachineBody body;
       body.machine = machine;
       visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
-        body.position = pose.position;
+        body.position = position_value (pose.position);
         if constexpr (requires { pose.render_orientation; }) {
-          body.forward = pose.render_orientation;
-          body.up = pose.render_normal;
+          body.forward = direction_value (pose.render_orientation);
+          body.up = direction_value (pose.render_normal);
         } else {
-          body.forward = pose.forward;
-          body.up = pose.up;
+          body.forward = direction_value (pose.forward);
+          body.up = direction_value (pose.up);
         }
         if constexpr (requires { pose.trailer_position; }) {
           body.towing = true;
-          body.towed_position = pose.trailer_position;
-          body.towed_forward = pose.trailer_forward;
-          body.towed_up = pose.trailer_up;
+          body.towed_position = position_value (pose.trailer_position);
+          body.towed_forward = direction_value (pose.trailer_forward);
+          body.towed_up = direction_value (pose.trailer_up);
           body.towed_mass = session.tractor ().trailer_mass ();
         }
       });
@@ -204,11 +202,11 @@ namespace moppe::game {
     strangers_were = were;
     // What says how it moves is believed over what was seen to.
     strangers[static_cast<std::size_t> (Machine::jeep)].velocity =
-      theirs.fleet.jeep.velocity;
+      velocity_value (theirs.fleet.jeep.velocity);
     strangers[static_cast<std::size_t> (Machine::boat)].velocity =
-      theirs.fleet.boat.velocity;
+      velocity_value (theirs.fleet.boat.velocity);
     strangers[static_cast<std::size_t> (Machine::jet_ski)].velocity =
-      theirs.fleet.jet_ski.velocity;
+      velocity_value (theirs.fleet.jet_ski.velocity);
   }
 
   std::optional<CompanionSnapshot>
@@ -313,14 +311,11 @@ namespace moppe::game {
     if (const std::optional<Machine> seat = passenger_in (logic.m_doing);
         seat && logic.m_cam_mode != CAM_HELMET)
       riders[static_cast<std::size_t> (*seat)].passenger = outfit;
-    draw_fleet ({ .r = r,
-                  .dl = dl,
-                  .time = seconds_value (time),
-                  .blob = &blob,
-                  .surface = &surface },
-                theirs.fleet,
-                riders,
-                true);
+    draw_fleet (
+      { .r = r, .dl = dl, .time = time, .blob = &blob, .surface = &surface },
+      theirs.fleet,
+      riders,
+      true);
     if (theirs.hung)
       draw_hammock (dl,
                     theirs.hammock,
@@ -361,18 +356,21 @@ namespace moppe::game {
                    hammock_across (theirs.hammock) * 0.75f -
                    hammock_along (theirs.hammock) * 0.5f;
       floor[1] = ground.height (floor);
-      render_basket_set_down (
-        dl, floor, hammock_along (theirs.hammock), basket);
+      render_basket_set_down (dl,
+                              position (floor),
+                              unit_direction (hammock_along (theirs.hammock)),
+                              basket);
     } else if (theirs.walker && theirs.mode != Doing::on_the_bus ()) {
-      blob.draw (
-        dl, surface, theirs.walker->position + Vec3 (0, 0.5f, 0), 0.8f);
-      render_walker (
-        dl, *theirs.walker, seconds_value (time), basket, their_outfit ());
+      blob.draw (dl,
+                 surface,
+                 theirs.walker->position + quantity_cast<isq::position_vector> (
+                                             displacement (Vec3 (0, 0.5f, 0))),
+                 0.8f * u::m);
+      render_walker (dl, *theirs.walker, time, basket, their_outfit ());
     }
     if (theirs.glider) {
-      blob.draw (dl, surface, theirs.glider->position, 3.4f);
-      render_glider (
-        r, dl, *theirs.glider, seconds_value (time), 0x4000, their_outfit ());
+      blob.draw (dl, surface, theirs.glider->position, 3.4f * u::m);
+      render_glider (r, dl, *theirs.glider, time, 0x4000, their_outfit ());
     }
   }
 
@@ -384,16 +382,17 @@ namespace moppe::game {
     theirs.hearth = companion->hearth;
     const Vec3 lamp = fire_light_position (theirs);
     FrameLighting& lighting = frame.lighting;
-    if (lighting.lamp_reach > 0.0f &&
-        length2 (lighting.lamp_position - frame.camera.position) <=
-          length2 (lamp - frame.camera.position))
+    const Vec3& camera = position_value (frame.camera.position);
+    if (lighting.lamp_reach > 0.0f * u::m &&
+        length2 (position_value (lighting.lamp_position) - camera) <=
+          length2 (lamp - camera))
       return;
-    lighting.lamp_position = lamp;
-    lighting.lamp_reach = meters_value (fire_light_reach);
+    lighting.lamp_position = position (lamp);
+    lighting.lamp_reach = fire_light_reach;
     lighting.lamp_color = scale_display (
       fire_light_color (companion->fire_burn.numerical_value_in (one),
-                        lighting.time),
-      1.0f - 0.25f * lighting.daylight);
+                        seconds_value (lighting.time)),
+      1.0f - 0.25f * lighting.daylight.numerical_value_in (one));
   }
 
   void Companionship::add_readings (HudState& state,

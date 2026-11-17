@@ -14,7 +14,8 @@ namespace moppe {
         : m_params (bind_world_params (options.world, recipe)),
           m_recipe (std::move (recipe)),
           m_loading (this->recipe (), options.world_cache),
-          m_graphics (options.graphics), m_sky (m_graphics.sun_height),
+          m_graphics (options.graphics),
+          m_sky (m_graphics.sun_height.numerical_value_in (one)),
           m_spawn_position (position_value (this->world ().spawn_position ())),
           m_renderer (0), m_capture (options.screenshot_path), m_ready (false) {
       if (options.multiplayer)
@@ -266,8 +267,8 @@ namespace moppe {
     FrameViewInput MoppeGame::frame_view_input (float aspect) const {
       FrameSceneMode scene = FrameSceneMode::Gameplay;
       FrameCameraReading camera = {
-        .position = session ().camera ().position (),
-        .forward = session ().camera ().forward (),
+        .position = position (session ().camera ().position ()),
+        .forward = unit_direction (session ().camera ().forward ()),
         .view = session ().camera ().view_matrix (),
         .field_of_view = 70.0f * u::deg,
       };
@@ -284,9 +285,9 @@ namespace moppe {
         .graphics = m_graphics,
         .selected_camera = camera,
         .scene = scene,
-        .aspect = aspect,
-        .cinematic_motion_blur = m_opening.motion_blur (),
-        .cinematic_elapsed = m_opening.elapsed (),
+        .aspect = aspect * aspect_ratio[one],
+        .cinematic_motion_blur = m_opening.motion_blur () * proportion[one],
+        .cinematic_elapsed = m_opening.elapsed () * u::s,
         .reveal_player = m_opening.reveal_player (),
         .capture_field_of_view =
           m_capture_camera.lens () && !cinematic
@@ -299,8 +300,9 @@ namespace moppe {
 
     void MoppeGame::update_frame_flare () {
       const FrameView frame = compose_frame_view (frame_view_input (1.0f));
-      const float target = sun_visibility_target (frame, world (), surface ());
-      logic ().m_flare += (target * proportion[one] - logic ().m_flare) * 0.12f;
+      const proportion_t target =
+        sun_visibility_target (frame, world (), surface ());
+      logic ().m_flare += (target - logic ().m_flare) * 0.12f;
     }
 
     void MoppeGame::leave_cinematic () {

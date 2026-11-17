@@ -15,6 +15,12 @@ namespace moppe {
     public:
       void load (render::Renderer& r);
 
+      // The disc on the ground under `pos`, of `radius` while it is low.
+      void draw (render::DrawList& dl,
+                 const map::SurfaceGeometry& surface,
+                 const position_t& pos,
+                 meters_t radius);
+      // For callers still holding a plain vector and metres (game_draw.cc).
       void draw (render::DrawList& dl,
                  const map::SurfaceGeometry& surface,
                  const Vec3& pos,

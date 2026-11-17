@@ -37,8 +37,8 @@ namespace moppe::game {
       // after being tipped about its left (mov::Boat::tail_point).
       Mat4 tail_frame (const BoatPose& boat, const Mat4& frame) {
         return frame * Mat4::translation (boat_model::pivot) *
-               Mat4::rotation (boat.swing_radians * u::rad, Vec3 (0, 1, 0)) *
-               Mat4::rotation (boat.tilt_radians * u::rad, Vec3 (1, 0, 0));
+               Mat4::rotation (boat.swing, Vec3 (0, 1, 0)) *
+               Mat4::rotation (boat.tilt, Vec3 (1, 0, 0));
       }
 
       // The helmsman on the after seat, the right hand on the tiller's
@@ -139,11 +139,12 @@ namespace moppe::game {
                     std::optional<Outfit> helmsman,
                     uint64_t motion_base,
                     const std::optional<RodPose>& rod,
-                    float time,
+                    seconds_t time,
                     std::optional<Outfit> passenger) {
     const BoatMeshes& meshes = boat_meshes (r);
-    const Mat4 frame =
-      model_mesh::body_frame (boat.position, boat.forward, boat.up);
+    const Mat4 frame = model_mesh::body_frame (position_value (boat.position),
+                                               direction_value (boat.forward),
+                                               direction_value (boat.up));
     const Mat4 tail = tail_frame (boat, frame);
     if (passenger)
       figure::draw (dl, pose_passenger (frame), *passenger);
@@ -152,7 +153,7 @@ namespace moppe::game {
       if (helmsman)
         figure::draw (dl, k, *helmsman);
       if (rod)
-        draw_rod (dl, k, *rod, time);
+        draw_rod (dl, k, *rod, seconds_value (time));
     }
 
     r.draw_mesh (*meshes.hull, frame, motion_base + 1);
@@ -162,59 +163,70 @@ namespace moppe::game {
     const Vec3 shaft = normalized (boat_model::pivot - boat_model::hub);
     const Vec3 side = normalized (cross (Vec3 (0, 1, 0), shaft));
     const Vec3 over = cross (shaft, side);
-    r.draw_mesh (
-      *meshes.propeller,
-      tail * Mat4::translation (boat_model::hub - boat_model::pivot) *
-        Mat4::basis (side, over, shaft) *
-        Mat4::rotation (boat.propeller_radians * u::rad, Vec3 (0, 0, 1)),
-      motion_base + 3);
+    r.draw_mesh (*meshes.propeller,
+                 tail *
+                   Mat4::translation (boat_model::hub - boat_model::pivot) *
+                   Mat4::basis (side, over, shaft) *
+                   Mat4::rotation (boat.propeller, Vec3 (0, 0, 1)),
+                 motion_base + 3);
   }
 
   void BoatWake::follow (const BoatPose& boat,
-                         float water_level,
-                         float depth,
-                         float time) {
+                         meters_t water_level,
+                         meters_t depth,
+                         seconds_t time) {
     while (!m_marks.empty () && time - m_marks.front ().time > lasts)
       m_marks.pop_front ();
     if (!m_marks.empty () && m_marks.back ().time > time)
       m_marks.clear ();
-    Vec3 ahead = boat.forward;
-    ahead[1] = 0.0f;
-    if (length2 (ahead) < 1e-6f)
+    Vec3 level_ahead = direction_value (boat.forward);
+    level_ahead[1] = 0.0f;
+    if (length2 (level_ahead) < 1e-6f)
       return;
-    ahead = normalized (ahead);
-    Vec3 stern = boat.position - ahead * 1.2f;
+    const direction_t ahead = unit_direction (normalized (level_ahead));
+    position_t stern = boat.position - quantity_cast<isq::position_vector> (
+                                         along (ahead, 1.2f * u::m));
     // Only where the stern is down in water that floats it.
-    if (stern[1] > water_level + 0.15f || depth < 0.15f) {
-      if (!m_marks.empty () && m_marks.back ().speed > 0.0f)
-        m_marks.push_back (
-          { m_marks.back ().stern, m_marks.back ().across, 0.0f, time });
+    if (position_value (stern)[1] > meters_value (water_level + 0.15f * u::m) ||
+        depth < 0.15f * u::m) {
+      if (!m_marks.empty () && m_marks.back ().speed > 0.0f * u::m / u::s)
+        m_marks.push_back ({ m_marks.back ().stern,
+                             m_marks.back ().across,
+                             0.0f * u::m / u::s,
+                             time });
       return;
     }
-    stern[1] = water_level + 0.03f;
+    position_value (stern)[1] = meters_value (water_level + 0.03f * u::m);
     if (!m_marks.empty () &&
-        length2 (stern - m_marks.back ().stern) < 0.6f * 0.6f &&
-        time - m_marks.back ().time < 0.5f)
+        length2 (displacement_value (stern - m_marks.back ().stern)) <
+          0.6f * 0.6f &&
+        time - m_marks.back ().time < 0.5f * u::s)
       return;
-    const float speed =
+    const speed_t speed =
       !m_marks.empty () && time > m_marks.back ().time
-        ? length (stern - m_marks.back ().stern) / (time - m_marks.back ().time)
-        : 0.0f;
+        ? speed_t (length (displacement_value (stern - m_marks.back ().stern)) *
+                   u::m / (time - m_marks.back ().time))
+        : speed_t (0.0f * u::m / u::s);
     // A hash of where it is for the foam, so that it does not shimmer.
-    const float hash =
-      std::sin (stern[0] * 12.9898f + stern[2] * 78.233f) * 43758.5453f;
-    const float foam = 0.25f + 0.75f * (hash - std::floor (hash));
-    m_marks.push_back ({ stern,
-                         Vec3 (ahead[2], 0.0f, -ahead[0]),
-                         std::min (speed, 20.0f),
-                         time,
-                         foam });
+    const float hash = std::sin (position_value (stern)[0] * 12.9898f +
+                                 position_value (stern)[2] * 78.233f) *
+                       43758.5453f;
+    const proportion_t foam =
+      (0.25f + 0.75f * (hash - std::floor (hash))) * proportion[one];
+    m_marks.push_back (
+      { stern,
+        unit_direction (
+          Vec3 (direction_value (ahead)[2], 0.0f, -direction_value (ahead)[0])),
+        std::min (speed, speed_t (20.0f * u::m / u::s)),
+        time,
+        foam });
   }
 
-  void BoatWake::draw (render::DrawList& dl,
-                       float time,
-                       float light,
-                       const std::function<float (const Vec3&)>& level) const {
+  void BoatWake::draw (
+    render::DrawList& dl,
+    seconds_t time,
+    proportion_t light,
+    const std::function<meters_t (const position_t&)>& level) const {
     if (m_marks.size () < 2)
       return;
     render::DrawState soft;
@@ -224,60 +236,74 @@ namespace moppe::game {
     dl.state (soft);
     dl.lit (false);
     dl.fogged (true);
-    const float shade = 0.25f + 0.7f * std::clamp (light, 0.0f, 1.0f);
+    const proportion_t shade =
+      0.25f * proportion[one] +
+      0.7f * std::clamp (light, 0.0f * proportion[one], 1.0f * proportion[one]);
+    const DisplayColor white (shade.numerical_value_in (one),
+                              shade.numerical_value_in (one),
+                              (shade * 1.02f).numerical_value_in (one));
+    const proportion_t none = 0.0f * proportion[one];
+    // Below this a strip's foam is not drawn.
+    const proportion_t faint = 0.01f * proportion[one];
     dl.begin (render::Prim::Triangles);
     // On the water as it stands now, which the waves lift and lower.
-    const auto on_water = [&] (Vec3 at) {
-      at[1] = level (at) + 0.03f;
+    const auto on_water = [&] (position_t at) {
+      position_value (at)[1] = meters_value (level (at) + 0.03f * u::m);
       return at;
     };
     // Each strip as quads between consecutive marks: `offset` places its
     // middle across the wake and `width` its breadth, by the mark's age.
-    const auto strip = [&] (auto offset, auto width, float strength) {
+    const auto strip = [&] (auto offset, auto width, proportion_t strength) {
       // Each mark's middle and edges, lifted once and shared by the quads
       // either side of it.
       const std::size_t n = m_marks.size ();
-      std::vector<float> faded (n);
+      std::vector<proportion_t> faded (n);
       for (std::size_t i = 0; i < n; ++i) {
         const WakeMark& m = m_marks[i];
-        const float age = time - m.time;
-        const float under_way =
-          std::clamp ((m.speed - 1.0f) / 4.0f, 0.0f, 1.0f);
-        const float fade = std::max (0.0f, 1.0f - age / lasts);
-        faded[i] = strength * m.foam * under_way * fade * fade * fade *
-                   std::min (1.0f, age * 4.0f + 0.3f);
+        const seconds_t age = time - m.time;
+        const proportion_t under_way = std::clamp (
+          proportion_t ((m.speed - 1.0f * u::m / u::s) / (4.0f * u::m / u::s)),
+          none,
+          1.0f * proportion[one]);
+        const proportion_t fade =
+          std::max (none, proportion_t (1.0f * proportion[one] - age / lasts));
+        const proportion_t settled =
+          std::min (1.0f, seconds_value (age) * 4.0f + 0.3f) * proportion[one];
+        faded[i] = strength * m.foam * under_way * fade * fade * fade * settled;
       }
-      std::vector<std::array<Vec3, 3>> lifted (n);
+      std::vector<std::array<position_t, 3>> lifted (n);
       for (std::size_t i = 0; i < n; ++i) {
-        const bool seen = faded[i] > 0.01f || (i > 0 && faded[i - 1] > 0.01f) ||
-                          (i + 1 < n && faded[i + 1] > 0.01f);
+        const bool seen = faded[i] > faint || (i > 0 && faded[i - 1] > faint) ||
+                          (i + 1 < n && faded[i + 1] > faint);
         if (!seen)
           continue;
         const WakeMark& m = m_marks[i];
-        const float age = time - m.time;
-        const Vec3 c = m.stern + m.across * offset (m, age);
-        const Vec3 w = m.across * (0.5f * width (m, age));
+        const seconds_t age = time - m.time;
+        const position_t c = m.stern + quantity_cast<isq::position_vector> (
+                                         along (m.across, offset (m, age)));
+        const auto w = quantity_cast<isq::position_vector> (
+          along (m.across, 0.5f * width (m, age)));
         lifted[i] = { on_water (c), on_water (c - w), on_water (c + w) };
       }
       for (std::size_t i = 0; i + 1 < m_marks.size (); ++i) {
-        const float fa = faded[i], fb = faded[i + 1];
-        if (fa <= 0.01f && fb <= 0.01f)
+        const proportion_t fa = faded[i], fb = faded[i + 1];
+        if (fa <= faint && fb <= faint)
           continue;
-        const Vec3& ca = lifted[i][0];
-        const Vec3& cb = lifted[i + 1][0];
+        const position_t& ca = lifted[i][0];
+        const position_t& cb = lifted[i + 1][0];
         // Two halves, each from the strip's middle line, where the foam
         // is thickest, out to an edge that has none.
         for (const int edge : { 1, 2 }) {
-          dl.color (shade, shade, shade * 1.02f, fa);
+          dl.color (white, fa);
           dl.vertex (ca);
-          dl.color (shade, shade, shade * 1.02f, 0.0f);
+          dl.color (white, none);
           dl.vertex (lifted[i][edge]);
           dl.vertex (lifted[i + 1][edge]);
-          dl.color (shade, shade, shade * 1.02f, fa);
+          dl.color (white, fa);
           dl.vertex (ca);
-          dl.color (shade, shade, shade * 1.02f, 0.0f);
+          dl.color (white, none);
           dl.vertex (lifted[i + 1][edge]);
-          dl.color (shade, shade, shade * 1.02f, fb);
+          dl.color (white, fb);
           dl.vertex (cb);
         }
       }
@@ -285,29 +311,34 @@ namespace moppe::game {
     // The arms spread at some 19.5 degrees (tan = 0.35) from the track.
     for (const float side : { 1.0f, -1.0f })
       strip (
-        [side] (const WakeMark& m, float age) {
-          return side * (0.75f + 0.35f * m.speed * age);
+        [side] (const WakeMark& m, seconds_t age) {
+          return side * (0.75f * u::m + 0.35f * m.speed * age);
         },
-        [] (const WakeMark&, float age) { return 0.2f + 0.15f * age; },
-        0.2f);
+        [] (const WakeMark&, seconds_t age) {
+          return 0.2f * u::m + 0.15f * u::m / u::s * age;
+        },
+        0.2f * proportion[one]);
     // The churned water behind the propeller, widening and settling.
-    strip ([] (const WakeMark&, float) { return 0.0f; },
-           [] (const WakeMark&, float age) { return 0.6f + 0.35f * age; },
-           0.26f);
+    strip ([] (const WakeMark&, seconds_t) { return 0.0f * u::m; },
+           [] (const WakeMark&, seconds_t age) {
+             return 0.6f * u::m + 0.35f * u::m / u::s * age;
+           },
+           0.26f * proportion[one]);
     dl.end ();
     dl.lit (true);
     dl.state (render::DrawState ());
   }
 
-  void BoatWakes::draw (render::Renderer& r,
-                        const BoatPose& boat,
-                        const JetSkiPose& jet_ski,
-                        const BoatPose* their_boat,
-                        const JetSkiPose* their_jet_ski,
-                        const std::function<float (const Vec3&)>& level,
-                        const std::function<float (const Vec3&)>& ground,
-                        float time,
-                        float daylight) {
+  void
+  BoatWakes::draw (render::Renderer& r,
+                   const BoatPose& boat,
+                   const JetSkiPose& jet_ski,
+                   const BoatPose* their_boat,
+                   const JetSkiPose* their_jet_ski,
+                   const std::function<meters_t (const position_t&)>& level,
+                   const std::function<meters_t (const position_t&)>& ground,
+                   seconds_t time,
+                   proportion_t daylight) {
     // The jet ski leaves a wake as a boat of its place and heading.
     const auto as_boat = [] (const JetSkiPose& ski) {
       return BoatPose { .position = ski.position,
@@ -315,7 +346,7 @@ namespace moppe::game {
                         .up = ski.up };
     };
     const auto trail = [&] (BoatWake& wake, const BoatPose& pose) {
-      const Vec3& at = pose.position;
+      const position_t& at = pose.position;
       wake.follow (pose, level (at), level (at) - ground (at), time);
       wake.draw (m_dl, time, daylight, level);
     };

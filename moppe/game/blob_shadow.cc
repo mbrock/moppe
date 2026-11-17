@@ -11,30 +11,43 @@ namespace moppe {
 
     void BlobShadow::draw (render::DrawList& dl,
                            const map::SurfaceGeometry& surface,
-                           const Vec3& pos,
-                           float radius) {
-      const float gy = terrain::surface_elevation_value (
-        spatial::sample<terrain::surface_elevation> (
-          surface, moppe::position (Vec3 (pos[0], 0.0f, pos[2]))));
-      const float h = pos[1] - gy;
-      if (h > 30.0f || h < -2.0f)
+                           const position_t& pos,
+                           meters_t radius) {
+      const position_t under = at_height (plan (pos), 0.0f * u::m);
+      const meters_t gy =
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (surface, under)) *
+        u::m;
+      const meters_t h = position_value (pos)[1] * u::m - gy;
+      if (h > 30.0f * u::m || h < -2.0f * u::m)
         return; // too high to matter (or underground somehow)
 
-      const float fade = 1.0f - std::max (0.0f, h) / 30.0f;
-      const float r = radius * (1.0f + 0.5f * (1.0f - fade));
+      const proportion_t fade =
+        (1.0f - meters_value (std::max (0.0f * u::m, h)) / 30.0f) *
+        proportion[one];
+      const meters_t r =
+        radius * (1.0f + 0.5f * (1.0f - fade.numerical_value_in (one)));
 
       // Tangent frame from the interpolated ground normal, so the
       // disc lies flat on slopes
-      Vec3 n = spatial::sample<terrain::terrain_normal> (
-                 surface, moppe::position (Vec3 (pos[0], 0.0f, pos[2])))
-                 .numerical_value_in (mp_units::one);
-      Vec3 t1 = cross (n, Vec3 (1, 0, 0));
-      if (length2 (t1) < 0.01f)
-        t1 = cross (n, Vec3 (0, 0, 1));
-      normalize (t1);
-      Vec3 t2 = cross (n, t1);
+      const direction_t n = unit_direction (
+        spatial::sample<terrain::terrain_normal> (surface, under)
+          .numerical_value_in (mp_units::one));
+      const direction_t t1 = [&] {
+        const Vec3 across = cross (direction_value (n), Vec3 (1, 0, 0));
+        return unit_direction (normalized (
+          length2 (across) < 0.01f ? cross (direction_value (n), Vec3 (0, 0, 1))
+                                   : across));
+      }();
+      const direction_t t2 =
+        unit_direction (cross (direction_value (n), direction_value (t1)));
 
-      const Vec3 c = Vec3 (pos[0], gy, pos[2]) + n * 0.14f;
+      const position_t c =
+        at_height (plan (pos), gy) +
+        quantity_cast<isq::position_vector> (along (n, 0.14f * u::m));
+      const auto offset = [] (const direction_t& way, meters_t distance) {
+        return quantity_cast<isq::position_vector> (along (way, distance));
+      };
 
       render::DrawState soft;
       soft.blend = true;
@@ -44,21 +57,28 @@ namespace moppe {
       dl.lit (false);
       dl.set_texture (m_tex.get ());
 
-      dl.color (0.0f, 0.0f, 0.0f, 0.45f * fade);
+      dl.color (DisplayColor (0.0f, 0.0f, 0.0f), 0.45f * fade);
       dl.begin (render::Prim::Quads);
       dl.uv (0, 0);
-      dl.vertex (c - t1 * r - t2 * r);
+      dl.vertex (c - offset (t1, r) - offset (t2, r));
       dl.uv (1, 0);
-      dl.vertex (c + t1 * r - t2 * r);
+      dl.vertex (c + offset (t1, r) - offset (t2, r));
       dl.uv (1, 1);
-      dl.vertex (c + t1 * r + t2 * r);
+      dl.vertex (c + offset (t1, r) + offset (t2, r));
       dl.uv (0, 1);
-      dl.vertex (c - t1 * r + t2 * r);
+      dl.vertex (c - offset (t1, r) + offset (t2, r));
       dl.end ();
 
       dl.set_texture (0);
       dl.lit (true);
       dl.state (render::DrawState ());
+    }
+
+    void BlobShadow::draw (render::DrawList& dl,
+                           const map::SurfaceGeometry& surface,
+                           const Vec3& pos,
+                           float radius) {
+      draw (dl, surface, moppe::position (pos), radius * u::m);
     }
   }
 }

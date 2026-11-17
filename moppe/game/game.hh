@@ -206,6 +206,8 @@ namespace moppe {
       // The vehicles lend their meshes to the sun's shadow before it is
       // drawn, so that they shade the ground under them and their own
       // insides; riders, skinned into a draw list, cast none.
+      terrain::ElevationField animal_ground () const;
+      plan_extent_t places_period () const;
       void cast_actor_shadows (render::Renderer& r, const FrameView& frame);
 
       void draw_world_layers (render::Renderer& r, const FrameView& frame);

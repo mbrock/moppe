@@ -63,7 +63,9 @@ MOPPE_TEST (ground_detail_slopes_are_the_grain_s_own) {
   const double count = double (detail_size) * detail_size;
   MOPPE_CHECK_NEAR (grain / count, 127.5, 2.0);
   MOPPE_CHECK_NEAR (
-    std::sqrt (squares / (2.0 * count)), 1.0 / GroundDetail::slope_range, 0.01);
+    std::sqrt (squares / (2.0 * count)),
+    1.0 / GroundDetail::slope_range.numerical_value_in (mp_units::one),
+    0.01);
 
   // The stored slope along u rises and falls with the grain's own
   // difference along u: the two are one relief.
@@ -84,7 +86,8 @@ MOPPE_TEST (ground_detail_stones_are_flat_faces_between_dark_seams) {
   // A stone's flat top is the inner part of its cell; its shoulders and
   // the seams share the rest.
   const GroundDetail detail = render::make_ground_detail ();
-  const int floor_byte = int (GroundDetail::stone_floor * 255.0f);
+  const int floor_byte =
+    int (GroundDetail::stone_floor.numerical_value_in (mp_units::one) * 255.0f);
   std::size_t faces = 0, seams = 0;
   for (int y = 0; y < detail_size; ++y)
     for (int x = 0; x < detail_size; ++x) {

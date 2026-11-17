@@ -52,23 +52,22 @@ namespace moppe::game {
                render::DrawList& dl,
                const BusLine& line,
                play_time_t now,
-               const Vec3& camera,
+               const position_t& camera,
                std::uint64_t motion_base,
                std::span<const BusRider> riders) const;
     // The same, lent to the sun's shadow.
     void cast_shadows (render::Renderer& renderer,
                        const BusLine& line,
                        play_time_t now,
-                       const Vec3& camera) const;
+                       const position_t& camera) const;
 
   private:
-    Vec3 near_copy (const Vec3& at, const Vec3& camera) const;
+    position_t near_copy (const position_t& at, const position_t& camera) const;
 
     std::vector<render::MeshPtr> m_stops;
     CarMeshes m_bus;
     std::array<render::MeshPtr, 2> m_doors;
-    float m_period_x = 0.0f;
-    float m_period_z = 0.0f;
+    plan_extent_t m_period = plan_extent (0.0f * u::m, 0.0f * u::m);
   };
 }
 

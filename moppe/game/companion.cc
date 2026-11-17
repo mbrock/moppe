@@ -115,6 +115,23 @@ namespace moppe::game {
           put (static_cast<float> (value[i]));
       }
 
+      // Typed values go on the wire as the floats behind them, in the
+      // units the poses keep them in.
+      template <Quantity Q>
+        requires std::same_as<typename Q::rep, float>
+      void put (Q value) {
+        put (value.numerical_value_in (Q::unit));
+      }
+      void put (const position_t& value) {
+        put (position_value (value));
+      }
+      void put (const direction_t& value) {
+        put (direction_value (value));
+      }
+      void put (const velocity_t& value) {
+        put (velocity_value (value));
+      }
+
     private:
       std::vector<std::uint8_t>& m_bytes;
     };
@@ -171,6 +188,18 @@ namespace moppe::game {
         return value * (1.0f / size);
       }
 
+      position_t place () {
+        return position (point ());
+      }
+
+      direction_t way (const Vec3& otherwise) {
+        return unit_direction (direction (otherwise));
+      }
+
+      velocity_t motion () {
+        return velocity (point ());
+      }
+
       bool good () const {
         return m_good;
       }
@@ -198,13 +227,31 @@ namespace moppe::game {
       return length2 (between) > 1e-6f ? normalized (between) : b;
     }
 
-    // Between two fractions of a cycle, the short way round. (The poses
-    // tell their phases and angles as plain numbers, frame_view.hh.)
+    // The same blends on typed values, through the floats behind them.
+    velocity_t
+    mix (const velocity_t& a, const velocity_t& b, blend_weight_t t) {
+      return velocity (mix (velocity_value (a), velocity_value (b), t));
+    }
+
+    direction_t mix_direction (const direction_t& a,
+                               const direction_t& b,
+                               blend_weight_t t) {
+      return unit_direction (
+        mix_direction (direction_value (a), direction_value (b), t));
+    }
+
+    // Between two fractions of a cycle, the short way round.
     float mix_phase (float a, float b, blend_weight_t t) {
       float step = b - a;
       step -= std::round (step);
       const float phase = a + step * t.numerical_value_in (one);
       return phase - std::floor (phase);
+    }
+
+    proportion_t mix_phase (proportion_t a, proportion_t b, blend_weight_t t) {
+      return mix_phase (
+               a.numerical_value_in (one), b.numerical_value_in (one), t) *
+             proportion[one];
     }
 
     // Between two angles in radians, the short way round.
@@ -213,9 +260,17 @@ namespace moppe::game {
              std::remainder (b - a, 6.2831853f) * t.numerical_value_in (one);
     }
 
+    radians_t mix_angle (radians_t a, radians_t b, blend_weight_t t) {
+      return mix_angle (radians_value (a), radians_value (b), t) * u::rad;
+    }
+
     bool leapt (const Vec3& a, const Vec3& b) {
       const square_meters_t apart = length2 (b - a) * (si::metre * si::metre);
       return apart > leap_metres * leap_metres;
+    }
+
+    bool leapt (const position_t& a, const position_t& b) {
+      return leapt (position_value (a), position_value (b));
     }
 
     // The curve from `p1` (at zero) to `p2` (at one) that leaves with
@@ -241,13 +296,13 @@ namespace moppe::game {
       out.put (bike.render_normal);
       out.put (bike.rear_wheel_drop);
       out.put (bike.front_wheel_drop);
-      out.put (bike.wheel_spin_radians);
-      out.put (bike.fork_radians);
+      out.put (bike.wheel_spin);
+      out.put (bike.fork);
       if (machine_kind (machine).pedalled) {
-        out.put (bike.crank_radians);
+        out.put (bike.crank);
         return;
       }
-      out.put (bike.lean_radians);
+      out.put (bike.lean);
       out.put (bike.thrust);
       out.put (bike.boost_level);
       out.put (bike.boost_drive);
@@ -258,10 +313,10 @@ namespace moppe::game {
       out.put (car.position);
       out.put (car.forward);
       out.put (car.up);
-      for (const float drop : car.wheel_drop)
+      for (const meters_t drop : car.wheel_drop)
         out.put (drop);
-      out.put (car.steer_radians);
-      out.put (car.wheel_spin_radians);
+      out.put (car.steer);
+      out.put (car.wheel_spin);
       out.put (car.velocity);
     }
 
@@ -269,34 +324,34 @@ namespace moppe::game {
       out.put (heli.position);
       out.put (heli.forward);
       out.put (heli.up);
-      out.put (heli.rotor_radians);
-      out.put (heli.tail_radians);
+      out.put (heli.rotor);
+      out.put (heli.tail);
     }
 
     void put (Writer& out, Machine, const TractorPose& tractor) {
       out.put (tractor.position);
       out.put (tractor.forward);
       out.put (tractor.up);
-      for (const float drop : tractor.wheel_drop)
+      for (const meters_t drop : tractor.wheel_drop)
         out.put (drop);
-      out.put (tractor.steer_radians);
-      out.put (tractor.front_spin_radians);
-      out.put (tractor.rear_spin_radians);
+      out.put (tractor.steer);
+      out.put (tractor.front_spin);
+      out.put (tractor.rear_spin);
       out.put (tractor.trailer_position);
       out.put (tractor.trailer_forward);
       out.put (tractor.trailer_up);
-      for (const float drop : tractor.trailer_wheel_drop)
+      for (const meters_t drop : tractor.trailer_wheel_drop)
         out.put (drop);
-      out.put (tractor.trailer_spin_radians);
+      out.put (tractor.trailer_spin);
     }
 
     void put (Writer& out, Machine, const BoatPose& boat) {
       out.put (boat.position);
       out.put (boat.forward);
       out.put (boat.up);
-      out.put (boat.swing_radians);
-      out.put (boat.tilt_radians);
-      out.put (boat.propeller_radians);
+      out.put (boat.swing);
+      out.put (boat.tilt);
+      out.put (boat.propeller);
       out.put (boat.rpm);
       out.put (boat.velocity);
     }
@@ -305,88 +360,90 @@ namespace moppe::game {
       out.put (ski.position);
       out.put (ski.forward);
       out.put (ski.up);
-      out.put (ski.steer_radians);
-      out.put (ski.lean_radians);
+      out.put (ski.steer);
+      out.put (ski.lean);
       out.put (ski.rpm);
       out.put (ski.velocity);
     }
 
     void get (Reader& in, Machine machine, VehiclePose& bike) {
-      bike.position = in.point ();
-      bike.render_orientation = in.direction (Vec3 (0, 0, 1));
-      bike.render_normal = in.direction (Vec3 (0, 1, 0));
-      bike.rear_wheel_drop = in.number ();
-      bike.front_wheel_drop = in.number ();
-      bike.wheel_spin_radians = in.number ();
-      bike.fork_radians = in.number ();
+      bike.position = in.place ();
+      bike.render_orientation = in.way (Vec3 (0, 0, 1));
+      bike.render_normal = in.way (Vec3 (0, 1, 0));
+      bike.rear_wheel_drop = in.number () * u::m;
+      bike.front_wheel_drop = in.number () * u::m;
+      bike.wheel_spin = in.number () * u::rad;
+      bike.fork = in.number () * u::rad;
       if (machine_kind (machine).pedalled) {
-        bike.rear_wheel_drop = std::clamp (bike.rear_wheel_drop, -0.2f, 0.2f);
-        bike.front_wheel_drop = std::clamp (bike.front_wheel_drop, -0.2f, 0.2f);
-        bike.crank_radians = in.number ();
+        bike.rear_wheel_drop =
+          std::clamp (bike.rear_wheel_drop, -0.2f * u::m, 0.2f * u::m);
+        bike.front_wheel_drop =
+          std::clamp (bike.front_wheel_drop, -0.2f * u::m, 0.2f * u::m);
+        bike.crank = in.number () * u::rad;
         return;
       }
-      bike.lean_radians = in.number ();
-      bike.thrust = in.number ();
-      bike.boost_level = in.number ();
-      bike.boost_drive = in.number ();
-      bike.rider_lean = in.number ();
+      bike.lean = in.number () * u::rad;
+      bike.thrust = in.number () * control_signal[one];
+      bike.boost_level = in.number () * proportion[one];
+      bike.boost_drive = in.number () * proportion[one];
+      bike.rider_lean = in.number () * control_signal[one];
     }
 
     void get (Reader& in, Machine, CarPose& car) {
-      car.position = in.point ();
-      car.forward = in.direction (Vec3 (0, 0, 1));
-      car.up = in.direction (Vec3 (0, 1, 0));
-      for (float& drop : car.wheel_drop)
-        drop = std::clamp (in.number (), -0.5f, 0.5f);
-      car.steer_radians = in.number ();
-      car.wheel_spin_radians = in.number ();
-      car.velocity = in.point ();
+      car.position = in.place ();
+      car.forward = in.way (Vec3 (0, 0, 1));
+      car.up = in.way (Vec3 (0, 1, 0));
+      for (meters_t& drop : car.wheel_drop)
+        drop = std::clamp (in.number (), -0.5f, 0.5f) * u::m;
+      car.steer = in.number () * u::rad;
+      car.wheel_spin = in.number () * u::rad;
+      car.velocity = in.motion ();
     }
 
     void get (Reader& in, Machine, HelicopterPose& heli) {
-      heli.position = in.point ();
-      heli.forward = in.direction (Vec3 (0, 0, 1));
-      heli.up = in.direction (Vec3 (0, 1, 0));
-      heli.rotor_radians = in.number ();
-      heli.tail_radians = in.number ();
+      heli.position = in.place ();
+      heli.forward = in.way (Vec3 (0, 0, 1));
+      heli.up = in.way (Vec3 (0, 1, 0));
+      heli.rotor = in.number () * u::rad;
+      heli.tail = in.number () * u::rad;
     }
 
     void get (Reader& in, Machine, TractorPose& tractor) {
-      tractor.position = in.point ();
-      tractor.forward = in.direction (Vec3 (0, 0, 1));
-      tractor.up = in.direction (Vec3 (0, 1, 0));
-      for (float& drop : tractor.wheel_drop)
-        drop = std::clamp (in.number (), -0.5f, 0.5f);
-      tractor.steer_radians = in.number ();
-      tractor.front_spin_radians = in.number ();
-      tractor.rear_spin_radians = in.number ();
-      tractor.trailer_position = in.point ();
-      tractor.trailer_forward = in.direction (Vec3 (0, 0, 1));
-      tractor.trailer_up = in.direction (Vec3 (0, 1, 0));
-      for (float& drop : tractor.trailer_wheel_drop)
-        drop = std::clamp (in.number (), -0.5f, 0.5f);
-      tractor.trailer_spin_radians = in.number ();
+      tractor.position = in.place ();
+      tractor.forward = in.way (Vec3 (0, 0, 1));
+      tractor.up = in.way (Vec3 (0, 1, 0));
+      for (meters_t& drop : tractor.wheel_drop)
+        drop = std::clamp (in.number (), -0.5f, 0.5f) * u::m;
+      tractor.steer = in.number () * u::rad;
+      tractor.front_spin = in.number () * u::rad;
+      tractor.rear_spin = in.number () * u::rad;
+      tractor.trailer_position = in.place ();
+      tractor.trailer_forward = in.way (Vec3 (0, 0, 1));
+      tractor.trailer_up = in.way (Vec3 (0, 1, 0));
+      for (meters_t& drop : tractor.trailer_wheel_drop)
+        drop = std::clamp (in.number (), -0.5f, 0.5f) * u::m;
+      tractor.trailer_spin = in.number () * u::rad;
     }
 
     void get (Reader& in, Machine, BoatPose& boat) {
-      boat.position = in.point ();
-      boat.forward = in.direction (Vec3 (0, 0, 1));
-      boat.up = in.direction (Vec3 (0, 1, 0));
-      boat.swing_radians = in.number ();
-      boat.tilt_radians = in.number ();
-      boat.propeller_radians = in.number ();
-      boat.rpm = in.number ();
-      boat.velocity = in.point ();
+      boat.position = in.place ();
+      boat.forward = in.way (Vec3 (0, 0, 1));
+      boat.up = in.way (Vec3 (0, 1, 0));
+      boat.swing = in.number () * u::rad;
+      boat.tilt = in.number () * u::rad;
+      boat.propeller = in.number () * u::rad;
+      boat.rpm = in.number () * proportion[one];
+      boat.velocity = in.motion ();
     }
 
     void get (Reader& in, Machine, JetSkiPose& ski) {
-      ski.position = in.point ();
-      ski.forward = in.direction (Vec3 (0, 0, 1));
-      ski.up = in.direction (Vec3 (0, 1, 0));
-      ski.steer_radians = in.number ();
-      ski.lean_radians = in.number ();
-      ski.rpm = in.number ();
-      ski.velocity = in.point ();
+      ski.position = in.place ();
+      ski.forward = in.way (Vec3 (0, 0, 1));
+      ski.up = in.way (Vec3 (0, 1, 0));
+      ski.steer = in.number () * u::rad;
+      ski.lean = in.number () * u::rad;
+      ski.rpm = in.number () * proportion[one];
+      ski.velocity = in.motion ();
     }
 
     // When a blend falls, between snapshots `a` and `b` (at `t` from
@@ -438,12 +495,13 @@ namespace moppe::game {
       const Pose& p2;
       const Pose* p3;
 
-      Vec3 travel (const Moments& w, Vec3 Pose::* place) const {
-        return game::travel (w,
-                             p0 ? &(p0->*place) : nullptr,
-                             p1.*place,
-                             p2.*place,
-                             p3 ? &(p3->*place) : nullptr);
+      position_t travel (const Moments& w, position_t Pose::* place) const {
+        return position (
+          game::travel (w,
+                        p0 ? &position_value (p0->*place) : nullptr,
+                        position_value (p1.*place),
+                        position_value (p2.*place),
+                        p3 ? &position_value (p3->*place) : nullptr));
       }
     };
 
@@ -462,17 +520,14 @@ namespace moppe::game {
         mix (from.rear_wheel_drop, to.rear_wheel_drop, w.within);
       out.front_wheel_drop =
         mix (from.front_wheel_drop, to.front_wheel_drop, w.within);
-      out.fork_radians = mix (from.fork_radians, to.fork_radians, w.within);
+      out.fork = mix (from.fork, to.fork, w.within);
       if (machine_kind (machine).pedalled) {
-        out.wheel_spin_radians =
-          mix_angle (from.wheel_spin_radians, to.wheel_spin_radians, w.t);
-        out.crank_radians =
-          mix_angle (from.crank_radians, to.crank_radians, w.t);
+        out.wheel_spin = mix_angle (from.wheel_spin, to.wheel_spin, w.t);
+        out.crank = mix_angle (from.crank, to.crank, w.t);
         return;
       }
-      out.lean_radians = mix (from.lean_radians, to.lean_radians, w.within);
-      out.wheel_spin_radians =
-        mix (from.wheel_spin_radians, to.wheel_spin_radians, w.t);
+      out.lean = mix (from.lean, to.lean, w.within);
+      out.wheel_spin = mix (from.wheel_spin, to.wheel_spin, w.t);
       out.rider_lean = mix (from.rider_lean, to.rider_lean, w.within);
     }
 
@@ -486,9 +541,8 @@ namespace moppe::game {
       for (std::size_t i = 0; i < out.wheel_drop.size (); ++i)
         out.wheel_drop[i] =
           mix (from.wheel_drop[i], to.wheel_drop[i], w.within);
-      out.steer_radians = mix (from.steer_radians, to.steer_radians, w.within);
-      out.wheel_spin_radians =
-        mix_angle (from.wheel_spin_radians, to.wheel_spin_radians, w.t);
+      out.steer = mix (from.steer, to.steer, w.within);
+      out.wheel_spin = mix_angle (from.wheel_spin, to.wheel_spin, w.t);
       out.velocity = mix (from.velocity, to.velocity, w.within);
     }
 
@@ -501,8 +555,8 @@ namespace moppe::game {
       out.position = by.travel (w, &HelicopterPose::position);
       out.forward = mix_direction (from.forward, to.forward, w.t);
       out.up = mix_direction (from.up, to.up, w.t);
-      out.rotor_radians = mix_angle (from.rotor_radians, to.rotor_radians, w.t);
-      out.tail_radians = mix_angle (from.tail_radians, to.tail_radians, w.t);
+      out.rotor = mix_angle (from.rotor, to.rotor, w.t);
+      out.tail = mix_angle (from.tail, to.tail, w.t);
     }
 
     void mix (Machine,
@@ -517,11 +571,9 @@ namespace moppe::game {
       for (std::size_t i = 0; i < out.wheel_drop.size (); ++i)
         out.wheel_drop[i] =
           mix (from.wheel_drop[i], to.wheel_drop[i], w.within);
-      out.steer_radians = mix (from.steer_radians, to.steer_radians, w.within);
-      out.front_spin_radians =
-        mix_angle (from.front_spin_radians, to.front_spin_radians, w.t);
-      out.rear_spin_radians =
-        mix_angle (from.rear_spin_radians, to.rear_spin_radians, w.t);
+      out.steer = mix (from.steer, to.steer, w.within);
+      out.front_spin = mix_angle (from.front_spin, to.front_spin, w.t);
+      out.rear_spin = mix_angle (from.rear_spin, to.rear_spin, w.t);
       out.trailer_position = by.travel (w, &TractorPose::trailer_position);
       out.trailer_forward =
         mix_direction (from.trailer_forward, to.trailer_forward, w.t);
@@ -529,8 +581,7 @@ namespace moppe::game {
       for (std::size_t i = 0; i < out.trailer_wheel_drop.size (); ++i)
         out.trailer_wheel_drop[i] =
           mix (from.trailer_wheel_drop[i], to.trailer_wheel_drop[i], w.within);
-      out.trailer_spin_radians =
-        mix_angle (from.trailer_spin_radians, to.trailer_spin_radians, w.t);
+      out.trailer_spin = mix_angle (from.trailer_spin, to.trailer_spin, w.t);
     }
 
     void
@@ -540,10 +591,9 @@ namespace moppe::game {
       out.position = by.travel (w, &BoatPose::position);
       out.forward = mix_direction (from.forward, to.forward, w.t);
       out.up = mix_direction (from.up, to.up, w.t);
-      out.swing_radians = mix (from.swing_radians, to.swing_radians, w.within);
-      out.tilt_radians = mix (from.tilt_radians, to.tilt_radians, w.within);
-      out.propeller_radians =
-        mix_angle (from.propeller_radians, to.propeller_radians, w.t);
+      out.swing = mix (from.swing, to.swing, w.within);
+      out.tilt = mix (from.tilt, to.tilt, w.within);
+      out.propeller = mix_angle (from.propeller, to.propeller, w.t);
       out.rpm = mix (from.rpm, to.rpm, w.within);
       out.velocity = mix (from.velocity, to.velocity, w.within);
     }
@@ -557,8 +607,8 @@ namespace moppe::game {
       out.position = by.travel (w, &JetSkiPose::position);
       out.forward = mix_direction (from.forward, to.forward, w.t);
       out.up = mix_direction (from.up, to.up, w.t);
-      out.steer_radians = mix (from.steer_radians, to.steer_radians, w.within);
-      out.lean_radians = mix (from.lean_radians, to.lean_radians, w.within);
+      out.steer = mix (from.steer, to.steer, w.within);
+      out.lean = mix (from.lean, to.lean, w.within);
       out.rpm = mix (from.rpm, to.rpm, w.within);
       out.velocity = mix (from.velocity, to.velocity, w.within);
     }
@@ -627,7 +677,7 @@ namespace moppe::game {
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
       out.put (snapshot.glider->heading);
-      out.put (snapshot.glider->bank_radians);
+      out.put (snapshot.glider->bank);
     }
     if (snapshot.walker) {
       const WalkerPose& walker = *snapshot.walker;
@@ -637,7 +687,7 @@ namespace moppe::game {
       out.put (walker.ground_normal);
       out.put (walker.stride_phase);
       out.put (walker.stride_speed);
-      out.put (walker.airborne_seconds);
+      out.put (walker.airborne);
       out.put (walker.vertical_speed);
       out.put (walker.landing_dip);
       out.put (walker.look_pitch);
@@ -708,26 +758,26 @@ namespace moppe::game {
 
     if (flags & has_glider) {
       GliderPose glider;
-      glider.position = in.point ();
-      glider.heading = in.direction (Vec3 (0, 0, 1));
-      glider.bank_radians = in.number ();
+      glider.position = in.place ();
+      glider.heading = in.way (Vec3 (0, 0, 1));
+      glider.bank = in.number () * u::rad;
       glider.bike_attached = (flags & glider_carries_bike) != 0;
       snapshot.glider = glider;
     }
     if (flags & has_walker) {
       WalkerPose walker;
-      walker.position = in.point ();
-      walker.heading = in.direction (Vec3 (0, 0, 1));
-      walker.velocity = in.point ();
-      walker.ground_normal = in.direction (Vec3 (0, 1, 0));
-      walker.stride_phase = in.number ();
-      walker.stride_speed = in.number ();
-      walker.airborne_seconds = in.number ();
-      walker.vertical_speed = in.number ();
-      walker.landing_dip = in.number ();
-      walker.look_pitch = in.number ();
-      walker.look_aside = in.number ();
-      walker.turn_speed = in.number ();
+      walker.position = in.place ();
+      walker.heading = in.way (Vec3 (0, 0, 1));
+      walker.velocity = in.motion ();
+      walker.ground_normal = in.way (Vec3 (0, 1, 0));
+      walker.stride_phase = in.number () * proportion[one];
+      walker.stride_speed = in.number () * u::m / u::s;
+      walker.airborne = in.number () * u::s;
+      walker.vertical_speed = in.number () * u::m / u::s;
+      walker.landing_dip = in.number () * u::m;
+      walker.look_pitch = in.number () * inclination[u::rad];
+      walker.look_aside = in.number () * u::rad;
+      walker.turn_speed = in.number () * u::rad / u::s;
       walker.grounded = (flags & walker_grounded) != 0;
       snapshot.walker = walker;
     }
@@ -831,25 +881,28 @@ namespace moppe::game {
     if (a.glider && b.glider &&
         !leapt (a.glider->position, b.glider->position)) {
       GliderPose& glider = *result.glider;
-      glider.position =
-        travel (w,
-                before && before->glider ? &before->glider->position : nullptr,
-                a.glider->position,
-                b.glider->position,
-                after && after->glider ? &after->glider->position : nullptr);
+      glider.position = position (travel (
+        w,
+        before && before->glider ? &position_value (before->glider->position)
+                                 : nullptr,
+        position_value (a.glider->position),
+        position_value (b.glider->position),
+        after && after->glider ? &position_value (after->glider->position)
+                               : nullptr));
       glider.heading = mix_direction (a.glider->heading, b.glider->heading, t);
-      glider.bank_radians =
-        mix (a.glider->bank_radians, b.glider->bank_radians, within);
+      glider.bank = mix (a.glider->bank, b.glider->bank, within);
     }
     if (a.walker && b.walker &&
         !leapt (a.walker->position, b.walker->position)) {
       WalkerPose& walker = *result.walker;
-      walker.position =
-        travel (w,
-                before && before->walker ? &before->walker->position : nullptr,
-                a.walker->position,
-                b.walker->position,
-                after && after->walker ? &after->walker->position : nullptr);
+      walker.position = position (travel (
+        w,
+        before && before->walker ? &position_value (before->walker->position)
+                                 : nullptr,
+        position_value (a.walker->position),
+        position_value (b.walker->position),
+        after && after->walker ? &position_value (after->walker->position)
+                               : nullptr));
       walker.heading = mix_direction (a.walker->heading, b.walker->heading, t);
       walker.ground_normal =
         mix_direction (a.walker->ground_normal, b.walker->ground_normal, t);
@@ -981,10 +1034,10 @@ namespace moppe::game {
     CompanionSnapshot seen = look (m_snapshots.size (), m_play);
     const auto places = [] (CompanionSnapshot& each) {
       return std::array<Vec3*, 4> {
-        &each.fleet.bike.position,
-        &each.fleet.jeep.position,
-        each.walker ? &each.walker->position : nullptr,
-        each.glider ? &each.glider->position : nullptr
+        &position_value (each.fleet.bike.position),
+        &position_value (each.fleet.jeep.position),
+        each.walker ? &position_value (each.walker->position) : nullptr,
+        each.glider ? &position_value (each.glider->position) : nullptr
       };
     };
     // Word that came late shows where they really were while this
@@ -1036,9 +1089,10 @@ namespace moppe::game {
     template <class Pose>
     std::pair<Vec3, Vec3> lie_of (const Pose& pose) {
       if constexpr (requires { pose.render_orientation; })
-        return { pose.render_orientation, pose.render_normal };
+        return { direction_value (pose.render_orientation),
+                 direction_value (pose.render_normal) };
       else
-        return { pose.forward, pose.up };
+        return { direction_value (pose.forward), direction_value (pose.up) };
     }
   }
 
@@ -1049,7 +1103,7 @@ namespace moppe::game {
       visit (theirs.fleet, machine, [&] (Machine, const auto& pose) {
         const auto [forward, up] = lie_of (pose);
         const Vec3 left = normalized (cross (up, forward));
-        return pose.position + left * seat[0] + up * seat[1] +
+        return position_value (pose.position) + left * seat[0] + up * seat[1] +
                forward * seat[2];
       }));
   }
@@ -1062,7 +1116,7 @@ namespace moppe::game {
       state.m_seat_heading = unit_direction (forward);
       state.m_seat_up = unit_direction (up);
       if constexpr (requires { pose.velocity; })
-        state.m_seat_velocity = velocity (pose.velocity);
+        state.m_seat_velocity = pose.velocity;
       else
         state.m_seat_velocity = velocity (Vec3 ());
     });

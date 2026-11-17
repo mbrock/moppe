@@ -1,14 +1,15 @@
 #ifndef MOPPE_GAME_GRAPHICS_SETTINGS_HH
 #define MOPPE_GAME_GRAPHICS_SETTINGS_HH
 
+#include <moppe/gfx/math.hh>
 #include <moppe/render/types.hh>
 
 namespace moppe::game {
   struct GraphicsSettings {
-    float scene_scale = 1.0f;
+    scale_factor_t scene_scale = 1.0f * scale_factor[one];
     // Zero uses scene_scale relative to the point-resolution baseline.
     // A positive value is an absolute fraction of drawable resolution.
-    float render_scale_override = 0.0f;
+    scale_factor_t render_scale_override = 0.0f * scale_factor[one];
     // The most scene pixels the 3D passes may cover at scene_scale 1, in
     // megapixels.  Point resolution alone does not bound the scene on a
     // desktop display attached at 1x, so this is what keeps an oversized
@@ -19,9 +20,10 @@ namespace moppe::game {
     // of what the rules above give, while the GPU cannot keep up. Zero
     // never sheds any; so does an explicit render scale, which is a
     // promise about the scene's size.
-    float target_frame_rate = 60.0f;
-    // Late afternoon: a lower, warmer sun with longer shadows.
-    float sun_height = 0.62f;
+    frequency_t target_frame_rate = 60.0f * u::Hz;
+    // Late afternoon: a lower, warmer sun with longer shadows (a half is
+    // the horizon; game/daylight.hh).
+    proportion_t sun_height = 0.62f * proportion[one];
 
     bool terrain_shadows = true;
     bool ocean = true;

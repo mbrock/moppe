@@ -791,8 +791,8 @@ namespace moppe::game {
                              .machine = logic.m_doing != Doing::on_foot () });
       if (around.companion && around.companion->walker)
         presences.push_back (
-          { .position = around.companion->walker->position,
-            .velocity = around.companion->walker->velocity });
+          { .position = position_value (around.companion->walker->position),
+            .velocity = velocity_value (around.companion->walker->velocity) });
       const AnimalGround& ground = *around.animal_ground;
       session.animals ().step (ground,
                                presences,

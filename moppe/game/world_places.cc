@@ -279,8 +279,8 @@ namespace moppe::game {
                           render::DrawList& dl,
                           const FrameView& frame,
                           const GameLogicState& logic) {
-    const Vec3& camera = frame.camera.position;
-    landscape.draw (r, camera, frame.lighting.time, 0x10000);
+    const Vec3& camera = position_value (frame.camera.position);
+    landscape.draw (r, camera, seconds_value (frame.lighting.time), 0x10000);
     landscape.draw_beacons (dl, camera, logic.m_beacon_burn);
     const Camp& camp = logic.m_camp;
     for (const Vec3& ring : layout.hearths) {
@@ -302,22 +302,28 @@ namespace moppe::game {
         continue;
       const Vec3 lamp = layout.sanctuaries[i].hearth + Vec3 (0.0f, 0.7f, 0.0f);
       FrameLighting& lighting = frame.lighting;
-      if (lighting.lamp_reach > 0.0f &&
-          length2 (lighting.lamp_position - frame.camera.position) <=
-            length2 (lamp - frame.camera.position))
+      const position_t& camera = frame.camera.position;
+      if (lighting.lamp_reach > 0.0f * u::m &&
+          length2 (position_value (lighting.lamp_position) -
+                   position_value (camera)) <=
+            length2 (lamp - position_value (camera)))
         continue;
-      lighting.lamp_position = lamp;
-      lighting.lamp_reach = 1.8f * meters_value (fire_light_reach);
+      lighting.lamp_position = position (lamp);
+      lighting.lamp_reach = 1.8f * fire_light_reach;
       lighting.lamp_color = scale_display (
-        fire_light_color (burn[i].numerical_value_in (one), lighting.time),
-        1.4f * (1.0f - 0.25f * lighting.daylight));
+        fire_light_color (burn[i].numerical_value_in (one),
+                          seconds_value (lighting.time)),
+        1.4f * (1.0f - 0.25f * lighting.daylight.numerical_value_in (one)));
     }
   }
 
   void WorldPlaces::light_barn (FrameView& frame) const {
     FrameLighting& lighting = frame.lighting;
-    const float dark = 1.0f - smoothstep (0.15f, 0.55f, lighting.daylight);
-    const Vec3 eye = frame.camera.position;
+    const proportion_t daylight = lighting.daylight;
+    const seconds_t time = lighting.time;
+    const float dark =
+      1.0f - smoothstep (0.15f, 0.55f, daylight.numerical_value_in (one));
+    const Vec3 eye = position_value (frame.camera.position);
     const Building* nearest = nullptr;
     for (const Building* barn : kept_barns ())
       if (length2 (barn->at - eye) < 30.0f * 30.0f &&
@@ -330,22 +336,24 @@ namespace moppe::game {
     const Vec3 at = barn.transform_point (
       lantern ? farm_model::barn_lantern - Vec3 (0.0f, 0.2f, 0.0f)
               : Vec3 (0.0f, 2.4f, barn_front - 0.9f));
-    if (lighting.lamp_reach > 0.0f &&
-        length2 (lighting.lamp_position - eye) <= length2 (at - eye))
+    if (lighting.lamp_reach > 0.0f * u::m &&
+        length2 (position_value (lighting.lamp_position) - eye) <=
+          length2 (at - eye))
       return;
-    lighting.lamp_position = at;
+    lighting.lamp_position = position (at);
     if (lantern) {
-      const float flicker = 1.0f + 0.03f * std::sin (lighting.time * 7.3f) +
-                            0.02f * std::sin (lighting.time * 12.9f + 1.7f);
-      lighting.lamp_reach = 11.0f;
+      const float flicker =
+        1.0f + 0.03f * std::sin (seconds_value (time) * 7.3f) +
+        0.02f * std::sin (seconds_value (time) * 12.9f + 1.7f);
+      lighting.lamp_reach = 11.0f * u::m;
       lighting.lamp_color =
         scale_display (DisplayColor (1.30f, 0.95f, 0.55f), dark * flicker);
     } else {
       // The day's light, warmed by the boards it comes in over.
-      lighting.lamp_reach = 13.0f;
-      lighting.lamp_color =
-        scale_display (DisplayColor (1.0f, 0.93f, 0.80f),
-                       0.9f * (1.0f - dark) * lighting.daylight);
+      lighting.lamp_reach = 13.0f * u::m;
+      lighting.lamp_color = scale_display (DisplayColor (1.0f, 0.93f, 0.80f),
+                                           0.9f * (1.0f - dark) *
+                                             daylight.numerical_value_in (one));
     }
   }
 }

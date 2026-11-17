@@ -100,10 +100,11 @@ MOPPE_TEST (water_presentation_writes_typed_sections_directly) {
                       spatial_extent_in_metres (Vec3 (200, 100, 300)));
   // A lattice smaller than a terrain patch says nothing about dry ground.
   MOPPE_CHECK (renderer.ocean.wet_patches.empty ());
-  MOPPE_CHECK_NEAR (renderer.ocean.level, 10.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (renderer.ocean.center[0], 100.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (renderer.ocean.center[2], 150.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (renderer.ocean.half_extent, 5500.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (meters_value (renderer.ocean.level), 10.0f, 1e-6f);
+  const Vec3& center = position_value (renderer.ocean.center);
+  MOPPE_CHECK_NEAR (center[0], 100.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (center[2], 150.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (meters_value (renderer.ocean.half_extent), 5500.0f, 1e-6f);
   MOPPE_CHECK (renderer.ocean.cells == 300);
   MOPPE_CHECK (std::ranges::equal (renderer.water_levels, level_and_amplitude));
   MOPPE_CHECK (std::ranges::equal (renderer.water_flow, flow));

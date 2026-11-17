@@ -134,6 +134,10 @@ MOPPE_TEST (
 
 MOPPE_TEST (a_grazing_animal_reaches_the_grass_with_its_muzzle) {
   const auto ground = [] (float x, float) { return 10.0f + 0.1f * x; };
+  const terrain::ElevationField field = [&ground] (plan_position_t at) {
+    return terrain::surface_elevation_point (
+      ground (meters_value (x_of (at)), meters_value (z_of (at))) * u::m);
+  };
   for (int s = 0; s < species_count; ++s) {
     Animal a;
     a.species = static_cast<Species> (s);
@@ -141,12 +145,12 @@ MOPPE_TEST (a_grazing_animal_reaches_the_grass_with_its_muzzle) {
     a.heading = 0.4f;
     a.head = 1.0f;
     // The moose browses the shrubs rather than the grass.
-    const Vec3 muzzle = animal_muzzle (a, ground);
+    const Vec3 muzzle = position_value (animal_muzzle (a, field));
     const float above = a.species == Species::moose ? 0.55f : 0.0f;
     MOPPE_CHECK_NEAR (muzzle[1], ground (muzzle[0], muzzle[2]) + above, 0.12f);
     // Head up, it is well clear of the ground.
     a.head = 0.0f;
-    const Vec3 up = animal_muzzle (a, ground);
+    const Vec3 up = position_value (animal_muzzle (a, field));
     MOPPE_CHECK (up[1] - ground (up[0], up[2]) > 0.35f);
   }
 }

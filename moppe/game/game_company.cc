@@ -17,7 +17,8 @@ namespace moppe {
           (here == theirs.sent && m_company.link->player () < theirs.player))
         return;
       mov::Vehicle& bike = session ().bike ();
-      Vec3 apart = bike.position () - theirs.fleet.bike.position;
+      Vec3 apart =
+        bike.position () - position_value (theirs.fleet.bike.position);
       apart[1] = 0.0f;
       if (length2 (apart) > 2.5f * 2.5f)
         return;
@@ -42,8 +43,8 @@ namespace moppe {
       m_parking.park_tractor (parking_lot ());
       m_parking.park_mountain_bike (parking_lot ());
       m_parking.park_long_john (parking_lot ());
-      m_parking.park_helicopter (parking_lot (),
-                                 theirs.fleet.helicopter.position);
+      m_parking.park_helicopter (
+        parking_lot (), position_value (theirs.fleet.helicopter.position));
       if (logic ().m_doing != Doing::driving (Machine::boat))
         m_parking.park_boat (parking_lot ());
       if (logic ().m_doing != Doing::driving (Machine::jet_ski))

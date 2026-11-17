@@ -56,12 +56,12 @@ namespace moppe::nhal {
     }
 
     shaders::gtao::Post NhalRenderer::post_block (const position_t& eye,
-                                                  const Vec3& forward,
+                                                  const direction_t& forward,
                                                   const Vec3& right,
                                                   const Vec3& up) const {
       shaders::gtao::Post post {};
       post.eye = lanes (position_value (eye));
-      post.ray_forward = lanes (forward);
+      post.ray_forward = lanes (direction_value (forward));
       post.ray_right = lanes (right);
       post.ray_up = lanes (up);
       post.occlusion = m_post.block.occlusion;
@@ -168,7 +168,7 @@ namespace moppe::nhal {
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, terrain_block ());
       m_device->set_uniforms (2, below);
-      m_device->set_uniforms (3, sea_block (m_params.time));
+      m_device->set_uniforms (3, sea_block (seconds_value (m_params.time)));
       m_device->set_texture (0, m_scene_color);
       m_device->set_texture (1, m_scene_depth);
       m_device->set_texture (2, m_terrain.heights);
@@ -218,14 +218,16 @@ namespace moppe::nhal {
 
     std::array<float, 4> NhalRenderer::sun_glare () const {
       const Mat4 view_proj = m_params.proj * m_params.view;
-      const Vec3 sun = m_params.sun_dir;
+      const Vec3& sun = direction_value (m_params.sun_dir);
+      const float visibility =
+        m_params.sun_visibility.numerical_value_in (mp_units::one);
       auto row = [&] (int r) {
         return view_proj.element (r) * sun[0] +
                view_proj.element (4 + r) * sun[1] +
                view_proj.element (8 + r) * sun[2];
       };
       const float w = row (3);
-      if (w <= 0.0f || m_params.sun_visibility <= 0.0f)
+      if (w <= 0.0f || visibility <= 0.0f)
         return { 0, 0, 0, 1 };
       const float nx = row (0) / w, ny = row (1) / w;
       const float edge =
@@ -236,7 +238,7 @@ namespace moppe::nhal {
         return { 0, 0, 0, 1 };
       return { nx * 0.5f + 0.5f,
                1.0f - (ny * 0.5f + 0.5f),
-               m_params.sun_visibility * std::min (edge, 1.0f),
+               visibility * std::min (edge, 1.0f),
                float (m_width) / float (std::max (m_height, 1u)) };
     }
 

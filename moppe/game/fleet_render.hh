@@ -28,7 +28,7 @@ namespace moppe::game {
   struct FleetScene {
     render::Renderer& r;
     render::DrawList& dl;
-    float time = 0.0f;
+    seconds_t time = 0.0f * u::s;
     std::optional<RodPose> rod;
     BlobShadow* blob = nullptr;
     const map::SurfaceGeometry* surface = nullptr;

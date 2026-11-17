@@ -27,8 +27,8 @@ namespace moppe {
     // vehicle draw time.
     void render_vehicle_flames (render::Renderer& r,
                                 const VehiclePose& vehicle,
-                                const Vec3& camera,
-                                float time,
+                                const position_t& camera,
+                                seconds_t time,
                                 uint64_t motion_base);
   }
 }

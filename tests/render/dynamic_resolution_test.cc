@@ -14,7 +14,7 @@ namespace {
     float fixed_ms, scene_ms;
 
     seconds_t frame (const DynamicResolution& dynamic) const {
-      const float share = dynamic.share ();
+      const float share = dynamic.share ().numerical_value_in (one);
       return seconds ((fixed_ms + scene_ms * share * share) * 0.001f);
     }
   };
@@ -28,7 +28,7 @@ namespace {
     for (int frame = 0; frame < frames; ++frame) {
       dynamic.observe (machine.frame (dynamic), sixtieth);
       if (frame >= frames - 100)
-        late.insert (dynamic.share ());
+        late.insert (dynamic.share ().numerical_value_in (one));
     }
     return late;
   }
@@ -50,7 +50,8 @@ MOPPE_TEST (dynamic_resolution_sheds_pixels_until_the_frame_fits) {
     // It settles on one step, inside the budget, without hunting.
     MOPPE_CHECK (late.size () == 1);
     MOPPE_CHECK (*late.begin () < 1.0f);
-    const float budget_ms = 1000.0f / 60.0f * DynamicResolution::headroom;
+    const float budget_ms =
+      1000.0f / 60.0f * DynamicResolution::headroom.numerical_value_in (one);
     const float settled_ms = seconds_value (machine.frame (dynamic)) * 1000.0f;
     MOPPE_CHECK (settled_ms <= budget_ms);
     MOPPE_CHECK (settled_ms >= budget_ms * 0.80f);

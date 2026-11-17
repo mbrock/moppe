@@ -13,7 +13,7 @@ namespace moppe::game {
   void render_glider (render::Renderer& r,
                       render::DrawList& dl,
                       const GliderPose& glider,
-                      float time,
+                      seconds_t time,
                       uint64_t motion_base,
                       Outfit outfit = Outfit::blue_jacket);
 }

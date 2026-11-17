@@ -249,15 +249,15 @@ namespace moppe::game {
   std::optional<FrameCameraReading> OpeningDirector::camera () const {
     if (m_reel.active ())
       return FrameCameraReading {
-        .position = m_reel.position (),
-        .forward = m_reel.forward (),
+        .position = position (m_reel.position ()),
+        .forward = unit_direction (m_reel.forward ()),
         .view = m_reel.view_matrix (),
         .field_of_view = m_reel.field_of_view () * u::deg,
       };
     if (m_flight.active ())
       return FrameCameraReading {
-        .position = m_flight.position (),
-        .forward = m_flight.forward (),
+        .position = position (m_flight.position ()),
+        .forward = unit_direction (m_flight.forward ()),
         .view = m_flight.view_matrix (),
         .field_of_view = m_flight.field_of_view (),
       };

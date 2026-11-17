@@ -48,11 +48,11 @@ namespace moppe {
     struct FrameParams {
       Mat4 view;
       Mat4 proj; // reversed-Z perspective
-      Vec3 camera_pos;
-      Vec3 cam_right, cam_up, cam_forward;
+      position_t camera_pos;
+      direction_t cam_right, cam_up, cam_forward;
       DisplayColor clear_color; // also the fog/haze color
-      float fog_scale = 0.0f;
-      Vec3 sun_dir; // world space, toward the sun
+      attenuation_t fog_scale = 0.0f / u::m;
+      direction_t sun_dir; // world space, toward the sun
       // Art-directed sun products.  Ambient is the strength/color fed
       // into the shaders' cool-sky / warm-ground hemisphere fill.
       DisplayColor sun_diffuse;
@@ -60,40 +60,41 @@ namespace moppe {
       DisplayColor ambient;
       // Art-direction multiplier applied after automatic exposure.  Tools can
       // favor legibility without changing adaptation for normal gameplay.
-      float exposure_bias = 1.0f;
-      float time = 0.0f;
-      float cloud_cover = 0.0f;
+      scale_factor_t exposure_bias = 1.0f * scale_factor[one];
+      seconds_t time = 0.0f * u::s;
+      proportion_t cloud_cover = 0.0f * proportion[one];
       // The weather (game/weather.hh): mist lying in the valleys, 0..1,
       // and rain, 1 a drizzle and up to 2.5 a downpour. Backends without
       // them draw neither.
-      float mist = 0.0f;
-      float rain = 0.0f;
-      // How much of the sun the camera can actually see (0..1); the
-      // game raymarches the terrain and folds in cloud cover.
-      // Drives the present pass's lens flare.
-      float sun_visibility = 0.0f;
+      proportion_t mist = 0.0f * proportion[one];
+      scale_factor_t rain = 0.0f * scale_factor[one];
+      // How much of the sun the camera can actually see; the game
+      // raymarches the terrain and folds in cloud cover. Drives the
+      // present pass's lens flare.
+      proportion_t sun_visibility = 0.0f * proportion[one];
       // The sky itself, where `sun_dir` is only the key light (the moon,
       // at night): toward the true sun and the moon, the celestial pole
-      // and how far the stars have turned about it in radians, and how
-      // brightly the moon shines, 0..1. A zero `sky_sun_dir` means the
-      // sun is the key light and it is day.
-      Vec3 sky_sun_dir;
-      Vec3 sky_moon_dir { 0, -1, 0 };
-      Vec3 sky_pole { 0, 1, 0 };
-      float sky_turn = 0.0f;
-      float moonlight = 0.0f;
-      // One warm point light -- a campfire: its position, how many metres
-      // it reaches (0: none), and its colour at full strength.
-      Vec3 lamp_pos;
-      float lamp_reach = 0.0f;
+      // and how far the stars have turned about it, and how brightly the
+      // moon shines. A zero `sky_sun_dir` means the sun is the key light
+      // and it is day.
+      direction_t sky_sun_dir;
+      direction_t sky_moon_dir = unit_direction (Vec3 (0, -1, 0));
+      direction_t sky_pole = unit_direction (Vec3 (0, 1, 0));
+      radians_t sky_turn = 0.0f * u::rad;
+      proportion_t moonlight = 0.0f * proportion[one];
+      // One warm point light -- a campfire: its position, how far it
+      // reaches (none: no lamp), and its colour at full strength.
+      position_t lamp_pos;
+      meters_t lamp_reach = 0.0f * u::m;
       DisplayColor lamp_color;
-      float scene_scale = 1.0f;
-      float render_scale_override = 0.0f;
+      scale_factor_t scene_scale = 1.0f * scale_factor[one];
+      scale_factor_t render_scale_override = 0.0f * scale_factor[one];
+      // Millions of scene pixels; zero, no budget.
       float scene_megapixel_budget = 0.0f;
       // Frames a second to hold by drawing the scene smaller than those
       // rules ask, down to half their size, while the GPU cannot keep up
       // (render/dynamic_resolution.hh). Zero draws it as asked.
-      float frame_rate_target = 0.0f;
+      frequency_t frame_rate_target = 0.0f * u::Hz;
       bool bloom = true;
       bool auto_exposure = true;
       bool lens_flare = true;
@@ -133,10 +134,10 @@ namespace moppe {
     // vectors; the measurable quantities keep their units to the boundary.
     struct LightShaftParams {
       position_t camera_pos;
-      Vec3 forward;    // unit view direction
-      Vec3 right_span; // right * tan(fov/2) * aspect
-      Vec3 up_span;    // up * tan(fov/2)
-      Vec3 sun_dir;    // toward the sun
+      direction_t forward; // unit view direction
+      Vec3 right_span;     // right * tan(fov/2) * aspect
+      Vec3 up_span;        // up * tan(fov/2)
+      direction_t sun_dir; // toward the sun
       DisplayColor sun_color;
       magnitude_t strength = 1.0f * one;
       meters_t max_distance = 140.0f * u::m;
@@ -147,9 +148,9 @@ namespace moppe {
     // near and far planes linearize the reversed-Z depth.
     struct GtaoParams {
       position_t camera_pos;
-      Vec3 forward;    // unit view direction
-      Vec3 right_span; // right * tan(fov/2) * aspect
-      Vec3 up_span;    // up * tan(fov/2)
+      direction_t forward; // unit view direction
+      Vec3 right_span;     // right * tan(fov/2) * aspect
+      Vec3 up_span;        // up * tan(fov/2)
       magnitude_t strength = 1.0f * one;
       meters_t radius = 1.6f * u::m;
       meters_t near_plane = camera_near_m * u::m;
@@ -212,17 +213,18 @@ namespace moppe {
     };
 
     struct SkyParams {
-      float time;
-      float sun_height;
-      float cloudiness;
-      Vec3 sun_dir;
+      seconds_t time;
+      // How high the sun stands: a half on the horizon (game/daylight.hh).
+      proportion_t sun_height;
+      proportion_t cloudiness;
+      direction_t sun_dir;
       DisplayColor fog_color;
     };
 
     struct OceanSetup {
-      float level;
-      Vec3 center;
-      float half_extent;
+      meters_t level;
+      position_t center;
+      meters_t half_extent;
       int cells; // 300
       // Which terrain patches (terrain_patch_cells square, row by row) hold
       // water: nonzero where the sheet stands above the ground at any of a
@@ -232,10 +234,10 @@ namespace moppe {
     };
 
     struct OceanParams {
-      float time;
+      seconds_t time;
       DisplayColor fog_color;
-      float fog_scale;
-      Vec3 world_offset;
+      attenuation_t fog_scale;
+      displacement_t world_offset;
     };
 
     // Grass and occasional ferns on the forest floor. There is no plant list
@@ -244,26 +246,27 @@ namespace moppe {
     // stands there. The optional interaction footprint lets the current mover
     // part those generated blades without turning them into retained objects.
     struct UndergrowthParams {
-      float time = 0.0f;
-      float cloud_cover = 0.0f;
-      float reach = 52.0f;  // world metres from the camera
-      float density = 1.0f; // art-directed scale over the field's own answer
-      Vec3 interaction_position {};
-      float interaction_radius = 0.0f;
+      seconds_t time = 0.0f * u::s;
+      proportion_t cloud_cover = 0.0f * proportion[one];
+      meters_t reach = 52.0f * u::m; // from the camera
+      // Art-directed scale over the field's own answer.
+      scale_factor_t density = 1.0f * scale_factor[one];
+      position_t interaction_position {};
+      meters_t interaction_radius = 0.0f * u::m;
       // A floor the grass keeps out from under (a house that can be walked
       // into): its middle, the horizontal unit vector along its length,
       // and its half length and half width; none while both are zero.
-      Vec3 bare_centre {};
-      Vec3 bare_along { 1, 0, 0 };
-      float bare_half_x = 0.0f;
-      float bare_half_z = 0.0f;
+      position_t bare_centre {};
+      direction_t bare_along = unit_direction (Vec3 (1, 0, 0));
+      meters_t bare_half_x = 0.0f * u::m;
+      meters_t bare_half_z = 0.0f * u::m;
       // A barn's floor, as above, and how far round it its yard is
       // trodden, the grass short and sparse.
-      Vec3 yard_centre {};
-      Vec3 yard_along { 1, 0, 0 };
-      float yard_half_x = 0.0f;
-      float yard_half_z = 0.0f;
-      float yard_margin = 0.0f;
+      position_t yard_centre {};
+      direction_t yard_along = unit_direction (Vec3 (1, 0, 0));
+      meters_t yard_half_x = 0.0f * u::m;
+      meters_t yard_half_z = 0.0f * u::m;
+      meters_t yard_margin = 0.0f * u::m;
     };
 
     // One stable individual, still expressed in physical and bounded domain

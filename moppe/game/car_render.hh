@@ -24,20 +24,22 @@ namespace moppe::game {
   // rest, where its wheels are, and how its hiker sits.
   struct CarModel {
     // The steering wheel turns this many times as far as the road wheels.
-    float steering_ratio;
-    Vec3 steering_hub, steering_column;
-    Vec3 grip_left, grip_right;
-    Vec3 seat_driver, seat_passenger;
-    Vec3 pedal_left, pedal_right;
-    Vec3 footrest_left, footrest_right;
+    scale_factor_t steering_ratio;
+    // Points of the model, as offsets from its origin.
+    displacement_t steering_hub, steering_column;
+    displacement_t grip_left, grip_right;
+    displacement_t seat_driver, seat_passenger;
+    displacement_t pedal_left, pedal_right;
+    displacement_t footrest_left, footrest_right;
     // Front left, front right, rear left, rear right.
-    Vec3 wheels[4];
-    // How far back the hiker sits, how far the soles tip up to the pedals,
-    // and how far the knees point ahead and out.
-    float lean;
-    float sole_tilt;
-    float knee_ahead;
-    float knee_out;
+    displacement_t wheels[4];
+    // How far back the hiker sits, how far the soles tip up to the pedals
+    // (rise over run), and how far the knees point ahead and out, as
+    // shares of up.
+    radians_t lean;
+    grade_t sole_tilt;
+    scale_factor_t knee_ahead;
+    scale_factor_t knee_out;
   };
 
   // A car's baked meshes: the parts fixed to its body, each at its hinge
@@ -47,7 +49,7 @@ namespace moppe::game {
   struct CarMeshes {
     struct Part {
       render::MeshPtr mesh;
-      std::optional<Vec3> hinge;
+      std::optional<displacement_t> hinge;
     };
     std::vector<Part> body;
     render::MeshPtr steering_wheel;

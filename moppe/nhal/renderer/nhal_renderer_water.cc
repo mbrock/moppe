@@ -154,7 +154,7 @@ namespace moppe::nhal {
       m_device->set_pipeline (m_water.draw);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, terrain_block ());
-      m_device->set_uniforms (3, sea_block (params.time));
+      m_device->set_uniforms (3, sea_block (seconds_value (params.time)));
       m_device->set_texture (0, m_terrain.heights);
       m_device->set_texture (8, m_sun_shadow.map);
       m_device->set_texture (11, m_water.levels);

@@ -21,14 +21,14 @@ namespace moppe::game {
     // they drive, and, `over_driver`, as high over it as they sit.
     Vec3 whereabouts (const CompanionSnapshot& theirs, bool over_driver) {
       if (theirs.walker)
-        return theirs.walker->position;
+        return position_value (theirs.walker->position);
       if (theirs.glider)
-        return theirs.glider->position;
+        return position_value (theirs.glider->position);
       const Machine machine =
         driven_machine (theirs.mode).value_or (Machine::bike);
       const Vec3 at =
         visit (theirs.fleet, machine, [] (Machine, const auto& pose) -> Vec3 {
-          return pose.position;
+          return position_value (pose.position);
         });
       if (!over_driver)
         return at;
@@ -475,7 +475,7 @@ namespace moppe::game {
     if (state.waymark_count >= static_cast<int> (state.waymarks.size ()))
       return;
     const FrameCamera& camera = frame.camera;
-    const Vec3 to = at - camera.position;
+    const Vec3 to = at - position_value (camera.position);
     const float metres = length (to);
     // Fading in past `near`, and out again toward `vanish`, if set.
     const float shown =
@@ -485,9 +485,9 @@ namespace moppe::game {
          : 1.0f);
     if (shown <= 0.0f)
       return;
-    const float across = dot (to, camera.right);
-    const float above = dot (to, camera.up);
-    const float ahead = dot (to, camera.frame_forward);
+    const float across = dot (to, direction_value (camera.right));
+    const float above = dot (to, direction_value (camera.up));
+    const float ahead = dot (to, direction_value (camera.frame_forward));
     const float half =
       std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad));
     HudState::Waymark mark;
@@ -500,7 +500,9 @@ namespace moppe::game {
     mark.green = tint.green;
     mark.blue = tint.blue;
     const float x =
-      ahead > 0.1f ? across / (ahead * half * camera.aspect) : 0.0f;
+      ahead > 0.1f
+        ? across / (ahead * half * camera.aspect.numerical_value_in (one))
+        : 0.0f;
     const float y = ahead > 0.1f ? above / (ahead * half) : 0.0f;
     if (ahead > 0.1f && std::fabs (x) < 0.86f && std::fabs (y) < 0.80f) {
       // In view: a small arrow over it, pointing down at it.
@@ -551,7 +553,7 @@ namespace moppe::game {
     // The nearest named place, while it is near but not yet reached.
     {
       const terrain::RoadNetwork& roads = w.world.roads ();
-      const Vec3 here = frame.hud.subject_position;
+      const Vec3 here = position_value (frame.hud.subject_position);
       const char* name = nullptr;
       float nearest_m = place_waymark_m, x = 0.0f, z = 0.0f;
       for (std::size_t p = 0;
@@ -608,30 +610,31 @@ namespace moppe::game {
 
   HudState HeadsUp::hud_state_for (const FrameHud& reading) {
     HudState state;
-    state.speed_kmh = reading.speed_kmh;
-    state.boost_ready01 = reading.boost_ready01;
-    state.health01 = reading.health01;
-    state.odometer_m = reading.odometer_m;
+    state.speed_kmh =
+      reading.speed.numerical_value_in (si::kilo<si::metre> / si::hour);
+    state.boost_ready01 = reading.boost_ready.numerical_value_in (one);
+    state.health01 = reading.health.numerical_value_in (one);
+    state.odometer_m = meters_value (reading.odometer);
     state.lives = reading.lives;
     state.stars = reading.stars;
     state.score = reading.score;
-    state.airtime_s = reading.airtime_s;
-    state.spin_degrees = reading.spin_degrees;
-    state.landed_airtime_s = reading.landed_airtime_s;
-    state.landed_spin_degrees = reading.landed_spin_degrees;
+    state.airtime_s = seconds_value (reading.airtime);
+    state.spin_degrees = reading.spin.numerical_value_in (u::deg);
+    state.landed_airtime_s = seconds_value (reading.landed_airtime);
+    state.landed_spin_degrees = reading.landed_spin.numerical_value_in (u::deg);
     state.landed_points = reading.landed_points;
     state.landed_clean = reading.landed_clean;
-    state.landed_age_s = reading.landed_age_s;
-    state.wheelie_m = reading.wheelie_m;
-    state.last_wheelie_m = reading.last_wheelie_m;
+    state.landed_age_s = seconds_value (reading.landed_age);
+    state.wheelie_m = meters_value (reading.wheelie);
+    state.last_wheelie_m = meters_value (reading.last_wheelie);
     state.last_wheelie_points = reading.last_wheelie_points;
-    state.best_wheelie_m = reading.best_wheelie_m;
-    state.wheelie_age_s = reading.wheelie_age_s;
+    state.best_wheelie_m = meters_value (reading.best_wheelie);
+    state.wheelie_age_s = seconds_value (reading.wheelie_age);
     state.on_foot = reading.on_foot;
     state.gliding = reading.gliding;
-    state.vertical_speed_mps = reading.vertical_speed_mps;
-    state.frame_time_s = reading.frame_time_s;
-    state.heading_radians = reading.heading_radians;
+    state.vertical_speed_mps = speed_value (reading.vertical_speed);
+    state.frame_time_s = seconds_value (reading.frame_time);
+    state.heading_radians = reading.heading.numerical_value_in (u::rad);
     return state;
   }
 
@@ -795,20 +798,20 @@ namespace moppe::game {
     chart.picture = map.picture ();
     chart.period_x_m = map.period_x_m ();
     chart.period_z_m = map.period_z_m ();
-    const Vec3 at = frame.hud.subject_position;
+    const Vec3 at = position_value (frame.hud.subject_position);
     chart.x_m = at[0];
     chart.z_m = at[2];
     // Ahead is where the camera looks; looking down or up, its top
     // (or its foot) leans the way it faces.
-    const Vec3 forward = frame.camera.forward;
-    const Vec3 up = frame.camera.up;
+    const Vec3 forward = direction_value (frame.camera.forward);
+    const Vec3 up = direction_value (frame.camera.up);
     const float lean = forward[1] < 0.0f ? 1.0f : -1.0f;
     chart.ahead_x = forward[0] + lean * up[0];
     chart.ahead_z = forward[2] + lean * up[2];
-    const Vec3 facing = frame.hud.subject_heading;
+    const Vec3 facing = direction_value (frame.hud.subject_heading);
     chart.facing_x = facing[0];
     chart.facing_z = facing[2];
-    chart.daylight = frame.lighting.daylight;
+    chart.daylight = frame.lighting.daylight.numerical_value_in (one);
     using Kind = MapSheet::Mark::Kind;
     using Pin = HudState::Chart::Pin;
     for (const MapSheet::Mark& mark : map_marks (w)) {
@@ -879,17 +882,19 @@ namespace moppe::game {
     // the camera sees it.
     const FrameCamera& camera = frame.camera;
     const Vec3 foot = Vec3 (eye[0] + dx, at.sign[1] + 3.4f, eye[2] + dz);
-    const Vec3 to = foot - camera.position;
-    const float ahead = dot (to, camera.frame_forward);
+    const Vec3 to = foot - position_value (camera.position);
+    const float ahead = dot (to, direction_value (camera.frame_forward));
     if (ahead < 0.5f || shown <= 0.0f)
       return;
     const float half =
       std::tan (0.5f * camera.field_of_view.numerical_value_in (u::rad));
     const float x =
-      (0.5f + 0.5f * dot (to, camera.right) / (ahead * half * camera.aspect)) *
+      (0.5f + 0.5f * dot (to, direction_value (camera.right)) /
+                (ahead * half * camera.aspect.numerical_value_in (one))) *
       static_cast<float> (width);
-    const float y = (0.5f - 0.5f * dot (to, camera.up) / (ahead * half)) *
-                    static_cast<float> (height);
+    const float y =
+      (0.5f - 0.5f * dot (to, direction_value (camera.up)) / (ahead * half)) *
+      static_cast<float> (height);
     render::TextStyle title;
     title.size = 20.0f;
     render::TextStyle small;
@@ -934,7 +939,10 @@ namespace moppe::game {
     if (visibility.cinematic_hud) {
       opening.draw_titles (hud, dl, text, hud_width, hud_height);
       hud.draw_ride_prompt (
-        text, frame.overlay.cinematic_prompt_alpha, hud_width, hud_height);
+        text,
+        frame.overlay.cinematic_prompt_alpha.numerical_value_in (one),
+        hud_width,
+        hud_height);
     } else if (visibility.game_hud) {
       HudState hud_state = hud_state_for (frame.hud);
       add_basket_readings (hud_state, w);
@@ -951,8 +959,8 @@ namespace moppe::game {
                         dl,
                         hud_width,
                         hud_height,
-                        frame.hud.subject_position,
-                        frame.hud.subject_heading);
+                        position_value (frame.hud.subject_position),
+                        direction_value (frame.hud.subject_heading));
       if (map.open ())
         draw_map (r, w, hud_width, hud_height);
       if (quit_asked)

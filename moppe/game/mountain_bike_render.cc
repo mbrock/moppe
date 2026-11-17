@@ -17,7 +17,22 @@ namespace moppe::game {
 
       // How far outboard of the crank's end each pedal's body stands, as
       // tools/figure/mountain_bike.py builds it.
-      constexpr float pedal_out = 0.055f;
+      constexpr meters_t pedal_out = 0.055f * u::m;
+
+      // The rider: the pelvis this far above the saddle, the eyes this far
+      // below the level, the arms reaching this share of their length
+      // before the trunk leans in, the wrist this far back from its grip,
+      // and the ankle above, behind, and inboard of the ball of the foot.
+      constexpr meters_t seat_rise = 0.07f * u::m;
+      constexpr radians_t gaze_down = 0.25f * u::rad;
+      constexpr auto arm_stretch = 0.9f * proportion[one];
+      constexpr meters_t wrist_short = 0.07f * u::m;
+      constexpr meters_t ankle_rise = 0.07f * u::m;
+      constexpr meters_t ankle_back = 0.08f * u::m;
+      constexpr meters_t ankle_in = 0.03f * u::m;
+      // The leaning search: from upright to the most, in steps.
+      constexpr radians_t most_lean = 1.3f * u::rad;
+      constexpr radians_t lean_step = 0.04f * u::rad;
 
       struct Meshes {
         render::MeshPtr frame;
@@ -48,72 +63,95 @@ namespace moppe::game {
       // drive side), y up, z forward, from the reference point midway
       // between the axles.
       Mat4 bike_frame (const VehiclePose& bike) {
-        const Vec3 forward = normalized (bike.render_orientation);
-        const Vec3 right = normalized (cross (bike.render_normal, forward));
-        const Vec3 up = cross (forward, right);
-        return Mat4::translation (bike.position) *
-               Mat4::basis (right, up, forward) *
-               Mat4::rotation (bike.lean_radians * u::rad, Vec3 (0, 0, 1)) *
-               Mat4::scaling (Vec3 (1, 1, 1) * bike.scale);
+        const direction_t forward = unit_direction (
+          normalized (direction_value (bike.render_orientation)));
+        const direction_t right = unit_direction (normalized (cross (
+          direction_value (bike.render_normal), direction_value (forward))));
+        const direction_t up = unit_direction (
+          cross (direction_value (forward), direction_value (right)));
+        return Mat4::translation (position_value (bike.position)) *
+               Mat4::basis (direction_value (right),
+                            direction_value (up),
+                            direction_value (forward)) *
+               Mat4::rotation (bike.lean, Vec3 (0, 0, 1)) *
+               Mat4::scaling (Vec3 (1, 1, 1) *
+                              bike.scale.numerical_value_in (one));
       }
 
-      Vec3 steering_axis () {
-        return normalized (model::steering_top - model::steering_head);
+      direction_t steering_axis () {
+        return unit_direction (
+          normalized (model::steering_top - model::steering_head));
       }
 
       // The bars and fork, turned about the head tube, from the crown.
       Mat4 steering_turn (const VehiclePose& bike, const Mat4& frame) {
         return frame * Mat4::translation (model::steering_head) *
-               Mat4::rotation (-bike.fork_radians * u::rad, steering_axis ());
+               Mat4::rotation (-bike.fork, direction_value (steering_axis ()));
       }
 
-      // Where each pedal's body is, in model space: the right crank down
-      // at a crank angle of zero, the left one opposite it.
-      Vec3 pedal_at (const VehiclePose& bike, int side) {
-        const Vec3 arm = model::crank_end - model::bottom_bracket;
-        const float c = std::cos (bike.crank_radians);
-        const float s = std::sin (bike.crank_radians);
-        // The arm turned about x as the crank mesh is turned.
-        Vec3 out (
-          arm[0] + pedal_out, arm[1] * c - arm[2] * s, arm[1] * s + arm[2] * c);
+      // Where each pedal's body is, as an offset in model space: the right
+      // crank down at a crank angle of zero, the left one opposite it.
+      displacement_t pedal_at (const VehiclePose& bike, int side) {
+        const displacement_t arm =
+          displacement (model::crank_end - model::bottom_bracket);
+        // The arm turned about x as the crank mesh is turned: the
+        // rotation's entries, lane by lane.
+        const float c = std::cos (radians_value (bike.crank));
+        const float s = std::sin (radians_value (bike.crank));
+        const Vec3& a = displacement_value (arm);
+        displacement_t out =
+          displacement (Vec3 (a[0] + meters_value (pedal_out),
+                              a[1] * c - a[2] * s,
+                              a[1] * s + a[2] * c));
         if (side < 0)
-          out = Vec3 (-out[0], -out[1], -out[2]);
-        return model::bottom_bracket + out;
+          out = -out;
+        return displacement (model::bottom_bracket) + out;
       }
 
       // The hiker in the saddle: hands on the grips, the balls of the feet
       // on the pedals, knees forward, leaning over the top tube just far
       // enough to reach the bars, eyes a little down the trail.
       AvatarSkeleton pose_rider (const VehiclePose& bike, const Mat4& frame) {
-        const Vec3 up = normalized (frame.transform_vector (Vec3 (0, 1, 0)));
-        const Vec3 facing =
-          normalized (frame.transform_vector (Vec3 (0, 0, 1)));
-        const Vec3 right = normalized (cross (up, facing));
+        const direction_t up =
+          unit_direction (normalized (frame.transform_vector (Vec3 (0, 1, 0))));
+        const direction_t facing =
+          unit_direction (normalized (frame.transform_vector (Vec3 (0, 0, 1))));
+        const direction_t right = unit_direction (
+          normalized (cross (direction_value (up), direction_value (facing))));
         const Mat4 steering = steering_turn (bike, frame);
-        const Vec3 grip[2] = {
-          steering.transform_point (model::grip_left - model::steering_head),
-          steering.transform_point (model::grip_right - model::steering_head)
+        const position_t grip[2] = {
+          position (
+            steering.transform_point (model::grip_left - model::steering_head)),
+          position (
+            steering.transform_point (model::grip_right - model::steering_head))
         };
 
         HoldPose hold;
-        hold.facing = facing;
-        hold.up = up;
-        hold.pelvis = frame.transform_point (model::saddle) + up * 0.07f;
-        hold.gaze = facing * std::cos (0.25f) - up * std::sin (0.25f);
-        hold.head_up = up;
-        hold.sole = facing;
-        hold.instep = up;
+        hold.facing = direction_value (facing);
+        hold.up = direction_value (up);
+        hold.pelvis = frame.transform_point (model::saddle) +
+                      displacement_value (along (up, seat_rise));
+        hold.gaze =
+          direction_value (facing) * std::cos (radians_value (gaze_down)) -
+          direction_value (up) * std::sin (radians_value (gaze_down));
+        hold.head_up = direction_value (up);
+        hold.sole = direction_value (facing);
+        hold.instep = direction_value (up);
 
         // The most upright lean whose shoulders reach the grips, or failing
         // that, the lean that comes closest.
-        const float reach =
-          0.9f * (avatar_size::upper_arm + avatar_size::forearm);
-        float best_lean = 0.0f, best_span = 1e9f;
-        for (float lean = 0.0f; lean <= 1.3f; lean += 0.04f) {
-          hold.lean = lean;
-          const float span =
-            std::max (length (held_shoulder (hold, 0) - grip[0]),
-                      length (held_shoulder (hold, 1) - grip[1]));
+        const meters_t reach =
+          arm_stretch * (avatar_size::upper_arm + avatar_size::forearm) * u::m;
+        radians_t best_lean = 0.0f * u::rad;
+        meters_t best_span = 1e9f * u::m;
+        for (radians_t lean = 0.0f * u::rad; lean <= most_lean;
+             lean += lean_step) {
+          hold.lean = radians_value (lean);
+          const meters_t span =
+            std::max (
+              length (held_shoulder (hold, 0) - position_value (grip[0])),
+              length (held_shoulder (hold, 1) - position_value (grip[1]))) *
+            u::m;
           if (span <= reach) {
             best_lean = lean;
             break;
@@ -123,19 +161,27 @@ namespace moppe::game {
             best_lean = lean;
           }
         }
-        hold.lean = best_lean;
+        hold.lean = radians_value (best_lean);
 
         for (int i = 0; i < 2; ++i) {
-          const float side = i == 0 ? -1.0f : 1.0f;
-          const Vec3 shoulder = held_shoulder (hold, i);
-          hold.wrist[i] = grip[i] - normalized (grip[i] - shoulder) * 0.07f;
-          hold.elbow_pole[i] = right * side - up * 0.4f - facing * 0.2f;
+          const int side = i == 0 ? -1 : 1;
+          const position_t shoulder = position (held_shoulder (hold, i));
+          hold.wrist[i] = position_value (grip[i]) -
+                          displacement_value (along (
+                            direction_of (grip[i] - shoulder), wrist_short));
+          hold.elbow_pole[i] = direction_value (right) * side -
+                               direction_value (up) * 0.4f -
+                               direction_value (facing) * 0.2f;
           // The ankle stands above and behind the ball of the foot.
-          const Vec3 pedal =
-            frame.transform_point (pedal_at (bike, i == 0 ? -1 : 1));
-          hold.ankle[i] =
-            pedal - right * (side * 0.03f) + up * 0.07f - facing * 0.08f;
-          hold.knee_pole[i] = facing + up * 0.2f + right * (side * 0.12f);
+          const position_t pedal = position (frame.transform_point (
+            displacement_value (pedal_at (bike, i == 0 ? -1 : 1))));
+          hold.ankle[i] = position_value (pedal) -
+                          displacement_value (along (right, side * ankle_in)) +
+                          displacement_value (along (up, ankle_rise)) -
+                          displacement_value (along (facing, ankle_back));
+          hold.knee_pole[i] = direction_value (facing) +
+                              direction_value (up) * 0.2f +
+                              direction_value (right) * (side * 0.12f);
         }
         return pose_holding (hold);
       }
@@ -158,17 +204,19 @@ namespace moppe::game {
                                 const Mat4& transform) {
       r.draw_mesh (mesh, transform, ++motion_part);
     };
-    const Vec3 x_axis (1, 0, 0);
-    const Mat4 spin = Mat4::rotation (bike.wheel_spin_radians * u::rad, x_axis);
+    const direction_t x_axis = unit_direction (Vec3 (1, 0, 0));
+    const Mat4 spin =
+      Mat4::rotation (bike.wheel_spin, direction_value (x_axis));
 
     draw_part (*m.frame, frame);
 
     // The rear wheel hangs on the frame, giving only as its tyre does; the
     // cassette turns with it.
+    const displacement_t rear_axle =
+      displacement (model::rear_axle) -
+      displacement (Vec3 (0, meters_value (bike.rear_wheel_drop), 0));
     const Mat4 rear =
-      frame *
-      Mat4::translation (model::rear_axle - Vec3 (0, bike.rear_wheel_drop, 0)) *
-      spin;
+      frame * Mat4::translation (displacement_value (rear_axle)) * spin;
     draw_part (*m.wheel, rear);
     draw_part (*m.cassette, rear);
 
@@ -176,18 +224,23 @@ namespace moppe::game {
     // and the lowers and the wheel slide along it as the fork works.
     const Mat4 steering = steering_turn (bike, frame);
     draw_part (*m.steering, steering);
-    const Vec3 axis = steering_axis ();
-    const Vec3 axle = model::front_axle - model::steering_head -
-                      axis * (bike.front_wheel_drop / axis[1]);
-    draw_part (*m.lowers, steering * Mat4::translation (axle));
-    draw_part (*m.wheel, steering * Mat4::translation (axle) * spin);
+    const direction_t axis = steering_axis ();
+    const displacement_t axle =
+      displacement (model::front_axle - model::steering_head) -
+      along (axis, bike.front_wheel_drop / direction_value (axis)[1]);
+    draw_part (*m.lowers,
+               steering * Mat4::translation (displacement_value (axle)));
+    draw_part (*m.wheel,
+               steering * Mat4::translation (displacement_value (axle)) * spin);
 
     // The crank turns about the bottom bracket; each pedal stays level
     // on the end of its arm.
     draw_part (*m.crank,
                frame * Mat4::translation (model::bottom_bracket) *
-                 Mat4::rotation (bike.crank_radians * u::rad, x_axis));
+                 Mat4::rotation (bike.crank, direction_value (x_axis)));
     for (int side : { -1, 1 })
-      draw_part (*m.pedal, frame * Mat4::translation (pedal_at (bike, side)));
+      draw_part (
+        *m.pedal,
+        frame * Mat4::translation (displacement_value (pedal_at (bike, side))));
   }
 }

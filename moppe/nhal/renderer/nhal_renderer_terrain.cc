@@ -218,7 +218,7 @@ namespace moppe::nhal {
       const float period_z = t.height * t.scale[2];
       // Well inside where the finest level begins to morph away.
       const float reach = std::min (110.0f, 50.0f * t.scale[0]);
-      const Vec3 camera = m_params.camera_pos;
+      const Vec3 camera = position_value (m_params.camera_pos);
       constexpr std::size_t stride = RoadSetup::rows_per_segment;
       const float segments = float (m_terrain.road_segments.size () / stride);
       bool bound = false;
@@ -315,10 +315,12 @@ namespace moppe::nhal {
                              m_terrain.road_setup.shoulder,
                              m_terrain.road_setup.crown,
                              m_terrain.road_setup.blend };
-      terrain.road_batter = { m_terrain.road_setup.cut_slope,
-                              m_terrain.road_setup.fill_slope,
-                              std::clamp (m_params.rain, 0.0f, 1.0f),
-                              0 };
+      terrain.road_batter = {
+        m_terrain.road_setup.cut_slope,
+        m_terrain.road_setup.fill_slope,
+        std::clamp (m_params.rain.numerical_value_in (one), 0.0f, 1.0f),
+        0
+      };
       return terrain;
     }
   }

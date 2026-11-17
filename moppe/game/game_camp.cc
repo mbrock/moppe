@@ -106,8 +106,10 @@ namespace moppe {
                    hammock_across (camp.hammock) * 0.75f -
                    hammock_along (camp.hammock) * 0.5f;
       floor[1] = world_ground ().height (floor);
-      render_basket_set_down (
-        dl, floor, hammock_along (camp.hammock), m_basket_contents);
+      render_basket_set_down (dl,
+                              position (floor),
+                              unit_direction (hammock_along (camp.hammock)),
+                              m_basket_contents);
     }
   }
 }

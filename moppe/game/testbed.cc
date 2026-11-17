@@ -40,19 +40,19 @@ namespace {
       fp.view = Mat4::look_at (eye, at, Vec3 (0, 1, 0));
       fp.proj = Mat4::perspective_reversed (
         60 * u::deg, (float)r.width_pts () / r.height_pts (), 0.5f, 9000.0f);
-      fp.camera_pos = eye;
-      fp.cam_right =
-        Vec3 (fp.view.element (0), fp.view.element (4), fp.view.element (8));
-      fp.cam_up =
-        Vec3 (fp.view.element (1), fp.view.element (5), fp.view.element (9));
-      fp.cam_forward = normalized (at - eye);
+      fp.camera_pos = position (eye);
+      fp.cam_right = unit_direction (
+        Vec3 (fp.view.element (0), fp.view.element (4), fp.view.element (8)));
+      fp.cam_up = unit_direction (
+        Vec3 (fp.view.element (1), fp.view.element (5), fp.view.element (9)));
+      fp.cam_forward = unit_direction (normalized (at - eye));
       fp.clear_color = DisplayColor (0.55f, 0.65f, 0.85f);
-      fp.fog_scale = 0.004f;
-      fp.sun_dir = normalized (Vec3 (0.5f, 0.8f, 0.3f));
+      fp.fog_scale = 0.004f / u::m;
+      fp.sun_dir = unit_direction (normalized (Vec3 (0.5f, 0.8f, 0.3f)));
       fp.sun_diffuse = DisplayColor (1.0f, 0.9f, 0.75f);
       fp.sun_specular = DisplayColor (0.5f, 0.5f, 0.5f);
       fp.ambient = DisplayColor (0.35f, 0.35f, 0.4f);
-      fp.time = m_time;
+      fp.time = seconds (m_time);
 
       if (!r.begin_frame (fp))
         return;

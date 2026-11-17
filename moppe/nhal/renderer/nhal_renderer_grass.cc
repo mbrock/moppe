@@ -44,7 +44,8 @@ namespace moppe::nhal {
         return;
       constexpr float tile = 0.60f;
       constexpr std::uint32_t shoots = 32, indices_per_shoot = 18;
-      const float reach = std::max (m_grass.params.reach, 1.0f) * 1.7f;
+      const float reach =
+        std::max (meters_value (m_grass.params.reach), 1.0f) * 1.7f;
       const std::uint32_t side = std::min (
         std::uint32_t (std::ceil (2.0f * reach / tile)), grass_window_side);
       if (!m_grass.tiles) {
@@ -96,9 +97,15 @@ namespace moppe::nhal {
           std::as_bytes (std::span (grid)));
       }
       const auto& t = m_terrain.params;
+      const Vec3& camera = position_value (params.camera_pos);
+      const render::UndergrowthParams& sward_params = m_grass.params;
+      const Vec3& bare_centre = position_value (sward_params.bare_centre);
+      const Vec3& bare_along = direction_value (sward_params.bare_along);
+      const Vec3& yard_centre = position_value (sward_params.yard_centre);
+      const Vec3& yard_along = direction_value (sward_params.yard_along);
       shaders::grass::Grass grass {};
-      grass.window = { std::floor ((params.camera_pos[0] - reach) / tile),
-                       std::floor ((params.camera_pos[2] - reach) / tile),
+      grass.window = { std::floor ((camera[0] - reach) / tile),
+                       std::floor ((camera[2] - reach) / tile),
                        float (side),
                        tile };
       grass.lattice = {
@@ -106,22 +113,23 @@ namespace moppe::nhal {
       };
       const float focal =
         0.5f * float (m_scene_height) * std::abs (params.proj.at (1, 1));
-      grass.habitat = { reach, m_grass.params.density, t.tex_scale, focal };
-      grass.stand_field = stand_field ();
-      grass.bare = { m_grass.params.bare_centre[0],
-                     m_grass.params.bare_centre[2],
-                     m_grass.params.bare_along[0],
-                     m_grass.params.bare_along[2] };
-      grass.bare_size = {
-        m_grass.params.bare_half_x, m_grass.params.bare_half_z, 0.0f, 0.0f
+      grass.habitat = {
+        reach, sward_params.density.numerical_value_in (one), t.tex_scale, focal
       };
-      grass.yard = { m_grass.params.yard_centre[0],
-                     m_grass.params.yard_centre[2],
-                     m_grass.params.yard_along[0],
-                     m_grass.params.yard_along[2] };
-      grass.yard_size = { m_grass.params.yard_half_x,
-                          m_grass.params.yard_half_z,
-                          m_grass.params.yard_margin,
+      grass.stand_field = stand_field ();
+      grass.bare = {
+        bare_centre[0], bare_centre[2], bare_along[0], bare_along[2]
+      };
+      grass.bare_size = { meters_value (sward_params.bare_half_x),
+                          meters_value (sward_params.bare_half_z),
+                          0.0f,
+                          0.0f };
+      grass.yard = {
+        yard_centre[0], yard_centre[2], yard_along[0], yard_along[2]
+      };
+      grass.yard_size = { meters_value (sward_params.yard_half_x),
+                          meters_value (sward_params.yard_half_z),
+                          meters_value (sward_params.yard_margin),
                           0.0f };
       m_grass.block = grass;
 
@@ -141,12 +149,10 @@ namespace moppe::nhal {
           view_proj.element (8 + r) * view_proj.element (8 + r));
       };
       shaders::grass::Grass sward = grass;
-      sward.window = {
-        std::floor ((params.camera_pos[0] - canopy_reach) / patch),
-        std::floor ((params.camera_pos[2] - canopy_reach) / patch),
-        float (patches),
-        patch
-      };
+      sward.window = { std::floor ((camera[0] - canopy_reach) / patch),
+                       std::floor ((camera[2] - canopy_reach) / patch),
+                       float (patches),
+                       patch };
       sward.habitat[0] = canopy_reach;
       sward.interaction = { row (0), row (1), 0, 0 };
       m_grass.sward_block = sward;
@@ -228,8 +234,8 @@ namespace moppe::nhal {
 
     void NhalRenderer::draw_blades (const render::UndergrowthParams& params) {
       shaders::grass::Grass grass = m_grass.block;
-      grass.interaction =
-        lanes (params.interaction_position, params.interaction_radius);
+      grass.interaction = lanes (position_value (params.interaction_position),
+                                 meters_value (params.interaction_radius));
       m_device->set_pipeline (m_grass.blades);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, grass);

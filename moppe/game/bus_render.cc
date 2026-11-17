@@ -13,18 +13,21 @@
 namespace moppe::game {
   namespace {
     namespace bus_render_parts {
-      const Vec3 up (0.0f, 1.0f, 0.0f);
+      const direction_t up = unit_direction (Vec3 (0.0f, 1.0f, 0.0f));
 
-      Vec3 left_of (const Vec3& forward) {
-        return Vec3 (forward[2], 0.0f, -forward[0]);
+      direction_t left_of (const direction_t& forward) {
+        return unit_direction (Vec3 (
+          direction_value (forward)[2], 0.0f, -direction_value (forward)[0]));
       }
 
       // A box of `size` (whole extents) about `centre`, in the frame
       // the list stands in.
-      void box (render::DrawList& dl, const Vec3& centre, const Vec3& size) {
+      void box (render::DrawList& dl,
+                const displacement_t& centre,
+                const spatial_extent_t& size) {
         dl.push ();
         dl.translate (centre);
-        dl.scale (size);
+        dl.scale (extent_value (size));
         dl.cube (1.0f);
         dl.pop ();
       }
@@ -36,61 +39,91 @@ namespace moppe::game {
       // front to the road, a bench inside, and a roof sloping back.
       void record_sign (render::DrawList& dl) {
         dl.color (0.55f, 0.56f, 0.57f);
-        box (dl, Vec3 (0, 1.2f, 0), Vec3 (0.07f, 2.6f, 0.07f));
+        box (dl,
+             displacement (Vec3 (0, 1.2f, 0)),
+             spatial_extent_in_metres (Vec3 (0.07f, 2.6f, 0.07f)));
         dl.color (0.97f, 0.80f, 0.12f);
-        box (dl, Vec3 (0, 2.25f, 0), Vec3 (0.5f, 0.6f, 0.03f));
+        box (dl,
+             displacement (Vec3 (0, 2.25f, 0)),
+             spatial_extent_in_metres (Vec3 (0.5f, 0.6f, 0.03f)));
         dl.color (0.06f, 0.42f, 0.22f);
         for (const float side : { 1.0f, -1.0f }) {
-          const float face = side * 0.017f;
-          box (dl, Vec3 (-0.12f, 2.25f, face), Vec3 (0.06f, 0.36f, 0.004f));
-          box (dl, Vec3 (0.12f, 2.25f, face), Vec3 (0.06f, 0.36f, 0.004f));
-          box (dl, Vec3 (0, 2.25f, face), Vec3 (0.24f, 0.06f, 0.004f));
+          // The H on each face of the plate, standing just proud of it.
+          const meters_t face = side * 0.017f * u::m;
+          box (dl,
+               displacement (Vec3 (-0.12f, 2.25f, meters_value (face))),
+               spatial_extent_in_metres (Vec3 (0.06f, 0.36f, 0.004f)));
+          box (dl,
+               displacement (Vec3 (0.12f, 2.25f, meters_value (face))),
+               spatial_extent_in_metres (Vec3 (0.06f, 0.36f, 0.004f)));
+          box (dl,
+               displacement (Vec3 (0, 2.25f, meters_value (face))),
+               spatial_extent_in_metres (Vec3 (0.24f, 0.06f, 0.004f)));
         }
       }
 
-      constexpr float shelter_half_width = 1.6f, shelter_half_depth = 0.8f;
+      constexpr meters_t shelter_half_width = 1.6f * u::m,
+                         shelter_half_depth = 0.8f * u::m;
 
       void record_shelter (render::DrawList& dl) {
-        const float hw = shelter_half_width, hd = shelter_half_depth;
+        // The shelter's literal geometry below is in metres.
+        const float hw = meters_value (shelter_half_width),
+                    hd = meters_value (shelter_half_depth);
         const DisplayColor falu (0.50f, 0.13f, 0.09f);
         const DisplayColor white (0.90f, 0.89f, 0.85f);
         // A footing of gravel and stone, sunk into the ground.
         dl.color (0.52f, 0.50f, 0.46f);
-        box (dl, Vec3 (0, -0.2f, 0), Vec3 (2 * hw + 0.4f, 0.5f, 2 * hd + 0.4f));
+        box (
+          dl,
+          displacement (Vec3 (0, -0.2f, 0)),
+          spatial_extent_in_metres (Vec3 (2 * hw + 0.4f, 0.5f, 2 * hd + 0.4f)));
         // The back wall and the two sides.
         dl.color (falu);
-        box (dl, Vec3 (0, 1.0f, -hd + 0.05f), Vec3 (2 * hw, 2.0f, 0.1f));
+        box (dl,
+             displacement (Vec3 (0, 1.0f, -hd + 0.05f)),
+             spatial_extent_in_metres (Vec3 (2 * hw, 2.0f, 0.1f)));
         for (const float x : { -hw + 0.05f, hw - 0.05f })
-          box (dl, Vec3 (x, 1.05f, -0.1f), Vec3 (0.1f, 2.1f, 2 * hd - 0.2f));
+          box (dl,
+               displacement (Vec3 (x, 1.05f, -0.1f)),
+               spatial_extent_in_metres (Vec3 (0.1f, 2.1f, 2 * hd - 0.2f)));
         // White corner posts and the eaves' board.
         dl.color (white);
         for (const float x : { -hw, hw })
           for (const float z : { -hd + 0.05f, hd - 0.1f })
-            box (dl, Vec3 (x, 1.1f, z), Vec3 (0.12f, 2.2f, 0.12f));
-        box (dl, Vec3 (0, 2.2f, hd - 0.1f), Vec3 (2 * hw + 0.12f, 0.16f, 0.1f));
+            box (dl,
+                 displacement (Vec3 (x, 1.1f, z)),
+                 spatial_extent_in_metres (Vec3 (0.12f, 2.2f, 0.12f)));
+        box (dl,
+             displacement (Vec3 (0, 2.2f, hd - 0.1f)),
+             spatial_extent_in_metres (Vec3 (2 * hw + 0.12f, 0.16f, 0.1f)));
         // The roof, sloping down to the back.
         dl.color (0.20f, 0.20f, 0.21f);
         dl.push ();
-        dl.translate (Vec3 (0, 2.28f, 0));
-        dl.mult (Mat4::rotation (-0.12f * u::rad, Vec3 (1, 0, 0)));
+        dl.translate (displacement (Vec3 (0, 2.28f, 0)));
+        dl.rotate (-0.12f * u::rad, unit_direction (Vec3 (1, 0, 0)));
         dl.scale (Vec3 (2 * hw + 0.4f, 0.06f, 2 * hd + 0.5f));
         dl.cube (1.0f);
         dl.pop ();
         // The bench along the back wall.
         dl.color (0.62f, 0.45f, 0.28f);
-        box (
-          dl, Vec3 (0, 0.45f, -hd + 0.35f), Vec3 (2 * hw - 0.4f, 0.06f, 0.4f));
+        box (dl,
+             displacement (Vec3 (0, 0.45f, -hd + 0.35f)),
+             spatial_extent_in_metres (Vec3 (2 * hw - 0.4f, 0.06f, 0.4f)));
         dl.color (0.25f, 0.24f, 0.23f);
         for (const float x : { -hw + 0.5f, hw - 0.5f })
-          box (dl, Vec3 (x, 0.22f, -hd + 0.35f), Vec3 (0.06f, 0.45f, 0.3f));
+          box (dl,
+               displacement (Vec3 (x, 0.22f, -hd + 0.35f)),
+               spatial_extent_in_metres (Vec3 (0.06f, 0.45f, 0.3f)));
       }
 
       // The frame a stop's things stand in: x along the road against the
       // buses' way, y up, and z out toward the road.
-      Mat4 facing_road (const Vec3& at, const Vec3& buses_way) {
-        const Vec3 toward_road = left_of (buses_way);
-        return Mat4::translation (at) *
-               Mat4::basis (left_of (toward_road), up, toward_road);
+      Mat4 facing_road (const position_t& at, const direction_t& buses_way) {
+        const direction_t toward_road = left_of (buses_way);
+        return Mat4::translation (position_value (at)) *
+               Mat4::basis (direction_value (left_of (toward_road)),
+                            direction_value (up),
+                            direction_value (toward_road));
       }
 
       // The bus's model as render_car reads it: its driver at the wheel
@@ -98,24 +131,33 @@ namespace moppe::game {
       // the floor.
       CarModel bus_car_for (std::size_t seat) {
         namespace m = bus_model;
-        const Vec3 at = bus_seat_in_model (seat);
+        const displacement_t at = displacement (bus_seat_in_model (seat));
         return {
-          .steering_ratio = 6.0f,
-          .steering_hub = m::steering_hub,
-          .steering_column = m::steering_column,
-          .grip_left = m::grip_left,
-          .grip_right = m::grip_right,
-          .seat_driver = m::seat_driver,
+          .steering_ratio = 6.0f * scale_factor[one],
+          .steering_hub = displacement (m::steering_hub),
+          .steering_column = displacement (m::steering_column),
+          .grip_left = displacement (m::grip_left),
+          .grip_right = displacement (m::grip_right),
+          .seat_driver = displacement (m::seat_driver),
           .seat_passenger = at,
-          .pedal_left = m::pedal_left,
-          .pedal_right = m::pedal_right,
-          .footrest_left = Vec3 (at[0] + 0.12f, m::aisle[1], at[2] + 0.45f),
-          .footrest_right = Vec3 (at[0] - 0.12f, m::aisle[1], at[2] + 0.45f),
-          .wheels = { m::wheel_fl, m::wheel_fr, m::wheel_rl, m::wheel_rr },
-          .lean = -0.10f,
-          .sole_tilt = 0.30f,
-          .knee_ahead = 0.5f,
-          .knee_out = 0.15f,
+          .pedal_left = displacement (m::pedal_left),
+          .pedal_right = displacement (m::pedal_right),
+          .footrest_left =
+            displacement (Vec3 (displacement_value (at)[0] + 0.12f,
+                                m::aisle[1],
+                                displacement_value (at)[2] + 0.45f)),
+          .footrest_right =
+            displacement (Vec3 (displacement_value (at)[0] - 0.12f,
+                                m::aisle[1],
+                                displacement_value (at)[2] + 0.45f)),
+          .wheels = { displacement (m::wheel_fl),
+                      displacement (m::wheel_fr),
+                      displacement (m::wheel_rl),
+                      displacement (m::wheel_rr) },
+          .lean = -0.10f * u::rad,
+          .sole_tilt = 0.30f * grade[one],
+          .knee_ahead = 0.5f * scale_factor[one],
+          .knee_out = 0.15f * scale_factor[one],
         };
       }
 
@@ -145,25 +187,27 @@ namespace moppe::game {
     std::vector<mov::Trunk> colliders;
     for (const BusStop& stop : line.stops ()) {
       colliders.push_back ({ .root = stop.sign + Vec3 (0, -0.2f, 0),
-                             .axis = up,
+                             .axis = direction_value (up),
                              .height = 2.8f,
                              .radius = 0.12f });
       if (!stop.shelter)
         continue;
-      const Mat4 frame = facing_road (*stop.shelter, stop.forward);
-      const auto post = [&] (float x, float z) {
-        colliders.push_back (
-          { .root = frame.transform_point (Vec3 (x, -0.3f, z)),
-            .axis = up,
-            .height = 2.6f,
-            .radius = 0.3f });
+      const Mat4 frame =
+        facing_road (position (*stop.shelter), unit_direction (stop.forward));
+      const auto post = [&] (meters_t x, meters_t z) {
+        colliders.push_back ({ .root = frame.transform_point (Vec3 (
+                                 meters_value (x), -0.3f, meters_value (z))),
+                               .axis = direction_value (up),
+                               .height = 2.6f,
+                               .radius = 0.3f });
       };
-      for (float x = -shelter_half_width + 0.3f; x <= shelter_half_width;
-           x += 0.6f)
-        post (x, -shelter_half_depth + 0.3f);
-      for (const float x :
-           { -shelter_half_width + 0.3f, shelter_half_width - 0.3f })
-        post (x, 0.2f);
+      for (meters_t x = -shelter_half_width + 0.3f * u::m;
+           x <= shelter_half_width;
+           x += 0.6f * u::m)
+        post (x, -shelter_half_depth + 0.3f * u::m);
+      for (const meters_t x : { -shelter_half_width + 0.3f * u::m,
+                                shelter_half_width - 0.3f * u::m })
+        post (x, 0.2f * u::m);
     }
     return colliders;
   }
@@ -173,8 +217,7 @@ namespace moppe::game {
                          float period_x,
                          float period_z) {
     using namespace bus_render_parts;
-    m_period_x = period_x;
-    m_period_z = period_z;
+    m_period = plan_extent (period_x * u::m, period_z * u::m);
     m_stops.clear ();
     const auto lit = [] (render::DrawList& dl) {
       render::DrawState solid;
@@ -187,12 +230,14 @@ namespace moppe::game {
       render::DrawList dl;
       lit (dl);
       dl.push ();
-      dl.mult (facing_road (stop.sign, stop.forward));
+      dl.mult (
+        facing_road (position (stop.sign), unit_direction (stop.forward)));
       record_sign (dl);
       dl.pop ();
       if (stop.shelter) {
         dl.push ();
-        dl.mult (facing_road (*stop.shelter, stop.forward));
+        dl.mult (facing_road (position (*stop.shelter),
+                              unit_direction (stop.forward)));
         record_shelter (dl);
         dl.pop ();
       }
@@ -230,10 +275,15 @@ namespace moppe::game {
                 model_mesh::bake (renderer, m::door_aft) };
   }
 
-  Vec3 BusView::near_copy (const Vec3& at, const Vec3& camera) const {
-    Vec3 out = at;
-    out[0] += terrain::whole_periods (camera[0] - at[0], m_period_x);
-    out[2] += terrain::whole_periods (camera[2] - at[2], m_period_z);
+  position_t BusView::near_copy (const position_t& at,
+                                 const position_t& camera) const {
+    position_t out = at;
+    position_value (out)[0] += terrain::whole_periods (
+      position_value (camera)[0] - position_value (at)[0],
+      plan_value (m_period).x ());
+    position_value (out)[2] += terrain::whole_periods (
+      position_value (camera)[2] - position_value (at)[2],
+      plan_value (m_period).z ());
     return out;
   }
 
@@ -241,17 +291,19 @@ namespace moppe::game {
                       render::DrawList& dl,
                       const BusLine& line,
                       play_time_t now,
-                      const Vec3& camera,
+                      const position_t& camera,
                       std::uint64_t motion_base,
                       std::span<const BusRider> riders) const {
     using namespace bus_render_parts;
     std::uint64_t id = motion_base;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
          ++i) {
-      const Vec3& sign = line.stops ()[i].sign;
-      const Vec3 at = near_copy (sign, camera);
-      if (m_stops[i] && length2 (at - camera) < 1500.0f * 1500.0f)
-        renderer.draw_mesh (*m_stops[i], Mat4::translation (at - sign));
+      const position_t sign = position (line.stops ()[i].sign);
+      const position_t at = near_copy (sign, camera);
+      if (m_stops[i] &&
+          length2 (displacement_value (at - camera)) < 1500.0f * 1500.0f)
+        renderer.draw_mesh (*m_stops[i],
+                            Mat4::translation (displacement_value (at - sign)));
     }
     if (!m_bus.wheel)
       return;
@@ -259,14 +311,14 @@ namespace moppe::game {
     for (std::size_t k = 0; k < buses.size (); ++k) {
       const BusPose& pose = buses[k];
       id += 16;
-      const Vec3 at = near_copy (pose.position, camera);
-      if (length2 (at - camera) > 2500.0f * 2500.0f)
+      const position_t at = near_copy (position (pose.position), camera);
+      if (length2 (displacement_value (at - camera)) > 2500.0f * 2500.0f)
         continue;
       const CarPose car { .position = at,
-                          .forward = pose.forward,
-                          .up = pose.up,
-                          .steer_radians = pose.steer_radians,
-                          .wheel_spin_radians = pose.wheel_spin_radians };
+                          .forward = unit_direction (pose.forward),
+                          .up = unit_direction (pose.up),
+                          .steer = pose.steer_radians * u::rad,
+                          .wheel_spin = pose.wheel_spin_radians * u::rad };
       // Its riders, by seat.
       std::array<std::optional<Outfit>, 2> seated;
       for (const BusRider& rider : riders)
@@ -286,17 +338,19 @@ namespace moppe::game {
       if (seated[1])
         seat_car_passenger (dl, car, bus_car (1), *seated[1]);
       // Its doors, folding out about their hinges at a stop.
-      const Mat4 frame = model_mesh::body_frame (at, pose.forward, pose.up);
-      const float swing = 1.536f * pose.door_open;
+      const Mat4 frame =
+        model_mesh::body_frame (position_value (at), pose.forward, pose.up);
+      // The doors' swing when they stand fully open.
+      const radians_t swing = 1.536f * pose.door_open * u::rad;
       renderer.draw_mesh (*m_doors[0],
                           frame *
                             Mat4::translation (bus_model::door_fore_hinge) *
-                            Mat4::rotation (swing * u::rad, Vec3 (0, 1, 0)),
+                            Mat4::rotation (swing, Vec3 (0, 1, 0)),
                           id + 14);
       renderer.draw_mesh (*m_doors[1],
                           frame *
                             Mat4::translation (bus_model::door_aft_hinge) *
-                            Mat4::rotation (-swing * u::rad, Vec3 (0, 1, 0)),
+                            Mat4::rotation (-swing, Vec3 (0, 1, 0)),
                           id + 15);
     }
   }
@@ -304,22 +358,25 @@ namespace moppe::game {
   void BusView::cast_shadows (render::Renderer& renderer,
                               const BusLine& line,
                               play_time_t now,
-                              const Vec3& camera) const {
+                              const position_t& camera) const {
     using namespace bus_render_parts;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
          ++i) {
-      const Vec3& sign = line.stops ()[i].sign;
-      const Vec3 at = near_copy (sign, camera);
-      if (m_stops[i] && length2 (at - camera) < 160.0f * 160.0f)
-        renderer.draw_mesh (*m_stops[i], Mat4::translation (at - sign));
+      const position_t sign = position (line.stops ()[i].sign);
+      const position_t at = near_copy (sign, camera);
+      if (m_stops[i] &&
+          length2 (displacement_value (at - camera)) < 160.0f * 160.0f)
+        renderer.draw_mesh (*m_stops[i],
+                            Mat4::translation (displacement_value (at - sign)));
     }
     if (m_bus.body.empty ())
       return;
     for (const BusPose& pose : line.where (now)) {
-      const Vec3 at = near_copy (pose.position, camera);
-      if (length2 (at - camera) < 160.0f * 160.0f)
-        renderer.draw_mesh (*m_bus.body.front ().mesh,
-                            model_mesh::body_frame (at, pose.forward, pose.up));
+      const position_t at = near_copy (position (pose.position), camera);
+      if (length2 (displacement_value (at - camera)) < 160.0f * 160.0f)
+        renderer.draw_mesh (
+          *m_bus.body.front ().mesh,
+          model_mesh::body_frame (position_value (at), pose.forward, pose.up));
     }
   }
 

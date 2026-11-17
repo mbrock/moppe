@@ -10,12 +10,12 @@
       "escapes": 14
     },
     "Companion / multiplayer": {
-      "share": 60.9,
+      "share": 68.7,
       "files": 7,
-      "typed": 103,
-      "raw_float": 27,
-      "raw_vector": 39,
-      "escapes": 61
+      "typed": 134,
+      "raw_float": 21,
+      "raw_vector": 40,
+      "escapes": 94
     },
     "Developer tools & site": {
       "share": 36.0,
@@ -42,12 +42,12 @@
       "escapes": 47
     },
     "Game logic": {
-      "share": 14.2,
+      "share": 14.4,
       "files": 43,
-      "typed": 270,
+      "typed": 273,
       "raw_float": 940,
       "raw_vector": 685,
-      "escapes": 278
+      "escapes": 281
     },
     "HUD & map": {
       "share": 1.4,
@@ -55,15 +55,15 @@
       "typed": 10,
       "raw_float": 662,
       "raw_vector": 37,
-      "escapes": 22
+      "escapes": 60
     },
     "Places & camp": {
-      "share": 4.1,
+      "share": 4.4,
       "files": 12,
-      "typed": 33,
+      "typed": 36,
       "raw_float": 444,
       "raw_vector": 332,
-      "escapes": 41
+      "escapes": 53
     },
     "Platform game interface": {
       "share": 88.8,
@@ -74,12 +74,12 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 6.8,
+      "share": 70.6,
       "files": 61,
-      "typed": 89,
-      "raw_float": 736,
-      "raw_vector": 478,
-      "escapes": 113
+      "typed": 1078,
+      "raw_float": 303,
+      "raw_vector": 146,
+      "escapes": 658
     },
     "Rivers, water & sediment": {
       "share": 98.0,
@@ -106,12 +106,12 @@
       "escapes": 207
     },
     "Tests": {
-      "share": 35.0,
+      "share": 35.1,
       "files": 83,
-      "typed": 524,
-      "raw_float": 782,
-      "raw_vector": 191,
-      "escapes": 549
+      "typed": 527,
+      "raw_float": 783,
+      "raw_vector": 192,
+      "escapes": 665
     },
     "Vehicles & on-foot body": {
       "share": 32.8,
@@ -119,7 +119,7 @@
       "typed": 860,
       "raw_float": 887,
       "raw_vector": 877,
-      "escapes": 296
+      "escapes": 309
     }
   }
 }

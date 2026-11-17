@@ -37,7 +37,7 @@ namespace moppe::game {
       };
 
       // The trailer's shadow, behind the tractor's own.
-      constexpr float trailer_shadow_radius = 2.4f;
+      constexpr meters_t trailer_shadow_radius = 2.4f * u::m;
 
       void draw (const FleetScene& s,
                  Machine machine,
@@ -129,8 +129,8 @@ namespace moppe::game {
     for_each_machine (fleet, [&] (Machine m, const auto& pose) {
       const std::size_t i = static_cast<std::size_t> (m);
       if (scene.blob) {
-        const float radius = meters_value (machine_kind (m).shadow_radius);
-        if (radius > 0.0f)
+        const meters_t radius = machine_kind (m).shadow_radius;
+        if (radius > 0.0f * u::m)
           scene.blob->draw (scene.dl, *scene.surface, pose.position, radius);
         if constexpr (requires { pose.trailer_position; })
           scene.blob->draw (scene.dl,

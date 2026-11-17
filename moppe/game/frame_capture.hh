@@ -29,8 +29,8 @@ namespace moppe::game {
     struct VideoPlan {
       std::string path;
       int fps = 30;
-      float seconds = 0.0f;
-      float start = 0.0f;
+      seconds_t seconds = 0.0f * u::s;
+      seconds_t start = 0.0f * u::s;
       int speed = 1;
       int height = 0;
     };
@@ -80,14 +80,14 @@ namespace moppe::game {
 
     // Before a frame of play is begun: asks the renderer for the still
     // when its delay is up, for a requested snapshot (with its pose, at
-    // `play_seconds` under `sun_height`), and for a video's frame.
-    // Returns whether the still was asked for this frame.
+    // `play_time` under `sun_height`, daylight.hh's old reading of the
+    // sun: a half at the horizon), and for a video's frame. Returns
+    // whether the still was asked for this frame.
     bool before_frame (render::Renderer& r,
                        const FrameView& frame,
-                       float play_seconds,
-                       float sun_height,
+                       seconds_t play_time,
+                       proportion_t sun_height,
                        bool opening_active);
-
     // After the frame: a launch whose still is taken quits.
     void after_frame (bool still_taken);
 
@@ -113,8 +113,8 @@ namespace moppe::game {
     // log.txt) and gathered in the run directory's shots.txt.
     void record_shot_pose (const FrameView& frame,
                            const std::string& path,
-                           float play_seconds,
-                           float sun_height);
+                           seconds_t play_time,
+                           proportion_t sun_height);
 
     std::string m_screenshot_path;
     int m_screenshot_frames = 0;

@@ -74,8 +74,12 @@ namespace moppe::nhal {
       m_scene_open = m_scene_begun = m_scene_closed = m_resolved = m_presented =
         false;
       const Mat4 view_proj = params.proj * params.view;
+      const Vec3& camera = position_value (params.camera_pos);
+      const Vec3& sun_dir = direction_value (params.sun_dir);
+      const Vec3& sky_sun_dir = direction_value (params.sky_sun_dir);
+      const float time = seconds_value (params.time);
       if (m_restart)
-        m_previous_view_proj = view_proj, m_previous_time = params.time;
+        m_previous_view_proj = view_proj, m_previous_time = time;
       const float tan_x = 1.0f / params.proj.at (0, 0);
       const float tan_y = 1.0f / params.proj.at (1, 1);
       const std::uint32_t phase = m_frame++ % 16 + 1;
@@ -83,19 +87,22 @@ namespace moppe::nhal {
       FrameBlock frame {};
       frame.view_proj = matrix (view_proj);
       frame.previous_view_proj = matrix (m_previous_view_proj);
-      frame.camera_position = lanes (params.camera_pos, params.time);
-      frame.sun_direction = lanes (params.sun_dir, params.cloud_cover);
+      frame.camera_position = lanes (camera, time);
+      frame.sun_direction =
+        lanes (sun_dir, params.cloud_cover.numerical_value_in (one));
       frame.sun_diffuse = linear (params.sun_diffuse);
       frame.sun_specular = linear (params.sun_specular);
       frame.ambient = linear (params.ambient);
-      frame.fog_color = linear (params.clear_color, params.fog_scale);
+      frame.fog_color =
+        linear (params.clear_color, attenuation_value (params.fog_scale));
       frame.relief = { m_terrain.params.sea_level,
                        m_terrain.params.land_relief,
                        m_previous_time,
-                       std::clamp (params.mist, 0.0f, 1.0f) };
-      frame.view_right = lanes (params.cam_right * tan_x);
-      frame.view_up = lanes (params.cam_up * tan_y);
-      frame.view_forward = lanes (params.cam_forward);
+                       std::clamp (
+                         params.mist.numerical_value_in (one), 0.0f, 1.0f) };
+      frame.view_right = lanes (direction_value (params.cam_right) * tan_x);
+      frame.view_up = lanes (direction_value (params.cam_up) * tan_y);
+      frame.view_forward = lanes (direction_value (params.cam_forward));
       frame.temporal = { float (m_scene_width),
                          float (m_scene_height),
                          (halton (phase, 2) - 0.5f) * 2 / float (m_scene_width),
@@ -105,22 +112,23 @@ namespace moppe::nhal {
         m_restart ? 1.0f : 0.1f, 0.0f, float (m_width), float (m_height)
       };
       frame.shadow = { 0, 1.0f / shadow_size, 0, 0 };
-      const Vec3 sky_sun = length2 (params.sky_sun_dir) > 1e-6f
-                             ? params.sky_sun_dir
-                             : params.sun_dir;
-      frame.sky_sun = lanes (sky_sun, params.sky_turn);
-      frame.sky_moon = lanes (params.sky_moon_dir, params.moonlight);
-      frame.sky_pole = lanes (params.sky_pole);
-      frame.lamp = lanes (params.lamp_pos, params.lamp_reach);
+      const Vec3 sky_sun =
+        length2 (sky_sun_dir) > 1e-6f ? sky_sun_dir : sun_dir;
+      frame.sky_sun = lanes (sky_sun, radians_value (params.sky_turn));
+      frame.sky_moon = lanes (direction_value (params.sky_moon_dir),
+                              params.moonlight.numerical_value_in (one));
+      frame.sky_pole = lanes (direction_value (params.sky_pole));
+      frame.lamp = lanes (position_value (params.lamp_pos),
+                          meters_value (params.lamp_reach));
       frame.lamp_color = linear (params.lamp_color);
       m_frame_values = frame;
       upload_frame ();
-      cull_trees (view_proj, params.camera_pos, float (m_scene_height), false);
+      cull_trees (view_proj, camera, float (m_scene_height), false);
       cull_grass (view_proj, params);
-      cull_rocks (view_proj, params.camera_pos, float (m_scene_height), false);
+      cull_rocks (view_proj, camera, float (m_scene_height), false);
 
       m_previous_view_proj = view_proj;
-      m_previous_time = params.time;
+      m_previous_time = time;
       m_restart = false;
       return true;
     }
@@ -129,18 +137,17 @@ namespace moppe::nhal {
       if (m_scene_closed)
         return;
       open_scene ();
-      if (m_params.rain > 0.0f) {
+      const float rain = m_params.rain.numerical_value_in (one);
+      if (rain > 0.0f) {
         // The rain, last in the scene so it falls in front of
         // everything it does not pass behind: 1 is a drizzle, and
         // heavier rain is more drops of it, up to a downpour at 2.5.
         const std::uint32_t drops =
-          std::uint32_t (7000.0f * std::clamp (m_params.rain, 0.0f, 2.5f));
+          std::uint32_t (7000.0f * std::clamp (rain, 0.0f, 2.5f));
         m_device->set_pipeline (m_rain);
         m_device->set_buffer (0, m_frame_block);
         shaders::rain::Weather weather {};
-        weather.rain = {
-          std::clamp (m_params.rain, 0.0f, 1.0f), float (drops), 0, 0
-        };
+        weather.rain = { std::clamp (rain, 0.0f, 1.0f), float (drops), 0, 0 };
         m_device->set_uniforms (1, weather);
         m_device->draw (6, drops);
       }
@@ -295,7 +302,8 @@ namespace moppe::nhal {
     render::Viewport NhalRenderer::viewport_pixels () const {
       return render::fit_viewport (m_device->surface_width (),
                                    m_device->surface_height (),
-                                   m_aspect_limit);
+                                   m_aspect_limit *
+                                     aspect_ratio[mp_units::one]);
     }
 
     int NhalRenderer::width_pts () const {
@@ -323,16 +331,21 @@ namespace moppe::nhal {
         params.scene_megapixel_budget > 0.0f && pixels > 0
           ? float (std::sqrt (params.scene_megapixel_budget * 1.0e6 / pixels))
           : 1.0f;
-      float scale = params.scene_scale * std::min (point_relative, affordable);
-      if (params.render_scale_override > 0.0f)
-        scale = params.render_scale_override;
+      const float override_scale =
+        params.render_scale_override.numerical_value_in (one);
+      float scale = params.scene_scale.numerical_value_in (one) *
+                    std::min (point_relative, affordable);
+      if (override_scale > 0.0f)
+        scale = override_scale;
       // Bound the ordinary size, not the controller's result: a quarter
       // drawable floor otherwise defeats adaptation on large displays.
-      return std::clamp (scale, 0.25f, 1.0f) * m_dynamic.share ();
+      return std::clamp (scale, 0.25f, 1.0f) *
+             m_dynamic.share ().numerical_value_in (mp_units::one);
     }
 
     void NhalRenderer::hold_frame_rate (const FrameParams& params) {
-      if (params.frame_rate_target <= 0.0f) {
+      const float target = params.frame_rate_target.numerical_value_in (u::Hz);
+      if (target <= 0.0f) {
         m_dynamic = {};
         return;
       }
@@ -341,9 +354,8 @@ namespace moppe::nhal {
         milliseconds += pass.milliseconds;
       const float refresh =
         float (m_device->next_frame_timing ().refresh_seconds);
-      m_dynamic.observe (
-        seconds (float (milliseconds) * 0.001f),
-        seconds (std::max (1.0f / params.frame_rate_target, refresh)));
+      m_dynamic.observe (seconds (float (milliseconds) * 0.001f),
+                         seconds (std::max (1.0f / target, refresh)));
     }
 
     void NhalRenderer::make_drawable_targets () {
@@ -472,12 +484,12 @@ namespace moppe::nhal {
         return;
       reconstruct_scene ();
       shaders::present::Present present {};
-      present.grade = { std::max (m_params.exposure_bias, 0.01f),
-                        m_device->surface_format () == Format::rgba16_float
-                          ? 0.0f
-                          : 1.0f,
-                        std::fmod (m_params.time, 1000.0f),
-                        m_params.bloom ? 1.0f : 0.0f };
+      present.grade = {
+        std::max (m_params.exposure_bias.numerical_value_in (one), 0.01f),
+        m_device->surface_format () == Format::rgba16_float ? 0.0f : 1.0f,
+        std::fmod (seconds_value (m_params.time), 1000.0f),
+        m_params.bloom ? 1.0f : 0.0f
+      };
       present.sun_glare = sun_glare ();
       if (m_params.bloom)
         bloom (present);

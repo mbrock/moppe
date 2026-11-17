@@ -98,7 +98,7 @@ namespace moppe::game {
     AvatarSkeleton k;
 
     const Vec3 up (0, 1, 0);
-    Vec3 f = flat (walker.heading);
+    Vec3 f = flat (direction_value (walker.heading));
     f = length2 (f) > 1e-6f ? normalized (f) : Vec3 (0, 0, 1);
     const Vec3 r = normalized (cross (up, f));
 
@@ -106,15 +106,16 @@ namespace moppe::game {
     // run, how much it steps round on the spot, and how far into the air
     // it is. The stride speed holds its last value through the air, so a
     // jump folds the legs out of the gait they left the ground in.
-    const float speed = walker.stride_speed;
-    const float turn = walker.turn_speed;
+    const float speed = speed_value (walker.stride_speed);
+    const float turn = walker.turn_speed.numerical_value_in (u::rad / u::s);
     const float moving = ease (0.05f, 0.9f, speed);
     const float running = ease (4.2f, 7.0f, speed);
     const float stepping = (1.0f - moving) * ease (0.1f, 0.9f, std::abs (turn));
     const float gait = std::max (moving, stepping);
-    const float air =
-      walker.grounded ? 0.0f : ease (0.0f, 0.15f, walker.airborne_seconds);
-    const float phase = walker.stride_phase;
+    const float air = walker.grounded
+                        ? 0.0f
+                        : ease (0.0f, 0.15f, seconds_value (walker.airborne));
+    const float phase = walker.stride_phase.numerical_value_in (one);
     const float breath = std::sin (time * 1.7f);
     const float sway = std::sin (time * 0.6f);
 
@@ -132,12 +133,12 @@ namespace moppe::game {
     const float back = 0.06f * running * moving;
     const float lift = 0.11f * moving + 0.08f * stepping;
     const float track = mix (0.11f, 0.075f, running);
-    Vec3 travel = flat (walker.velocity);
+    Vec3 travel = flat (velocity_value (walker.velocity));
     travel = length2 (travel) > 0.04f ? normalized (travel) : f;
 
     // Heights on the ground plane the walker stands on.
-    const Vec3& feet = walker.position;
-    Vec3 n = walker.ground_normal;
+    const Vec3& feet = position_value (walker.position);
+    Vec3 n = direction_value (walker.ground_normal);
     if (n[1] < 0.5f)
       n = Vec3 (0, 1, 0);
     const auto ground = [&] (const Vec3& at) {
@@ -214,7 +215,8 @@ namespace moppe::game {
     height += (1.0f - running) * gait * 0.024f * -std::cos (2.0f * PI2 * phase);
     height +=
       running * moving * 0.06f * -std::cos (2.0f * PI2 * (phase - duty * 0.5f));
-    height += 0.004f * breath * (1.0f - moving) - walker.landing_dip;
+    height +=
+      0.004f * breath * (1.0f - moving) - meters_value (walker.landing_dip);
     const float shift = -moving * (1.0f - running) * 0.03f *
                           std::cos (PI2 * (phase - duty * 0.5f)) +
                         (1.0f - moving) * 0.012f * sway;
@@ -240,7 +242,8 @@ namespace moppe::game {
 
     // Airborne legs: one knee drawn up and the other trailing on the way
     // up, both reaching for the ground on the way down.
-    const float falling = ease (0.5f, -3.5f, walker.vertical_speed);
+    const float falling =
+      ease (0.5f, -3.5f, speed_value (walker.vertical_speed));
     for (int i = 0; i < 2; ++i) {
       const float side = i == 0 ? -1.0f : 1.0f;
       k.hip[i] = pelvis + k.right * (side * size::hip_width);
@@ -277,7 +280,7 @@ namespace moppe::game {
     // and then the chest, each as far as it goes.
     const float lean = mix (0.07f, 0.30f, running) * moving + 0.10f * air -
                        0.03f * air * falling;
-    const float aside = walker.look_aside;
+    const float aside = radians_value (walker.look_aside);
     const float head_aside = 1.0f * std::tanh (aside / 1.0f);
     const float chest_aside = 0.5f * std::tanh ((aside - head_aside) / 0.5f);
     const float twist =
@@ -295,7 +298,9 @@ namespace moppe::game {
     // The head keeps its eyes on the horizon through the lean and the
     // stride and follows the walker's gaze.
     const float nod =
-      std::clamp (walker.look_pitch * 0.6f, -0.5f, 0.45f) - lean * 0.6f;
+      std::clamp (
+        walker.look_pitch.numerical_value_in (u::rad) * 0.6f, -0.5f, 0.45f) -
+      lean * 0.6f;
     const Vec3 gaze = yawed (f, head_aside + chest_aside);
     k.head_forward = gaze * std::cos (nod) + up * std::sin (nod);
     k.head_up = up * std::cos (nod) - gaze * std::sin (nod);
@@ -334,7 +339,7 @@ namespace moppe::game {
 
     // Hauling, the right hand holds the rope out toward where it is tied.
     if (walker.rope_end) {
-      const Vec3 toward = *walker.rope_end - k.shoulder[1];
+      const Vec3 toward = position_value (*walker.rope_end) - k.shoulder[1];
       const float distance = length (toward);
       const float reach = 0.95f * (size::upper_arm + size::forearm);
       if (distance > 1e-3f) {

@@ -140,11 +140,12 @@ namespace moppe::game {
             const char* const* values,
             std::string& error) {
           // An explicit scale is held, whatever the frame rate.
-          options.graphics.target_frame_rate = 0.0f;
-          return parse_scale (values[0],
-                              "--render-scale",
-                              options.graphics.render_scale_override,
-                              error);
+          options.graphics.target_frame_rate = 0.0f * u::Hz;
+          float scale = 0.0f;
+          if (!parse_scale (values[0], "--render-scale", scale, error))
+            return false;
+          options.graphics.render_scale_override = scale * scale_factor[one];
+          return true;
         } },
       { "--world-size",
         "",

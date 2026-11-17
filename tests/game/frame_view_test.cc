@@ -71,8 +71,8 @@ namespace {
   game::FrameCameraReading camera_reading (const game::GameSession& session,
                                            degrees_t fov = 58.0f * u::deg) {
     return {
-      .position = session.camera ().position (),
-      .forward = session.camera ().forward (),
+      .position = position (session.camera ().position ()),
+      .forward = unit_direction (session.camera ().forward ()),
       .view = session.camera ().view_matrix (),
       .field_of_view = fov,
     };
@@ -86,14 +86,14 @@ namespace {
       .graphics = fixture.graphics,
       .selected_camera = camera_reading (fixture.running ()),
       .scene = game::FrameSceneMode::Gameplay,
-      .aspect = 16.0f / 9.0f,
+      .aspect = (16.0f / 9.0f) * aspect_ratio[one],
     };
   }
 
   game::FrameView clear_sun_view () {
     game::FrameView view;
-    view.camera.position = Vec3 (10, 30, 80);
-    view.lighting.sun_direction = Vec3 (1, 0, 0);
+    view.camera.position = position (Vec3 (10, 30, 80));
+    view.lighting.sun_direction = unit_direction (Vec3 (1, 0, 0));
     return view;
   }
 
@@ -136,7 +136,7 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
   static_assert (std::is_copy_assignable_v<game::FrameView>);
 
   FrameFixture fixture;
-  fixture.graphics.scene_scale = 0.75f;
+  fixture.graphics.scene_scale = 0.75f * scale_factor[one];
   terrain::WaterSheets water (fixture.surface.domain ());
   std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
                      terrain::surface_elevation_point (24.0f * u::m));
@@ -162,30 +162,36 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
   MOPPE_CHECK (after.stars.count == before.stars.count);
 
   MOPPE_CHECK (first.scene == game::FrameSceneMode::Gameplay);
-  MOPPE_CHECK_NEAR (first.graphics.scene_scale, 0.75f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    first.graphics.scene_scale.numerical_value_in (one), 0.75f, 0.0f);
   MOPPE_CHECK (first.camera_water_level.has_value ());
   MOPPE_CHECK (first.camera_water_level == second.camera_water_level);
   MOPPE_CHECK (first.visibility.underwater == second.visibility.underwater);
   MOPPE_CHECK (frame_view_same_matrix (first.camera.view, second.camera.view));
   MOPPE_CHECK (
     frame_view_same_matrix (first.camera.projection, second.camera.projection));
-  frame_view_check_vector (first.camera.position, second.camera.position);
-  frame_view_check_vector (first.camera.right, second.camera.right);
-  frame_view_check_vector (first.camera.up, second.camera.up);
-  frame_view_check_vector (first.camera.frame_forward,
-                           second.camera.frame_forward);
+  frame_view_check_vector (position_value (first.camera.position),
+                           position_value (second.camera.position));
+  frame_view_check_vector (direction_value (first.camera.right),
+                           direction_value (second.camera.right));
+  frame_view_check_vector (direction_value (first.camera.up),
+                           direction_value (second.camera.up));
+  frame_view_check_vector (direction_value (first.camera.frame_forward),
+                           direction_value (second.camera.frame_forward));
   frame_view_check_color (first.lighting.clear_color,
                           second.lighting.clear_color);
   MOPPE_CHECK_NEAR (
-    first.lighting.sun_visibility,
+    first.lighting.sun_visibility.numerical_value_in (one),
     fixture.running ().logic ().m_flare.numerical_value_in (one),
     1e-6f);
   frame_view_check_vector (position_value (first.environment.camera_pos),
-                           first.camera.position);
-  frame_view_check_vector (first.environment.cam_right, first.camera.right);
-  frame_view_check_vector (first.environment.cam_up, first.camera.up);
+                           position_value (first.camera.position));
+  frame_view_check_vector (first.environment.cam_right,
+                           direction_value (first.camera.right));
+  frame_view_check_vector (first.environment.cam_up,
+                           direction_value (first.camera.up));
   frame_view_check_vector (first.environment.cam_forward,
-                           first.camera.frame_forward);
+                           direction_value (first.camera.frame_forward));
 }
 
 MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
@@ -205,17 +211,19 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
 
   const game::FrameView frozen =
     game::compose_frame_view (gameplay_input (fixture));
-  MOPPE_CHECK_NEAR (frozen.hud.health01, 0.83f, 1e-6f);
-  MOPPE_CHECK_NEAR (frozen.hud.odometer_m, 1234.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (frozen.hud.health.numerical_value_in (one), 0.83f, 1e-6f);
+  MOPPE_CHECK_NEAR (meters_value (frozen.hud.odometer), 1234.0f, 1e-6f);
   MOPPE_CHECK (frozen.hud.lives == 6);
   MOPPE_CHECK (frozen.hud.score == 420);
-  MOPPE_CHECK_NEAR (frozen.hud.airtime_s, 2.75f, 1e-6f);
-  MOPPE_CHECK_NEAR (frozen.hud.spin_degrees, 90.0f, 1e-4f);
-  MOPPE_CHECK_NEAR (frozen.hud.landed_spin_degrees, 180.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (seconds_value (frozen.hud.airtime), 2.75f, 1e-6f);
+  MOPPE_CHECK_NEAR (frozen.hud.spin.numerical_value_in (u::deg), 90.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    frozen.hud.landed_spin.numerical_value_in (u::deg), 180.0f, 1e-6f);
   MOPPE_CHECK (frozen.hud.landed_clean);
-  MOPPE_CHECK_NEAR (frozen.hud.landed_age_s, 0.35f, 1e-6f);
-  MOPPE_CHECK_NEAR (frozen.hud.frame_time_s, 0.0125f, 1e-6f);
-  MOPPE_CHECK_NEAR (frozen.hud.heading_radians, 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (seconds_value (frozen.hud.landed_age), 0.35f, 1e-6f);
+  MOPPE_CHECK_NEAR (seconds_value (frozen.hud.frame_time), 0.0125f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    frozen.hud.heading.numerical_value_in (u::rad), 0.0f, 1e-6f);
 
   logic.m_score = 7;
   session.bike ().reset (Vec3 (96, 11.2f, 48));
@@ -223,17 +231,23 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
   const game::FrameView changed =
     game::compose_frame_view (gameplay_input (fixture));
   MOPPE_CHECK (frozen.hud.score == 420);
-  frame_view_check_vector (frozen.hud.subject_position, Vec3 (48, 11.2f, 48));
-  MOPPE_CHECK_NEAR (frozen.hud.heading_radians, 0.0f, 1e-6f);
+  frame_view_check_vector (position_value (frozen.hud.subject_position),
+                           Vec3 (48, 11.2f, 48));
+  MOPPE_CHECK_NEAR (
+    frozen.hud.heading.numerical_value_in (u::rad), 0.0f, 1e-6f);
   MOPPE_CHECK (changed.hud.score == 7);
-  MOPPE_CHECK_NEAR (changed.hud.heading_radians, 0.5f * PI, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    changed.hud.heading.numerical_value_in (u::rad), 0.5f * PI, 1e-6f);
 
   game::FrameViewInput cinematic = gameplay_input (fixture);
   cinematic.scene = game::FrameSceneMode::Cinematic;
-  cinematic.cinematic_elapsed = 5.0f;
+  cinematic.cinematic_elapsed = 5.0f * u::s;
   const game::FrameView prompt = game::compose_frame_view (cinematic);
   MOPPE_CHECK (prompt.visibility.cinematic_hud);
-  MOPPE_CHECK_NEAR (prompt.overlay.cinematic_prompt_alpha, 0.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    prompt.overlay.cinematic_prompt_alpha.numerical_value_in (one),
+    0.5f,
+    1e-6f);
 }
 
 MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
@@ -245,20 +259,22 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
   const game::FrameView frozen =
     game::compose_frame_view (gameplay_input (fixture));
   MOPPE_CHECK (frozen.actors.walker.has_value ());
-  const Vec3 bike_position = frozen.actors.fleet.bike.position;
-  const Vec3 walker_position = frozen.actors.walker->position;
+  const Vec3 bike_position = position_value (frozen.actors.fleet.bike.position);
+  const Vec3 walker_position = position_value (frozen.actors.walker->position);
 
   session.bike ().reset (Vec3 (112, 11.2f, 48));
   session.walker ().spawn (position (Vec3 (96, 10, 40)), Vec3 (-1, 0, 0));
   const game::FrameView changed =
     game::compose_frame_view (gameplay_input (fixture));
 
-  frame_view_check_vector (frozen.actors.fleet.bike.position, bike_position);
-  frame_view_check_vector (frozen.actors.walker->position, walker_position);
-  MOPPE_CHECK (length2 (changed.actors.fleet.bike.position - bike_position) >
-               1.0f);
-  MOPPE_CHECK (length2 (changed.actors.walker->position - walker_position) >
-               1.0f);
+  frame_view_check_vector (position_value (frozen.actors.fleet.bike.position),
+                           bike_position);
+  frame_view_check_vector (position_value (frozen.actors.walker->position),
+                           walker_position);
+  MOPPE_CHECK (length2 (position_value (changed.actors.fleet.bike.position) -
+                        bike_position) > 1.0f);
+  MOPPE_CHECK (length2 (position_value (changed.actors.walker->position) -
+                        walker_position) > 1.0f);
 
   session.logic ().m_doing = game::Doing::gliding ();
   session.glider ().launch (position (Vec3 (72, 42, 72)),
@@ -269,14 +285,15 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
     game::compose_frame_view (gameplay_input (fixture));
   MOPPE_CHECK (gliding.actors.glider.has_value ());
   MOPPE_CHECK (gliding.actors.glider->bike_attached);
-  const Vec3 glider_position = gliding.actors.glider->position;
+  const Vec3 glider_position = position_value (gliding.actors.glider->position);
   session.glider ().launch (
     position (Vec3 (108, 55, 72)), velocity (Vec3 (0, 1, 14)), Vec3 (0, 0, 1));
   const game::FrameView relaunched =
     game::compose_frame_view (gameplay_input (fixture));
-  frame_view_check_vector (gliding.actors.glider->position, glider_position);
-  MOPPE_CHECK (length2 (relaunched.actors.glider->position - glider_position) >
-               1.0f);
+  frame_view_check_vector (position_value (gliding.actors.glider->position),
+                           glider_position);
+  MOPPE_CHECK (length2 (position_value (relaunched.actors.glider->position) -
+                        glider_position) > 1.0f);
 }
 
 MOPPE_TEST (frame_view_applies_shake_to_the_reading_not_the_camera_body) {
@@ -290,16 +307,20 @@ MOPPE_TEST (frame_view_applies_shake_to_the_reading_not_the_camera_body) {
   const game::FrameView shaken =
     game::compose_frame_view (gameplay_input (fixture));
 
-  frame_view_check_vector (shaken.camera.position, steady.camera.position);
-  frame_view_check_vector (shaken.camera.forward, steady.camera.forward);
+  frame_view_check_vector (position_value (shaken.camera.position),
+                           position_value (steady.camera.position));
+  frame_view_check_vector (direction_value (shaken.camera.forward),
+                           direction_value (steady.camera.forward));
   MOPPE_CHECK (
     !frame_view_same_matrix (shaken.camera.view, steady.camera.view));
-  MOPPE_CHECK (length2 (shaken.camera.frame_forward -
-                        steady.camera.frame_forward) > 1e-7f);
-  frame_view_check_vector (shaken.environment.cam_right, shaken.camera.right);
-  frame_view_check_vector (shaken.environment.cam_up, shaken.camera.up);
+  MOPPE_CHECK (length2 (direction_value (shaken.camera.frame_forward) -
+                        direction_value (steady.camera.frame_forward)) > 1e-7f);
+  frame_view_check_vector (shaken.environment.cam_right,
+                           direction_value (shaken.camera.right));
+  frame_view_check_vector (shaken.environment.cam_up,
+                           direction_value (shaken.camera.up));
   frame_view_check_vector (shaken.environment.cam_forward,
-                           shaken.camera.frame_forward);
+                           direction_value (shaken.camera.frame_forward));
 }
 
 MOPPE_TEST (frame_view_selects_cinematic_rules) {
@@ -309,8 +330,8 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
   session.logic ().m_shake_time = 0.031f * u::s;
 
   const game::FrameCameraReading cinematic_camera {
-    .position = Vec3 (20, 60, 20),
-    .forward = normalized (Vec3 (1, -0.2f, 1)),
+    .position = position (Vec3 (20, 60, 20)),
+    .forward = unit_direction (normalized (Vec3 (1, -0.2f, 1))),
     .view =
       Mat4::look_at (Vec3 (20, 60, 20), Vec3 (80, 20, 80), Vec3 (0, 1, 0)),
     .field_of_view = 52.0f * u::deg,
@@ -318,7 +339,7 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
   game::FrameViewInput cinematic = gameplay_input (fixture);
   cinematic.selected_camera = cinematic_camera;
   cinematic.scene = game::FrameSceneMode::Cinematic;
-  cinematic.cinematic_motion_blur = 0.47f;
+  cinematic.cinematic_motion_blur = 0.47f * proportion[one];
   const game::FrameView flight = game::compose_frame_view (cinematic);
 
   MOPPE_CHECK (flight.scene == game::FrameSceneMode::Cinematic);
@@ -326,7 +347,8 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
     flight.camera.field_of_view.numerical_value_in (u::deg), 52.0f, 1e-6f);
   MOPPE_CHECK (
     frame_view_same_matrix (flight.camera.view, cinematic_camera.view));
-  MOPPE_CHECK_NEAR (flight.motion_blur_amount, 0.47f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    flight.motion_blur_amount.numerical_value_in (one), 0.47f, 1e-6f);
   MOPPE_CHECK (flight.visibility.cinematic);
   MOPPE_CHECK (flight.visibility.sky_after_terrain);
   MOPPE_CHECK (flight.visibility.cinematic_hud);
@@ -367,42 +389,53 @@ MOPPE_TEST (frame_view_classifies_the_selected_camera_in_an_elevated_lake) {
   fixture.running ().logic ().m_shake_time = 0.031f * u::s;
   game::FrameViewInput input = gameplay_input (fixture);
   input.water = &water;
-  input.selected_camera.position = Vec3 (21, 24.5f, 73);
-  input.selected_camera.view = Mat4::look_at (input.selected_camera.position,
-                                              input.selected_camera.position +
-                                                input.selected_camera.forward,
-                                              Vec3 (0, 1, 0));
+  input.selected_camera.position = position (Vec3 (21, 24.5f, 73));
+  input.selected_camera.view =
+    Mat4::look_at (position_value (input.selected_camera.position),
+                   position_value (input.selected_camera.position) +
+                     direction_value (input.selected_camera.forward),
+                   Vec3 (0, 1, 0));
 
   const game::FrameView submerged = game::compose_frame_view (input);
   MOPPE_CHECK (submerged.camera_water_level.has_value ());
-  MOPPE_CHECK_NEAR (*submerged.camera_water_level, 25.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    terrain::surface_elevation_value (*submerged.camera_water_level),
+    25.0f,
+    1e-6f);
   MOPPE_CHECK (submerged.visibility.underwater);
-  frame_view_check_vector (submerged.camera.position,
-                           input.selected_camera.position);
+  frame_view_check_vector (position_value (submerged.camera.position),
+                           position_value (input.selected_camera.position));
   MOPPE_CHECK (!frame_view_same_matrix (submerged.camera.view,
                                         input.selected_camera.view));
   MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (submerged, fixture.world, fixture.surface),
+    game::sun_visibility_target (submerged, fixture.world, fixture.surface)
+      .numerical_value_in (one),
     0.0f,
     1e-6f);
 
   // At the surface, and half a metre above, retain its height for the
   // renderer's per-pixel transition without classifying the eye as wet.
   for (const float height : { 25.0f, 25.5f }) {
-    input.selected_camera.position[1] = height;
+    position_value (input.selected_camera.position)[1] = height;
     const game::FrameView above = game::compose_frame_view (input);
     MOPPE_CHECK (above.camera_water_level.has_value ());
-    MOPPE_CHECK_NEAR (*above.camera_water_level, 25.0f, 1e-6f);
+    MOPPE_CHECK_NEAR (
+      terrain::surface_elevation_value (*above.camera_water_level),
+      25.0f,
+      1e-6f);
     MOPPE_CHECK (!above.visibility.underwater);
     MOPPE_CHECK (game::sun_visibility_target (
                    above, fixture.world, fixture.surface) > 0.0f);
   }
 
-  input.selected_camera.position[1] = 24.5f;
+  position_value (input.selected_camera.position)[1] = 24.5f;
   fixture.graphics.ocean = false;
   const game::FrameView hidden = game::compose_frame_view (input);
   MOPPE_CHECK (hidden.camera_water_level.has_value ());
-  MOPPE_CHECK_NEAR (*hidden.camera_water_level, 25.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    terrain::surface_elevation_value (*hidden.camera_water_level),
+    25.0f,
+    1e-6f);
   MOPPE_CHECK (!hidden.visibility.ocean);
   MOPPE_CHECK (!hidden.visibility.underwater);
   MOPPE_CHECK (game::sun_visibility_target (
@@ -416,7 +449,7 @@ MOPPE_TEST (frame_view_dry_sheets_do_not_fall_back_to_sea_level) {
   input.water = &water;
   // Below the sea datum, but inside dry ground: neither an unpainted
   // field nor a sheet exactly on the ground constitutes water.
-  input.selected_camera.position[1] = 2.0f;
+  position_value (input.selected_camera.position)[1] = 2.0f;
   for (const float level : { 0.0f, 10.0f }) {
     std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
                        terrain::surface_elevation_point (level * u::m));
@@ -432,7 +465,7 @@ MOPPE_TEST (frame_view_dry_sheets_do_not_fall_back_to_sea_level) {
   map::rebuild_geometry (fixture.surface);
   std::ranges::fill (spatial::get<terrain::surface_elevation> (water),
                      terrain::surface_elevation_point (-6.0f * u::m));
-  input.selected_camera.position[1] = -2.0f;
+  position_value (input.selected_camera.position)[1] = -2.0f;
   const game::FrameView basin = game::compose_frame_view (input);
   MOPPE_CHECK (!basin.camera_water_level.has_value ());
   MOPPE_CHECK (!basin.visibility.underwater);
@@ -443,7 +476,7 @@ MOPPE_TEST (frame_view_dry_sheets_do_not_fall_back_to_sea_level) {
 MOPPE_TEST (frame_view_without_a_sheet_requires_sea_above_local_ground) {
   FrameFixture fixture;
   game::FrameViewInput input = gameplay_input (fixture);
-  input.selected_camera.position[1] = 2.0f;
+  position_value (input.selected_camera.position)[1] = 2.0f;
   for (const float sea : { 4.0f, 10.0f }) {
     fixture.world.water_level = sea * u::m;
     const game::FrameView dry = game::compose_frame_view (input);
@@ -452,16 +485,20 @@ MOPPE_TEST (frame_view_without_a_sheet_requires_sea_above_local_ground) {
   }
 
   fixture.world.water_level = 18.0f * u::m;
-  input.selected_camera.position[1] = 17.0f;
+  position_value (input.selected_camera.position)[1] = 17.0f;
   const game::FrameView submerged = game::compose_frame_view (input);
   MOPPE_CHECK (submerged.camera_water_level.has_value ());
-  MOPPE_CHECK_NEAR (*submerged.camera_water_level, 18.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    terrain::surface_elevation_value (*submerged.camera_water_level),
+    18.0f,
+    1e-6f);
   MOPPE_CHECK (submerged.visibility.underwater);
 
-  input.selected_camera.position[1] = 18.5f;
+  position_value (input.selected_camera.position)[1] = 18.5f;
   const game::FrameView above = game::compose_frame_view (input);
   MOPPE_CHECK (above.camera_water_level.has_value ());
-  MOPPE_CHECK_NEAR (*above.camera_water_level, 18.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    terrain::surface_elevation_value (*above.camera_water_level), 18.0f, 1e-6f);
   MOPPE_CHECK (!above.visibility.underwater);
 }
 
@@ -486,14 +523,17 @@ MOPPE_TEST (frame_view_interpolates_sloping_water_and_its_banks) {
     fixture.surface.domain ().spacing_z ().numerical_value_in (u::m);
   game::FrameViewInput input = gameplay_input (fixture);
   input.water = &water;
-  input.selected_camera.position = Vec3 (2.25f * dx, 28.875f, 3.75f * dz);
+  input.selected_camera.position =
+    position (Vec3 (2.25f * dx, 28.875f, 3.75f * dz));
   const game::FrameView river = game::compose_frame_view (input);
   // Here the bed interpolates to 28.75 m and the sheet to 29 m.
   MOPPE_CHECK (river.camera_water_level.has_value ());
-  MOPPE_CHECK_NEAR (*river.camera_water_level, 29.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (
+    terrain::surface_elevation_value (*river.camera_water_level), 29.0f, 1e-5f);
   MOPPE_CHECK (river.visibility.underwater);
 
-  input.selected_camera.position = Vec3 (2.75f * dx, 28.875f, 3.25f * dz);
+  input.selected_camera.position =
+    position (Vec3 (2.75f * dx, 28.875f, 3.25f * dz));
   const game::FrameView bank = game::compose_frame_view (input);
   // In the same cell, 31.75 m of ground stands above the 27 m sheet.
   MOPPE_CHECK (!bank.camera_water_level.has_value ());
@@ -510,19 +550,23 @@ MOPPE_TEST (frame_view_follows_the_rendered_sea_wave_phase) {
                      1.0f * terrain::wave_amplitude[one]);
   game::FrameViewInput input = gameplay_input (fixture);
   input.water = &water;
-  input.selected_camera.position = Vec3 (21.25f, 18.0f, 73.5f);
+  input.selected_camera.position = position (Vec3 (21.25f, 18.0f, 73.5f));
   bool crested = false, troughed = false;
   for (const double time : { 0.0, 2.5, 7.75, 13.125, 100000.1234 }) {
     fixture.running ().logic ().m_total_time = game::play_time (time);
     const game::FrameView view = game::compose_frame_view (input);
-    const float level = game::water_surface_at (fixture.world,
-                                                fixture.surface,
-                                                &water,
-                                                view.camera.position,
-                                                view.lighting.time)
-                          .numerical_value_in (u::m);
+    const float level =
+      game::water_surface_at (fixture.world,
+                              fixture.surface,
+                              &water,
+                              position_value (view.camera.position),
+                              seconds_value (view.lighting.time))
+        .numerical_value_in (u::m);
     MOPPE_CHECK (view.camera_water_level.has_value ());
-    MOPPE_CHECK_NEAR (*view.camera_water_level, level, 1e-6f);
+    MOPPE_CHECK_NEAR (
+      terrain::surface_elevation_value (*view.camera_water_level),
+      level,
+      1e-6f);
     MOPPE_CHECK (view.visibility.underwater == (level > 18.0f));
     MOPPE_CHECK (
       (game::sun_visibility_target (view, fixture.world, fixture.surface) >
@@ -536,16 +580,19 @@ MOPPE_TEST (frame_view_follows_the_rendered_sea_wave_phase) {
 
 MOPPE_TEST (frame_view_carries_sun_height) {
   FrameFixture fixture;
-  fixture.graphics.sun_height = 0.75f;
+  fixture.graphics.sun_height = 0.75f * proportion[one];
   game::FrameViewInput input = gameplay_input (fixture);
 
   const game::FrameView view = game::compose_frame_view (input);
 
-  MOPPE_CHECK_NEAR (view.lighting.sun_height, 0.75f, 1e-6f);
-  frame_view_check_vector (view.lighting.sun_direction,
-                           game::sun_direction_for (0.75f));
   MOPPE_CHECK_NEAR (
-    view.lighting.sun_direction[1], std::sin (0.25f * 3.14159f), 1e-6f);
+    view.lighting.sun_height.numerical_value_in (one), 0.75f, 1e-6f);
+  frame_view_check_vector (
+    direction_value (view.lighting.sun_direction),
+    direction_value (game::sun_direction_for (0.75f * proportion[one])));
+  MOPPE_CHECK_NEAR (direction_value (view.lighting.sun_direction)[1],
+                    std::sin (0.25f * 3.14159f),
+                    1e-6f);
 }
 
 MOPPE_TEST (
@@ -553,17 +600,20 @@ MOPPE_TEST (
   FrameFixture clear;
   const game::FrameView view = clear_sun_view ();
   MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (view, clear.world, clear.surface),
+    game::sun_visibility_target (view, clear.world, clear.surface)
+      .numerical_value_in (one),
     1.0f,
     1e-6f);
 
   FrameFixture underwater;
   game::FrameView submerged = clear_sun_view ();
-  submerged.camera_water_level = 24.0f;
-  submerged.camera.position[1] = 23.0f;
+  submerged.camera_water_level =
+    terrain::surface_elevation_point (24.0f * u::m);
+  position_value (submerged.camera.position)[1] = 23.0f;
   submerged.visibility.underwater = true;
   MOPPE_CHECK_NEAR (game::sun_visibility_target (
-                      submerged, underwater.world, underwater.surface),
+                      submerged, underwater.world, underwater.surface)
+                      .numerical_value_in (one),
                     0.0f,
                     1e-6f);
 
@@ -576,7 +626,8 @@ MOPPE_TEST (
         moppe::terrain::surface_elevation_point ((4.0f) * 40.0f *
                                                  mp_units::si::metre);
   MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (view, ridge.world, ridge.surface),
+    game::sun_visibility_target (view, ridge.world, ridge.surface)
+      .numerical_value_in (one),
     0.0f,
     1e-6f);
 
@@ -584,40 +635,44 @@ MOPPE_TEST (
   game::FrameView overcast = clear_sun_view ();
   overcast.lighting.cloudiness = 0.4f * game::cloud_cover[one];
   MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (overcast, cloudy.world, cloudy.surface),
+    game::sun_visibility_target (overcast, cloudy.world, cloudy.surface)
+      .numerical_value_in (one),
     0.74f,
     1e-6f);
 }
 
 MOPPE_TEST (motion_blur_follows_the_speed_that_feels_fast_in_each_vehicle) {
   using game::motion_blur_for;
+  const auto kmh = [] (float value) {
+    return value * si::kilo<si::metre> / si::hour;
+  };
   // The boat on the plane streaks; a jeep or the motocross as fast does not.
-  MOPPE_CHECK (
-    motion_blur_for (game::Doing::driving (game::Machine::boat), 26.0f) > 0.3f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::boat),
-                                10.0f) == 0.0f);
+                                kmh (26.0f)) > 0.3f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::boat),
+                                kmh (10.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jeep),
-                                26.0f) == 0.0f);
+                                kmh (26.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
-                                26.0f) == 0.0f);
+                                kmh (26.0f)) == 0.0f);
   // The jet ski idles along sharp and streaks flat out.
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
-                                26.0f) == 0.0f);
+                                kmh (26.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::jet_ski),
-                                60.0f) > 0.8f);
+                                kmh (60.0f)) > 0.8f);
   // The motocross cruises sharp and streaks on a boost.
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
-                                100.0f) == 0.0f);
+                                kmh (100.0f)) == 0.0f);
   MOPPE_CHECK (motion_blur_for (game::Doing::driving (game::Machine::bike),
-                                150.0f) > 0.3f);
+                                kmh (150.0f)) > 0.3f);
   // Faster streaks longer.
   MOPPE_CHECK (
-    motion_blur_for (game::Doing::driving (game::Machine::bike), 140.0f) >
-    motion_blur_for (game::Doing::driving (game::Machine::bike), 120.0f));
+    motion_blur_for (game::Doing::driving (game::Machine::bike), kmh (140.0f)) >
+    motion_blur_for (game::Doing::driving (game::Machine::bike), kmh (120.0f)));
   // None on foot or in the air, however fast.
-  MOPPE_CHECK (motion_blur_for (game::Doing::on_foot (), 30.0f) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::on_foot (), kmh (30.0f)) == 0.0f);
   MOPPE_CHECK (
     motion_blur_for (game::Doing::driving (game::Machine::helicopter),
-                     200.0f) == 0.0f);
-  MOPPE_CHECK (motion_blur_for (game::Doing::gliding (), 150.0f) == 0.0f);
+                     kmh (200.0f)) == 0.0f);
+  MOPPE_CHECK (motion_blur_for (game::Doing::gliding (), kmh (150.0f)) == 0.0f);
 }
