@@ -9,6 +9,7 @@
 #include <moppe/game/dust.hh>
 #include <moppe/game/fishing_state.hh>
 #include <moppe/game/hens.hh>
+#include <moppe/game/machine_controls.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/game/sling.hh>
 #include <moppe/game/stars.hh>
@@ -57,9 +58,8 @@ namespace moppe::game {
     int m_lives = 10;
     bool m_game_over = false;
     double m_odometer = 0.0;
-    float m_turn_input = 0.0f;
-    float m_go_input = 0.0f;
-    float m_boost_input = 0.0f;
+    // What the player's hands last asked (game/machine_controls.hh).
+    Controls m_controls;
     Doing m_doing;
     CamMode m_cam_mode = CAM_CHASE;
     // Each way of getting about keeps the view last chosen for it, from

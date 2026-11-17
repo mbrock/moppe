@@ -233,7 +233,7 @@ namespace moppe::game {
       w.session.logic ().m_doing == Doing::driving (Machine::boat);
     const bool boosts =
       w.session.logic ().m_doing == Doing::driving (Machine::bike) || afloat;
-    if (boosts && w.session.logic ().m_boost_input > 0.1f)
+    if (boosts && w.session.logic ().m_controls.boost > 0.1f)
       m_prompts.boost_tried[afloat] = true;
     state.thumb_hint = boosts && !m_prompts.boost_tried[afloat] &&
                        w.session.logic ().m_total_time - m_prompts.thumb_from <

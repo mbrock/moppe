@@ -44,86 +44,33 @@ namespace moppe::game {
       return bike.grounded ();
     }
 
-    void set_turn (GameSession& session, float value) {
+    // Hands the controls to whatever the player is getting about on.
+    void steer (GameSession& session, Controls k) {
       GameLogicState& logic = session.logic ();
-      logic.m_turn_input = value;
-      // On foot the mouse turns; the steering keys step sideways.
-      if (logic.m_doing == Doing::on_foot ())
-        session.walker ().set_strafe (value);
-      else if (logic.m_doing == Doing::gliding ())
-        session.glider ().set_turn (value);
-      else if (logic.m_doing == Doing::driving (Machine::jeep))
-        session.jeep ().set_turn (value);
-      else if (logic.m_doing == Doing::driving (Machine::helicopter))
-        session.helicopter ().set_turn (value);
-      else if (logic.m_doing == Doing::driving (Machine::tractor))
-        session.tractor ().set_turn (value);
-      else if (logic.m_doing == Doing::driving (Machine::caddy))
-        session.caddy ().set_turn (value);
-      else if (logic.m_doing == Doing::driving (Machine::bike))
-        session.bike ().set_yaw ((90 * value) * u::deg);
-      else if (pedalled (logic.m_doing))
-        session.ridden_bike ().set_yaw ((90 * value) * u::deg);
-      else if (logic.m_doing == Doing::driving (Machine::boat))
-        session.boat ().set_turn (value);
-      else if (logic.m_doing == Doing::driving (Machine::jet_ski))
-        session.jet_ski ().set_turn (value);
-    }
-
-    void set_go (GameSession& session, float value) {
-      GameLogicState& logic = session.logic ();
-      logic.m_go_input = value;
-      if (logic.m_doing == Doing::on_foot ()) {
+      k.boost = std::clamp (k.boost, 0.0f, 1.0f);
+      const bool pressed = k.boost > 0.1f && logic.m_controls.boost <= 0.1f;
+      logic.m_controls = k;
+      switch (logic.m_doing.way) {
+      case Doing::Way::foot: {
+        // On foot the mouse turns; the steering keys step sideways.
+        session.walker ().set_strafe (k.turn);
         // Hauling on a rope is slow work.
         const float burden = logic.m_haul.active ? 0.6f : 1.0f;
-        session.walker ().set_walk (burden *
-                                    (value > 0 ? value : value * 0.6f));
-      } else if (logic.m_doing == Doing::gliding ())
-        session.glider ().set_speed_control (value);
-      else if (logic.m_doing == Doing::driving (Machine::jeep))
-        session.jeep ().set_drive (value);
-      else if (logic.m_doing == Doing::driving (Machine::helicopter))
-        session.helicopter ().set_drive (value);
-      else if (logic.m_doing == Doing::driving (Machine::tractor))
-        session.tractor ().set_drive (value);
-      else if (logic.m_doing == Doing::driving (Machine::caddy))
-        session.caddy ().set_drive (value);
-      else if (logic.m_doing == Doing::driving (Machine::bike)) {
-        session.bike ().set_thrust (value);
-        session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
-      } else if (pedalled (logic.m_doing))
-        session.ridden_bike ().set_thrust (value);
-      else if (logic.m_doing == Doing::driving (Machine::boat))
-        session.boat ().set_drive (value);
-      else if (logic.m_doing == Doing::driving (Machine::jet_ski))
-        session.jet_ski ().set_drive (value);
-    }
-
-    void set_boost (GameSession& session, float value) {
-      GameLogicState& logic = session.logic ();
-      const float previous = logic.m_boost_input;
-      logic.m_boost_input = std::max (0.0f, std::min (1.0f, value));
-      if (logic.m_doing == Doing::on_foot ()) {
-        if (logic.m_boost_input > 0.1f && previous <= 0.1f)
+        session.walker ().set_walk (burden * (k.go > 0 ? k.go : k.go * 0.6f));
+        if (pressed)
           session.walker ().jump ();
-      } else if (logic.m_doing == Doing::gliding ()) {
-        session.glider ().set_flare (logic.m_boost_input > 0.1f);
-      } else if (logic.m_doing == Doing::driving (Machine::jeep)) {
-        // What boosts the bike brakes the jeep.
-        session.jeep ().set_brake (logic.m_boost_input > 0.1f);
-      } else if (logic.m_doing == Doing::driving (Machine::tractor)) {
-        session.tractor ().set_brake (logic.m_boost_input > 0.1f);
-      } else if (logic.m_doing == Doing::driving (Machine::caddy)) {
-        session.caddy ().set_brake (logic.m_boost_input > 0.1f);
-      } else if (logic.m_doing == Doing::driving (Machine::bike)) {
-        session.bike ().set_boost (logic.m_boost_input, logic.m_go_input);
-      } else if (logic.m_doing == Doing::driving (Machine::boat)) {
-        session.boat ().set_boost (logic.m_boost_input);
-      } else if (logic.m_doing == Doing::driving (Machine::mountain_bike)) {
-        // No jets on a mountainbike: the rider springs it up off the
-        // ground instead.
-        if (logic.m_boost_input > 0.1f && previous <= 0.1f)
-          session.mountain_bike ().hop (3.0f * u::m / u::s);
+        break;
+      }
+      case Doing::Way::glider:
+        session.glider ().set_turn (k.turn);
+        session.glider ().set_speed_control (k.go);
+        session.glider ().set_flare (k.boost > 0.1f);
+        break;
+      case Doing::Way::passenger:
+        break;
+      case Doing::Way::driving:
+        drive (session.fleet (), logic.m_doing.machine, k, pressed);
+        break;
       }
     }
 
@@ -145,9 +92,7 @@ namespace moppe::game {
         true);
       GameLogicState& logic = session.logic ();
       session.set_mode (Doing::gliding ());
-      session.glider ().set_turn (logic.m_turn_input);
-      session.glider ().set_speed_control (logic.m_go_input);
-      session.glider ().set_flare (logic.m_boost_input > 0.1f);
+      steer (session, logic.m_controls);
     }
 
     void use_glider_control (GameSession& session,
@@ -165,9 +110,9 @@ namespace moppe::game {
         // The bike rides on with everything the glide gave it.
         session.glider ().drop_bike ();
         session.set_mode (Doing::driving (Machine::bike));
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
-        set_boost (session, 0);
+        Controls k = logic.m_controls;
+        k.boost = 0.0f;
+        steer (session, k);
         return;
       }
 
@@ -180,21 +125,9 @@ namespace moppe::game {
       session.walker ().spawn (
         moppe::position (feet), glider.heading (), glider.physical_velocity ());
       session.set_mode (Doing::on_foot ());
-      set_turn (session, logic.m_turn_input);
-      set_go (session, logic.m_go_input);
-      set_boost (session, 0);
-    }
-
-    // The helicopter climbs on what boosts the bike and descends on what
-    // runs on foot (or the held deploy key, a controller's A).
-    void set_lift (GameSession& session, const InputFrame& input) {
-      if (session.logic ().m_doing != Doing::driving (Machine::helicopter))
-        return;
-      const float climb = input_value (input.boost);
-      const bool descend = input.run || input.deploy_glider_held;
-      session.helicopter ().set_lift (climb > 0.1f ? climb
-                                      : descend    ? -1.0f
-                                                   : 0.0f);
+      Controls k = logic.m_controls;
+      k.boost = 0.0f;
+      steer (session, k);
     }
 
     Trouble& trouble_of (GameLogicState& logic, Machine machine) {
@@ -308,8 +241,7 @@ namespace moppe::game {
           length2 (heading) > 1e-6f ? normalized (heading) : Vec3 (0, 0, 1),
           moppe::velocity (heli.velocity ()));
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -324,8 +256,7 @@ namespace moppe::game {
           tractor.forward (),
           moppe::velocity (tractor.velocity ()));
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -340,8 +271,7 @@ namespace moppe::game {
           caddy.forward (),
           moppe::velocity (caddy.velocity ()));
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -358,8 +288,7 @@ namespace moppe::game {
         bike.set_yaw (0 * u::deg);
         bike.set_skid (0);
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -373,8 +302,7 @@ namespace moppe::game {
                                  level_heading (boat.forward ()),
                                  moppe::velocity (boat.velocity () * 0.5f));
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -387,8 +315,7 @@ namespace moppe::game {
                                  level_heading (ski.forward ()),
                                  moppe::velocity (ski.velocity () * 0.5f));
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -403,8 +330,7 @@ namespace moppe::game {
           jeep.forward (),
           moppe::velocity (jeep.velocity ()));
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -426,12 +352,7 @@ namespace moppe::game {
                            : Doing::on_foot ();
       if (into != Doing::on_foot ()) {
         session.set_mode (into);
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
-        if (into != Doing::driving (Machine::helicopter) &&
-            into != Doing::driving (Machine::boat) &&
-            into != Doing::driving (Machine::jet_ski))
-          set_boost (session, logic.m_boost_input);
+        steer (session, logic.m_controls);
         return;
       }
 
@@ -450,19 +371,14 @@ namespace moppe::game {
         vehicle.set_skid (0);
         vehicle.set_wheelie (0);
         session.set_mode (Doing::on_foot ());
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
+        steer (session, logic.m_controls);
         return;
       }
 
       // On foot: remount the bike when standing next to it.
       if (reach == Machine::bike) {
-        session.bike ().set_thrust (0);
-        session.bike ().set_yaw (0 * u::deg);
         session.set_mode (Doing::driving (Machine::bike));
-        set_turn (session, logic.m_turn_input);
-        set_go (session, logic.m_go_input);
-        set_boost (session, logic.m_boost_input);
+        steer (session, logic.m_controls);
       }
     }
 
@@ -619,23 +535,21 @@ namespace moppe::game {
                             const InputFrame& input) {
       const RoadHelp help = road_help (
         session, terrain, input_value (input.turn), input_value (input.drive));
-      set_turn (session, help.turn);
-      set_go (session, help.drive);
-      set_boost (session, input_value (input.boost));
-      set_lift (session, input);
+      // The helicopter climbs on what boosts the bike and descends on
+      // what runs on foot (or the held deploy key, a controller's A).
+      const float climb = input_value (input.boost);
+      const bool descend = input.run || input.deploy_glider_held;
+      steer (session,
+             { .turn = help.turn,
+               .go = help.drive,
+               .boost = input_value (input.boost),
+               .lift = climb > 0.1f ? climb
+                       : descend    ? -1.0f
+                                    : 0.0f,
+               // Riding, what runs on foot stamps on the rear brake.
+               .skid = input.run,
+               .wheelie = input.lean_back });
       GameLogicState& logic = session.logic ();
-      // Riding, what runs on foot stamps on the rear brake.
-      session.bike ().set_skid (
-        logic.m_doing == Doing::driving (Machine::bike) && input.run ? 1 : 0);
-      session.bike ().set_wheelie (
-        logic.m_doing == Doing::driving (Machine::bike) && input.lean_back);
-      session.mountain_bike ().set_skid (
-        logic.m_doing == Doing::driving (Machine::mountain_bike) && input.run
-          ? 1
-          : 0);
-      session.long_john ().set_skid (
-        logic.m_doing == Doing::driving (Machine::long_john) && input.run ? 1
-                                                                          : 0);
       logic.m_look_pitch =
         std::clamp (logic.m_look_pitch + input.look_pitch, -1.35f, 1.35f);
       if (input.look_yaw != 0.0f || input.look_pitch != 0.0f)
@@ -744,8 +658,9 @@ namespace moppe::game {
         Trouble& trouble = trouble_of (logic, machine);
         // The helicopter flies out of any hole.
         const float throttle =
-          driven == machine && machine != Machine::helicopter ? logic.m_go_input
-                                                              : 0.0f;
+          driven == machine && machine != Machine::helicopter
+            ? logic.m_controls.go
+            : 0.0f;
         if (!strain (trouble, body.position, throttle, dt))
           continue;
         const velocity_t kick = heave (trouble, body.forward, throttle);
@@ -1330,9 +1245,7 @@ namespace moppe::game {
   }
 
   void GameSession::clear_controls () {
-    set_turn (*this, 0.0f);
-    set_go (*this, 0.0f);
-    set_boost (*this, 0.0f);
+    steer (*this, Controls {});
   }
 
   GameSession::State GameSession::state () const {
