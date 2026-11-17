@@ -67,28 +67,34 @@ namespace moppe::game {
     if (script == "landing" && s.places.layout.landing) {
       // On the strand, looking past the jetty to the skiff beside it.
       const Landing& landing = *s.places.layout.landing;
-      const Vec3 back = landing.jetty.root - landing.berth;
+      const Vec3 root = position_value (landing.jetty.root);
+      const Vec3 berth = position_value (landing.berth);
+      const Vec3 back = root - berth;
       const Vec3 aside =
-        landing.berth -
-        (landing.jetty.root + landing.jetty.out * landing.jetty.length);
-      stand = { landing.berth + back * 0.55f + aside * 6.0f, landing.berth };
+        berth - (root + direction_value (landing.jetty.out) *
+                          landing.jetty.length.numerical_value_in (u::m));
+      stand = { berth + back * 0.55f + aside * 6.0f, berth };
     } else if (script == "sanctuary" && !s.places.layout.sanctuaries.empty ()) {
       const Sanctuary& sanctuary = s.places.layout.sanctuaries.front ();
       // Inside the wall by its gap, on the level top, facing the fire.
-      stand = { sanctuary.centre +
-                  sanctuary.gate * (sanctuary.wall_radius - 1.8f),
-                sanctuary.centre };
+      const Vec3 centre = position_value (sanctuary.centre);
+      stand = { centre +
+                  direction_value (sanctuary.gate) *
+                    (sanctuary.wall_radius.numerical_value_in (u::m) - 1.8f),
+                centre };
     } else if (script == "house" || script == "indoors") {
       // Before the farmhouse's open door, or inside by the back wall
       // looking out through it.
       for (const Farm& farm : s.places.layout.farms)
         for (const Building& b : farm.buildings)
           if (!stand && !farm.ruined && b.kind == Building::Kind::house) {
-            const Vec3 left (b.forward[2], 0.0f, -b.forward[0]);
-            const Vec3 door = b.at + b.forward * 2.5f - left * 0.9f;
+            const Vec3 base = position_value (b.at);
+            const Vec3 forward = direction_value (b.forward);
+            const Vec3 left (forward[2], 0.0f, -forward[0]);
+            const Vec3 door = base + forward * 2.5f - left * 0.9f;
             stand = script == "house"
-                      ? std::pair (door + b.forward * 6.0f, door)
-                      : std::pair (b.at - b.forward * 1.6f + left * 0.6f, door);
+                      ? std::pair (door + forward * 6.0f, door)
+                      : std::pair (base - forward * 1.6f + left * 0.6f, door);
           }
     } else if (script.starts_with ("animals") &&
                !s.session.animals ().animals ().empty ()) {
@@ -159,8 +165,9 @@ namespace moppe::game {
       for (const Farm& farm : s.places.layout.farms)
         for (const Building& b : farm.buildings)
           if (farm.kept && !farm.ruined && b.kind == Building::Kind::barn) {
+            const Vec3& base = position_value (b.at);
             const float d =
-              std::hypot (b.at[0] - s.spawn[0], b.at[2] - s.spawn[2]);
+              std::hypot (base[0] - s.spawn[0], base[2] - s.spawn[2]);
             if (d < best) {
               best = d;
               nearest = &b;
@@ -173,7 +180,8 @@ namespace moppe::game {
           return frame.transform_point (Vec3 (x, 0.0f, z));
         };
         if (script == "barn")
-          stand = { at (0.8f, barn_front + 7.0f), at (0.0f, 0.0f) };
+          stand = { at (0.8f, barn_front.numerical_value_in (u::m) + 7.0f),
+                    at (0.0f, 0.0f) };
         else if (script == "byre")
           stand = { at (-2.0f, 2.6f), at (3.0f, -3.2f) };
         else if (script == "hens")
@@ -211,17 +219,20 @@ namespace moppe::game {
     } else if (script == "farm" && !s.places.layout.farms.empty () &&
                !s.places.layout.farms.front ().buildings.empty ()) {
       const Building& b = s.places.layout.farms.front ().buildings.front ();
-      stand = { b.at + b.forward * 16.0f +
-                  Vec3 (b.forward[2], 0.0f, -b.forward[0]) * 9.0f,
-                b.at };
+      const Vec3 base = position_value (b.at);
+      const Vec3 forward = direction_value (b.forward);
+      stand = { base + forward * 16.0f +
+                  Vec3 (forward[2], 0.0f, -forward[0]) * 9.0f,
+                base };
     }
     if (!stand)
       return;
     Vec3 at = stand->first;
     at[1] = s.ground.height (at) + 0.1f;
-    if (const std::optional<float> floor =
-          floor_at (s.places.layout, at[0], at[2]))
-      at[1] = std::max (static_cast<float> (at[1]), *floor + 0.1f);
+    if (const std::optional<terrain::SurfaceElevation> floor =
+          floor_at (s.places.layout, plan_position (at[0], at[2])))
+      at[1] = std::max (static_cast<float> (at[1]),
+                        terrain::surface_elevation_value (*floor) + 0.1f);
     Vec3 facing = stand->second - at;
     facing[1] = 0.0f;
     s.session.walker ().spawn (moppe::position (at), normalized (facing));
@@ -240,16 +251,18 @@ namespace moppe::game {
     const std::vector<mov::Trunk> near =
       s.ground.trunks.gather (s.spawn, 700.0f);
     // Under open sky, so there are stars to lie and look at.
-    m_state.camp.site =
-      nearest_hammock_site (near, s.spawn, s.ground.reader (), 60.0f);
+    m_state.camp.site = nearest_hammock_site (near,
+                                              moppe::position (s.spawn),
+                                              s.ground.elevation_field (),
+                                              60.0f * u::m);
     if (!m_state.camp.site) {
       std::cerr << "moppe: camp script: no two trees near the spawn "
                    "would take a hammock\n";
       return;
     }
     const HammockSite& site = *m_state.camp.site;
-    const Vec3 middle = hammock_middle (site);
-    const Vec3 across = hammock_across (site);
+    const Vec3 middle = position_value (hammock_middle (site));
+    const Vec3 across = direction_value (hammock_across (site));
     // How near the nearest trunk stands to the walk in from a side.
     const auto clearance = [&] (float side) {
       float least = 100.0f;
@@ -265,7 +278,7 @@ namespace moppe::game {
     };
     m_state.camp.side = clearance (1.0f) >= clearance (-1.0f) ? 1.0f : -1.0f;
     Vec3 stand = middle + across * (m_state.camp.side * 8.5f) +
-                 hammock_along (site) * 1.5f;
+                 direction_value (hammock_along (site)) * 1.5f;
     stand[1] = s.ground.height (stand) + 0.1f;
     Vec3 facing = middle - stand;
     facing[1] = 0.0f;
@@ -312,11 +325,11 @@ namespace moppe::game {
         ahead > 0.8f ? std::min (0.8f, 0.3f + 0.3f * distance) : 0.0f;
       return false;
     };
-    Vec3 middle = hammock_middle (site);
+    Vec3 middle = position_value (hammock_middle (site));
     middle[1] = s.ground.height (middle);
-    const Vec3 fireside = middle +
-                          hammock_across (site) * (script.side * 3.6f) -
-                          hammock_along (site) * 0.6f;
+    const Vec3 fireside =
+      middle + direction_value (hammock_across (site)) * (script.side * 3.6f) -
+      direction_value (hammock_along (site)) * 0.6f;
     // The walker's gaze levels out as they go.
     input.look_pitch = std::clamp (
       -0.12f - s.session.logic ().m_look_pitch.numerical_value_in (u::rad),

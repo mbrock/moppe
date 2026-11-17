@@ -92,16 +92,17 @@ namespace moppe {
       return [this] (plan_position_t at) {
         const float x = meters_value (x_of (at)), z = meters_value (z_of (at));
         const float ground = world_ground ().height (Vec3 (x, 0.0f, z));
-        if (const std::optional<float> floor = floor_at (m_places.layout, x, z))
-          return terrain::surface_elevation_point (std::max (*floor, ground) *
-                                                   u::m);
+        if (const std::optional<terrain::SurfaceElevation> floor =
+              floor_at (m_places.layout, at))
+          return terrain::surface_elevation_point (
+            std::max (terrain::surface_elevation_value (*floor), ground) *
+            u::m);
         return terrain::surface_elevation_point (ground * u::m);
       };
     }
 
     plan_extent_t MoppeGame::places_period () const {
-      return plan_extent (m_places.layout.period_x * u::m,
-                          m_places.layout.period_z * u::m);
+      return m_places.layout.period;
     }
 
     void MoppeGame::cast_actor_shadows (render::Renderer& r,
@@ -116,8 +117,7 @@ namespace moppe {
       }
       const FrameActors& actors = frame.actors;
       cast_fleet (r, m_caster_dl, actors.fleet);
-      m_places.landscape.cast_shadows (r,
-                                       position_value (frame.camera.position));
+      m_places.landscape.cast_shadows (r, frame.camera.position);
       m_places.bus_view.cast_shadows (
         r, m_places.bus, bus_time (logic ()), frame.camera.position);
       render_animals (r,
@@ -214,18 +214,18 @@ namespace moppe {
           for (const Building& b : farm.buildings) {
             if (farm.ruined || b.kind == Building::Kind::mill)
               continue;
-            Vec3 at = b.at;
-            at[0] +=
-              terrain::whole_periods (eye[0] - at[0], m_places.layout.period_x);
-            at[2] +=
-              terrain::whole_periods (eye[2] - at[2], m_places.layout.period_z);
+            Vec3 at = position_value (b.at);
+            at[0] += terrain::whole_periods (
+              eye[0] - at[0], plan_value (m_places.layout.period).x ());
+            at[2] += terrain::whole_periods (
+              eye[2] - at[2], plan_value (m_places.layout.period).z ());
             const meters_t d =
               std::hypot (at[0] - eye[0], at[2] - eye[2]) * u::m;
             const bool barn = b.kind == Building::Kind::barn;
             if (d >= nearest[barn])
               continue;
             nearest[barn] = d;
-            Vec3 f = b.forward;
+            Vec3 f = direction_value (b.forward);
             f[1] = 0.0f;
             f = normalized (f);
             // Along the floor's length: its forward, turned a right angle.
@@ -352,15 +352,15 @@ namespace moppe {
                     direction_value (frame.camera.frame_forward),
                     seconds_value (frame.lighting.time),
                     90.0f,
-                    m_places.layout.period_x,
-                    m_places.layout.period_z,
+                    plan_value (m_places.layout.period).x (),
+                    plan_value (m_places.layout.period).z (),
                     0x300000);
       draw_nest_eggs (m_world_dl,
                       m_places.nests,
                       logic ().m_nests,
                       position_value (frame.camera.position),
-                      m_places.layout.period_x,
-                      m_places.layout.period_z);
+                      plan_value (m_places.layout.period).x (),
+                      plan_value (m_places.layout.period).z ());
       if (actors.walker && lying_down ())
         draw_sleeper (m_world_dl, helmet, seconds_value (frame.lighting.time));
       else if (actors.walker && !helmet)
@@ -426,18 +426,17 @@ namespace moppe {
                                frame.camera.position,
                                frame.lighting.time,
                                0x1000);
-      m_places.landscape.draw_beacon_fires (
-        r,
-        position_value (frame.camera.position),
-        logic ().m_beacon_burn,
-        frame.lighting.daylight.numerical_value_in (one),
-        seconds_value (frame.lighting.time));
+      m_places.landscape.draw_beacon_fires (r,
+                                            frame.camera.position,
+                                            logic ().m_beacon_burn,
+                                            frame.lighting.daylight,
+                                            frame.lighting.time);
       if (hearth_laid (logic ().m_camp))
         draw_fire (r,
-                   position_value (logic ().m_camp.hearth),
-                   position_value (frame.camera.position),
+                   logic ().m_camp.hearth,
+                   frame.camera.position,
                    fire_burn (logic ().m_camp, logic ().m_total_time),
-                   seconds_value (frame.lighting.time));
+                   frame.lighting.time);
       if (m_company.companion) {
         if (visibility.vehicle_effects)
           render_vehicle_flames (r,
@@ -447,10 +446,10 @@ namespace moppe {
                                  0x3000);
         if (m_company.companion->hearth_laid)
           draw_fire (r,
-                     position_value (m_company.companion->hearth),
-                     position_value (frame.camera.position),
-                     m_company.companion->fire_burn.numerical_value_in (one),
-                     seconds_value (frame.lighting.time));
+                     m_company.companion->hearth,
+                     frame.camera.position,
+                     m_company.companion->fire_burn,
+                     frame.lighting.time);
       }
       if (visibility.star_effects)
         session ().stars ().render (r, frame.environment);

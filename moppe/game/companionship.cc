@@ -64,14 +64,13 @@ namespace moppe::game {
     const Camp& camp = state.m_camp;
     mine.hung = camp.hung;
     mine.hammock = camp.hammock;
-    mine.hammock_load =
-      hammock_load (camp, state.m_total_time) * proportion[one];
+    mine.hammock_load = hammock_load (camp, state.m_total_time);
     mine.swing = camp.swing;
     mine.gaze_yaw = camp.gaze_yaw;
     mine.gaze_pitch = camp.gaze_pitch;
     mine.hearth_laid = hearth_laid (camp);
     mine.hearth = camp.hearth;
-    mine.fire_burn = fire_burn (camp, state.m_total_time) * proportion[one];
+    mine.fire_burn = fire_burn (camp, state.m_total_time);
     mine.beacons = 0;
     for (std::size_t i = 0; i < state.m_beacons.size () && i < 32; ++i)
       if (state.m_beacons[i].burning ())
@@ -80,7 +79,8 @@ namespace moppe::game {
     mine.pan_place = camp.pan.place;
     mine.pan_yaw = camp.pan.yaw;
     mine.pan_cooked =
-      pan_cooked (camp.pan, state.m_total_time) * proportion[one];
+      pan_cooked (camp.pan, state.m_total_time).numerical_value_in (one) *
+      proportion[one];
     mine.pan_count = static_cast<std::uint8_t> (camp.pan.count);
     std::copy (std::begin (camp.pan.mushrooms),
                std::end (camp.pan.mushrooms),
@@ -317,14 +317,9 @@ namespace moppe::game {
       riders,
       true);
     if (theirs.hung)
-      draw_hammock (dl,
-                    theirs.hammock,
-                    theirs.hammock_load.numerical_value_in (one),
-                    radians_value (theirs.swing));
+      draw_hammock (dl, theirs.hammock, theirs.hammock_load, theirs.swing);
     if (theirs.hearth_laid)
-      draw_hearth (dl,
-                   position_value (theirs.hearth),
-                   theirs.fire_burn.numerical_value_in (one));
+      draw_hearth (dl, theirs.hearth, theirs.fire_burn);
 
     basket.clear ();
     for (std::size_t i = theirs.pick_used; i < picks.size (); ++i)
@@ -336,30 +331,26 @@ namespace moppe::game {
         if (theirs.pan_mushrooms[i] < mushrooms.mushroom_count ())
           pan.push_back (mushrooms.site (theirs.pan_mushrooms[i]));
       draw_pan (dl,
-                position_value (theirs.pan_place),
-                theirs.pan_yaw.numerical_value_in (si::radian),
+                theirs.pan_place,
+                theirs.pan_yaw.numerical_value_in (si::radian) * si::radian,
                 pan,
-                theirs.pan_cooked.numerical_value_in (one));
+                theirs.pan_cooked.numerical_value_in (one) * doneness[one]);
     }
     if (theirs.walker && theirs.lying_down ()) {
       figure::draw (
         dl,
         pose_resting (
           theirs.hammock,
-          radians_value (theirs.swing),
-          resting_gaze (theirs.hammock,
-                        radians_value (theirs.gaze_yaw),
-                        theirs.gaze_pitch.numerical_value_in (si::radian)),
-          seconds_value (time)),
+          theirs.swing,
+          resting_gaze (theirs.hammock, theirs.gaze_yaw, theirs.gaze_pitch),
+          time),
         their_outfit ());
-      Vec3 floor = hammock_middle (theirs.hammock) +
-                   hammock_across (theirs.hammock) * 0.75f -
-                   hammock_along (theirs.hammock) * 0.5f;
+      Vec3 floor = position_value (hammock_middle (theirs.hammock)) +
+                   direction_value (hammock_across (theirs.hammock)) * 0.75f -
+                   direction_value (hammock_along (theirs.hammock)) * 0.5f;
       floor[1] = ground.height (floor);
-      render_basket_set_down (dl,
-                              position (floor),
-                              unit_direction (hammock_along (theirs.hammock)),
-                              basket);
+      render_basket_set_down (
+        dl, position (floor), hammock_along (theirs.hammock), basket);
     } else if (theirs.walker && theirs.mode != Doing::on_the_bus ()) {
       blob.draw (dl,
                  surface,
@@ -380,7 +371,7 @@ namespace moppe::game {
       return;
     Camp theirs;
     theirs.hearth = companion->hearth;
-    const Vec3 lamp = fire_light_position (theirs);
+    const Vec3 lamp = position_value (fire_light_position (theirs));
     FrameLighting& lighting = frame.lighting;
     const Vec3& camera = position_value (frame.camera.position);
     if (lighting.lamp_reach > 0.0f * u::m &&
@@ -390,8 +381,7 @@ namespace moppe::game {
     lighting.lamp_position = position (lamp);
     lighting.lamp_reach = fire_light_reach;
     lighting.lamp_color = scale_display (
-      fire_light_color (companion->fire_burn.numerical_value_in (one),
-                        seconds_value (lighting.time)),
+      fire_light_color (companion->fire_burn, lighting.time),
       (1.0f - 0.25f * lighting.daylight.numerical_value_in (one)) *
         scale_factor[one]);
   }

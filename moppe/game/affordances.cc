@@ -40,7 +40,8 @@ namespace moppe::game {
                    .prompted = false };
         const bool camping =
           camp.hung && !hearth_laid (camp) &&
-          hammock_distance (camp.hammock, session.walker ().position ()) <
+          hammock_distance (camp.hammock,
+                            moppe::position (session.walker ().position ())) <
             12.0f * u::m;
         return { .verb = Verb::light_fire,
                  .button = Button::fire,
@@ -173,8 +174,7 @@ namespace moppe::game {
                   bus_at_hand (*around->bus,
                                position (session.walker ().position ()),
                                bus_time (logic),
-                               plan_extent (around->places->period_x * u::m,
-                                            around->places->period_z * u::m)))
+                               around->places->period))
               list.push_back ({ .verb = Verb::board_bus,
                                 .button = Button::mount,
                                 .object = static_cast<std::uint32_t> (*bus) });

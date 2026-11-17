@@ -31,19 +31,6 @@ namespace moppe::game {
                        const plan_extent_t& period,
                        std::uint64_t motion_base);
 
-  // The same for callers still holding floats: metres, seconds, and the
-  // ground's height at (x, z).
-  void render_animals (render::Renderer& r,
-                       std::span<const Animal> animals,
-                       const std::function<float (float, float)>& ground,
-                       const Vec3& camera,
-                       const Vec3& forward,
-                       float time,
-                       float reach,
-                       float period_x,
-                       float period_z,
-                       std::uint64_t motion_base);
-
   // Where an animal's muzzle is, grazing or not, for the tests and for
   // judging the pose.
   [[nodiscard]] position_t

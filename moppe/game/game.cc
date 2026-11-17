@@ -141,8 +141,7 @@ namespace moppe {
         strangers.push_back (
           bus_body (bus,
                     position (session ().subject_position ()),
-                    plan_extent (m_places.layout.period_x * u::m,
-                                 m_places.layout.period_z * u::m)));
+                    m_places.layout.period));
       const GameSessionAdvanceResult advance =
         advance_game_session (world (),
                               surface (),

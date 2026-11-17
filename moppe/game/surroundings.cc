@@ -83,9 +83,10 @@ namespace moppe::game {
         around.trunks ? around.trunks->gather (feet, 8.0f)
                       : std::vector<mov::Trunk> ();
       const map::SurfaceGeometry& surface = *around.surface;
-      logic.m_hammock_at_hand =
-        hammock_site_at (near, feet, [&surface] (float x, float z) {
-          return ground_height_at (surface, Vec3 (x, 0.0f, z));
+      logic.m_hammock_at_hand = hammock_site_at (
+        near, moppe::position (feet), [&surface] (const plan_position_t& at) {
+          return spatial::sample<terrain::surface_elevation> (
+            surface, at_height (at, 0.0f * u::m));
         });
     }
 
@@ -97,7 +98,7 @@ namespace moppe::game {
       Pan& pan = camp.pan;
       if (!pan.on || now < pan.next_steam)
         return;
-      const float cooked = pan_cooked (pan, now);
+      const float cooked = pan_cooked (pan, now).numerical_value_in (one);
       pan.next_steam = now + (cooked > 1.2f ? 0.25 : 0.45) * si::second;
       const float shade =
         cooked > 1.2f ? 0.18f : 0.55f + 0.35f * around.daylight;
@@ -231,7 +232,7 @@ namespace moppe::game {
       GameLogicState& logic = session.logic ();
       Camp& camp = logic.m_camp;
       const play_time_t now = logic.m_total_time;
-      const float burn = fire_burn (camp, now);
+      const float burn = fire_burn (camp, now).numerical_value_in (one);
       const bool smouldering =
         !camp.fire && now - camp.fire_time < 8.0 * si::second;
       if (burn <= 0.02f && !smouldering)
@@ -371,7 +372,8 @@ namespace moppe::game {
   bool beside_hammock (const GameSession& session) {
     const Camp& camp = session.logic ().m_camp;
     return camp.hung &&
-           hammock_distance (camp.hammock, session.walker ().position ()) <
+           hammock_distance (camp.hammock,
+                             moppe::position (session.walker ().position ())) <
              1.5f * u::m;
   }
 
@@ -413,7 +415,7 @@ namespace moppe::game {
       }
     };
     consider (position_value (camp.hearth),
-              fire_burn (camp, logic.m_total_time));
+              fire_burn (camp, logic.m_total_time).numerical_value_in (one));
     if (around.companion && around.companion->hearth_laid)
       consider (position_value (around.companion->hearth),
                 around.companion->fire_burn.numerical_value_in (one));
@@ -421,7 +423,7 @@ namespace moppe::game {
     for (std::size_t i = 0;
          i < places.sanctuaries.size () && i < logic.m_beacon_burn.size ();
          ++i)
-      consider (places.sanctuaries[i].hearth,
+      consider (position_value (places.sanctuaries[i].hearth),
                 logic.m_beacon_burn[i].numerical_value_in (one));
     return found;
   }
@@ -442,7 +444,8 @@ namespace moppe::game {
     const Camp& camp = logic.m_camp;
     const Basket& basket = logic.m_basket;
     if (beside_pan (session)) {
-      const float cooked = pan_cooked (camp.pan, logic.m_total_time);
+      const float cooked =
+        pan_cooked (camp.pan, logic.m_total_time).numerical_value_in (one);
       return cooked < 1.0f   ? Supper::frying
              : cooked > 1.4f ? Supper::eat_burnt
                              : Supper::eat;
@@ -461,7 +464,7 @@ namespace moppe::game {
     if (logic.m_doing != Doing::on_foot () || logic.m_camp.resting)
       return std::nullopt;
     return sanctuary_at_hand (places_of (around),
-                              session.walker ().position ());
+                              moppe::position (session.walker ().position ()));
   }
 
   bool their_beacon (const GameLogicState& logic, std::size_t i) {
@@ -479,8 +482,8 @@ namespace moppe::game {
                               logic.m_nests,
                               session.walker ().position (),
                               session.walker ().heading (),
-                              places.period_x,
-                              places.period_z);
+                              plan_value (places.period).x (),
+                              plan_value (places.period).z ());
   }
 
   std::optional<Angler> angler (const GameSession& session) {
@@ -605,8 +608,8 @@ namespace moppe::game {
     switch (supper_at_hand (session, around)) {
     case Supper::fry: {
       // A pan set on the fire's stones.
-      Pan pan = pan_set_on (*fire_at_hand (session, around),
-                            session.walker ().position ());
+      Pan pan = pan_set_on (moppe::position (*fire_at_hand (session, around)),
+                            moppe::position (session.walker ().position ()));
       pan.since = now;
       pan.next_steam = now + 1.0 * si::second;
       // A fish first, if there is one, and mushrooms beside it.
@@ -633,7 +636,8 @@ namespace moppe::game {
     case Supper::eat:
     case Supper::eat_burnt:
       // Eating mends the walker, less so what was left to burn.
-      camp.ate_cooked = pan_cooked (camp.pan, now) * proportion[one];
+      camp.ate_cooked =
+        pan_cooked (camp.pan, now).numerical_value_in (one) * proportion[one];
       camp.ate_count = camp.pan.count;
       camp.ate_eggs = camp.pan.eggs;
       camp.ate_fish = camp.pan.has_fish;
@@ -730,9 +734,9 @@ namespace moppe::game {
   std::optional<Vec3> fire_place (const GameSession& session,
                                   const Surroundings& around) {
     // An old fire ring takes the fire, or else level ground ahead.
-    if (const std::optional<Vec3> ring =
-          hearth_at_hand (places_of (around), session.walker ().position ()))
-      return ring;
+    if (const std::optional<position_t> ring = hearth_at_hand (
+          places_of (around), moppe::position (session.walker ().position ())))
+      return position_value (*ring);
     return hearth_ahead (session, around);
   }
 

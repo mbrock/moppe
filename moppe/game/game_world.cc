@@ -63,13 +63,10 @@ namespace moppe {
     void MoppeGame::build_home_base_marker () {
       m_home_base_marker.clear ();
       build_cairn (m_home_base_marker,
-                   m_home_base_position,
-                   direction_value (world_ground ().trail_heading ()),
+                   moppe::position (m_home_base_position),
+                   world_ground ().trail_heading (),
                    static_cast<std::uint32_t> (recipe ().seed ().value),
-                   [this] (float x, float z) {
-                     return terrain::surface_elevation_value (
-                       world_ground ().elevation (plan_position (x, z)));
-                   });
+                   world_ground ().elevation_field ());
     }
 
     void MoppeGame::activate_completed_world (
@@ -213,7 +210,7 @@ namespace moppe {
       // Nothing grows where the places stand, nor on a road.
       ForestPlan plan = generated_world ().forest ();
       std::erase_if (plan.sites, [this] (const ForestSite& site) {
-        return cleared (m_places.layout, position_value (site.position)) ||
+        return cleared (m_places.layout, site.position) ||
                world_ground ().on_road (
                  moppe::plan (site.position), 0.6f * u::m, true);
       });
@@ -252,7 +249,7 @@ namespace moppe {
       // bridges too.
       std::erase_if (plan.sites, [this] (const BoulderSite& site) {
         return !site.solid &&
-               (cleared (m_places.layout, position_value (site.centre)) ||
+               (cleared (m_places.layout, site.centre) ||
                 world_ground ().on_road (
                   moppe::plan (site.centre), site.radius, false));
       });
@@ -354,8 +351,10 @@ namespace moppe {
       m_places.build (m_renderer, world_ground ());
       if (m_renderer && !m_places.landscape.colliders ().empty ())
         settle_obstacles (true);
-      m_places.let_out_animals (
-        world_ground (), session (), m_home_base_position, m_spawn_position);
+      m_places.let_out_animals (world_ground (),
+                                session (),
+                                moppe::position (m_home_base_position),
+                                moppe::position (m_spawn_position));
       m_parking.park_jeep (parking_lot ());
       m_parking.park_tractor (parking_lot ());
       m_parking.park_mountain_bike (parking_lot ());

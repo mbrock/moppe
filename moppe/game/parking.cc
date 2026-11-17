@@ -33,16 +33,17 @@ namespace moppe::game {
       const Landing& landing = *lot.places.landing;
       mov::Boat& boat = lot.session.boat ();
       boat.set_trunks (&lot.trunks);
-      boat.place (landing.berth,
-                  outward ? -landing.berth_forward : landing.berth_forward,
-                  landing.berth[1] * u::m);
-      m_mooring = landing.jetty.root;
-      m_mooring_out = landing.jetty.out;
+      const position_t& berth_at = landing.berth;
+      const direction_t forward =
+        outward ? -landing.berth_forward : landing.berth_forward;
+      const Vec3& berth = position_value (berth_at);
+      boat.place (berth, direction_value (forward), berth[1] * u::m);
+      m_mooring = position_value (landing.jetty.root);
+      m_mooring_out = direction_value (landing.jetty.out);
       std::cerr << "moppe: boat moored at the landing's jetty, "
-                << std::hypot (landing.berth[0] - lot.spawn[0],
-                               landing.berth[2] - lot.spawn[2])
-                << " m from the spawn, at " << landing.berth[0] << ' '
-                << landing.berth[2] << std::endl;
+                << std::hypot (berth[0] - lot.spawn[0], berth[2] - lot.spawn[2])
+                << " m from the spawn, at " << berth[0] << ' ' << berth[2]
+                << std::endl;
       return;
     }
     if (!lakes_first && moor_boat (lot, true, outward))
@@ -66,15 +67,18 @@ namespace moppe::game {
     const Vec3 beam (bow[2], 0.0f, -bow[0]);
     std::vector<Vec3> berths;
     if (lot.places.landing && m_mooring &&
-        length2 (*m_mooring - lot.places.landing->jetty.root) < 1.0f) {
+        length2 (*m_mooring - position_value (lot.places.landing->jetty.root)) <
+          1.0f) {
       // Across the jetty from the boat, a little nearer its head.
       const Jetty& jetty = lot.places.landing->jetty;
-      const Vec3 side (jetty.out[2], 0.0f, -jetty.out[0]);
-      const float across = dot (berth - jetty.root, side);
+      const Vec3 side (
+        direction_value (jetty.out)[2], 0.0f, -direction_value (jetty.out)[0]);
+      const float across = dot (berth - position_value (jetty.root), side);
       berths.push_back (
         berth -
-        side * (across + std::copysign (jetty.half_width + 0.8f, across)) +
-        jetty.out * 0.9f);
+        side * (across + std::copysign (meters_value (jetty.half_width) + 0.8f,
+                                        across)) +
+        direction_value (jetty.out) * 0.9f);
     }
     for (const float aside : { 3.2f, -3.2f, 5.5f, -5.5f })
       berths.push_back (berth + beam * aside);
@@ -582,8 +586,11 @@ namespace moppe::game {
       for (const Building& building : farm.buildings) {
         if (building.kind != Building::Kind::house)
           continue;
-        const Vec3 door = near_spawn (
-          lot.ground, lot.spawn, building.at + building.forward * 6.0f);
+        const Vec3 door =
+          near_spawn (lot.ground,
+                      lot.spawn,
+                      position_value (building.at) +
+                        direction_value (building.forward) * 6.0f);
         const float r = from_spawn (lot.spawn, door);
         if (r > 3000.0f || (hamlet && r >= from_spawn (lot.spawn, *hamlet)))
           continue;

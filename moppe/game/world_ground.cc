@@ -119,36 +119,32 @@ namespace moppe::game {
     // here, from the typed queries. Each keeps a copy of this view, which
     // may not outlive it.
     const terrain::WaterSheets& sheets = generated.water_surface ();
-    const meters_t sea = world.water_level;
-    const auto level = [g = *this] (float x, float z) {
-      return terrain::surface_elevation_value (
-        g.still_water (plan_position (x, z)));
+    const terrain::SurfaceElevation sea =
+      terrain::surface_elevation_point (world.water_level);
+    // Each reading keeps a copy of this view, which may not outlive it.
+    const auto level = [g = *this] (const plan_position_t& at) {
+      return g.still_water (at);
     };
     return {
-      .ground =
-        [g = *this] (float x, float z) {
-          return terrain::surface_elevation_value (
-            g.elevation (plan_position (x, z)));
-        },
+      .ground = elevation_field (),
       .water = level,
-      .sea = [level, sea = meters_value (sea)] (
-               float x, float z) { return level (x, z) <= sea + 0.05f; },
+      .sea =
+        [level, sea] (const plan_position_t& at) {
+          return level (at) <= sea + 0.05f * u::m;
+        },
       .current =
-        [&sheets] (float x, float z) {
+        [&sheets] (const plan_position_t& at) {
           return spatial::sample<terrain::water_velocity> (
-                   sheets, at_height (plan_position (x, z), 0.0f * u::m))
-            .numerical_value_in (u::m / u::s);
+            sheets, at_height (at, 0.0f * u::m));
         },
       .forest =
-        [&readings = generated.readings ()] (float x, float z) {
+        [&readings = generated.readings ()] (const plan_position_t& at) {
           return spatial::sample<map::forest_cover> (
-                   readings, at_height (plan_position (x, z), 0.0f * u::m))
-            .numerical_value_in (one);
+            readings, at_height (at, 0.0f * u::m));
         },
       .roads = &generated.road_surface (),
-      .sea_level = meters_value (sea),
-      .period_x = plan_value (period ()).x (),
-      .period_z = plan_value (period ()).z (),
+      .sea_level = sea,
+      .period = period (),
     };
   }
 }

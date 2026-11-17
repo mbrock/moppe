@@ -73,12 +73,5 @@ namespace moppe {
       dl.lit (true);
       dl.state (render::DrawState ());
     }
-
-    void BlobShadow::draw (render::DrawList& dl,
-                           const map::SurfaceGeometry& surface,
-                           const Vec3& pos,
-                           float radius) {
-      draw (dl, surface, moppe::position (pos), radius * u::m);
-    }
   }
 }

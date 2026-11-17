@@ -111,7 +111,7 @@ namespace moppe::game {
     for (const HammockSite& site : sites) {
       ScanFind find;
       find.kind = ScanFind::Kind::hammock;
-      find.at = hammock_middle (site);
+      find.at = position_value (hammock_middle (site));
       find.hammock = site;
       finds.push_back (find);
     }
@@ -446,8 +446,14 @@ namespace moppe::game {
     std::vector<ScanFind> finds = scan_mushrooms (mushrooms, feet);
     const std::vector<mov::Trunk> near =
       trunks.gather (feet, scan_reach + 6.0f);
-    const std::vector<ScanFind> trees =
-      scan_hammocks (hammock_sites_near (near, feet, scan_reach, ground));
+    const std::vector<ScanFind> trees = scan_hammocks (hammock_sites_near (
+      near,
+      moppe::position (feet),
+      scan_reach * u::m,
+      [&ground] (const plan_position_t& at) {
+        return terrain::surface_elevation_point (
+          ground (plan_value (at).x (), plan_value (at).z ()) * u::m);
+      }));
     finds.insert (finds.end (), trees.begin (), trees.end ());
     std::cerr << "moppe: scan from " << feet[0] << " " << feet[1] << " "
               << feet[2] << " found " << finds.size () << "\n";

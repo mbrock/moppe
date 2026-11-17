@@ -290,18 +290,13 @@ namespace moppe::game {
     if (line.empty ())
       return {};
     const meters_t length = line.length ();
-    const plan_extent_t period =
-      plan_extent (ground.period_x * u::m, ground.period_z * u::m);
+    const plan_extent_t period = ground.period;
     // The ground's and the water's heights, as the places read them.
     const auto ground_at = [&] (const plan_position_t& at) {
-      const Vec2& p = plan_value (at);
-      return terrain::surface_elevation_point (ground.ground (p.x (), p.z ()) *
-                                               u::m);
+      return ground.ground (at);
     };
     const auto water_at = [&] (const plan_position_t& at) {
-      const Vec2& p = plan_value (at);
-      return terrain::surface_elevation_point (ground.water (p.x (), p.z ()) *
-                                               u::m);
+      return ground.water (at);
     };
 
     // How far along the loop its nearest point to `at` lies, and how far
@@ -393,9 +388,8 @@ namespace moppe::game {
     for (const Farm& farm : places.farms) {
       if (farm.buildings.empty () || farm.ruined)
         continue;
-      const Vec3 house = farm.buildings.front ().at;
       const auto [along, off] =
-        nearest_along (plan_position (house[0], house[2]));
+        nearest_along (plan (farm.buildings.front ().at));
       if (off < 160.0f * u::m)
         wants.push_back ({ along, 2, "", true });
     }

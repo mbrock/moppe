@@ -20,11 +20,6 @@ namespace moppe {
                  const map::SurfaceGeometry& surface,
                  const position_t& pos,
                  meters_t radius);
-      // For callers still holding a plain vector and metres (game_draw.cc).
-      void draw (render::DrawList& dl,
-                 const map::SurfaceGeometry& surface,
-                 const Vec3& pos,
-                 float radius);
 
     private:
       render::TexturePtr m_tex;

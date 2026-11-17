@@ -388,31 +388,6 @@ namespace moppe::game {
     }
   }
 
-  void render_animals (render::Renderer& r,
-                       std::span<const Animal> animals,
-                       const std::function<float (float, float)>& ground,
-                       const Vec3& camera,
-                       const Vec3& forward,
-                       float time,
-                       float reach,
-                       float period_x,
-                       float period_z,
-                       std::uint64_t motion_base) {
-    render_animals (
-      r,
-      animals,
-      [&ground] (plan_position_t at) {
-        return terrain::surface_elevation_point (
-          ground (meters_value (x_of (at)), meters_value (z_of (at))) * u::m);
-      },
-      position (camera),
-      unit_direction (forward),
-      seconds (time),
-      reach * u::m,
-      plan_extent (period_x * u::m, period_z * u::m),
-      motion_base);
-  }
-
   position_t animal_muzzle (const Animal& a,
                             const terrain::ElevationField& ground) {
     namespace ad = animal_drawing;

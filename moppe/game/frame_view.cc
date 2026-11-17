@@ -321,12 +321,12 @@ namespace moppe::game {
       static_cast<float> (seconds_into_play (logic.m_total_time));
     lighting.time = time * u::s;
     // The campfire lights what stands round it, most of all at night.
-    if (const float burn = fire_burn (logic.m_camp, logic.m_total_time);
-        burn > 0.01f) {
-      lighting.lamp_position = position (fire_light_position (logic.m_camp));
+    if (const proportion_t burn = fire_burn (logic.m_camp, logic.m_total_time);
+        burn > 0.01f * proportion[one]) {
+      lighting.lamp_position = fire_light_position (logic.m_camp);
       lighting.lamp_reach = fire_light_reach;
       lighting.lamp_color =
-        scale_display (fire_light_color (burn, time),
+        scale_display (fire_light_color (burn, time * u::s),
                        (1.0f - 0.25f * sky.daylight) * scale_factor[one]);
     }
     lighting.sun_height = sky.sun_height * proportion[one];

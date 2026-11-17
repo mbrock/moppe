@@ -780,8 +780,7 @@ namespace moppe::game {
     if (camp.hung || camp.fire)
       marks.push_back (
         { .kind = Mark::Kind::Camp,
-          .position =
-            camp.hung ? position (hammock_middle (camp.hammock)) : camp.hearth,
+          .position = camp.hung ? hammock_middle (camp.hammock) : camp.hearth,
           .colour = DisplayColor (0.80f, 0.38f, 0.08f),
           .name = "camp" });
     // The buses where the timetable has them, and their stops; the
@@ -900,21 +899,17 @@ namespace moppe::game {
     if (!font)
       return;
     const Vec3 eye = w.session.subject_position ();
-    // PlacesPlan's periods are floats still.
-    const float period_x = w.places.period_x, period_z = w.places.period_z;
+    const plan_extent_t& period = w.places.period;
     const std::optional<std::size_t> stop =
-      bus_stop_near (w.bus,
-                     position (eye),
-                     shown_within,
-                     plan_extent (period_x * u::m, period_z * u::m));
+      bus_stop_near (w.bus, position (eye), shown_within, period);
     if (!stop)
       return;
     const BusStop& at = w.bus.stops ()[*stop];
     const Vec3& sign = position_value (at.sign);
-    const meters_t dx =
-      terrain::minimum_image_delta ((sign[0] - eye[0]) * u::m, period_x * u::m);
-    const meters_t dz =
-      terrain::minimum_image_delta ((sign[2] - eye[2]) * u::m, period_z * u::m);
+    const meters_t dx = terrain::minimum_image_delta (
+      (sign[0] - eye[0]) * u::m, plan_value (period).x () * u::m);
+    const meters_t dz = terrain::minimum_image_delta (
+      (sign[2] - eye[2]) * u::m, plan_value (period).z () * u::m);
     const meters_t off =
       std::hypot (meters_value (dx), meters_value (dz)) * u::m;
     const opacity_t shown =

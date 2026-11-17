@@ -32,13 +32,24 @@ namespace {
   }
 
   PlaceGround bus_test_country () {
-    return { .ground = [] (float, float) { return 10.0f; },
-             .water = [] (float, float) { return 0.0f; },
-             .sea = [] (float, float) { return false; },
-             .current = [] (float, float) { return Vec3 (); },
-             .sea_level = 0.0f,
-             .period_x = bus_test_period,
-             .period_z = bus_test_period };
+    using terrain::surface_elevation_point;
+    return { .ground =
+               [] (const plan_position_t&) {
+                 return surface_elevation_point (10.0f * u::m);
+               },
+             .water =
+               [] (const plan_position_t&) {
+                 return surface_elevation_point (0.0f * u::m);
+               },
+             .sea = [] (const plan_position_t&) { return false; },
+             .current =
+               [] (const plan_position_t&) {
+                 return terrain::WaterVelocity (
+                   Vec3 () * terrain::water_velocity[u::m / u::s]);
+               },
+             .sea_level = surface_elevation_point (0.0f * u::m),
+             .period =
+               plan_extent (bus_test_period * u::m, bus_test_period * u::m) };
   }
 
   terrain::RoadNetwork bus_test_network () {

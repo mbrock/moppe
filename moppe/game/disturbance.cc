@@ -152,7 +152,7 @@ namespace moppe::game {
     // the birch has been walking back in since it went quiet.
     std::size_t pastures = 0, kept = 0;
     for (const terrain::RoadPlace& place : roads.places) {
-      const meters_t reach = place_kind (place.kind).pasture_m * u::m;
+      const meters_t reach = place_kind (place.kind).pasture;
       if (reach <= 0.0f * u::m)
         continue;
       ++pastures;
