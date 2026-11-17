@@ -39,16 +39,20 @@ namespace moppe::mov {
   class JetSki {
   public:
     // models/jet_ski.blend agrees.
-    static constexpr float hull_length = 2.9f;
-    static constexpr float half_beam = 0.52f;
-    static constexpr float transom = -1.05f;
-    static constexpr float stem = transom + hull_length;
+    static constexpr meters_t hull_length = 2.9f * u::m;
+    static constexpr meters_t half_beam = 0.52f * u::m;
+    static constexpr meters_t transom = -1.05f * u::m;
+    static constexpr meters_t stem = transom + hull_length;
     // The pump's intake grate and its nozzle, the saddle where the rider
     // sits, and the foot of the steering column.
-    static constexpr float intake[3] = { 0.0f, 0.03f, -0.55f };
-    static constexpr float nozzle[3] = { 0.0f, 0.13f, -1.09f };
-    static constexpr float saddle[3] = { 0.0f, 0.66f, -0.30f };
-    static constexpr float column[3] = { 0.0f, 0.80f, 0.42f };
+    static inline const displacement_t intake =
+      displacement (Vec3 (0.0f, 0.03f, -0.55f));
+    static inline const displacement_t nozzle =
+      displacement (Vec3 (0.0f, 0.13f, -1.09f));
+    static inline const displacement_t saddle =
+      displacement (Vec3 (0.0f, 0.66f, -0.30f));
+    static inline const displacement_t column =
+      displacement (Vec3 (0.0f, 0.80f, 0.42f));
 
     struct State {
       RigidBodyState body;
@@ -112,7 +116,7 @@ namespace moppe::mov {
     bool afloat () const;
     bool grounded () const;
     position_t seat () const {
-      return point (displacement (Vec3 (saddle[0], saddle[1], saddle[2])));
+      return point (saddle);
     }
 
     // The engine's speed, a share of full.
@@ -124,8 +128,8 @@ namespace moppe::mov {
     // Where the jet leaves the nozzle, and the way it is thrown, in the
     // world; and how deep under the water the intake last ran (negative
     // is out of it).
-    Vec3 jet () const;
-    Vec3 jet_direction () const;
+    position_t jet () const;
+    direction_t jet_direction () const;
     meters_t intake_depth () const;
 
     // The most the jet pushes, newtons, standing.

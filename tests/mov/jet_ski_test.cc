@@ -38,6 +38,11 @@ namespace {
       ski.update (moppe::seconds (1.0f / 60.0f), water);
   }
 
+  // A stick or a throttle held at `x`.
+  control_signal_t jet_ski_signal (float x) {
+    return x * control_signal[one];
+  }
+
   Vec3 jet_ski_level (Vec3 v) {
     v[1] = 0.0f;
     return v;
@@ -47,14 +52,18 @@ namespace {
 MOPPE_TEST (
   the_jet_ski_model_puts_the_pump_and_the_saddle_where_the_physics_does) {
   for (int i = 0; i < 3; ++i) {
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::jet[i], mov::JetSki::nozzle[i], 1e-3f);
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::intake[i], mov::JetSki::intake[i], 1e-3f);
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::seat[i], mov::JetSki::saddle[i], 1e-3f);
-    MOPPE_CHECK_NEAR (
-      game::jet_ski_model::column[i], mov::JetSki::column[i], 1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::jet[i],
+                      displacement_value (mov::JetSki::nozzle)[i],
+                      1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::intake[i],
+                      displacement_value (mov::JetSki::intake)[i],
+                      1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::seat[i],
+                      displacement_value (mov::JetSki::saddle)[i],
+                      1e-3f);
+    MOPPE_CHECK_NEAR (game::jet_ski_model::column[i],
+                      displacement_value (mov::JetSki::column)[i],
+                      1e-3f);
   }
 }
 
@@ -112,7 +121,7 @@ MOPPE_TEST (the_jet_planes_the_jet_ski_and_its_nozzle_steers_it) {
   ski.set_parked (false);
   jet_ski_test_run (ski, 2.0f);
   const float floating = position_value (ski.position ())[1];
-  ski.set_drive (1.0f);
+  ski.set_drive (jet_ski_signal (1.0f));
   float least_up = 1.0f;
   for (int i = 0; i < 20; ++i) {
     jet_ski_test_run (ski, 0.5f);
@@ -129,7 +138,7 @@ MOPPE_TEST (the_jet_planes_the_jet_ski_and_its_nozzle_steers_it) {
   MOPPE_CHECK (ski.intake_depth ().numerical_value_in (u::m) > 0.0f);
 
   // The bars over, it turns to the right, toward -x, banked into it.
-  ski.set_turn (1.0f);
+  ski.set_turn (jet_ski_signal (1.0f));
   for (int i = 0; i < 6; ++i) {
     jet_ski_test_run (ski, 0.5f);
     MOPPE_CHECK (direction_value (ski.up ())[1] > 0.75f);
@@ -137,8 +146,8 @@ MOPPE_TEST (the_jet_planes_the_jet_ski_and_its_nozzle_steers_it) {
   MOPPE_CHECK (direction_value (ski.forward ())[0] < -0.5f);
 
   // Throttle shut, it sinks back off the plane and all but stops.
-  ski.set_turn (0.0f);
-  ski.set_drive (0.0f);
+  ski.set_turn (jet_ski_signal (0.0f));
+  ski.set_drive (jet_ski_signal (0.0f));
   jet_ski_test_run (ski, 12.0f);
   MOPPE_CHECK (length (jet_ski_level (velocity_value (ski.velocity ()))) <
                1.5f);
@@ -152,10 +161,10 @@ MOPPE_TEST (with_the_throttle_shut_the_jet_ski_has_nothing_to_steer_with) {
   ski.place (
     position (Vec3 (256, 0, 30)), unit_direction (Vec3 (0, 0, 1)), 0.0f * u::m);
   ski.set_parked (false);
-  ski.set_drive (1.0f);
+  ski.set_drive (jet_ski_signal (1.0f));
   jet_ski_test_run (ski, 5.0f);
-  ski.set_drive (0.0f);
-  ski.set_turn (1.0f);
+  ski.set_drive (jet_ski_signal (0.0f));
+  ski.set_turn (jet_ski_signal (1.0f));
   jet_ski_test_run (ski, 2.0f);
   MOPPE_CHECK_NEAR (ski.thrust ().numerical_value_in (u::N), 0.0f, 1e-6f);
   // It leans as its rider does and comes round a little, no more.
@@ -170,7 +179,7 @@ MOPPE_TEST (astern_the_jet_skis_bucket_backs_it_slowly) {
              unit_direction (Vec3 (0, 0, 1)),
              0.0f * u::m);
   ski.set_parked (false);
-  ski.set_drive (-1.0f);
+  ski.set_drive (jet_ski_signal (-1.0f));
   jet_ski_test_run (ski, 6.0f);
   const float astern = -velocity_value (ski.velocity ())[2];
   MOPPE_CHECK (astern > 0.8f);
@@ -186,7 +195,7 @@ MOPPE_TEST (a_jet_ski_thrown_off_a_wave_loses_its_push_until_it_lands) {
              unit_direction (Vec3 (0, 0, 1)),
              0.0f * u::m);
   ski.set_parked (false);
-  ski.set_drive (1.0f);
+  ski.set_drive (jet_ski_signal (1.0f));
   jet_ski_test_run (ski, 4.0f);
   MOPPE_CHECK (ski.thrust ().numerical_value_in (u::N) > 200.0f);
   // Lifted clear of the water, its grate sucks air.
@@ -228,14 +237,15 @@ MOPPE_TEST (a_jet_ski_rides_over_a_swell_without_burying_its_bow) {
   ski.place (
     position (Vec3 (256, 0, 40)), unit_direction (Vec3 (0, 0, 1)), 0.0f * u::m);
   ski.set_parked (false);
-  ski.set_drive (1.0f);
+  ski.set_drive (jet_ski_signal (1.0f));
   float least_up = 1.0f, lowest = 1e9f;
   for (int i = 0; i < 15 * 60; ++i) {
     time += 1.0f / 60.0f;
     ski.update (moppe::seconds (1.0f / 60.0f), swell);
     least_up = std::min<float> (least_up, direction_value (ski.up ())[1]);
-    const Vec3 at = position_value (ski.position ());
-    lowest = std::min<float> (lowest, at[1] - swell.level_at (at));
+    const position_t at = ski.position ();
+    lowest = std::min<float> (
+      lowest, position_value (at)[1] - meters_value (swell.level (at)));
   }
   MOPPE_CHECK (least_up > 0.6f);
   MOPPE_CHECK (lowest > -0.6f);
@@ -251,7 +261,7 @@ MOPPE_TEST (driven_at_a_shelving_shore_the_jet_ski_runs_aground) {
              unit_direction (Vec3 (0, 0, 1)),
              0.0f * u::m);
   ski.set_parked (false);
-  ski.set_drive (1.0f);
+  ski.set_drive (jet_ski_signal (1.0f));
   jet_ski_test_run (ski, 20.0f);
   MOPPE_CHECK (ski.grounded ());
   MOPPE_CHECK (!ski.afloat ());
@@ -291,8 +301,8 @@ MOPPE_TEST (a_jet_skis_checkpoint_replays_the_same_ride_each_time) {
   ski.place (
     position (Vec3 (256, 0, 60)), unit_direction (Vec3 (0, 0, 1)), 0.0f * u::m);
   ski.set_parked (false);
-  ski.set_drive (1.0f);
-  ski.set_turn (0.4f);
+  ski.set_drive (jet_ski_signal (1.0f));
+  ski.set_turn (jet_ski_signal (0.4f));
   jet_ski_test_run (ski, 3.0f);
   const mov::JetSki::State kept = ski.state ();
   jet_ski_test_run (ski, 2.0f);

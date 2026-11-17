@@ -38,6 +38,11 @@ namespace {
       boat.update (moppe::seconds (1.0f / 60.0f), water);
   }
 
+  // A stick or a throttle held at `x`.
+  control_signal_t boat_signal (float x) {
+    return x * control_signal[one];
+  }
+
   Vec3 level (Vec3 v) {
     v[1] = 0.0f;
     return v;
@@ -46,10 +51,14 @@ namespace {
 
 MOPPE_TEST (the_boat_model_puts_the_long_tail_where_the_physics_does) {
   for (int i = 0; i < 3; ++i) {
-    MOPPE_CHECK_NEAR (game::boat_model::pivot[i], mov::Boat::pivot[i], 1e-3f);
-    MOPPE_CHECK_NEAR (game::boat_model::hub[i], mov::Boat::hub[i], 1e-3f);
+    MOPPE_CHECK_NEAR (game::boat_model::pivot[i],
+                      displacement_value (mov::Boat::pivot)[i],
+                      1e-3f);
     MOPPE_CHECK_NEAR (
-      game::boat_model::seat_helm[i], mov::Boat::helm[i], 1e-3f);
+      game::boat_model::hub[i], displacement_value (mov::Boat::hub)[i], 1e-3f);
+    MOPPE_CHECK_NEAR (game::boat_model::seat_helm[i],
+                      displacement_value (mov::Boat::helm)[i],
+                      1e-3f);
   }
 }
 
@@ -105,7 +114,7 @@ MOPPE_TEST (the_long_tail_drives_the_boat_up_onto_the_plane_and_steers_it) {
   boat.place (
     position (Vec3 (60, 0, 40)), unit_direction (Vec3 (0, 0, 1)), 0.0f * u::m);
   boat.set_parked (false);
-  boat.set_drive (1.0f);
+  boat.set_drive (boat_signal (1.0f));
   boat_test_run (boat, 3.0f);
   // The tail is down and the propeller bites.
   MOPPE_CHECK (boat.propeller_depth ().numerical_value_in (u::m) > 0.0f);
@@ -121,21 +130,21 @@ MOPPE_TEST (the_long_tail_drives_the_boat_up_onto_the_plane_and_steers_it) {
   MOPPE_CHECK (direction_value (boat.up ())[1] > 0.97f);
 
   // With the governor tied back it goes faster still.
-  boat.set_boost (1.0f);
+  boat.set_boost (boat_signal (1.0f));
   boat_test_run (boat, 6.0f);
   MOPPE_CHECK (length (level (velocity_value (boat.velocity ()))) >
                speed + 1.0f);
-  boat.set_boost (0.0f);
+  boat.set_boost (boat_signal (0.0f));
 
   // Swinging the tail turns it to the right, toward -x.
-  boat.set_turn (1.0f);
+  boat.set_turn (boat_signal (1.0f));
   boat_test_run (boat, 3.0f);
   MOPPE_CHECK (direction_value (boat.forward ())[0] < -0.3f);
   MOPPE_CHECK (direction_value (boat.up ())[1] > 0.9f);
 
   // Throttle off, it comes to a stop.
-  boat.set_turn (0.0f);
-  boat.set_drive (0.0f);
+  boat.set_turn (boat_signal (0.0f));
+  boat.set_drive (boat_signal (0.0f));
   boat_test_run (boat, 25.0f);
   MOPPE_CHECK (length (level (velocity_value (boat.velocity ()))) < 0.6f);
 }
@@ -162,7 +171,7 @@ MOPPE_TEST (driven_at_a_shelving_shore_the_boat_runs_aground) {
               unit_direction (Vec3 (0, 0, 1)),
               0.0f * u::m);
   boat.set_parked (false);
-  boat.set_drive (1.0f);
+  boat.set_drive (boat_signal (1.0f));
   boat_test_run (boat, 30.0f);
   MOPPE_CHECK (boat.grounded ());
   MOPPE_CHECK (position_value (boat.position ())[2] > 150.0f);
@@ -179,7 +188,7 @@ MOPPE_TEST (driven_against_a_current_the_boat_makes_less_way_over_the_ground) {
                 unit_direction (Vec3 (0, 0, 1)),
                 0.0f * u::m);
     boat.set_parked (false);
-    boat.set_drive (1.0f);
+    boat.set_drive (boat_signal (1.0f));
     boat_test_run (boat, 15.0f, water);
     const Vec3 v = velocity_value (boat.velocity ());
     return v[2];
@@ -200,7 +209,7 @@ MOPPE_TEST (
   boat.set_parked (false);
   boat.set_passenger (true);
   MOPPE_CHECK_NEAR (boat.mass ().numerical_value_in (u::kg), 230.0f, 1e-3f);
-  boat.set_drive (1.0f);
+  boat.set_drive (boat_signal (1.0f));
   boat_test_run (boat, 15.0f);
   // Some 16 km/h, as its builder and his father clock it: climbing its
   // own bow wave, short of the plane it makes alone at 24.
@@ -208,7 +217,7 @@ MOPPE_TEST (
   MOPPE_CHECK (stuck > 3.5f);
   MOPPE_CHECK (stuck < 5.0f);
   // Tied back, the engine pushes it over onto the plane.
-  boat.set_boost (1.0f);
+  boat.set_boost (boat_signal (1.0f));
   boat_test_run (boat, 10.0f);
   MOPPE_CHECK (length (level (velocity_value (boat.velocity ()))) > 6.0f);
 }

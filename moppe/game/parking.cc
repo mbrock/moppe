@@ -792,7 +792,7 @@ namespace moppe::game {
     const position_t centre = lot.spawn;
     const terrain::SurfaceElevation water =
       terrain::surface_elevation_point (lot.ground.world.water_level);
-    const meters_t reach = (mov::Helicopter::rotor_radius + 2.5f) * u::m;
+    const meters_t reach = mov::Helicopter::rotor_radius + 2.5f * u::m;
     std::optional<position_t> best;
     meters_t best_score = 1e30f * u::m;
     for (meters_t r = 220.0f * u::m; r <= 600.0f * u::m; r += 6.0f * u::m) {

@@ -85,6 +85,75 @@ namespace moppe::mov {
       true);
   }
 
+  // The typed crossings of offsets, places, and ways into and out of
+  // Box3D's frame: a body-frame offset, a place in the world, a unit way.
+  inline b3Vec3 to_b3 (const displacement_t& v) {
+    return to_b3 (displacement_value (v));
+  }
+
+  inline b3Vec3 to_b3 (const position_t& at) {
+    return to_b3 (position_value (at));
+  }
+
+  inline b3Vec3 to_b3 (const direction_t& way) {
+    return to_b3 (direction_value (way));
+  }
+
+  // How high a place stands, its y.
+  inline meters_t height_of (const position_t& at) {
+    return position_value (at)[1] * si::metre;
+  }
+
+  inline position_t body_position (b3BodyId body) {
+    return position (from_b3 (b3Body_GetPosition (body)));
+  }
+
+  inline angular_velocity_t angular_velocity (b3BodyId body) {
+    return from_b3 (b3Body_GetAngularVelocity (body)) *
+           isq::angular_velocity[si::radian / si::second];
+  }
+
+  // A body-frame offset or way turned into the world's by `q`, and a
+  // world way into the body's frame.
+  inline displacement_t turned (b3Quat q, const displacement_t& local) {
+    return displacement (from_b3 (b3RotateVector (q, to_b3 (local))));
+  }
+
+  inline direction_t turned (b3Quat q, const direction_t& local) {
+    return unit_direction (from_b3 (b3RotateVector (q, to_b3 (local))));
+  }
+
+  inline direction_t unturned (b3Quat q, const direction_t& way) {
+    return unit_direction (from_b3 (b3InvRotateVector (q, to_b3 (way))));
+  }
+
+  // The velocity of the body's point at the body-frame offset `local`.
+  inline velocity_t point_velocity (b3BodyId body,
+                                    const displacement_t& local) {
+    return velocity (
+      from_b3 (b3Body_GetLocalPointVelocity (body, to_b3 (local))));
+  }
+
+  inline void
+  apply_force (b3BodyId body, const force_t& force, const position_t& at) {
+    b3Body_ApplyForce (body, to_b3 (force_value (force)), to_b3 (at), true);
+  }
+
+  // A push of `magnitude` along `way`, at the place `at`.
+  inline void apply_force (b3BodyId body,
+                           const direction_t& way,
+                           newtons_t magnitude,
+                           const position_t& at) {
+    apply_force (body, direction_value (way), magnitude, position_value (at));
+  }
+
+  inline void
+  apply_drag (b3BodyId body,
+              const velocity_t& v,
+              quantity<si::kilogram / si::second, float> resistance) {
+    apply_drag (body, velocity_value (v), resistance);
+  }
+
   inline void apply_force_to_centre (b3BodyId body, const force_t& force) {
     b3Body_ApplyForceToCenter (
       body, to_b3 (force.numerical_value_ref_in (si::newton)), true);
@@ -97,6 +166,12 @@ namespace moppe::mov {
       body,
       to_b3 (axis * torque.numerical_value_in (si::newton * si::metre)),
       true);
+  }
+
+  inline void apply_torque (b3BodyId body,
+                            const direction_t& axis,
+                            newton_metres_t torque) {
+    apply_torque (body, direction_value (axis), torque);
   }
 
   // A body's mass, its centre in the body's frame, and its moments of
@@ -115,6 +190,13 @@ namespace moppe::mov {
     m.inertia.cy = { 0.0f, moment (inertia[1]), 0.0f };
     m.inertia.cz = { 0.0f, 0.0f, moment (inertia[2]) };
     return m;
+  }
+
+  inline b3MassData
+  body_mass (kilograms_t mass,
+             const displacement_t& centre,
+             const std::array<kilogram_square_metres_t, 3>& inertia) {
+    return body_mass (mass, displacement_value (centre), inertia);
   }
 
   // The torque that turns a body, rotated by `q` and with moments of
@@ -219,6 +301,13 @@ namespace moppe::mov {
   inline float
   surface_elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
     return ground_height (surface, x, z);
+  }
+
+  // The ground's height under a place.
+  inline meters_t ground_under (const map::SurfaceGeometry& surface,
+                                const position_t& at) {
+    const Vec3& p = position_value (at);
+    return ground_height (surface, p[0], p[2]) * si::metre;
   }
 
   // The unit normal of that ground: the height field's, and over a road's

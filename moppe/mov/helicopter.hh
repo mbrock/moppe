@@ -27,9 +27,10 @@ namespace moppe::mov {
   class Helicopter {
   public:
     // models/helicopter.blend agrees.
-    static constexpr float rotor_radius = 4.8f;
-    static constexpr float skid = 1.05f;
-    static constexpr float seat[3] = { -0.33f, 0.92f, 0.10f };
+    static constexpr meters_t rotor_radius = 4.8f * u::m;
+    static constexpr meters_t skid = 1.05f * u::m;
+    static inline const displacement_t seat =
+      displacement (Vec3 (-0.33f, 0.92f, 0.10f));
 
     struct State {
       RigidBodyState body;
@@ -93,7 +94,7 @@ namespace moppe::mov {
     void push (position_t at, const impulse_t& impulse);
     position_t point (const displacement_t& local) const;
     position_t pilot_seat () const {
-      return point (displacement (Vec3 (seat[0], seat[1], seat[2])));
+      return point (seat);
     }
     // Height of the skids over the ground beneath them.
     meters_t altitude () const;
