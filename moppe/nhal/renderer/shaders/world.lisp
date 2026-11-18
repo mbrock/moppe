@@ -466,6 +466,30 @@
     (* found (- 1.0 footpath)
        (- 1.0 (smoothstep tread (+ tread (swizzle shape :w)) (abs across))))))
 
+;;; How much snow the broad plane holds; patch noise only breaks its edge.
+(define-shader-function snow-reach (rise support northing wander)
+  (* (smoothstep 0.63 0.79 (+ rise (* 0.05 northing) wander))
+     (smoothstep 0.55 0.78 support)))
+
+(define-shader-function settled-powder (rise normal sheet)
+  (* (snow-reach rise (swizzle sheet :y) (- 0.0 (swizzle normal :z)) 0.0)
+     (smoothstep 0.48 0.53 (swizzle sheet :x))
+     (- 1.0 (smoothstep 0.74 0.87 (swizzle sheet :z)))
+     (smoothstep 0.55 0.83 (swizzle normal :y))))
+
+;;; Low lenticular pillows stretched downwind. Height in metres and its
+;;; two slopes: the same surface for the silhouette and the lighting.
+(define-shader-function drift-profile (xz)
+  (let* ((a (dot xz (vec2 0.86 0.32)))
+         (b (dot xz (vec2 -0.14 0.31)))
+         (c (dot xz (vec2 0.18 -0.09)))
+         (phase (+ a (* 1.65 (sin b))))
+         (crest (+ 0.50 (* 0.34 (sin phase)) (* 0.16 (sin c))))
+         (slope (+ (* 0.34 (cos phase)
+                      (+ (vec2 0.86 0.32) (* 1.65 (cos b) (vec2 -0.14 0.31))))
+                   (* 0.16 (cos c) (vec2 0.18 -0.09)))))
+    (vec3 (+ 0.035 (* 0.14 crest crest)) (* 0.28 crest slope))))
+
 (define-shader-abstraction powder-height (xz)
   `(let* ((uv (* (- ,xz (swizzle snow-window :xy)) (swizzle snow-window :z)))
           (edge (abs (- uv (vec2 0.5 0.5)))))
@@ -490,6 +514,7 @@
                  (road-index :storage-buffer :binding 4 :element :uint)
                  (heights :texture-2d :binding 0)
                  (normals :texture-2d :binding 1)
+                 (ground :texture-2d :binding 7)
                  (snow-pack :texture-2d :binding 13)
                  (linear-repeat :sampler :binding 1)))
   (let* ((row-length (uint (swizzle placement :w)))
@@ -555,9 +580,16 @@
                                (sqrt (dot from-camera from-camera)))))
          (height (mix own-height (on-lattice h00 h10 h01 h11 f) blend))
          (normal (mix own-normal (on-lattice n00 n10 n01 n11 f) blend))
+         (elevation (* height (swizzle scale :y)))
+         (rise (/ (- elevation (swizzle relief :x)) (max 1.0 (swizzle relief :y))))
+         (mantle (only-where (> rise 0.56) 0.0
+                   (let* ((floor (sample-level ground linear-repeat
+                                               (/ (+ grid (vec2 0.5 0.5)) extent) 0.0)))
+                     (* (settled-powder rise normal floor)
+                        (swizzle (drift-profile ground-xz) :x)))))
+         (press (powder-height ground-xz))
          (position (vec3 (swizzle ground-xz :x)
-                         (+ (* height (swizzle scale :y))
-                            (* (powder-height ground-xz) (- 1.0 road-weight)))
+                         (+ elevation (* (+ mantle press) (- 1.0 road-weight)))
                          (swizzle ground-xz :y)))
          (point (vec4 position 1.0))
          (current (* view-proj point)))
@@ -587,6 +619,20 @@
 
 (define-shader-function hash12 (p)
   (fract (* (sin (dot p (vec2 127.1 311.7))) 43758.5453)))
+
+;;; A few ice facets catch the sun at the specular half angle. They stay
+;;; put in the snow; widen the spot and conserve its energy as the pixel
+;;; grows, then let the snow's rough highlight take over in the distance.
+(define-shader-function crystal-glint (xz footprint normal halfway)
+  (let* ((space (* xz 16.0)) (cell (floor space))
+         (jitter (vec2 (hash12 cell) (hash12 (+ cell (vec2 23.0 41.0)))))
+         (offset (- (fract space) (+ (vec2 0.18 0.18) (* jitter 0.64))))
+         (width (+ 0.075 (min 0.28 (* 8.0 footprint))))
+         (spot (- 1.0 (smoothstep 0.0 (* width width) (dot offset offset))))
+         (facet (normalize (+ normal (vec3 (- (* 2.6 (swizzle jitter :x)) 1.3)
+                                          0.0 (- (* 2.6 (swizzle jitter :y)) 1.3))))))
+    (* spot (/ 0.012 (* width width))
+       (smoothstep 0.955 0.997 (dot facet halfway)))))
 
 (define-shader-function value-noise (p)
   (let* ((i (floor p))
@@ -793,13 +839,6 @@
 ;;; The sheet's relief tilts the normal the ground is lit by, so raking
 ;;; light finds hummocks and stones the terrain's own samples are too
 ;;; coarse to hold.
-
-;;; How much snow the ground at RISE of the land's relief carries, on the
-;;; broad plane SUPPORT (1 level) facing NORTHING (1 due north); WANDER, a
-;;; drift of noise about 0, moves the snow line.
-(define-shader-function snow-reach (rise support northing wander)
-  (* (smoothstep 0.63 0.79 (+ rise (* 0.05 northing) wander))
-     (smoothstep 0.55 0.78 support)))
 
 (define-shader-struct ground-surface
   (albedo :vec3)                   ; display space; the caller decodes it
@@ -1121,11 +1160,10 @@
 
          ;; Snow lies where the ground is level enough to hold it, deeper
          ;; the higher it is, and a trail is ridden through it.
-         (snow (* (band (+ (snow-reach rise (swizzle floor :y)
+         (snow (* (smoothstep 0.29 0.68 (+ (snow-reach rise (swizzle floor :y)
                                        (* -1.0 (swizzle normal :z))
                                        (* 0.10 (- drift 0.5)))
-                           (* 0.9 edge))
-                        0.5)
+                           (* 0.52 edge)))
                   (- 1.0 cliff)
                   (- 1.0 sunk)
                   (- 1.0 (band (swizzle floor :z) 0.80))))
@@ -1135,8 +1173,8 @@
                          (* 0.48 (swizzle world :z)) (* 6.0 patch)
                          (* 0.8 fleck)))
          (snowy (mix trodden
-                     (mix (vec3 0.80 0.86 0.94) (vec3 0.98 0.98 0.97)
-                          (+ 0.36 (* 0.38 fleck) (* 0.20 (sin drift-phase))))
+                     (mix (vec3 0.87 0.92 0.97) (vec3 0.99 0.99 0.98)
+                          (+ 0.54 (* 0.20 patch) (* 0.12 (sin drift-phase))))
                      snow))
 
          ;; The swash darkens whatever the water laps.
@@ -1146,9 +1184,9 @@
          ;; Sand and snow lie smooth.
          (smooth (max snow (* (band strand 0.5) (- 1.0 cliff)))))
     (make-ground-surface
-     :powder (vec2 snow (* snow 0.09 (cos drift-phase)))
+     :powder (vec2 snow (* snow 0.035 (cos drift-phase)))
      :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
-                (mix mottle 1.0 (* 0.65 smooth)))
+                (mix mottle 1.0 (max (* 0.65 smooth) (* 0.97 snow))))
      :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth)
                 (* 0.10 alvar-share) (* -0.06 bog-pool)
                 (* -0.06 bare-rock) (* -0.04 fen-cover))
@@ -2215,7 +2253,8 @@
                    (- 1.0 puddle)))
          ;; The full-resolution slopes of the trench and its rolled lips,
          ;; even where both fit between two terrain vertices.
-         (near-slope (+ (* (vec2 1.0 0.36) (swizzle powder :y)
+         (near-slope (+ (* (swizzle powder :x) (swizzle (drift-profile xz) :yz))
+                       (* (vec2 1.0 0.36) (swizzle powder :y)
                            (- 1.0 (smoothstep 0.15 1.0 footprint)) (- 1.0 packed))
                        (* (swizzle powder :x) 12.5
                         (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
@@ -2251,6 +2290,12 @@
                          overcast)
                     (vec3 1.0 1.0 1.0) direct))
          (to-eye (/ (- eye world) (max distance 0.0001)))
+         (crystals (* (swizzle powder :x) (- 1.0 packed) direct
+                      (- 1.0 overcast) (- 1.0 (smoothstep 0.02 0.055 footprint))
+                      (smoothstep 0.0 0.3 (dot shaded sun))))
+         (flash (only-where (> crystals 0.01) 0.0
+                  (* crystals (crystal-glint xz footprint shaded
+                                             (normalize (+ sun to-eye))))))
          ;; The ground's roughness: its own, a road's tread where it holds
          ;; the ground (asphalt smoother than gravel, and polished in the
          ;; wheel paths), and smoother wet.  Where the normal changes
@@ -2302,7 +2347,8 @@
                                                (smoothstep 0.15 0.5
                                                            rough))))
                        :xyz)))
-    (set-output color (vec4 (hazed lit world eye fog-color
+    (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz) flash 2.4))
+                                   world eye fog-color
                                    (swizzle sky-sun :xyz) relief)
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
@@ -5051,14 +5097,17 @@
                (moisture :float :location 2 :interpolation :flat)
                (rise :float :location 3)
                (here :vec4 :location 4)
-               (then :vec4 :location 5))
+               (then :vec4 :location 5)
+               (crown :vec4 :location 6))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (forest :uniform-block :binding 1 :members #.*forest*)
                  (draw :uniform-block :binding 2 :members #.*forest-class*)
                  (rocks :storage-buffer :binding 3 :element :vec4)
                  (candidates :storage-buffer :binding 4 :element :uint)
                  (corners :storage-buffer :binding 5 :element :vec4)
-                 (faces :storage-buffer :binding 6 :element :uint)))
+                 (faces :storage-buffer :binding 6 :element :uint)
+                 (floor-sheet :texture-2d :binding 7)
+                 (linear-repeat :sampler :binding 1)))
   (let* ((at (* (+ (uint (swizzle class :x)) instance-index) (uint 2)))
          (row (* (buffer-element candidates at) (uint 3)))
          (rock (buffer-element rocks row))
@@ -5088,7 +5137,17 @@
                          (boulder-cleave b (+ midpoint
                                               (* (normalize midpoint) lift)))))
          (p (if fine fine-point (rock-corner corners b vertex-index)))
-         (point (boulder-world b p))
+         (stone (boulder-world b p))
+         (altitude (/ (- (swizzle rock :y) (swizzle relief :x))
+                      (max (swizzle relief :y) 1.0)))
+         (snow (only-where (> altitude 0.56) 0.0
+                 (settled-powder altitude (swizzle ground :xyz)
+                   (sample-level floor-sheet linear-repeat
+                                 (/ (swizzle rock :xz) (swizzle world :xy)) 0.0))))
+         (radial (normalize (- stone (boulder-shape-centre b))))
+         (cap (* snow (smoothstep -0.05 0.64 (swizzle radial :y))
+                 (min 0.15 (* 0.20 (swizzle rock :w)))))
+         (point (+ stone (* cap (+ (vec3 0.0 0.8 0.0) (* 0.2 radial)))))
          (seed (boulder-shape-seed b))
          (hue (- (tree-hash seed (uint 30)) 0.5))
          (value (+ 0.86 (* 0.24 (tree-hash seed (uint 31)))))
@@ -5099,6 +5158,7 @@
                                       (- 0.51 (* 0.07 hue)))
                                 value)))
     (set-output moisture (swizzle ground :w))
+    (set-output crown (vec4 radial snow))
     (set-output rise (+ (* (swizzle p :y) (swizzle (boulder-shape-stretch b) :y))
                         0.4))
     (set-output here here-clip)
@@ -5111,7 +5171,8 @@
               (moisture :float :location 2 :interpolation :flat)
               (rise :float :location 3)
               (here :vec4 :location 4)
-              (then :vec4 :location 5))
+              (then :vec4 :location 5)
+              (crown :vec4 :location 6))
      :outputs ((color :vec4 :location 0)
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
@@ -5144,6 +5205,14 @@
          (surface (* (mix (* albedo (+ 0.88 (* 0.22 facet))) crust
                           (* 0.55 growth))
                      (mix 0.55 1.0 contact)))
+         ;; Snow softens the crown; leave the cleaved sides dark beneath
+         ;; an irregular lip, not one flat white triangle per rock face.
+         (round (normalize (swizzle crown :xyz)))
+         (cap (* (swizzle crown :w) (smoothstep 0.15 0.38
+                   (+ (* 0.76 (swizzle round :y)) (* 0.24 (swizzle n :y))
+                      (* 0.15 (- patches 0.5))))))
+         (surface (mix surface (vec3 0.86 0.91 0.96) cap))
+         (n (normalize (mix n (normalize (+ round (vec3 0.0 0.45 0.0))) cap)))
          (lit (sun-lit shadow-map shadow-compare world-position 0.5 0.5))
          (visibility (mix 0.18 1.0 lit))
          (sun-light (swizzle sun-diffuse :xyz))

@@ -856,8 +856,12 @@ build, test, and change the code; read this when working on a feature.
 - The ground (`ground-surface` in world.lisp; docs/nhal.md) is surfaced
   from the world's fields: turf, heath and stony fell above it, forest
   litter, soil, cobbles, sand along the water and silt on its bed, bedded
-  rock, the trail, and snow on the highest level ground. Everything finer
-  than the terrain's samples is read at four scales from one generated
+  rock, the trail, and snow on the highest level ground. There the powder
+  settles into shallow wind-shaped drifts and rounds off the crowns of
+  boulders, leaving their cleaved sides exposed. Small ice facets glint
+  in direct sunlight, fading into the sheen as they get too small to
+  resolve. Neither the snow nor its tracks rewrite the generated land.
+  The underlying grain is read at four scales from one generated
   tiling sheet (`moppe/render/ground_detail.hh`: grain, its slope, a
   mosaic of stones), which also tilts the lit normal.
 - Two players (`moppe/game/companion.hh`): `--multiplayer` on two
