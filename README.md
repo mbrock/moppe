@@ -228,8 +228,9 @@ hammock and fire.
   in a hammock.
 - **Camp & navigate:** `R` hangs a hammock between two trees (or leans back for
   a wheelie on the Trail 90); `T` lights a campfire or sanctuary beacon; `Q`
-  scans nearby mushrooms and hammock trees; `M` unfolds the map; `P` saves a
-  screenshot and `V` records a video clip.
+  scans nearby mushrooms and hammock trees; `M` unfolds the map; `G`, when
+  lost or stuck, flies you (and whatever you drive) to the road by the
+  nearest bus stop; `P` saves a screenshot and `V` records a video clip.
 
 ---
 

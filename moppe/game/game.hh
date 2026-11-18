@@ -32,6 +32,7 @@
 #include <moppe/game/surroundings.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/waterfall_surface.hh>
+#include <moppe/game/way_back.hh>
 #include <moppe/game/world_loading.hh>
 #include <moppe/game/world_places.hh>
 
@@ -249,6 +250,10 @@ namespace moppe {
 
       void leave_cinematic ();
 
+      // G: the way back to the road by the nearest bus stop
+      // (way_back.hh).
+      void take_way_back ();
+
       void regenerate_world ();
 
       void revive ();
@@ -279,6 +284,7 @@ namespace moppe {
       bool m_skip_cinematic_requested = false;
       // The opening (opening_director.hh).
       OpeningDirector m_opening;
+      WayBack m_way_back;
       InputFrameAdapter m_live_input;
       SimulationClock m_simulation_clock;
       WaterfallSurface m_waterfall_surface;

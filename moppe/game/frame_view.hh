@@ -414,6 +414,9 @@ namespace moppe::game {
                           inclination_t look_pitch = 0.0f *
                                                      inclination[u::rad]);
   FrameView compose_frame_view (const FrameViewInput& input);
+  // The lens play's own view would draw `input` through: the capture
+  // camera's, the eyes', or the following camera's, widening with speed.
+  degrees_t gameplay_field_of_view (const FrameViewInput& input);
 
   // How long the motion blur draws the world's streaks, as a share of a
   // frame's motion, for a player getting about in `mode` at `kmh`. Each

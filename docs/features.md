@@ -188,6 +188,23 @@ build, test, and change the code; read this when working on a feature.
   `MOPPE_WALK=bus-ride` boards that bus and rides it, and
   `MOPPE_MAP=whole|near` starts with the map unfolded; `moppe: bus:`
   lists the stops.
+- The way back (`moppe/game/way_back.*`): `G`, at any time in play,
+  takes whoever is lost or stuck to the road by the nearest bus stop
+  (`roadside_near`), in the copy of the world nearest them. A land
+  machine being driven (or the bike under the glider) comes along and
+  stands on the road's left half a bus's length short of the stop,
+  which the buses, all driving on the right, leave free; on foot, or
+  from the boat or the jet ski, which stay afloat where they were, one
+  stands on the verge behind the sign, where its board says when the
+  next bus comes. A rope or a slung load is let go first. The view does
+  not cut: it rises up and back out of play's view, flies over at a
+  height clear of the ground between, and comes down into play's view
+  at the stop, which it hands back as it ends (`WayBack`, five and a
+  half to eleven seconds by the distance); the player is set down as it
+  passes over the top (`set_down`), and play's controls rest meanwhile.
+  Not on the bus, along in the other player's machine, or in the
+  hammock. `tools/record OUT.mp4 --control 'wait 1' 'tap G'` films it;
+  `moppe: way back to` names the stop.
 - Waymarks: a small arrow with a name and a distance marks the other
   player (in their jacket's colour), and the bike, the jeep, the
   tractor, and the helicopter once they are more than some thirty metres off: over the thing when it is in

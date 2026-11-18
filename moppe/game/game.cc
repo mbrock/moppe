@@ -125,6 +125,15 @@ namespace moppe {
       else if (DemoPilot::active ())
         input = m_demo.steer (
           input, session (), m_parking, world_ground (), total_time, dt);
+      // While the way back flies, play's controls rest, and over its top
+      // the player is set down by the stop.
+      if (m_way_back.active ()) {
+        input = InputFrame {};
+        if (m_way_back.tick (dt)) {
+          set_down (session (), m_way_back.place ());
+          session ().settle_camera (surface ());
+        }
+      }
       m_company.ride_along (session (), input);
       m_company.keep_time (session ());
       // The ground shows what the basket holds, a restored one too.
@@ -227,6 +236,11 @@ namespace moppe {
         return;
       }
 
+      if (k == Key::G && down) {
+        take_way_back ();
+        return;
+      }
+
       if (k == Key::L && down) {
         m_pointer_free = !m_pointer_free;
         platform::set_pointer_captured (!m_pointer_free);
@@ -269,7 +283,7 @@ namespace moppe {
         camera = *shot;
       }
 
-      return {
+      FrameViewInput input {
         .world = world (),
         .surface = surface (),
         .session = session (),
@@ -285,6 +299,15 @@ namespace moppe {
         .sky = m_sky.sky (),
         .water = &generated_world ().water_surface (),
       };
+      if (m_way_back.active () && !cinematic) {
+        camera.field_of_view = gameplay_field_of_view (input);
+        input.selected_camera = m_way_back.camera (camera, world_ground ());
+        input.scene = FrameSceneMode::Cinematic;
+        input.cinematic_motion_blur = m_way_back.motion_blur ();
+        input.reveal_player = true;
+        input.capture_field_of_view = std::nullopt;
+      }
+      return input;
     }
 
     void MoppeGame::update_frame_flare () {
@@ -301,7 +324,29 @@ namespace moppe {
       session ().settle_camera (surface ());
     }
 
+    void MoppeGame::take_way_back () {
+      if (m_way_back.active () || !can_take_way_back (session ()))
+        return;
+      const WorldGround ground = world_ground ();
+      const std::optional<RoadsidePlace> place =
+        roadside_near (m_places.bus, ground, subject_position ());
+      if (!place)
+        return;
+      const FrameViewInput view = frame_view_input (1.0f);
+      FrameCameraReading from = view.selected_camera;
+      from.field_of_view = gameplay_field_of_view (view);
+      m_way_back.start (from,
+                        subject_position (),
+                        arrives_on_foot (session ()) ? place->feet
+                                                     : place->machine,
+                        *place,
+                        ground);
+      std::cerr << "moppe: way back to "
+                << m_places.bus.stops ()[place->stop].name << std::endl;
+    }
+
     void MoppeGame::regenerate_world () {
+      m_way_back.stop ();
       session ().clear_controls ();
       m_live_input.clear ();
       m_ready = false;
@@ -325,6 +370,7 @@ namespace moppe {
     }
 
     void MoppeGame::revive () {
+      m_way_back.stop ();
       logic ().m_lives = 10;
       logic ().m_health = 100.0f * health[one];
       logic ().m_shake = 0.0f * u::deg;

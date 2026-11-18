@@ -505,6 +505,7 @@ set(MOPPE_APPLICATION_SOURCES
   moppe/game/parking.cc
   moppe/game/sky_clock.cc
   moppe/game/walk_scripts.cc
+  moppe/game/way_back.cc
   moppe/game/world_ground.cc
   moppe/game/world_places.cc
   moppe/platform/input.cc

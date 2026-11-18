@@ -984,12 +984,15 @@ namespace moppe::game {
     const points_t height = static_cast<float> (hud_height) * u::pt;
     if (visibility.cinematic_hud) {
       opening.draw_titles (hud, dl, text, hud_width, hud_height);
-      hud.draw_ride_prompt (
-        text,
-        frame.overlay.cinematic_prompt_alpha.numerical_value_in (one) *
-          opacity[one],
-        width,
-        height);
+      // Only the opening is begun from; the way back (way_back.hh) ends
+      // by itself.
+      if (opening.active ())
+        hud.draw_ride_prompt (
+          text,
+          frame.overlay.cinematic_prompt_alpha.numerical_value_in (one) *
+            opacity[one],
+          width,
+          height);
     } else if (visibility.game_hud) {
       HudState hud_state = hud_state_for (frame.hud);
       add_basket_readings (hud_state, w);

@@ -42,12 +42,12 @@
       "escapes": 61
     },
     "Game logic": {
-      "share": 81.8,
-      "files": 45,
-      "typed": 1746,
+      "share": 82.4,
+      "files": 47,
+      "typed": 1814,
       "raw_float": 221,
       "raw_vector": 167,
-      "escapes": 938
+      "escapes": 970
     },
     "HUD & map": {
       "share": 81.0,
@@ -74,9 +74,9 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 73.4,
+      "share": 73.5,
       "files": 62,
-      "typed": 1112,
+      "typed": 1113,
       "raw_float": 266,
       "raw_vector": 136,
       "escapes": 622
