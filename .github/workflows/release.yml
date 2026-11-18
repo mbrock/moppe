@@ -202,8 +202,13 @@ jobs:
           name: macos
           path: dist/*
 
+  # The Mac app joins the release when it passes notarization; the Linux and
+  # Windows builds are published without it otherwise.
   release:
-    if: github.ref_type == 'tag'
+    if: >-
+      ${{ !cancelled() && github.ref_type == 'tag'
+      && needs.linux.result == 'success'
+      && needs.windows.result == 'success' }}
     needs: [linux, windows, macos]
     runs-on: ubuntu-24.04
     permissions:
@@ -218,6 +223,7 @@ jobs:
           name: windows
           path: dist
       - uses: actions/download-artifact@v4
+        if: needs.macos.result == 'success'
         with:
           name: macos
           path: dist
