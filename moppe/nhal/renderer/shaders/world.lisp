@@ -620,19 +620,22 @@
 (define-shader-function hash12 (p)
   (fract (* (sin (dot p (vec2 127.1 311.7))) 43758.5453)))
 
-;;; A few ice facets catch the sun at the specular half angle. They stay
-;;; put in the snow; widen the spot and conserve its energy as the pixel
-;;; grows, then let the snow's rough highlight take over in the distance.
-(define-shader-function crystal-glint (xz footprint normal halfway)
-  (let* ((space (* xz 16.0)) (cell (floor space))
+;;; World-fixed groups of ice facets flash together. Filter their radius
+;;; in cell units and preserve integrated light as a pixel grows.
+(define-shader-function crystal-glint (space pixel normal halfway)
+  (let* ((cell (floor space))
          (jitter (vec2 (hash12 cell) (hash12 (+ cell (vec2 23.0 41.0)))))
-         (offset (- (fract space) (+ (vec2 0.18 0.18) (* jitter 0.64))))
-         (width (+ 0.075 (min 0.28 (* 8.0 footprint))))
-         (spot (- 1.0 (smoothstep 0.0 (* width width) (dot offset offset))))
-         (facet (normalize (+ normal (vec3 (- (* 2.6 (swizzle jitter :x)) 1.3)
-                                          0.0 (- (* 2.6 (swizzle jitter :y)) 1.3))))))
-    (* spot (/ 0.012 (* width width))
-       (smoothstep 0.955 0.997 (dot facet halfway)))))
+         (offset (- (fract space) (+ (vec2 0.25 0.25) (* jitter 0.50))))
+         (width (min 0.25 (+ 0.14 (* 0.5 pixel))))
+         (facet-distance (+ (abs (swizzle offset :x)) (abs (swizzle offset :y))))
+         (spot (- 1.0 (smoothstep 0.0 width facet-distance)))
+         ;; Include upright facets: a low camera looking along the slope
+         ;; sees reflections the flatter facets only send overhead.
+         (tilt (- (* 2.0 jitter) (vec2 1.0 1.0)))
+         (facet (normalize (+ (* normal (max 0.06 (- 1.0 (dot tilt tilt))))
+                              (vec3 (swizzle tilt :x) 0.0 (swizzle tilt :y))))))
+    (* spot (/ 0.0196 (* width width)) (- 1.0 (smoothstep 0.18 0.50 pixel))
+       (smoothstep 0.83 0.99 (dot facet halfway)))))
 
 (define-shader-function value-noise (p)
   (let* ((i (floor p))
@@ -2291,11 +2294,16 @@
                     (vec3 1.0 1.0 1.0) direct))
          (to-eye (/ (- eye world) (max distance 0.0001)))
          (crystals (* (swizzle powder :x) (- 1.0 packed) direct
-                      (- 1.0 overcast) (- 1.0 (smoothstep 0.02 0.055 footprint))
+                      (- 1.0 overcast)
                       (smoothstep 0.0 0.3 (dot shaded sun))))
-         (flash (only-where (> crystals 0.01) 0.0
-                  (* crystals (crystal-glint xz footprint shaded
-                                             (normalize (+ sun to-eye))))))
+         (flash (only-where (and (> crystals 0.01) (< footprint 0.30)) 0.0
+                  (let* ((halfway (normalize (+ sun to-eye))))
+                    (* crystals (+ 1.0 (* 7.0 (- 1.0 (smoothstep 0.1 0.7
+                                                         (dot shaded to-eye)))))
+                       (+ (crystal-glint (* xz 5.0) (* footprint 5.0)
+                                         shaded halfway)
+                          (crystal-glint (* xz 1.7) (* footprint 1.7)
+                                         shaded halfway))))))
          ;; The ground's roughness: its own, a road's tread where it holds
          ;; the ground (asphalt smoother than gravel, and polished in the
          ;; wheel paths), and smoother wet.  Where the normal changes
@@ -2347,7 +2355,7 @@
                                                (smoothstep 0.15 0.5
                                                            rough))))
                        :xyz)))
-    (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz) flash 2.4))
+    (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz) flash 5.0))
                                    world eye fog-color
                                    (swizzle sky-sun :xyz) relief)
                             1.0))
