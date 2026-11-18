@@ -527,6 +527,16 @@ build, test, and change the code; read this when working on a feature.
   the following ones round), and `tools/boat-promo OUT.mp4` records
   and cuts a 50 s 1080p promo from them (clips kept in
   `build/boat-promo`, so recutting `FILM` takes a minute).
+- The Ripa 440 snowmobile stands on open high ground; find it on the map,
+  or start riding with `MOPPE_DEMO=snowmobile`. `F` mounts or dismounts,
+  `W` opens the throttle, `S` brakes then reverses, `A`/`D` turn the
+  runners and Space brakes the track. The steel keels steer only under
+  load and scrape on bare ground. On the snowy fells the belt kicks up
+  a fan of powder and ice chips, leaving a ribbed trench between two
+  narrow ski cuts. Boots and tyres compress the same snow. The near
+  terrain reads the signed height of each cut and the powder pushed up
+  at its edges; marked tiles stay in session memory outside the view.
+  `tools/record OUT.mp4 snowmobile --start 3` films the ride.
 - The jet ski (`moppe/mov/jet_ski.*`, `models/jet_ski.blend` from
   `tools/figure/jet_ski.py`, drawn by `game/jet_ski_render.*`) is a
   sit-down runabout of the early nineties: white glass fibre 2.9 m

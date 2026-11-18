@@ -29,6 +29,7 @@ namespace moppe::game {
     Of<mov::Car> caddy;
     Of<mov::Boat> boat;
     Of<mov::JetSki> jet_ski;
+    Of<mov::Car> snowmobile;
   };
 
   // What every machine answers to, whatever it rolls, floats, or flies
@@ -92,6 +93,8 @@ namespace moppe::game {
       return fn (Machine::long_john, fleet.long_john);
     case Machine::jet_ski:
       return fn (Machine::jet_ski, fleet.jet_ski);
+    case Machine::snowmobile:
+      return fn (Machine::snowmobile, fleet.snowmobile);
     }
     std::unreachable ();
   }
@@ -109,6 +112,7 @@ namespace moppe::game {
     fn (Machine::caddy, fleets.caddy...);
     fn (Machine::boat, fleets.boat...);
     fn (Machine::jet_ski, fleets.jet_ski...);
+    fn (Machine::snowmobile, fleets.snowmobile...);
   }
 
   // Calls fn (machine, member) for each machine, in the fleet's order.

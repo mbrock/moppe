@@ -39,6 +39,24 @@ namespace moppe {
                                 m_sky.sky ().sun_height,
                                 m_opening.active ());
       render::FrameParams params = frame_params_for (frame);
+      const SnowPack& snow = logic ().m_snow;
+      auto corner = SnowPack::tile_at (plan (frame.camera.position));
+      for (int& axis : corner)
+        axis -= SnowPack::window / 2;
+      if (snow.revision () != m_snow_revision ||
+          (snow.revision () && corner != m_snow_origin)) {
+        const bool any = snow.read (corner, m_snow_pixels);
+        if (!any)
+          m_snow_pixels.clear ();
+        const meters_t tile = SnowPack::tile * SnowPack::spacing;
+        r.set_snow_relief (plan_position (corner[0] * tile, corner[1] * tile),
+                           SnowPack::window * tile,
+                           SnowPack::depth,
+                           SnowPack::pixels,
+                           m_snow_pixels);
+        m_snow_revision = snow.revision ();
+        m_snow_origin = corner;
+      }
       if (!m_capture.keeping_pace ())
         params.frame_rate_target = 0.0f * u::Hz;
       if (!r.begin_frame (params))

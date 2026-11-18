@@ -20,9 +20,10 @@ namespace moppe::game {
     mountain_bike,
     boat,
     long_john,
-    jet_ski
+    jet_ski,
+    snowmobile
   };
-  inline constexpr int machine_count = 9;
+  inline constexpr int machine_count = 10;
 
   // One of a machine's spheres, in its frame: x to the left, y up, z
   // forward, from the point its position() names.

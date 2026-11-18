@@ -35,6 +35,22 @@ namespace moppe {
       const proportion_t wet =
         band (0.45f * part, 0.80f * part, read (map::surface_moisture));
       GroundCover ground;
+      const meters_t height = quantity_cast<isq::length> (
+        world_ground ().elevation (plan (at)).delta_from_zero ());
+      const proportion_t rise = quantity_cast<proportion> (
+        (height - world ().water_level) / m_land_relief);
+      const auto normal =
+        spatial::sample<terrain::terrain_normal> (surface (), at)
+          .numerical_value_in (one);
+      const auto support = spatial::sample<map::snow_support> (surface (), at);
+      // The same broad snow line and north-facing advantage as snow-reach
+      // in the ground shader; the shader breaks up its margin with noise.
+      ground.snow =
+        band (0.63f * part, 0.79f * part, rise - 0.05f * normal[2] * part) *
+        band (0.55f * part, 0.78f * part, support).numerical_value_in (one) *
+        (1.0f - tread.numerical_value_in (one));
+      if (world_ground ().water_depth (plan (at)) > terrain::ElevationChange {})
+        ground.snow = {};
       ground.leaves = m_forest.litter_at (plan (at));
       const proportion_t loose = std::max (tread, bare);
       const proportion_t whole = 1.0f * part;
@@ -57,6 +73,12 @@ namespace moppe {
       ground.clod_color = blend (ground.clod_color,
                                  DisplayColor (0.34f, 0.26f, 0.17f),
                                  ground.leaves.numerical_value_in (one));
+      ground.dust_color = blend (ground.dust_color,
+                                 DisplayColor (0.86f, 0.91f, 0.99f),
+                                 ground.snow.numerical_value_in (one));
+      ground.clod_color = blend (ground.clod_color,
+                                 DisplayColor (0.76f, 0.84f, 0.95f),
+                                 ground.snow.numerical_value_in (one));
       return ground;
     }
 
@@ -83,6 +105,11 @@ namespace moppe {
       std::unique_ptr<GameSession> retired_session = std::move (m_session);
       m_generated_world = std::move (completed);
       m_params = m_generated_world->params ();
+      m_land_relief = std::max (
+        1.0f * u::m,
+        meters_t (terrain::measure_elevation_range (surface ()).maximum -
+                  terrain::surface_elevation_point (world ().water_level)));
+      m_snow_revision = 0;
       m_recipe = m_generated_world->recipe ();
       // Before the session places anything: its bodies stand on the
       // roads.
@@ -372,6 +399,11 @@ namespace moppe {
         demo_name && std::string_view (demo_name) == "jet_ski";
       m_parking.park_jet_ski (parking_lot (), jet_ski_demo);
       m_parking.park_caddy (parking_lot ());
+      m_parking.park_snowmobile (parking_lot ());
+      if (demo_name && std::string_view (demo_name) == "snowmobile") {
+        session ().set_mode (Doing::driving (Machine::snowmobile));
+        logic ().m_cam_mode = CAM_CHASE;
+      }
       // A demo already at the wheel of a machine just parked follows it.
       if (logic ().m_doing != Doing::on_foot () &&
           logic ().m_doing != Doing::driving (Machine::bike))

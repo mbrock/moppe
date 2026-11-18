@@ -146,6 +146,7 @@ namespace moppe {
           Boat = 1u << static_cast<unsigned> (Machine::boat),
           LongJohn = 1u << static_cast<unsigned> (Machine::long_john),
           JetSki = 1u << static_cast<unsigned> (Machine::jet_ski),
+          Snowmobile = 1u << static_cast<unsigned> (Machine::snowmobile),
           Vehicles = (1u << machine_count) - 1,
           Companion = 1u << machine_count,
           Place = 1u << (machine_count + 1),

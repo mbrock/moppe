@@ -4,7 +4,7 @@
     "Checkpoints & caches": {
       "share": 97.1,
       "files": 5,
-      "typed": 99,
+      "typed": 102,
       "raw_float": 3,
       "raw_vector": 0,
       "escapes": 14
@@ -42,12 +42,12 @@
       "escapes": 61
     },
     "Game logic": {
-      "share": 81.6,
-      "files": 43,
-      "typed": 1700,
+      "share": 81.8,
+      "files": 45,
+      "typed": 1746,
       "raw_float": 221,
-      "raw_vector": 162,
-      "escapes": 919
+      "raw_vector": 167,
+      "escapes": 938
     },
     "HUD & map": {
       "share": 81.0,
@@ -75,11 +75,11 @@
     },
     "Renderer & render glue": {
       "share": 73.4,
-      "files": 61,
-      "typed": 1099,
+      "files": 62,
+      "typed": 1112,
       "raw_float": 266,
-      "raw_vector": 133,
-      "escapes": 613
+      "raw_vector": 136,
+      "escapes": 622
     },
     "Rivers, water & sediment": {
       "share": 98.2,
@@ -100,26 +100,26 @@
     "Terrain & world generation": {
       "share": 84.3,
       "files": 39,
-      "typed": 981,
+      "typed": 983,
       "raw_float": 139,
       "raw_vector": 44,
-      "escapes": 195
+      "escapes": 200
     },
     "Tests": {
-      "share": 37.2,
+      "share": 37.3,
       "files": 83,
-      "typed": 581,
-      "raw_float": 788,
+      "typed": 586,
+      "raw_float": 789,
       "raw_vector": 194,
-      "escapes": 1350
+      "escapes": 1356
     },
     "Vehicles & on-foot body": {
-      "share": 76.8,
+      "share": 76.9,
       "files": 47,
-      "typed": 2132,
+      "typed": 2146,
       "raw_float": 223,
       "raw_vector": 420,
-      "escapes": 624
+      "escapes": 632
     }
   }
 }

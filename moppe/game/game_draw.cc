@@ -423,6 +423,13 @@ namespace moppe {
 
       r.draw_list (m_world_dl, 0x0001);
 
+      if (visibility.vehicle_effects && logic ().m_snow.revision ()) {
+        m_world_dl.clear ();
+        session ().dust ().draw_powder (m_world_dl, frame.environment);
+        if (!m_world_dl.empty ())
+          r.draw_list (m_world_dl);
+      }
+
       // Additive glow after the solid list, so it blends over everything
       // already drawn: exhaust and jump-jet flames, then star halos.
       if (visibility.vehicle_effects &&

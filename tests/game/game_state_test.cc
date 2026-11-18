@@ -954,6 +954,95 @@ MOPPE_TEST (the_tractor_is_driven_off_and_climbed_down_from) {
   MOPPE_CHECK (length (apart) < 3.0f);
 }
 
+MOPPE_TEST (a_snowmobile_packs_two_runners_and_a_belt_only_in_snow) {
+  using namespace moppe;
+  using namespace moppe::game;
+  map::SurfaceGeometry surface (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (256, 0, 256))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     terrain::surface_elevation_point (10.0f * u::m));
+  map::rebuild_geometry (surface);
+  WorldParams world;
+  world.water_level = meters_t {};
+  GameSession session (world, surface);
+  auto& sled = session.fleet ().snowmobile;
+  const auto forward = unit_direction (Vec3 (0, 0, 1));
+  sled.place (position (Vec3 (12, 10, 5)), forward);
+  session.start_on_foot ();
+  session.walker ().spawn (position (Vec3 (13, 10.1f, 5)), forward);
+  const auto step = [&] (InputFrame input, proportion_t powder) {
+    advance_game_session (world,
+                          surface,
+                          session,
+                          input,
+                          seconds (1.0f / 60),
+                          nullptr,
+                          { .snow = powder });
+  };
+  step ({ .toggle_mount = true }, {});
+  MOPPE_CHECK (session.logic ().m_doing ==
+               Doing::driving (Machine::snowmobile));
+  const InputFrame gas { .drive = 1.0f * control_signal[one] };
+  for (int i = 0; i < 90; ++i)
+    step (gas, {});
+  MOPPE_CHECK (session.logic ().m_snow.revision () == 0);
+  const auto start = position_value (sled.position ());
+  for (int i = 0; i < 150; ++i)
+    step (gas, 1.0f * proportion[one]);
+  MOPPE_CHECK (position_value (sled.position ())[2] > start[2] + 7.0f);
+  std::vector<std::uint8_t> image;
+  MOPPE_CHECK (session.logic ().m_snow.read ({ 0, 0 }, image));
+  const auto sample = [&] (meters_t x, meters_t z) {
+    const auto col = int ((x / SnowPack::spacing).numerical_value_in (one));
+    const auto row = int ((z / SnowPack::spacing).numerical_value_in (one));
+    return image.at (row * SnowPack::pixels + col);
+  };
+  const auto at = [&] (float offset) {
+    return sample ((start[0] + offset) * u::m, (start[2] + 4) * u::m);
+  };
+  MOPPE_CHECK (at (0) < 80 && at (-0.48f) < 115 && at (0.48f) < 115);
+  MOPPE_CHECK (at (0.31f) > 128 && at (1.0f) == 128);
+  MOPPE_CHECK (std::ranges::any_of (
+    session.dust ().state ().emissions,
+    [] (const auto& e) { return e.style.powder && e.style.flake; }));
+  InputFrame turn = gas;
+  turn.turn = 1.0f * control_signal[one];
+  for (int i = 0; i < 120; ++i)
+    step (turn, 1.0f * proportion[one]);
+  MOPPE_CHECK (direction_value (sled.forward ())[0] < -0.2f);
+  for (int i = 0; i < 240; ++i)
+    step ({ .boost = 1.0f * proportion[one] }, 1.0f * proportion[one]);
+  MOPPE_CHECK (length (velocity_value (sled.velocity ())) < 0.6f);
+  step ({ .toggle_mount = true }, {});
+  MOPPE_CHECK (session.logic ().m_doing == Doing::on_foot ());
+
+  // Cross untouched snow on foot. The boots alternate instead of
+  // ploughing two uninterrupted parallel lines.
+  session.walker ().spawn (position (Vec3 (4, 10, 4)), forward);
+  for (int i = 0; i < 150; ++i)
+    step (gas, 1.0f * proportion[one]);
+  MOPPE_CHECK (session.logic ().m_snow.read ({ 0, 0 }, image));
+  int left = 0, right = 0, gaps = 0;
+  for (meters_t z = 5 * u::m; z < 9 * u::m; z += SnowPack::spacing) {
+    const bool l = sample (4.12f * u::m, z) < 115;
+    const bool r = sample (3.88f * u::m, z) < 115;
+    MOPPE_CHECK (!(l && r));
+    left += l;
+    right += r;
+    gaps += !l && !r;
+  }
+  MOPPE_CHECK (left && right && gaps);
+
+  session.caddy ().place (position (Vec3 (28, 10, 4)), forward);
+  session.set_mode (Doing::driving (Machine::caddy));
+  for (int i = 0; i < 160; ++i)
+    step (gas, 1.0f * proportion[one]);
+  MOPPE_CHECK (session.logic ().m_snow.read ({ 0, 0 }, image));
+  MOPPE_CHECK (sample (27.3f * u::m, 8 * u::m) < 115 &&
+               sample (28.7f * u::m, 8 * u::m) < 115 &&
+               sample (28 * u::m, 8 * u::m) == 128);
+}
+
 MOPPE_TEST (the_caddy_is_driven_off_and_stepped_out_of) {
   using namespace moppe;
 

@@ -794,6 +794,7 @@ namespace moppe::game {
           .caddy = mov::Car (surface, mov::caddy_rig),
           .boat = mov::Boat (surface),
           .jet_ski = mov::JetSki (surface),
+          .snowmobile = mov::Car (surface, mov::snowmobile_rig),
         },
         m_glider (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
 
@@ -1654,6 +1655,17 @@ namespace moppe::game {
                         ground.dust.numerical_value_in (one))),
           ground.dust_color);
     }
+    auto& sled = session.fleet ().snowmobile;
+    const bool riding_sled =
+      logic.m_doing == Doing::driving (Machine::snowmobile);
+    sled.set_trunks (trunks);
+    sled.set_parked (!riding_sled && !hauled (Machine::snowmobile));
+    sled.set_slung (logic.m_sling.hooked &&
+                    logic.m_sling.load == Machine::snowmobile);
+    if (riding_sled)
+      logic.m_odometer += length (velocity_value (sled.velocity ())) *
+                          seconds_value (elapsed) * u::m;
+    sled.update (dt, water_at (sled.position ()), ground.snow);
     session.boat ().set_trunks (trunks);
     advance_boat (world, surface, session, water, elapsed);
     session.jet_ski ().set_trunks (trunks);
@@ -2147,6 +2159,7 @@ namespace moppe::game {
       logic.m_odometer += length (velocity_value (vehicle.velocity ())) *
                           seconds_value (elapsed) * u::m;
 
+    disturb_snow (session, ground.snow);
     session.dust ().update (dt);
     logic.m_shake_time += elapsed;
     logic.m_shake = degrees_t (logic.m_shake * decay (7.0f / u::s, elapsed));

@@ -284,6 +284,10 @@ namespace moppe {
       WaterfallSurface m_waterfall_surface;
       BridgeSurface m_bridges;
       Terrain m_terrain;
+      meters_t m_land_relief = 1.0f * u::m;
+      SnowPack::Key m_snow_origin {};
+      std::uint64_t m_snow_revision {};
+      std::vector<std::uint8_t> m_snow_pixels;
       ForestLandscape m_forest;
       BoulderLandscape m_boulders;
       // What stands at the ends of the roads, and what lives there.

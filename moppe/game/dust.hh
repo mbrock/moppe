@@ -25,6 +25,7 @@ namespace moppe {
         // A flake -- a leaf or a chip -- keeps its size and a hard edge
         // instead of billowing out like a puff of dust.
         bool flake = false;
+        bool powder = false;
       };
 
       Dust ();
@@ -52,6 +53,7 @@ namespace moppe {
                  DisplayColor color,
                  const Style& style);
       void update (seconds_t dt);
+      void draw_powder (render::DrawList& dl, const FrameEnv& env) const;
 
       State state () const;
       void restore (const State& state);

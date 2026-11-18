@@ -58,6 +58,9 @@ namespace moppe::mov {
     watts_t engine_power;
     // Only the front pair drives, or all four.
     bool front_drive;
+    // The snowmobile's rear pair model the two edges of one driven belt;
+    // the ski contacts steer but carry no engine or braking torque.
+    meters_t ski_half_length {};
     newtons_t brake_force;
     // The brakes' share at the front.
     proportion_t front_brake_share;
@@ -86,8 +89,10 @@ namespace moppe::mov {
       return chassis_mass + 4.0f * wheel_mass;
     }
 
-    // The passenger's seat: the driver's, mirrored across the centre line.
+    // The passenger rides beside the driver in a car, behind on a sled.
     displacement_t passenger_seat () const {
+      if (ski_half_length > meters_t {})
+        return displacement (Vec3 (0, 0.533f, -0.681f));
       const Vec3& driver = displacement_value (seat);
       return displacement (Vec3 (-driver[0], driver[1], driver[2]));
     }
@@ -197,6 +202,33 @@ namespace moppe::mov {
     .slung_vane = 2.0f / pow<2> (u::s),
   };
 
+  inline const CarRig snowmobile_rig = [] {
+    CarRig rig = jeep_rig;
+    rig.wheel_radius = 0.23f * u::m;
+    rig.front_track = 0.48f * u::m;
+    rig.rear_track = 0.17f * u::m;
+    rig.axle = 0.90f * u::m;
+    rig.seat = displacement (Vec3 (0, 0.465f, -0.198f));
+    rig.chassis_mass = 290.0f * u::kg;
+    rig.inertia[0] = 180.0f * u::kg * u::m2;
+    rig.inertia[1] = 190.0f * u::kg * u::m2;
+    rig.inertia[2] = 60.0f * u::kg * u::m2;
+    rig.mass_centre = displacement (Vec3 (0, 0.05f, -0.23f));
+    rig.wheel_mass = 8.0f * u::kg;
+    rig.wheel_inertia = 0.3f * u::kg * u::m2;
+    rig.fast_wheels = true;
+    rig.boxes[0] = { spatial_extent_in_metres (Vec3 (0.41f, 0.19f, 1.22f)),
+                     displacement (Vec3 (0, 0.19f, -0.06f)) };
+    rig.box_count = 1;
+    rig.ski_half_length = 0.49f * u::m;
+    rig.front_brake_share = proportion_t {};
+    rig.engine_force = 4200.0f * u::N;
+    rig.engine_power = 52.0f * u::kW;
+    rig.brake_force = 3200.0f * u::N;
+    rig.full_lock = 0.5f * u::rad;
+    return rig;
+  }();
+
   // A car as a Box3D assemblage like the rigid bike: a chassis of boxes on
   // four sphere wheels, each on a wheel joint that springs it, spins it
   // for the engine and the brakes, and, at the front, steers it. It
@@ -258,7 +290,7 @@ namespace moppe::mov {
     // turns its nose the way it is carried.
     void set_slung (bool slung);
 
-    void update (seconds_t dt, meters_t water_level);
+    void update (seconds_t dt, meters_t water_level, proportion_t snow = {});
 
     position_t position () const;
     direction_t forward () const;

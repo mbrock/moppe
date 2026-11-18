@@ -88,6 +88,8 @@ namespace moppe::game {
         .boost =
           session.logic ().m_doing != Doing::driving (Machine::tractor) &&
               session.logic ().m_doing != Doing::driving (Machine::caddy) &&
+              session.logic ().m_doing !=
+                Doing::driving (Machine::snowmobile) &&
               session.logic ().m_doing != Doing::driving (Machine::boat) &&
               fmod (total_time, 11.0f * u::s) <
                 (demo_glides ? 3.5f : 1.35f) * u::s

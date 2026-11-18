@@ -268,7 +268,8 @@
       (size :vec4)                 ; terrain samples x,z; surf samples x,z
       (roads :vec4)                ; 0, buckets x, z, have roads
       (road-shape :vec4)           ; half width, shoulder, crown, blend
-      (road-batter :vec4))))       ; cut slope, fill slope, rain 0..1, 0
+      (road-batter :vec4)          ; cut slope, fill slope, rain 0..1, 0
+      (snow-window :vec4))))       ; origin x,z, inverse span, relief metres
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *chunk*
@@ -465,6 +466,14 @@
     (* found (- 1.0 footpath)
        (- 1.0 (smoothstep tread (+ tread (swizzle shape :w)) (abs across))))))
 
+(define-shader-abstraction powder-height (xz)
+  `(let* ((uv (* (- ,xz (swizzle snow-window :xy)) (swizzle snow-window :z)))
+          (edge (abs (- uv (vec2 0.5 0.5)))))
+     (only-where (and (> (swizzle snow-window :z) 0.0)
+                      (< (max (swizzle edge :x) (swizzle edge :y)) 0.496)) 0.0
+       (* (- (* (swizzle (sample-level snow-pack linear-repeat uv 0.0) :x)
+                 2.007874) 1.007874) (swizzle snow-window :w)))))
+
 (define-shader terrain-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index))
@@ -481,6 +490,7 @@
                  (road-index :storage-buffer :binding 4 :element :uint)
                  (heights :texture-2d :binding 0)
                  (normals :texture-2d :binding 1)
+                 (snow-pack :texture-2d :binding 13)
                  (linear-repeat :sampler :binding 1)))
   (let* ((row-length (uint (swizzle placement :w)))
          (stride (swizzle placement :z))
@@ -546,7 +556,8 @@
          (height (mix own-height (on-lattice h00 h10 h01 h11 f) blend))
          (normal (mix own-normal (on-lattice n00 n10 n01 n11 f) blend))
          (position (vec3 (swizzle ground-xz :x)
-                         (* height (swizzle scale :y))
+                         (+ (* height (swizzle scale :y))
+                            (* (powder-height ground-xz) (- 1.0 road-weight)))
                          (swizzle ground-xz :y)))
          (point (vec4 position 1.0))
          (current (* view-proj point)))
@@ -787,11 +798,12 @@
 ;;; broad plane SUPPORT (1 level) facing NORTHING (1 due north); WANDER, a
 ;;; drift of noise about 0, moves the snow line.
 (define-shader-function snow-reach (rise support northing wander)
-  (* (smoothstep 0.74 0.90 (+ rise (* 0.05 northing) wander))
+  (* (smoothstep 0.63 0.79 (+ rise (* 0.05 northing) wander))
      (smoothstep 0.55 0.78 support)))
 
 (define-shader-struct ground-surface
   (albedo :vec3)                   ; display space; the caller decodes it
+  (powder :vec2)                   ; snow share, windward drift slope
   (relief :float)                  ; how steep its relief is, as a slope
   (rough :float))                  ; its roughness, as a Principled BSDF's
 
@@ -1117,8 +1129,14 @@
                   (- 1.0 cliff)
                   (- 1.0 sunk)
                   (- 1.0 (band (swizzle floor :z) 0.80))))
+         ;; Wind scours shallow flutes across the fell. Their spacing and
+         ;; direction wander, so a distant snowfield doesn't read as stripes.
+         (drift-phase (+ (* 1.35 (swizzle world :x))
+                         (* 0.48 (swizzle world :z)) (* 6.0 patch)
+                         (* 0.8 fleck)))
          (snowy (mix trodden
-                     (mix (vec3 0.86 0.89 0.95) (vec3 0.95 0.96 0.97) fleck)
+                     (mix (vec3 0.80 0.86 0.94) (vec3 0.98 0.98 0.97)
+                          (+ 0.36 (* 0.38 fleck) (* 0.20 (sin drift-phase))))
                      snow))
 
          ;; The swash darkens whatever the water laps.
@@ -1128,6 +1146,7 @@
          ;; Sand and snow lie smooth.
          (smooth (max snow (* (band strand 0.5) (- 1.0 cliff)))))
     (make-ground-surface
+     :powder (vec2 snow (* snow 0.09 (cos drift-phase)))
      :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
                 (mix mottle 1.0 (* 0.65 smooth)))
      :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth)
@@ -2162,7 +2181,12 @@
                 (* (road-point-found road) (road-point-footpath road))))
          ;; Rain darkens what soaks it up, and still water more.
          (tread-share (road-hold road-built 0.0 road-across road-shape))
+         (xz (swizzle world :xz))
+         (press (powder-height xz))
+         (powder (* (- 1.0 road-flat) (ground-surface-powder surface)))
+         (packed (* (swizzle powder :x) (smoothstep 0.0 0.13 (- 0.0 press))))
          (albedo (* (srgb path-ground)
+                    (mix (vec3 1.0 1.0 1.0) (vec3 0.63 0.76 0.91) packed)
                     ;; Wet ground darkens, rock and bare earth most: the
                     ;; water fills their pores and leaves no air to scatter.
                     (- 1.0 (* wet (mix (mix 0.25 0.55
@@ -2189,7 +2213,17 @@
                            (- 1.0 (* 0.6 road-flat)))
                         asphalt-slope paved-tread)
                    (- 1.0 puddle)))
-         (tilt (vec3 (swizzle slope :x) 0.0 (swizzle slope :y)))
+         ;; The full-resolution slopes of the trench and its rolled lips,
+         ;; even where both fit between two terrain vertices.
+         (near-slope (+ (* (vec2 1.0 0.36) (swizzle powder :y)
+                           (- 1.0 (smoothstep 0.15 1.0 footprint)) (- 1.0 packed))
+                       (* (swizzle powder :x) 12.5
+                        (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
+                                 (powder-height (- xz (vec2 0.04 0.0))))
+                              (- (powder-height (+ xz (vec2 0.0 0.04)))
+                                 (powder-height (- xz (vec2 0.0 0.04))))))))
+         (tilt (vec3 (+ (swizzle slope :x) (swizzle near-slope :x)) 0.0
+                     (+ (swizzle slope :y) (swizzle near-slope :y))))
          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
          (sun (swizzle sun-direction :xyz))
          ;; The relief brightens and dims the sun the ground itself
@@ -2292,6 +2326,7 @@
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
                  (bedrock :texture-2d :binding 12)
+                 (snow-pack :texture-2d :binding 13)
                  (water-levels :texture-2d :binding 14)
                  (shore-surf :texture-2d :binding 15)
                  (shadow-map :depth-texture-2d :binding 8)
@@ -2448,6 +2483,7 @@
                  (more-plants :texture-2d :binding 4)
                  (scars :texture-2d :binding 11)
                  (bedrock :texture-2d :binding 12)
+                 (snow-pack :texture-2d :binding 13)
                  (water-levels :texture-2d :binding 14)
                  (shore-surf :texture-2d :binding 15)
                  (shadow-map :depth-texture-2d :binding 8)

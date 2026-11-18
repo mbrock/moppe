@@ -24,7 +24,8 @@ namespace moppe::game {
           0xD000,
           0xF000,
           0xD100,
-          0xD200 },
+          0xD200,
+          0xD300 },
         { 0x3000,
           0x6000,
           0x9000,
@@ -33,7 +34,8 @@ namespace moppe::game {
           0xE000,
           0xF800,
           0xE100,
-          0xE200 },
+          0xE200,
+          0xE300 },
       };
 
       // The trailer's shadow, behind the tractor's own.
@@ -78,7 +80,9 @@ namespace moppe::game {
           .driver_outfit = who.driver.value_or (Outfit::blue_jacket),
           .passenger_outfit = who.passenger.value_or (Outfit::blue_jacket),
         };
-        if (machine == Machine::caddy)
+        if (machine == Machine::snowmobile)
+          render_snowmobile (s, pose, who, base);
+        else if (machine == Machine::caddy)
           render_caddy (s.r, s.dl, pose, riders, base);
         else
           render_jeep (s.r, s.dl, pose, riders, base);

@@ -207,6 +207,8 @@ namespace moppe::nhal {
       render::TerrainParams params {};
       bool have = false;
       Texture heights, normals, detail;
+      Texture snow;
+      std::array<float, 4> snow_window {};
       Texture landscape, ground, plants, more_plants, scars, bedrock;
       Buffer chunk_indices[lod_count], patch_indices[lod_count];
       std::uint32_t chunk_index_count[lod_count] {};
@@ -356,6 +358,11 @@ namespace moppe::nhal {
       // The roads' buffers, or a stand-in where there are none: every
       // binding the terrain declares must hold something.
       void bind_roads (int first = 3);
+      void set_snow_relief (plan_position_t,
+                            meters_t,
+                            meters_t,
+                            int,
+                            std::span<const std::uint8_t>) override;
 
       void set_boulders (
         const render::BoulderSetup& setup,

@@ -767,6 +767,11 @@ namespace moppe::game {
                          .position = w.session.jet_ski ().position (),
                          .colour = DisplayColor (0.04f, 0.56f, 0.58f),
                          .name = "jet ski" });
+    if (mode != Doing::driving (Machine::snowmobile))
+      marks.push_back ({ .kind = Mark::Kind::Jeep,
+                         .position = w.session.fleet ().snowmobile.position (),
+                         .colour = DisplayColor (0.82f, 0.27f, 0.09f),
+                         .name = "snowmobile" });
     const Camp& camp = w.session.logic ().m_camp;
     if (camp.hung || camp.fire)
       marks.push_back (

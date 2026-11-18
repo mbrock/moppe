@@ -21,6 +21,7 @@
 #   helicopter the autopilot flying the helicopter     (MOPPE_DEMO=helicopter)
 #   boat      the autopilot taking the boat out        (MOPPE_DEMO=boat)
 #   jet_ski   the autopilot riding the jet ski         (MOPPE_DEMO=jet_ski)
+#   snowmobile the Ripa riding the high snowfield      (MOPPE_DEMO=snowmobile)
 #   tractor   the autopilot driving the tractor        (MOPPE_DEMO=tractor)
 #   caddy     the autopilot driving the Caddy          (MOPPE_DEMO=caddy)
 #   mountain_bike
@@ -169,6 +170,7 @@ case $scene in
   helicopter) stage MOPPE_DEMO=helicopter; : "${seconds:=30}" ;;
   boat) stage MOPPE_DEMO=boat; : "${seconds:=25}" ;;
   jet_ski) stage MOPPE_DEMO=jet_ski; : "${seconds:=25}" ;;
+  snowmobile) stage MOPPE_DEMO=snowmobile; : "${seconds:=20}" ;;
   tractor) stage MOPPE_DEMO=tractor; : "${seconds:=20}" ;;
   caddy) stage MOPPE_DEMO=caddy; : "${seconds:=20}" ;;
   mountain_bike) stage MOPPE_DEMO=mountain_bike; : "${seconds:=20}" ;;

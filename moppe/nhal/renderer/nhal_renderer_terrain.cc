@@ -37,6 +37,7 @@ namespace moppe::nhal {
       std::span<const terrain::SurfaceElevation> heights,
       std::span<const terrain::TerrainNormal> normals) {
       m_terrain.params = params;
+      m_terrain.snow_window = {};
       const std::uint32_t w = params.width, h = params.height;
       for (Texture* t : { &m_terrain.heights, &m_terrain.normals })
         if (*t)
@@ -122,6 +123,29 @@ namespace moppe::nhal {
       sheet (m_terrain.bedrock, bedrock, "bedrock");
     }
 
+    void NhalRenderer::set_snow_relief (plan_position_t origin,
+                                        meters_t span,
+                                        meters_t depth,
+                                        int side,
+                                        std::span<const std::uint8_t> pixels) {
+      if (pixels.empty ()) {
+        m_terrain.snow_window = {};
+        return;
+      }
+      if (!m_terrain.snow)
+        m_terrain.snow = m_device->create_texture ({ std::uint32_t (side),
+                                                     std::uint32_t (side),
+                                                     Format::r8_unorm,
+                                                     usage_sampled,
+                                                     1,
+                                                     "packed snow" });
+      m_device->write_texture (m_terrain.snow, std::as_bytes (pixels));
+      m_terrain.snow_window = { meters_value (x_of (origin)),
+                                meters_value (z_of (origin)),
+                                1.0f / meters_value (span),
+                                meters_value (depth) };
+    }
+
     void NhalRenderer::set_roads (const RoadSetup& setup) {
       for (Buffer* b : { &m_terrain.road_rows, &m_terrain.road_index })
         if (*b)
@@ -171,6 +195,7 @@ namespace moppe::nhal {
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, terrain_block ());
       bind_ground_textures ();
+      m_device->set_texture (13, m_terrain.snow ? m_terrain.snow : m_clear);
       m_device->set_texture (14, m_water.levels ? m_water.levels : m_black);
       m_device->set_texture (
         15, m_water.shore_surf ? m_water.shore_surf : m_water.still);
@@ -297,6 +322,7 @@ namespace moppe::nhal {
 
     shaders::terrain::Terrain NhalRenderer::terrain_block () const {
       shaders::terrain::Terrain terrain {};
+      terrain.snow_window = m_terrain.snow_window;
       const auto& p = m_terrain.params;
       terrain.scale = { p.scale[0], p.scale[1], p.scale[2], p.tex_scale };
       terrain.fields = { m_terrain.landscape && m_terrain.ground ? 1.0f : 0.0f,

@@ -17,7 +17,7 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 18;
+    constexpr std::uint8_t wire_version = 19;
 
     constexpr std::uint8_t has_glider = 1 << 0;
     constexpr std::uint8_t has_walker = 1 << 1;
@@ -54,6 +54,8 @@ namespace moppe::game {
       Doing::riding_along (Machine::boat),
       Doing::riding_along (Machine::long_john),
       Doing::riding_along (Machine::jet_ski),
+      Doing::driving (Machine::snowmobile),
+      Doing::riding_along (Machine::snowmobile),
     };
 
     std::uint8_t doing_byte (Doing doing) {

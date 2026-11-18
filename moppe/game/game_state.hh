@@ -13,6 +13,7 @@
 #include <moppe/game/machine_controls.hh>
 #include <moppe/game/rescue.hh>
 #include <moppe/game/sling.hh>
+#include <moppe/game/snow.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/game/weather.hh>
@@ -67,6 +68,12 @@ namespace moppe::game {
     meters_f64_t m_odometer = 0.0 * u::m;
     // What the player's hands last asked (game/machine_controls.hh).
     Controls m_controls;
+    SnowPack m_snow;
+    std::optional<position_t> m_snow_last;
+    direction_t m_snow_heading {};
+    Doing m_snow_mode;
+    meters_t m_snow_distance {};
+    bool m_snow_left = false;
     Doing m_doing;
     CamMode m_cam_mode = CAM_CHASE;
     // Each way of getting about keeps the view last chosen for it, from

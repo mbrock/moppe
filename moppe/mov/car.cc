@@ -116,7 +116,7 @@ namespace moppe::mov {
       return b3CreateBody (world, &def);
     }
 
-    b3BodyId create_wheel (const RigidBodyState& s) {
+    b3BodyId create_wheel (const RigidBodyState& s, int index) {
       const b3BodyId wheel = create_body (s, rig.fast_wheels);
       b3ShapeDef shape = b3DefaultShapeDef ();
       shape.updateBodyMass = false;
@@ -127,9 +127,20 @@ namespace moppe::mov {
         rig.rolling_resistance.numerical_value_in (one);
       shape.filter.categoryBits = car_rig::wheel_bit;
       shape.filter.maskBits = car_rig::ground_bit;
-      const b3Sphere sphere { { 0.0f, 0.0f, 0.0f },
-                              meters_value (rig.wheel_radius) };
-      b3CreateSphereShape (wheel, &shape, &sphere);
+      if (index < 2 && rig.ski_half_length > meters_t {}) {
+        // A runner slides lengthwise and can rock over a crest on its
+        // spindle. Rounded ends don't catch where terrain triangles meet.
+        const meters_t keel = 0.065f * u::m;
+        const auto y = meters_value (keel - rig.wheel_radius);
+        const auto z = meters_value (rig.ski_half_length);
+        const b3Capsule ski { { 0, y, -z }, { 0, y, z }, meters_value (keel) };
+        shape.baseMaterial.friction = 0.015f;
+        b3CreateCapsuleShape (wheel, &shape, &ski);
+      } else {
+        const b3Sphere sphere { { 0.0f, 0.0f, 0.0f },
+                                meters_value (rig.wheel_radius) };
+        b3CreateSphereShape (wheel, &shape, &sphere);
+      }
       b3Body_SetMassData (
         wheel,
         body_mass (
@@ -203,7 +214,7 @@ namespace moppe::mov {
       patch.build (world, trunks, s.ground_column, s.ground_row);
       create_chassis (s.chassis);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
-        wheels[wheel] = create_wheel (s.wheels[wheel]);
+        wheels[wheel] = create_wheel (s.wheels[wheel], wheel);
       for (int wheel = 0; wheel < wheel_count; ++wheel)
         joints[wheel] = create_suspension (wheel);
       kept = s;
@@ -281,7 +292,7 @@ namespace moppe::mov {
       recentre_ground ();
     }
 
-    void step (seconds_t dt, meters_t water_level) {
+    void step (seconds_t dt, meters_t water_level, proportion_t snow) {
       recentre_ground ();
       const Vec3 forward = axis (Vec3 (0, 0, 1));
       const Vec3 v = from_b3 (b3Body_GetLinearVelocity (chassis));
@@ -313,10 +324,11 @@ namespace moppe::mov {
         rig.engine_force,
         newtons_t (rig.engine_power / std::max (abs (vf), 2.0f * u::m / u::s)));
       kept.throttle = abs (drive);
-      const int driven = rig.front_drive ? 2 : 4;
+      const bool skis = rig.ski_half_length > meters_t {};
+      const int driven = rig.front_drive || skis ? 2 : 4;
       for (int wheel = 0; wheel < wheel_count; ++wheel) {
         const bool front = wheel < 2;
-        const bool drives = front || !rig.front_drive;
+        const bool drives = front ? !skis : !rig.front_drive;
         radians_per_second_t spin {};
         newton_metres_t torque =
           drives ? rig.engine_brake_torque : newton_metres_t {};
@@ -353,6 +365,28 @@ namespace moppe::mov {
               (vf + (ahead ? 1.0f : -1.0f) * u::m / u::s) / radius * u::rad;
             torque = rig.free_rev_torque;
           }
+        }
+        if (skis && front) {
+          // The keel bites across the runner, not along it. Limit its
+          // reaction by the load on this ski; it cannot steer in the air.
+          torque = 55.0f * u::N * u::m;
+          const b3BodyId runner = wheels[wheel];
+          const auto side =
+            from_b3 (b3Body_GetWorldVector (runner, { 1, 0, 0 }));
+          const auto motion = from_b3 (b3Body_GetLinearVelocity (runner));
+          const speed_t slip = dot (side, motion) * u::m / u::s;
+          const newtons_t bite =
+            kept.load[wheel] *
+            std::clamp (speed_value (slip) / 1.4f, -1.25f, 1.25f);
+          const newtons_t scrape =
+            kept.load[wheel] *
+            (0.03f + 0.52f * (1.0f - snow.numerical_value_in (one))) *
+            std::clamp (speed_value (vf), -1.0f, 1.0f);
+          b3Body_ApplyForceToCenter (
+            runner,
+            to_b3 (-side * bite.numerical_value_in (u::N) -
+                   forward * scrape.numerical_value_in (u::N)),
+            true);
         }
         b3WheelJoint_SetSpinMotorSpeed (
           joints[wheel], spin.numerical_value_in (u::rad / u::s));
@@ -489,10 +523,10 @@ namespace moppe::mov {
       kept.throttle = {};
   }
 
-  void Car::update (seconds_t dt, meters_t water_level) {
+  void Car::update (seconds_t dt, meters_t water_level, proportion_t snow) {
     in_substeps (dt, [&] (seconds_t h) {
       if (!m_impl->kept.asleep)
-        m_impl->step (h, water_level);
+        m_impl->step (h, water_level, snow);
     });
   }
 

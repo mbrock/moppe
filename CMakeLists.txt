@@ -389,6 +389,7 @@ set(MOPPE_SIMULATION_SOURCES
   moppe/game/sling.cc
   moppe/game/stars.cc
   moppe/game/dust.cc
+  moppe/game/snow.cc
   moppe/game/walker.cc
 )
 
@@ -426,6 +427,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/helicopter_render.cc
   moppe/game/boat_render.cc
   moppe/game/jet_ski_render.cc
+  moppe/game/snowmobile_render.cc
   moppe/game/tractor_render.cc
   moppe/game/caddy_render.cc
   moppe/game/mountain_bike_render.cc
@@ -465,6 +467,7 @@ set(MOPPE_MODEL_SOURCES
   moppe/game/horse_model.cc
   moppe/game/jeep_model.cc
   moppe/game/jet_ski_model.cc
+  moppe/game/snowmobile_model.cc
   moppe/game/long_john_model.cc
   moppe/game/moose_model.cc
   moppe/game/mountain_bike_model.cc

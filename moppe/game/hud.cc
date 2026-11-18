@@ -388,6 +388,18 @@ namespace moppe {
           polygon ({ { -7, 3 }, { -2, 3 }, { -2, 7 }, { -7, 7 } });
           stroke ({ -5, 4 }, { -11, -7 }, 1.4f);
           break;
+        case Mark::Snowmobile:
+          polygon ({ { -10, 0 },
+                     { 11, 1 },
+                     { 5, 6 },
+                     { 1, 6 },
+                     { -1, 3 },
+                     { -9, 3 } });
+          stroke ({ -8, -2 }, { 1, -2 }, 4.0f);
+          stroke ({ 6, 0 }, { 7, -4 }, 1.6f);
+          stroke ({ 3, -4 }, { 12, -4 }, 1.6f);
+          stroke ({ 12, -4 }, { 14, -2 }, 1.5f);
+          break;
         case Mark::JetSki:
           // A short deep hull with a raked bow, the cowl rising to the
           // bars, and the saddle behind it.

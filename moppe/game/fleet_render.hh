@@ -34,6 +34,11 @@ namespace moppe::game {
     const map::SurfaceGeometry* surface = nullptr;
   };
 
+  void render_snowmobile (const FleetScene& scene,
+                          const CarPose& pose,
+                          const Riders& riders,
+                          std::uint64_t base);
+
   // Draws every machine of a fleet with its riders, this player's or
   // the other's, whose motion is told apart.
   void draw_fleet (const FleetScene& scene,

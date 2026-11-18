@@ -117,6 +117,52 @@ namespace moppe::game {
       std::cerr << "moppe: boat: no open water near the spawn\n";
   }
 
+  void Parking::park_snowmobile (const ParkingLot& lot) const {
+    // Face along a snowy shelf with room to ride, rather than straight
+    // down the fall line and out of the snow on the first bend.
+    const auto& domain = lot.ground.surface ().domain ();
+    meters_t best = -1e6f * u::m;
+    auto pick = plan (lot.spawn);
+    auto heading = unit_direction (Vec3 (0, 0, 1));
+    for (int z = 0; z < 96; ++z)
+      for (int x = 0; x < 96; ++x) {
+        const auto p = plan_position (domain.period_x () * x / 96,
+                                      domain.period_z () * z / 96);
+        const auto h = meters_t (lot.ground.elevation (p).delta_from_zero ());
+        if (h <= best)
+          continue;
+        for (int bearing = 0; bearing < 12; ++bearing) {
+          const auto a = bearing * PI / 6;
+          const auto way =
+            plan_unit_direction (Vec2 (std::cos (a), std::sin (a)));
+          meters_t floor = h, last = h, climb {};
+          for (int j = 1; j <= 8; ++j) {
+            const meters_t next (
+              lot.ground.elevation (p + along (way, j * 16.0f * u::m))
+                .delta_from_zero ());
+            floor = std::min (floor, next);
+            climb += abs (next - last);
+            last = next;
+            if (floor - climb <= best)
+              break;
+          }
+          if (floor - climb > best &&
+              lot.ground.open (p, 2.0f * u::m, 0.9f * u::m)) {
+            best = floor - climb;
+            pick = p;
+            heading = heading_along (along (way, 1.0f * u::m));
+          }
+        }
+      }
+    const auto at = moved (
+      near_spawn (lot.ground,
+                  lot.spawn,
+                  terrain::at_elevation (pick, lot.ground.elevation (pick))),
+      m_aside);
+    lot.session.fleet ().snowmobile.place (at, heading);
+    report_parked (lot, "snowmobile", at, "on the fell");
+  }
+
   void Parking::park_jet_ski (const ParkingLot& lot, bool outward) {
     mov::JetSki& ski = lot.session.jet_ski ();
     ski.set_trunks (&lot.trunks);

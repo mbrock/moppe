@@ -69,6 +69,7 @@ namespace moppe::game {
     // above the shore the boat was left at, nose to the water as if its
     // driver had stood looking out; with no boat, at the trailhead.
     void park_caddy (const ParkingLot& lot) const;
+    void park_snowmobile (const ParkingLot& lot) const;
 
     // The mountainbike is left at the top of the trail's nearest climb,
     // the highest point of it within a kilometre or so, off the tread and

@@ -293,6 +293,7 @@ namespace moppe::game {
   // loose dust the ground gives up and its colour, and how thickly fallen
   // leaves lie there to be thrown up.
   struct GroundCover {
+    proportion_t snow {};
     proportion_t dust = 1.0f * proportion[one];
     DisplayColor dust_color { 0.60f, 0.52f, 0.40f };
     DisplayColor clod_color { 0.42f, 0.34f, 0.24f };

@@ -193,9 +193,11 @@ namespace moppe::game {
       session.logic ().m_doing == Doing::driving (Machine::boat);
     const bool ski =
       session.logic ().m_doing == Doing::driving (Machine::jet_ski);
+    const bool sled =
+      session.logic ().m_doing == Doing::driving (Machine::snowmobile);
     const bool driving =
       session.logic ().m_doing == Doing::driving (Machine::jeep) || tractor ||
-      caddy || boat || ski;
+      caddy || boat || ski || sled;
     const bool pedalled = game::pedalled (session.logic ().m_doing);
     const auto& bike = session.ridden_bike ();
     // The tractor with its trailer, from their middle.
@@ -203,17 +205,10 @@ namespace moppe::game {
       tractor ? (position_value (session.tractor ().position ()) +
                  position_value (session.tractor ().trailer_position ())) *
                   0.5f
-      : caddy ? position_value (session.caddy ().position ())
-      : boat  ? position_value (session.boat ().position ())
-      : ski   ? position_value (session.jet_ski ().position ())
-              : position_value (session.jeep ().position ()));
+              : position_value (session.subject_position ()));
     const direction_t heading =
       camera_level (gliding   ? session.glider ().heading ()
-                    : tractor ? direction_value (session.tractor ().forward ())
-                    : caddy   ? direction_value (session.caddy ().forward ())
-                    : boat    ? direction_value (session.boat ().forward ())
-                    : ski     ? direction_value (session.jet_ski ().forward ())
-                    : driving ? direction_value (session.jeep ().forward ())
+                    : driving ? direction_value (session.subject_heading ())
                               : direction_value (bike.render_orientation ()));
     const direction_t right = camera_right (heading);
     const position_t at = position (
@@ -232,13 +227,25 @@ namespace moppe::game {
                            : pedalled ? 3.4f
                                       : 4.5f) *
                           u::m;
+    if (sled && view == "drone") {
+      camera_place (session.camera (),
+                    at + camera_shift (along (right, 4.5f * u::m) -
+                                       along (heading, 6.0f * u::m) +
+                                       displacement (Vec3 (0, 5.0f, 0))),
+                    at - camera_shift (along (heading, 1.3f * u::m)));
+      return;
+    }
     const displacement_t from =
       view == "front" ? along (heading, away) + along (right, away * 0.27f)
                       : along (right, away) + along (heading, 0.6f * u::m);
-    camera_place (session.camera (),
-                  at + camera_shift (from) +
-                    camera_shift (displacement (Vec3 (0, 0.5f, 0))),
-                  at);
+    position_t eye = at + camera_shift (from) +
+                     camera_shift (displacement (Vec3 (0, 0.5f, 0)));
+    if (sled)
+      position_value (eye)[1] = std::max<float> (
+        position_value (eye)[1],
+        terrain::surface_elevation_value (ground.elevation (plan (eye))) +
+          1.2f);
+    camera_place (session.camera (), eye, at);
   }
 
   bool CaptureCameras::film_boat (GameSession& session,

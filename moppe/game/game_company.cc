@@ -53,6 +53,7 @@ namespace moppe {
       if (logic ().m_doing != Doing::driving (Machine::jet_ski))
         m_parking.park_jet_ski (parking_lot ());
       m_parking.park_caddy (parking_lot ());
+      m_parking.park_snowmobile (parking_lot ());
       if (!beside)
         return;
       session ().walker ().spawn (moppe::position (place + side * 1.8f),

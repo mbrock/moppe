@@ -491,6 +491,7 @@ namespace moppe::game {
         ramp = { 15.0f, 26.0f, 1.0f };
         break;
       case Machine::jet_ski:
+      case Machine::snowmobile:
         // Some 60 km/h flat out on still water, low over it.
         ramp = { 35.0f, 60.0f, 0.9f };
         break;

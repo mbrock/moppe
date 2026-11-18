@@ -405,6 +405,14 @@ namespace moppe {
         (void)bedrock;
       }
 
+      // Camera-local R8 relief of the snow. 128 is untouched powder; 255
+      // is a bank `depth` high. An empty image disables the window.
+      virtual void set_snow_relief (plan_position_t,
+                                    meters_t,
+                                    meters_t,
+                                    int,
+                                    std::span<const std::uint8_t>) {}
+
       // The built roads exactly (terrain::RoadSurface), for the near ground:
       // its segment rows and bucket index as RoadSurface lays them out, the
       // bucket grid's size (it divides the world's period evenly), and the
