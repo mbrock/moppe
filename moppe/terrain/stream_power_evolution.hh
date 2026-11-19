@@ -15,20 +15,19 @@ namespace moppe::terrain {
   // every parameter dimensionally stable while the area exponent remains an
   // inspectable runtime value.
   struct StreamPowerEvolution {
-    julian_years_t duration = 1000000.0f * mp_units::astronomy::Julian_year;
-    julian_years_t time_step = 50000.0f * mp_units::astronomy::Julian_year;
+    julian_years_t duration = 1000000.0f * moppe::astronomy::Julian_year;
+    julian_years_t time_step = 50000.0f * moppe::astronomy::Julian_year;
     // Tectonic forcing may end before geomorphic relaxation does. The uplift
     // field is active from the start of evolution through this duration; a
     // geological step crossing that boundary integrates only its overlap.
-    julian_years_t uplift_duration =
-      1000000.0f * mp_units::astronomy::Julian_year;
+    julian_years_t uplift_duration = 1000000.0f * moppe::astronomy::Julian_year;
     meters_per_julian_year_t reference_incision_rate =
-      2e-5f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+      2e-5f * mp_units::si::metre / moppe::astronomy::Julian_year;
     // Overloaded material continues downstream after this local aggradation
     // rate is reached. A long geological step may not pile a whole catchment
     // into one routing cell.
     meters_per_julian_year_t maximum_deposition_rate =
-      1e-5f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+      1e-5f * mp_units::si::metre / moppe::astronomy::Julian_year;
     square_meters_t reference_area =
       1.0f * mp_units::si::metre * mp_units::si::metre;
     quantity<stream_power_exponent[one], float> area_exponent =
@@ -47,9 +46,9 @@ namespace moppe::terrain {
       1.0f * mp_units::si::metre * mp_units::si::metre;
     FluvialTransport fluvial_transport;
     ValleyDeposition valley_deposition;
-    square_meters_per_julian_year_t diffusivity =
-      0.0f * mp_units::si::metre * mp_units::si::metre /
-      mp_units::astronomy::Julian_year;
+    square_meters_per_julian_year_t diffusivity = 0.0f * mp_units::si::metre *
+                                                  mp_units::si::metre /
+                                                  moppe::astronomy::Julian_year;
     // Linear creep remains exact below half this face gradient. Near the
     // critical gradient, bounded mass wasting multiplies the same
     // conservative cover-first flux.

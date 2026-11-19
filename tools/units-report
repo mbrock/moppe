@@ -358,7 +358,8 @@ class Scanner:
         break
       if token in ESCAPE_TOKENS or token in self.helpers:
         return False
-      if token == "::" and previous in ("u", "si", "isq", "mp_units"):
+      if token == "::" and previous in (
+          "u", "si", "isq", "astronomy", "mp_units"):
         typed = True
       elif token == "one" and previous in ("[", "*"):
         typed = True

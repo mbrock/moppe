@@ -12,7 +12,7 @@
 #include <moppe/correct_math.hh>
 
 #include <mp-units/framework.h>
-#include <mp-units/systems/si.h>
+#include <mp-units/systems/si/core.h>
 #include <mp-units/utility/cartesian_vector.h>
 
 #ifdef __APPLE__

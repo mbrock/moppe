@@ -91,7 +91,7 @@ namespace {
       { .kind = Kind::Landing, .at = plan_position (1010.0f, 500.0f) },
       { .kind = Kind::Sanctuary,
         .at = plan_position (3000.0f, 3004.0f),
-        .abandoned = sanctuary_left * mp_units::astronomy::Julian_year },
+        .abandoned = sanctuary_left * moppe::astronomy::Julian_year },
       { .kind = Kind::LakeOutlet, .at = plan_position (1600.0f, 6000.0f) },
     };
     return network;

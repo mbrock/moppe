@@ -17,8 +17,8 @@
 
 namespace moppe::game {
   namespace {
+    using moppe::astronomy::Julian_year;
     using mp_units::one;
-    using mp_units::astronomy::Julian_year;
 
     // How far ground has come back some years after it was opened: a
     // tenth in ten years, half in sixty, nine tenths in two hundred.

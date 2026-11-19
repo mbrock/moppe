@@ -23,12 +23,12 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_generation_values) {
   MOPPE_CHECK_NEAR (
     surface_elevation_value (recipe.trail_formation ().sea_level), 50.0f, 0.0f);
   MOPPE_CHECK (recipe.evolution ().duration ==
-               200000.0f * mp_units::astronomy::Julian_year);
+               200000.0f * moppe::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().uplift_duration ==
-               50000.0f * mp_units::astronomy::Julian_year);
+               50000.0f * moppe::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().diffusivity ==
                0.0001f * mp_units::si::metre * mp_units::si::metre /
-                 mp_units::astronomy::Julian_year);
+                 moppe::astronomy::Julian_year);
 
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     recipe.resolution (), recipe.resolution (), recipe.extent ()));
@@ -69,9 +69,9 @@ MOPPE_TEST (play_world_recipe_relaxes_after_half_a_million_years_of_uplift) {
                        TerrainGenerationProfile::Play);
 
   MOPPE_CHECK (recipe.evolution ().duration ==
-               2000000.0f * mp_units::astronomy::Julian_year);
+               2000000.0f * moppe::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().uplift_duration ==
-               500000.0f * mp_units::astronomy::Julian_year);
+               500000.0f * moppe::astronomy::Julian_year);
 }
 
 MOPPE_TEST (research_world_recipe_has_a_finite_uplift_schedule) {
@@ -86,9 +86,9 @@ MOPPE_TEST (research_world_recipe_has_a_finite_uplift_schedule) {
                        TerrainGenerationProfile::Research);
 
   MOPPE_CHECK (recipe.evolution ().duration ==
-               1000000.0f * mp_units::astronomy::Julian_year);
+               1000000.0f * moppe::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().uplift_duration ==
-               250000.0f * mp_units::astronomy::Julian_year);
+               250000.0f * moppe::astronomy::Julian_year);
 }
 
 MOPPE_TEST (world_recipe_accepts_an_explicit_uplift_experiment) {
@@ -101,12 +101,12 @@ MOPPE_TEST (world_recipe_accepts_an_explicit_uplift_experiment) {
                        Seed { 77 },
                        50.0f * mp_units::si::metre,
                        TerrainGenerationProfile::Play,
-                       750000.0f * mp_units::astronomy::Julian_year);
+                       750000.0f * moppe::astronomy::Julian_year);
 
   MOPPE_CHECK (recipe.evolution ().duration ==
-               2000000.0f * mp_units::astronomy::Julian_year);
+               2000000.0f * moppe::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().uplift_duration ==
-               750000.0f * mp_units::astronomy::Julian_year);
+               750000.0f * moppe::astronomy::Julian_year);
 }
 
 MOPPE_TEST (world_recipe_accepts_a_physical_channel_head_experiment) {

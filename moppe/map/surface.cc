@@ -171,7 +171,7 @@ namespace moppe::map {
     constexpr meters_t initial_land_relief = 20.0f * u::m;
     constexpr meters_t initial_bathymetric_relief = 240.0f * u::m;
     constexpr auto maximum_uplift_m_per_year =
-      0.001f * u::m / mp_units::astronomy::Julian_year;
+      0.001f * u::m / moppe::astronomy::Julian_year;
 
     void reset_material_history (SurfaceGeometry& surface) {
       std::ranges::fill (spatial::get<terrain::sediment_thickness> (surface),

@@ -5,7 +5,7 @@
 #include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/drainage.hh>
 
-#include <mp-units/systems/angular.h>
+#include <mp-units/systems/angular/units.h>
 
 #include <array>
 #include <cstddef>

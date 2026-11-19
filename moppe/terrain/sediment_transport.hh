@@ -23,7 +23,7 @@ namespace moppe::terrain {
     // one terrain cell. Concentration scales that discharge into solid volume
     // at unit slope; actual capacity also responds linearly to local slope.
     meters_per_julian_year_t runoff_rate =
-      1.0f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+      1.0f * mp_units::si::metre / moppe::astronomy::Julian_year;
     SedimentConcentration concentration_at_unit_slope =
       2e-5f * sediment_concentration[mp_units::one];
   };

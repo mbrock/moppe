@@ -31,7 +31,7 @@ int main (int argc, char** argv) {
       const auto now = std::chrono::steady_clock::now ();
       std::cout
         << "step " << step << "/" << steps << " at "
-        << years.numerical_value_in (mp_units::astronomy::Julian_year)
+        << years.numerical_value_in (moppe::astronomy::Julian_year)
         << " years: "
         << std::chrono::duration<double, std::milli> (now - last).count ()
         << " ms\n";

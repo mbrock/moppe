@@ -22,12 +22,12 @@ namespace {
                                                         float meters_per_year) {
     return std::vector<meters_per_julian_year_t> (
       count,
-      meters_per_year * mp_units::si::metre / mp_units::astronomy::Julian_year);
+      meters_per_year * mp_units::si::metre / moppe::astronomy::Julian_year);
   }
 
   FluvialTransport unbounded_test_transport () {
     return {
-      .runoff_rate = 1.0f * u::m / mp_units::astronomy::Julian_year,
+      .runoff_rate = 1.0f * u::m / moppe::astronomy::Julian_year,
       .concentration_at_unit_slope =
         1.0f * sediment_concentration[mp_units::one],
     };
@@ -39,7 +39,7 @@ MOPPE_TEST (zero_duration_stream_power_evolution_is_identity) {
     make_elevation_map (profile_grid (), profile_heights);
   const auto uplift = uniform_uplift (profile_heights.size (), 0.001f);
   const StreamPowerEvolutionResult result = evolve_stream_power (
-    terrain, uplift, { .duration = 0.0f * mp_units::astronomy::Julian_year });
+    terrain, uplift, { .duration = 0.0f * moppe::astronomy::Julian_year });
 
   MOPPE_CHECK (result.heights == spatial::get<surface_elevation> (terrain));
   MOPPE_CHECK (result.channel_tangents.size () == profile_heights.size ());
@@ -52,15 +52,15 @@ MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
   const ElevationMap terrain =
     make_elevation_map (profile_grid (), profile_heights);
   auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
-  uplift[4] = 0.002f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+  uplift[4] = 0.002f * mp_units::si::metre / moppe::astronomy::Julian_year;
   uplift[9] = uplift[4];
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
     uplift,
-    { .duration = 1000.0f * mp_units::astronomy::Julian_year,
-      .time_step = 250.0f * mp_units::astronomy::Julian_year,
+    { .duration = 1000.0f * moppe::astronomy::Julian_year,
+      .time_step = 250.0f * moppe::astronomy::Julian_year,
       .reference_incision_rate =
-        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        0.0f * mp_units::si::metre / moppe::astronomy::Julian_year,
       .sea_level = surface_elevation_point (0.0f * u::m) });
 
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[0]), 0.0f, 0.0f);
@@ -75,18 +75,18 @@ MOPPE_TEST (finite_uplift_integrates_the_exact_active_interval) {
   const ElevationMap terrain =
     make_elevation_map (profile_grid (), profile_heights);
   auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
-  uplift[4] = 0.002f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+  uplift[4] = 0.002f * mp_units::si::metre / moppe::astronomy::Julian_year;
   uplift[9] = uplift[4];
 
   const auto evolve = [&] (float step_years) {
     return evolve_stream_power (
       terrain,
       uplift,
-      { .duration = 1000.0f * mp_units::astronomy::Julian_year,
-        .time_step = step_years * mp_units::astronomy::Julian_year,
-        .uplift_duration = 500.0f * mp_units::astronomy::Julian_year,
+      { .duration = 1000.0f * moppe::astronomy::Julian_year,
+        .time_step = step_years * moppe::astronomy::Julian_year,
+        .uplift_duration = 500.0f * moppe::astronomy::Julian_year,
         .reference_incision_rate =
-          0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+          0.0f * mp_units::si::metre / moppe::astronomy::Julian_year,
         .sea_level = surface_elevation_point (0.0f * u::m) });
   };
 
@@ -116,11 +116,11 @@ MOPPE_TEST (zero_uplift_duration_disables_tectonic_forcing) {
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
     uplift,
-    { .duration = 1000.0f * mp_units::astronomy::Julian_year,
-      .time_step = 300.0f * mp_units::astronomy::Julian_year,
-      .uplift_duration = 0.0f * mp_units::astronomy::Julian_year,
+    { .duration = 1000.0f * moppe::astronomy::Julian_year,
+      .time_step = 300.0f * moppe::astronomy::Julian_year,
+      .uplift_duration = 0.0f * moppe::astronomy::Julian_year,
       .reference_incision_rate =
-        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        0.0f * mp_units::si::metre / moppe::astronomy::Julian_year,
       .sea_level = surface_elevation_point (0.0f * u::m) });
 
   MOPPE_CHECK (result.heights == spatial::get<surface_elevation> (terrain));
@@ -138,10 +138,10 @@ MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
     uplift,
-    { .duration = 1000.0f * mp_units::astronomy::Julian_year,
-      .time_step = 1000.0f * mp_units::astronomy::Julian_year,
+    { .duration = 1000.0f * moppe::astronomy::Julian_year,
+      .time_step = 1000.0f * moppe::astronomy::Julian_year,
       .reference_incision_rate =
-        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        0.0f * mp_units::si::metre / moppe::astronomy::Julian_year,
       .sea_level = surface_elevation_point (0.0f * u::m) });
 
   MOPPE_CHECK_NEAR (
@@ -162,10 +162,10 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
     uplift,
-    { .duration = 100.0f * mp_units::astronomy::Julian_year,
-      .time_step = 100.0f * mp_units::astronomy::Julian_year,
+    { .duration = 100.0f * moppe::astronomy::Julian_year,
+      .time_step = 100.0f * moppe::astronomy::Julian_year,
       .reference_incision_rate =
-        0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        0.1f * mp_units::si::metre / moppe::astronomy::Julian_year,
       .area_exponent = 0.0f * stream_power_exponent[one],
       // A four-cell world is entirely below any real channel head, so say
       // that this case is about the fluvial law and not about where the
@@ -192,13 +192,13 @@ MOPPE_TEST (thick_channel_cover_protects_bedrock_during_evolution) {
                                            SedimentThickness::zero (),
                                            200.0f * sediment_thickness[u::m] };
   const StreamPowerEvolution parameters {
-    .duration = 100.0f * mp_units::astronomy::Julian_year,
-    .time_step = 100.0f * mp_units::astronomy::Julian_year,
-    .reference_incision_rate = 0.1f * u::m / mp_units::astronomy::Julian_year,
+    .duration = 100.0f * moppe::astronomy::Julian_year,
+    .time_step = 100.0f * moppe::astronomy::Julian_year,
+    .reference_incision_rate = 0.1f * u::m / moppe::astronomy::Julian_year,
     .area_exponent = 0.0f * stream_power_exponent[one],
     .channel_initiation_area = 1.0f * u::m * u::m,
     .fluvial_transport = {
-      .runoff_rate = 1.0f * u::m / mp_units::astronomy::Julian_year,
+      .runoff_rate = 1.0f * u::m / moppe::astronomy::Julian_year,
       .concentration_at_unit_slope =
         0.01f * sediment_concentration[mp_units::one],
     },
@@ -235,10 +235,10 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
     uplift,
-    { .duration = duration_years * mp_units::astronomy::Julian_year,
-      .time_step = duration_years * mp_units::astronomy::Julian_year,
+    { .duration = duration_years * moppe::astronomy::Julian_year,
+      .time_step = duration_years * moppe::astronomy::Julian_year,
       .reference_incision_rate =
-        legacy_k * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        legacy_k * mp_units::si::metre / moppe::astronomy::Julian_year,
       .area_exponent = exponent * stream_power_exponent[one],
       .channel_initiation_area =
         1.0f * mp_units::si::metre * mp_units::si::metre,
@@ -264,11 +264,11 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
     return evolve_stream_power (
       terrain,
       uplift,
-      { .duration = 10000.0f * mp_units::astronomy::Julian_year,
-        .time_step = 1000.0f * mp_units::astronomy::Julian_year,
+      { .duration = 10000.0f * moppe::astronomy::Julian_year,
+        .time_step = 1000.0f * moppe::astronomy::Julian_year,
         .reference_incision_rate = reference_rate_m_per_year *
                                    mp_units::si::metre /
-                                   mp_units::astronomy::Julian_year,
+                                   moppe::astronomy::Julian_year,
         .reference_area =
           reference_area_m2 * mp_units::si::metre * mp_units::si::metre,
         .area_exponent = exponent * stream_power_exponent[one],
@@ -294,8 +294,8 @@ MOPPE_TEST (depression_routing_closes_the_sediment_ledger) {
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
     uplift,
-    { .duration = 100000.0f * mp_units::astronomy::Julian_year,
-      .time_step = 10000.0f * mp_units::astronomy::Julian_year,
+    { .duration = 100000.0f * moppe::astronomy::Julian_year,
+      .time_step = 10000.0f * moppe::astronomy::Julian_year,
       .sea_level = surface_elevation_point (0.0f * u::m) });
 
   const auto cubic_metre = u::m * u::m * u::m;
@@ -324,8 +324,8 @@ MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
     make_elevation_map (profile_grid (), profile_heights);
   const auto uplift = uniform_uplift (profile_heights.size (), 0.0005f);
   const StreamPowerEvolution parameters {
-    .duration = 50000.0f * mp_units::astronomy::Julian_year,
-    .time_step = 5000.0f * mp_units::astronomy::Julian_year,
+    .duration = 50000.0f * moppe::astronomy::Julian_year,
+    .time_step = 5000.0f * moppe::astronomy::Julian_year,
     .sea_level = surface_elevation_point (0.0f * u::m)
   };
   const StreamPowerEvolutionResult first =
@@ -355,12 +355,12 @@ MOPPE_TEST (stream_power_interleaves_conservative_hillslope_transport) {
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
     uplift,
-    { .duration = 1.0f * mp_units::astronomy::Julian_year,
-      .time_step = 1.0f * mp_units::astronomy::Julian_year,
+    { .duration = 1.0f * moppe::astronomy::Julian_year,
+      .time_step = 1.0f * moppe::astronomy::Julian_year,
       .reference_incision_rate =
-        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        0.0f * mp_units::si::metre / moppe::astronomy::Julian_year,
       .diffusivity = 0.1f * mp_units::si::metre * mp_units::si::metre /
-                     mp_units::astronomy::Julian_year,
+                     moppe::astronomy::Julian_year,
       .sea_level = surface_elevation_point (-1.0f * u::m) });
 
   MOPPE_CHECK (result.heights[12] <
@@ -393,10 +393,10 @@ MOPPE_TEST (hillslope_catchments_are_left_to_creep) {
     return evolve_stream_power (
       terrain,
       uplift,
-      { .duration = 100.0f * mp_units::astronomy::Julian_year,
-        .time_step = 100.0f * mp_units::astronomy::Julian_year,
+      { .duration = 100.0f * moppe::astronomy::Julian_year,
+        .time_step = 100.0f * moppe::astronomy::Julian_year,
         .reference_incision_rate =
-          0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+          0.1f * mp_units::si::metre / moppe::astronomy::Julian_year,
         .area_exponent = 0.0f * stream_power_exponent[one],
         .channel_initiation_area =
           initiation_m2 * mp_units::si::metre * mp_units::si::metre,

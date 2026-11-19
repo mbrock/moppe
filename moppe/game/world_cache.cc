@@ -93,7 +93,7 @@ namespace moppe::game {
          << bits ((recipe.water_datum ()).numerical_value_in (u::m));
     name << "-uplift-"
          << bits (recipe.evolution ().uplift_duration.numerical_value_in (
-              mp_units::astronomy::Julian_year));
+              moppe::astronomy::Julian_year));
     name << "-channel-"
          << bits (
               recipe.evolution ().channel_initiation_area.numerical_value_in (
@@ -101,7 +101,7 @@ namespace moppe::game {
     name << "-runoff-"
          << bits (recipe.evolution ()
                     .fluvial_transport.runoff_rate.numerical_value_in (
-                      u::m / mp_units::astronomy::Julian_year));
+                      u::m / moppe::astronomy::Julian_year));
     name << "-concentration-"
          << bits (recipe.evolution ()
                     .fluvial_transport.concentration_at_unit_slope
@@ -316,7 +316,7 @@ namespace moppe::game {
     // The units the file keeps each kind of quantity in.
     constexpr auto square_metre = u::m * u::m;
     constexpr auto cubic_metre = u::m * u::m * u::m;
-    constexpr auto julian_year = mp_units::astronomy::Julian_year;
+    constexpr auto julian_year = moppe::astronomy::Julian_year;
     constexpr auto slope_ratio = terrain::terrain_slope[mp_units::one];
     constexpr auto share = proportion[mp_units::one];
 

@@ -30,13 +30,13 @@ namespace moppe::game {
           << bits (extent_value (extent)[2]) << '-'
           << bits (recipe.water_datum ().numerical_value_in (u::m)) << '-'
           << bits (evolution.uplift_duration.numerical_value_in (
-               mp_units::astronomy::Julian_year))
+               moppe::astronomy::Julian_year))
           << '-'
           << bits (evolution.channel_initiation_area.numerical_value_in (u::m *
                                                                          u::m))
           << '-'
           << bits (evolution.fluvial_transport.runoff_rate.numerical_value_in (
-               u::m / mp_units::astronomy::Julian_year))
+               u::m / moppe::astronomy::Julian_year))
           << '-'
           << bits (evolution.fluvial_transport.concentration_at_unit_slope
                      .numerical_value_in (mp_units::one))

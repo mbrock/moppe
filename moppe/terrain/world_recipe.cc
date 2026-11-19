@@ -31,7 +31,7 @@ namespace moppe::terrain {
     // Evolution age and tectonic forcing are separate clocks. The initial
     // orogeny raises the country, then erosion and deposition reorganize that
     // finite relief without banking uplift for the whole geological run.
-    constexpr auto year = mp_units::astronomy::Julian_year;
+    constexpr auto year = moppe::astronomy::Julian_year;
     const julian_years_t duration =
       generation_profile == TerrainGenerationProfile::Smoke  ? 50000.0f * year
       : generation_profile == TerrainGenerationProfile::Fast ? 200000.0f * year
@@ -61,7 +61,7 @@ namespace moppe::terrain {
         *maximum_hillslope_multiplier;
     m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
                               mp_units::si::metre /
-                              mp_units::astronomy::Julian_year;
+                              moppe::astronomy::Julian_year;
     m_evolution.sea_level = surface_elevation_point (water_datum);
     m_trail_formation.sea_level = surface_elevation_point (water_datum);
   }

@@ -1,11 +1,15 @@
 #ifndef MOPPE_QUANTITIES_HH
 #define MOPPE_QUANTITIES_HH
 
+// Only the parts of the ISQ and the SI the game speaks: the whole of
+// <mp-units/systems/isq.h>, <si.h>, and <astronomy.h> would cost every
+// translation unit that includes this file several seconds of parsing.
 #include <mp-units/framework.h>
-#include <mp-units/systems/angular.h>
-#include <mp-units/systems/astronomy.h>
-#include <mp-units/systems/isq.h>
-#include <mp-units/systems/si.h>
+#include <mp-units/systems/angular/units.h>
+#include <mp-units/systems/isq/light_and_radiation.h>
+#include <mp-units/systems/isq/mechanics.h>
+#include <mp-units/systems/isq/space_and_time.h>
+#include <mp-units/systems/si/core.h>
 
 // Every quantity specification in the game, in one row. A spec says what a
 // number means; the concrete quantity and quantity_point aliases built on one
@@ -43,16 +47,24 @@ namespace moppe {
                        double>;
   using meters_per_second_t =
     mp_units::quantity<mp_units::si::metre / mp_units::si::second, float>;
-  using julian_years_t =
-    mp_units::quantity<mp_units::astronomy::Julian_year, float>;
-  using julian_years_f64_t =
-    mp_units::quantity<mp_units::astronomy::Julian_year, double>;
+  // mp-units' astronomy::Julian_year, spelled here so that the world's ages
+  // need neither <mp-units/systems/astronomy.h> nor the IAU and CODATA
+  // constants it brings.
+  namespace astronomy {
+    inline constexpr struct Julian_year final
+        : mp_units::named_unit<"a",
+                               mp_units::mag_ratio<36'525, 100> *
+                                 mp_units::non_si::day> {
+    } Julian_year;
+  }
+
+  using julian_years_t = mp_units::quantity<astronomy::Julian_year, float>;
+  using julian_years_f64_t = mp_units::quantity<astronomy::Julian_year, double>;
   using meters_per_julian_year_t =
-    mp_units::quantity<mp_units::si::metre / mp_units::astronomy::Julian_year,
-                       float>;
+    mp_units::quantity<mp_units::si::metre / astronomy::Julian_year, float>;
   using square_meters_per_julian_year_t =
     mp_units::quantity<mp_units::si::metre * mp_units::si::metre /
-                         mp_units::astronomy::Julian_year,
+                         astronomy::Julian_year,
                        float>;
 
   // ---- Signals ----

@@ -191,7 +191,7 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
                        Seed { 91 },
                        50.0f * u::m,
                        TerrainGenerationProfile::Fast,
-                       750000.0f * mp_units::astronomy::Julian_year);
+                       750000.0f * moppe::astronomy::Julian_year);
   MOPPE_CHECK (!game::try_load_world_cache (
     game::WorldParams {}, other_uplift, cache.string ()));
   const WorldRecipe other_channel_scale =
@@ -234,7 +234,7 @@ MOPPE_TEST (world_cache_names_are_stable_and_recipe_specific) {
                        Seed { 91 },
                        50.0f * u::m,
                        TerrainGenerationProfile::Fast,
-                       750000.0f * mp_units::astronomy::Julian_year);
+                       750000.0f * moppe::astronomy::Julian_year);
   const WorldRecipe other_channel_scale =
     make_world_recipe (extent,
                        17,

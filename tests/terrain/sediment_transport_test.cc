@@ -93,8 +93,8 @@ namespace {
       elevations,
       cover,
       fixed,
-      years * mp_units::astronomy::Julian_year,
-      0.1f * u::m * u::m / mp_units::astronomy::Julian_year,
+      years * moppe::astronomy::Julian_year,
+      0.1f * u::m * u::m / moppe::astronomy::Julian_year,
       critical_gradient * proportion[mp_units::one],
       maximum_multiplier * proportion[mp_units::one]);
   }
@@ -269,8 +269,8 @@ MOPPE_TEST (hillslope_transport_substeps_long_geological_intervals) {
     elevations,
     cover,
     fixed,
-    100.0f * mp_units::astronomy::Julian_year,
-    0.1f * u::m * u::m / mp_units::astronomy::Julian_year);
+    100.0f * moppe::astronomy::Julian_year,
+    0.1f * u::m * u::m / moppe::astronomy::Julian_year);
 
   MOPPE_CHECK (count_value (result.sweeps) >= 40);
   for (const SurfaceElevation elevation : result.heights)
@@ -283,13 +283,12 @@ MOPPE_TEST (hillslope_transport_substeps_long_geological_intervals) {
 
 MOPPE_TEST (fluvial_capacity_is_typed_discharge_times_slope_and_time) {
   const FluvialTransport transport {
-    .runoff_rate = 2.0f * u::m / mp_units::astronomy::Julian_year,
+    .runoff_rate = 2.0f * u::m / moppe::astronomy::Julian_year,
     .concentration_at_unit_slope =
       0.01f * sediment_concentration[mp_units::one],
   };
   const auto capacity = [&] (float years) {
-    return sediment_transport_capacity (years *
-                                          mp_units::astronomy::Julian_year,
+    return sediment_transport_capacity (years * moppe::astronomy::Julian_year,
                                         10.0f * u::m * u::m,
                                         0.5f * terrain_slope[mp_units::one],
                                         0.25f * proportion[mp_units::one],

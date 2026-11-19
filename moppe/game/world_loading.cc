@@ -158,7 +158,7 @@ namespace moppe::game {
                         recipe.evolution ().time_step);
           const auto whole_years = [] (julian_years_t time) {
             return static_cast<int> (std::lround (
-              time.numerical_value_in (mp_units::astronomy::Julian_year)));
+              time.numerical_value_in (moppe::astronomy::Julian_year)));
           };
           std::ostringstream detail;
           detail << "Geological time  "

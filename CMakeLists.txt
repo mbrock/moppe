@@ -99,11 +99,13 @@ option(MOPPE_EMBED_ASSETS
 #Moppe's implementation files are deliberately small, but compiling each
 #separately parses the heavily - templated headers(notably mp - units) once per
 #file.Unity batches of MOPPE_UNITY_BATCH_SIZE sources parse them once per
-#batch : on 16 cores a full build takes 45 s and 6 minutes of CPU, against 63 s
-# and 13 minutes without, and editing one source recompiles its batch(9 s,
-#against 5 s) rather than the whole program.The engine is a library built
-#once(below), and the programs link it.Set MOPPE_UNITY_BUILD = OFF for the
-#quickest edits, or a larger batch for a slow machine.
+#batch : on 16 cores a full build of moppe and moppe - tests takes 54 s and 13
+#minutes of CPU, and editing one source recompiles its batch(10 to 15 s)
+#rather than the whole program.Most of each unit's time is still parsing
+#headers, so moppe / quantities.hh includes only the mp - units systems it
+#uses.The engine is a library built once(below), and the programs link
+#it.Set MOPPE_UNITY_BUILD = OFF for the quickest edits, or a larger batch for
+#a slow machine.
 if(MOPPE_UNITY_BUILD)
   set(CMAKE_UNITY_BUILD ON)
   set(CMAKE_UNITY_BUILD_BATCH_SIZE ${MOPPE_UNITY_BATCH_SIZE})

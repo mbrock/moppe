@@ -65,8 +65,7 @@ int main (int argc, char** argv) {
 
     StreamPowerEvolution evolution;
     evolution.diffusivity = 0.0001f * mp_units::si::metre *
-                            mp_units::si::metre /
-                            mp_units::astronomy::Julian_year;
+                            mp_units::si::metre / moppe::astronomy::Julian_year;
     evolution.duration = static_cast<float> (steps) * evolution.time_step;
     const Seed terrain_seed { static_cast<std::uint32_t> (seed) };
 

@@ -17,18 +17,15 @@
 
 #include <mp-units/framework.h>
 #include <mp-units/math.h>
-#include <mp-units/systems/astronomy.h>
-#include <mp-units/systems/isq.h>
-#include <mp-units/systems/si.h>
 
 namespace moppe::terrain {
   namespace {
+    using moppe::astronomy::Julian_year;
     using mp_units::abs;
     using mp_units::default_point_origin;
     using mp_units::isfinite;
     using mp_units::one;
     using mp_units::quantity_point;
-    using mp_units::astronomy::Julian_year;
     using mp_units::si::metre;
     using spatial::get;
 

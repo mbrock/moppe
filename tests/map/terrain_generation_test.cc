@@ -47,8 +47,8 @@ MOPPE_TEST (terrain_generation_is_deterministic) {
   using namespace moppe;
   using namespace moppe::terrain;
   StreamPowerEvolution evolution;
-  evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
-  evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
+  evolution.duration = 100000.0f * moppe::astronomy::Julian_year;
+  evolution.time_step = 50000.0f * moppe::astronomy::Julian_year;
   map::SurfaceGeometry first = map::SurfaceGeometry (terrain::TerrainDomain (
     33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
   map::SurfaceGeometry second = map::SurfaceGeometry (terrain::TerrainDomain (
@@ -66,8 +66,8 @@ MOPPE_TEST (generated_terrain_wraps_continuously) {
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     32, 32, spatial_extent_in_metres (Vec3 (5000, 0, 3000))));
   StreamPowerEvolution evolution;
-  evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
-  evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
+  evolution.duration = 100000.0f * moppe::astronomy::Julian_year;
+  evolution.time_step = 50000.0f * moppe::astronomy::Julian_year;
 
   generate (surface, Seed { 123 }, evolution);
   map::rebuild_geometry (surface);
@@ -102,8 +102,8 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
   using namespace moppe;
   using namespace moppe::terrain;
   StreamPowerEvolution evolution;
-  evolution.duration = 200000.0f * mp_units::astronomy::Julian_year;
-  evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
+  evolution.duration = 200000.0f * moppe::astronomy::Julian_year;
+  evolution.time_step = 50000.0f * moppe::astronomy::Julian_year;
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
   std::vector<terrain::IterationCount> completed;
@@ -144,8 +144,8 @@ MOPPE_TEST (terrain_evolution_materializes_its_sediment_history) {
   const StreamPowerEvolutionReport report = map::evolve_terrain (
     surface,
     uplift,
-    { .duration = 200000.0f * mp_units::astronomy::Julian_year,
-      .time_step = 50000.0f * mp_units::astronomy::Julian_year,
+    { .duration = 200000.0f * moppe::astronomy::Julian_year,
+      .time_step = 50000.0f * moppe::astronomy::Julian_year,
       .sea_level = terrain::surface_elevation_point (50.0f * u::m) });
 
   const auto& mobile = spatial::get<terrain::sediment_thickness> (surface);

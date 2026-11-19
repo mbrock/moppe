@@ -262,7 +262,7 @@ moppe_geology_grow (int lattice, unsigned seed, int size) {
         moppe::site::paint_relief (heights, lattice, size, rgba);
       post_step (step,
                  steps,
-                 years.numerical_value_in (mp_units::astronomy::Julian_year),
+                 years.numerical_value_in (moppe::astronomy::Julian_year),
                  heights.data (),
                  lattice,
                  size > 0 ? rgba.data () : nullptr,

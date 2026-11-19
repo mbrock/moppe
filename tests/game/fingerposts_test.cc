@@ -35,7 +35,7 @@ namespace {
       road.points.push_back (plan_position (x, 500.0f));
     Road path;
     path.kind = Road::Kind::Footpath;
-    path.abandoned = 120.0f * mp_units::astronomy::Julian_year;
+    path.abandoned = 120.0f * moppe::astronomy::Julian_year;
     for (int i = 0; i <= 10; ++i)
       path.points.push_back (plan_position (500.0f, 485.0f - 33.5f * i));
     network.roads = { road, path };

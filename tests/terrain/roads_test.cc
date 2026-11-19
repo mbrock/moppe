@@ -36,7 +36,7 @@ namespace {
   }
 
   float years (moppe::age_t age) {
-    return age.numerical_value_in (mp_units::astronomy::Julian_year);
+    return age.numerical_value_in (moppe::astronomy::Julian_year);
   }
 
   float number (auto ratio) {
