@@ -236,6 +236,42 @@ namespace moppe {
         return;
       }
 
+      // ` opens the cheat menu, on foot or at a wheel: W and S choose a
+      // machine, Space or F takes it over where it stands, and Esc or `
+      // again closes it. Releases still count, so nothing stays held.
+      const Doing::Way way = logic ().m_doing.way;
+      if (k == Key::Cheat && down &&
+          (way == Doing::Way::foot || way == Doing::Way::driving)) {
+        m_heads_up.cheat_open = !m_heads_up.cheat_open;
+        if (const std::optional<Machine> driven =
+              driven_machine (logic ().m_doing))
+          m_heads_up.cheat_choice = *driven;
+        m_live_input.clear ();
+        return;
+      }
+      if (m_heads_up.cheat_open) {
+        if (!down) {
+          m_live_input.key (k, down);
+          return;
+        }
+        const int choice = static_cast<int> (m_heads_up.cheat_choice);
+        const auto choose = [&] (int step) {
+          m_heads_up.cheat_choice = static_cast<Machine> (
+            (choice + step + machine_count) % machine_count);
+        };
+        if (k == Key::W || k == Key::Up)
+          choose (-1);
+        else if (k == Key::S || k == Key::Down)
+          choose (1);
+        else if (k == Key::Space || k == Key::Mount) {
+          m_heads_up.cheat_open = false;
+          take_over (session (), m_heads_up.cheat_choice);
+          session ().settle_camera (surface ());
+        } else if (k == Key::Escape)
+          m_heads_up.cheat_open = false;
+        return;
+      }
+
       if (k == Key::G && down) {
         take_way_back ();
         return;

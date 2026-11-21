@@ -285,6 +285,9 @@ namespace moppe::game {
   void take_rope (GameSession& session, Machine machine);
   void let_go_rope (GameSession& session);
   void get_in (GameSession& session, Machine machine);
+  // The cheat menu's: at the wheel of `machine` wherever it stands, the
+  // machine left behind let go of, and any rope or load with it.
+  void take_over (GameSession& session, Machine machine);
   void step_out (GameSession& session, Machine machine);
   void hook_load (GameSession& session, Machine load);
   void let_load_go (GameSession& session);

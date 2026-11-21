@@ -275,6 +275,14 @@ namespace moppe {
                                points_t width,
                                points_t height) const;
 
+      // The cheat menu (` in play): the frame veiled, and every machine
+      // listed by name, `chosen` marked, with the keys that work it.
+      void draw_cheat_menu (render::DrawList& dl,
+                            render::TextList& text,
+                            points_t width,
+                            points_t height,
+                            Machine chosen) const;
+
       // Notes that `key` (by its name; none offers nothing) does `action`
       // just now.
       void offer (const std::string& key, const std::string& action);

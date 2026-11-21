@@ -61,7 +61,9 @@ namespace moppe {
       Five,
       Six,
       Seven,
-      Shift
+      Shift,
+      // The key under Esc (`): the cheat menu.
+      Cheat
     };
 
     struct Config {

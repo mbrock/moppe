@@ -125,6 +125,7 @@ namespace moppe::platform {
       { "5", Key::Five },        { "6", Key::Six },
       { "7", Key::Seven },       { "Shift", Key::Shift },
       { "P", Key::Screenshot },  { "V", Key::Record },
+      { "`", Key::Cheat },
     };
     const auto found = keys.find (name);
     return found == keys.end () ? Key::Unknown : found->second;

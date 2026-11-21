@@ -82,6 +82,8 @@ namespace {
     case SDL_SCANCODE_LSHIFT:
     case SDL_SCANCODE_RSHIFT:
       return Key::Shift;
+    case SDL_SCANCODE_GRAVE:
+      return Key::Cheat;
     default:
       break;
     }

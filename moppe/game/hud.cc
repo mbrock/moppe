@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -2181,6 +2182,80 @@ namespace moppe {
       offer (ride_key, "Begin");
       if (*ride_key && !m_host_offers && !m_hidden)
         draw_prompt (text, ride_key, "Begin", alpha, width, height);
+    }
+
+    void Hud::draw_cheat_menu (render::DrawList& dl,
+                               render::TextList& text,
+                               points_t width,
+                               points_t height,
+                               Machine chosen) const {
+      const float w = points_value (width);
+      const float h = points_value (height);
+      hud_state (dl);
+      dl.color (0.02f, 0.02f, 0.025f, 0.45f);
+      dl.begin (render::Prim::Quads);
+      dl.vertex (0, 0);
+      dl.vertex (w, 0);
+      dl.vertex (w, h);
+      dl.vertex (0, h);
+      dl.end ();
+      dl.state (render::DrawState ());
+      dl.lit (true);
+      dl.fogged (true);
+      dl.color (1, 1, 1, 1);
+      if (!m_font)
+        return;
+
+      constexpr points_t line = 26.0f * u::pt;
+      const points_t top =
+        0.5f * (height - static_cast<float> (machine_count) * line);
+      TextStyle title = prompt_words (opaque);
+      title.size = 26.0f;
+      draw_shaded (text,
+                   0.5f * width,
+                   top - 24.0f * u::pt,
+                   "Take the wheel of",
+                   title,
+                   TextAlign::Center);
+      for (int i = 0; i < machine_count; ++i) {
+        const Machine machine = static_cast<Machine> (i);
+        // "the jeep" becomes "Jeep".
+        std::string name = machine_kind (machine).name;
+        if (name.starts_with ("the "))
+          name.erase (0, 4);
+        if (!name.empty ())
+          name[0] = static_cast<char> (std::toupper (name[0]));
+        const bool on = machine == chosen;
+        TextStyle words =
+          prompt_words ((on ? 1.0f : 0.5f) * opacity[one]);
+        words.size = on ? 19.0f : 17.0f;
+        draw_shaded (text,
+                     0.5f * width,
+                     top + (static_cast<float> (i) + 1.0f) * line,
+                     on ? "\u2014  " + name + "  \u2014" : name,
+                     words,
+                     TextAlign::Center);
+      }
+      constexpr opacity_t clear = 0.9f * opacity[one];
+      const TextStyle words = prompt_words (clear);
+      const points_t space = 2.0f * words.size * u::pt;
+      const points_t choose = keyed_width ("W/S", "Choose", words);
+      const points_t take = keyed_width ("Space", "Take it", words);
+      const points_t close = keyed_width ("Esc", "Close", words);
+      const points_t x =
+        0.5f * (width - choose - take - close - 2.0f * space);
+      const points_t baseline =
+        top + (static_cast<float> (machine_count) + 2.5f) * line;
+      draw_keyed (text, x, baseline, "W/S", "Choose", words, clear);
+      draw_keyed (
+        text, x + choose + space, baseline, "Space", "Take it", words, clear);
+      draw_keyed (text,
+                  x + choose + take + 2.0f * space,
+                  baseline,
+                  "Esc",
+                  "Close",
+                  words,
+                  clear);
     }
 
     void Hud::draw_title_card (render::TextList& text,

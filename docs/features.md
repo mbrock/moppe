@@ -238,6 +238,11 @@ build, test, and change the code; read this when working on a feature.
   a kilometre grid, the trail in red dashes) and set on paper with a
   scale, spot heights, and marks for the walker, bike, jeep, tractor,
   companion, camp, and trailhead (`moppe/game/map_sheet.*`).
+- The cheat menu: `` ` `` (the key under Esc), on foot or at a wheel,
+  lists every machine; `W`/`S` choose, `Space` or `F` puts the player
+  at its wheel wherever it stands (`take_over` in game_session.cc), and
+  `Esc` or `` ` `` closes it (`Hud::draw_cheat_menu`). A
+  `MOPPE_CONTROL_FILE` works it too: `` tap ` ``, `tap S`, `tap Space`.
 - A wider world: `--world-size <KM>` (5 by default, up to 10) makes the
   world that many kilometres across, with more country rather than the
   same country stretched (`terrain/geological.cc` counts its noise in

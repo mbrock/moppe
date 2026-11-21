@@ -654,6 +654,16 @@ namespace moppe::game {
     steer (session, session.logic ().m_controls);
   }
 
+  void take_over (GameSession& session, Machine machine) {
+    GameLogicState& logic = session.logic ();
+    if (logic.m_haul.active)
+      let_go_rope (session);
+    let_load_go (session);
+    if (const std::optional<Machine> from = driven_machine (logic.m_doing))
+      drive (session.fleet (), *from, Controls {}, false);
+    get_in (session, machine);
+  }
+
   // Out of `machine` and onto the feet, where its kind says
   // (MachineKind::step_out), letting go of everything.
   void step_out (GameSession& session, Machine machine) {

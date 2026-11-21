@@ -59,6 +59,10 @@ namespace moppe::game {
     MapSheet map;
     // Esc in play has asked whether to quit (Hud::draw_quit_question).
     bool quit_asked = false;
+    // ` in play has opened the cheat menu (Hud::draw_cheat_menu), with
+    // this machine chosen in it.
+    bool cheat_open = false;
+    Machine cheat_choice = Machine::bike;
     // The lists the HUD is drawn into, the loading and game-over screens
     // too.
     render::DrawList dl;
