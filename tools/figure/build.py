@@ -185,17 +185,29 @@ def model(build):
         a = j["ankle"]
         x = a.x
         foot, shin = f"foot.{tag}", f"shin.{tag}"
+        # The foot's underside sits a little into the sole along its
+        # whole length, the rounded heel and toes too.
+        tread = [
+            (-0.085, 0.044, 0.032, 0.028),
+            (-0.055, 0.058, 0.042, 0.042),
+            (0.01, 0.058, 0.046, 0.038),
+            (0.1, 0.043, 0.05, 0.026),
+            (0.17, 0.034, 0.046, 0.019),
+            (0.2, 0.03, 0.03, 0.014),
+        ]
         part(f"bare_foot.{tag}", loft([
-            (V((x, 0.05, -0.085)), 0.032, 0.028),
-            (V((x, 0.06, -0.055)), 0.042, 0.042),
-            (V((x, 0.06, 0.01)), 0.046, 0.038),
-            (V((x, 0.045, 0.1)), 0.05, 0.026),
-            (V((x, 0.038, 0.17)), 0.046, 0.019),
-            (V((x, 0.036, 0.2)), 0.03, 0.014),
+            (V((x, y, z)), w, d) for z, y, w, d in tread
         ], RIGHT, sides=8, turn=math.pi / 8), "skin", [foot])
-        part(f"sandal_sole.{tag}",
-             slab(V((x, 0.012, 0.058)), (0.054, 0.012, 0.15)), "sole",
-             [foot], bevel=0.01)
+        # The sole follows the foot's outline a few millimetres proud of
+        # it, from behind the heel to past the toes; a square section
+        # turned on its corner, which the subdivision rounds.
+        edge = 1 / math.cos(math.pi / 4)
+        part(f"sandal_sole.{tag}", loft([
+            (V((x, 0.012, z)), (w + 0.008) * edge, 0.013 * edge)
+            for z, w in [(-0.093, 0.03), (-0.07, 0.04), (-0.055, 0.042),
+                         (0.01, 0.046), (0.1, 0.05), (0.17, 0.046),
+                         (0.215, 0.03)]
+        ], RIGHT, sides=4, turn=math.pi / 4), "sole", [foot])
         part(f"toe_strap.{tag}", loft([
             (V((x, 0.044, 0.095)), 0.054, 0.032),
             (V((x, 0.044, 0.1)), 0.056, 0.033),
