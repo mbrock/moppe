@@ -2226,8 +2226,7 @@ namespace moppe {
         if (!name.empty ())
           name[0] = static_cast<char> (std::toupper (name[0]));
         const bool on = machine == chosen;
-        TextStyle words =
-          prompt_words ((on ? 1.0f : 0.5f) * opacity[one]);
+        TextStyle words = prompt_words ((on ? 1.0f : 0.5f) * opacity[one]);
         words.size = on ? 19.0f : 17.0f;
         draw_shaded (text,
                      0.5f * width,
@@ -2242,8 +2241,7 @@ namespace moppe {
       const points_t choose = keyed_width ("W/S", "Choose", words);
       const points_t take = keyed_width ("Space", "Take it", words);
       const points_t close = keyed_width ("Esc", "Close", words);
-      const points_t x =
-        0.5f * (width - choose - take - close - 2.0f * space);
+      const points_t x = 0.5f * (width - choose - take - close - 2.0f * space);
       const points_t baseline =
         top + (static_cast<float> (machine_count) + 2.5f) * line;
       draw_keyed (text, x, baseline, "W/S", "Choose", words, clear);
