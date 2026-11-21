@@ -247,7 +247,8 @@ build, test, and change the code; read this when working on a feature.
   scale, spot heights, and marks for the walker, bike, jeep, tractor,
   companion, camp, and trailhead (`moppe/game/map_sheet.*`).
 - The cheat menu: `` ` `` (the key under Esc), on foot or at a wheel,
-  lists every machine; `W`/`S` choose, `Space` or `F` puts the player
+  lists every machine by its silhouette and name over the view, play's
+  HUD put away; `W`/`S` choose, `Space` or `F` puts the player
   at its wheel wherever it stands (`take_over` in game_session.cc), and
   `Esc` or `` ` `` closes it (`Hud::draw_cheat_menu`). A
   `MOPPE_CONTROL_FILE` works it too: `` tap ` ``, `tap S`, `tap Space`.

@@ -2234,14 +2234,28 @@ namespace moppe {
         if (!name.empty ())
           name[0] = static_cast<char> (std::toupper (name[0]));
         const bool on = machine == chosen;
-        TextStyle words = prompt_words ((on ? 1.0f : 0.5f) * opacity[one]);
+        const opacity_t shown = (on ? 1.0f : 0.5f) * opacity[one];
+        TextStyle words = prompt_words (shown);
         words.size = on ? 19.0f : 17.0f;
-        draw_shaded (text,
-                     0.5f * width,
-                     top + (static_cast<float> (i) + 1.0f) * line,
-                     on ? "\u2014  " + name + "  \u2014" : name,
-                     words,
-                     TextAlign::Center);
+        // Each machine's silhouette, as its waymark shows it, in a column
+        // before its name.
+        const points_t baseline = top + (static_cast<float> (i) + 1.0f) * line;
+        const points_t icon_x = 0.5f * width - 62.0f * u::pt;
+        const points_t icon_y = baseline - 6.0f * u::pt;
+        const auto& shape = m_shape->vehicles[i];
+        place_shape (text,
+                     shape,
+                     icon_x,
+                     icon_y + 0.5f * u::pt,
+                     0.9f * u::pt,
+                     0.0f * u::rad,
+                     black,
+                     0.5f * shown,
+                     2.0f * u::pt);
+        place_shape (
+          text, shape, icon_x, icon_y, 0.9f * u::pt, 0.0f * u::rad, ink, shown);
+        draw_shaded (
+          text, icon_x + 22.0f * u::pt, baseline, name, words, TextAlign::Left);
       }
       constexpr opacity_t clear = 0.9f * opacity[one];
       const TextStyle words = prompt_words (clear);

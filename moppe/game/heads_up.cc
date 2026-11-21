@@ -996,6 +996,9 @@ namespace moppe::game {
             opacity[one],
           width,
           height);
+    } else if (visibility.game_hud && cheat_open) {
+      // The cheat menu stands alone over the view, play's HUD put away.
+      hud.draw_cheat_menu (dl, text, width, height, cheat_choice);
     } else if (visibility.game_hud) {
       HudState hud_state = hud_state_for (frame.hud);
       add_basket_readings (hud_state, w);
@@ -1018,8 +1021,6 @@ namespace moppe::game {
         draw_map (r, w, hud_width, hud_height);
       if (quit_asked)
         hud.draw_quit_question (dl, text, width, height);
-      else if (cheat_open)
-        hud.draw_cheat_menu (dl, text, width, height, cheat_choice);
     }
     hud.publish_offers ();
     text.translate (in_points (safe_insets.left), in_points (safe_insets.top));
