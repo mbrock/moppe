@@ -91,6 +91,56 @@ MOPPE_TEST (walker_walks_and_runs_on_the_ground_deterministically) {
   MOPPE_CHECK (again.stride_phase == walked.stride_phase);
 }
 
+MOPPE_TEST (walker_swims_at_the_surface_dives_and_walks_ashore) {
+  const auto surface = walker_test_ground (
+    [] (float x, float) { return std::max (0.0f, 12.0f - 0.4f * x); });
+  auto world = walker_test_world ();
+  world.water_level = 8.0f * u::m;
+  game::Walker walker;
+  walker.spawn (position (Vec3 (10, 8, 64)), aim (1, 0, 0));
+  walker.set_walk (sig (1));
+  const auto height_of = [] (const position_t& at) {
+    return position_value (at)[1] * u::m;
+  };
+  const auto swim = [&] (int ticks, float lift) {
+    for (int i = 0; i < ticks; ++i)
+      walker.update (seconds (walker_test_step),
+                     surface,
+                     world,
+                     nullptr,
+                     nullptr,
+                     0.0,
+                     sig (lift));
+  };
+  swim (120, 0);
+  MOPPE_CHECK (!walker.swimming ()); // still wading
+  swim (1440, 0);
+  MOPPE_CHECK (walker.swimming () && !walker.grounded ());
+  MOPPE_CHECK (height_of (walker.eye_position ()) > world.water_level);
+  const meters_t afloat = height_of (walker.position ());
+  swim (240, -1);
+  swim (120, 0);
+  const meters_t below = height_of (walker.position ());
+  MOPPE_CHECK (below < afloat - 2.0f * u::m);
+  const auto checkpoint = walker.state ();
+  walker = game::Walker ();
+  walker.restore (checkpoint);
+  swim (240, 0);
+  MOPPE_CHECK (abs (height_of (walker.position ()) - below) < 0.02f * u::m);
+  swim (960, -1);
+  MOPPE_CHECK_NEAR (meters_value (height_of (walker.position ())), 0.0f, 0.02f);
+  swim (960, 1);
+  MOPPE_CHECK (abs (height_of (walker.position ()) - afloat) < 0.03f * u::m);
+  // Turn and follow the rising bed out. Holding rise cannot launch a jump.
+  walker.turn_by (PI * u::rad);
+  for (int i = 0;
+       i < 7000 && height_of (walker.position ()) <= world.water_level;
+       ++i)
+    swim (1, 1);
+  MOPPE_CHECK (!walker.swimming () && walker.grounded ());
+  MOPPE_CHECK (height_of (walker.position ()) > world.water_level);
+}
+
 MOPPE_TEST (walker_slides_around_a_trunk_instead_of_sticking) {
   const map::SurfaceGeometry surface =
     walker_test_ground ([] (float, float) { return 5.0f; });
@@ -313,6 +363,32 @@ MOPPE_TEST (avatar_plants_its_stance_foot_while_walking) {
     length (position_value (after.ankle[1]) - position_value (after.knee[1])),
     meters_value (game::avatar_size::shin),
     1e-3f);
+}
+
+MOPPE_TEST (avatar_rolls_the_stance_foot_over_sloping_ground) {
+  game::WalkerPose walker;
+  walker.stride_speed = 3.0f * u::m / u::s;
+  walker.velocity = velocity (Vec3 (0, 0, 3));
+  walker.ground_normal = unit_direction (normalized (Vec3 (-0.12f, 1, -0.24f)));
+  const auto clearance = [&] (const position_t& point) {
+    return dot (direction_value (walker.ground_normal),
+                position_value (point)) *
+           u::m;
+  };
+  auto foot = [&] (float phase) {
+    walker.stride_phase = phase * proportion[one];
+    const auto pose = game::pose_avatar (walker, 0.0f * u::s);
+    const meters_t heel = clearance (pose.heel[0]),
+                   toe = clearance (pose.toe[0]);
+    // The rig markers are just inside the sandal. At least one end is
+    // down throughout stance and neither cuts through the hillside.
+    MOPPE_CHECK (std::min (heel, toe) >= 0.0f * u::m);
+    MOPPE_CHECK (std::min (heel, toe) < 0.02f * u::m);
+    return toe - heel;
+  };
+  MOPPE_CHECK (foot (0.0f) > 0.03f * u::m);         // heel strike
+  MOPPE_CHECK (abs (foot (0.20f)) < 0.001f * u::m); // sole flat to the hill
+  MOPPE_CHECK (foot (0.49f) < -0.06f * u::m);       // toe-off
 }
 
 MOPPE_TEST (walker_body_follows_the_look_at_a_body_s_pace) {

@@ -33,13 +33,14 @@ namespace moppe::game {
 
   void WalkScripts::stage (const ScriptStage& s) {
     stage_camp (s);
-    stage_fish (s);
+    stage_bank (s);
     stage_place (s);
   }
 
-  void WalkScripts::stage_fish (const ScriptStage& s) {
+  void WalkScripts::stage_bank (const ScriptStage& s) {
     const char* walk = moppe::environment ("MOPPE_WALK");
-    if (!walk || std::string_view (walk) != "fish" ||
+    const bool swim = walk && std::string_view (walk) == "swim";
+    if (!walk || (!swim && std::string_view (walk) != "fish") ||
         s.session.logic ().m_doing != Doing::on_foot ())
       return;
     const terrain::WaterSheets& sheets = s.ground.generated.water_surface ();
@@ -51,6 +52,7 @@ namespace moppe::game {
              u::m;
     };
     constexpr meters_t step = 4.0f * u::m;
+    const position_t near = swim ? s.session.boat ().position () : s.spawn;
     for (int ring = 0; ring < 160; ++ring) {
       const meters_t radius = step * ring;
       const int count =
@@ -59,28 +61,41 @@ namespace moppe::game {
                     (2.0f * PI * radius / step).numerical_value_in (one)));
       for (int k = 0; k < count; ++k) {
         const radians_t a = 2.0f * PI * k / count * u::rad;
-        position_t stand = position (position_value (s.spawn) +
+        position_t stand = position (position_value (near) +
                                      Vec3 (std::cos (radians_value (a)),
                                            0.0f,
                                            std::sin (radians_value (a))) *
                                        meters_value (radius));
-        if (depth_at (stand) > -0.3f * u::m)
+        const meters_t depth = depth_at (stand);
+        if (swim ? depth < 2.2f * u::m : depth > -0.3f * u::m)
           continue;
         for (int d = 0; d < 16; ++d) {
           const radians_t b = 2.0f * PI * d / 16 * u::rad;
           const direction_t out = unit_direction (Vec3 (
             std::cos (radians_value (b)), 0.0f, std::sin (radians_value (b))));
-          if (depth_at (position (position_value (stand) +
-                                  direction_value (out) * 4.5f)) <
-                0.5f * u::m ||
-              depth_at (position (position_value (stand) +
-                                  direction_value (out) * 8.0f)) < 0.8f * u::m)
+          // A short cast from dry ground, or room to dive and swim a
+          // few lengths starting beside the moorings.
+          const auto depth_out = [&] (meters_t distance) {
+            return depth_at (stand + quantity_cast<isq::position_vector> (
+                                       along (out, distance)));
+          };
+          if (swim ? depth_out (15.0f * u::m) < 4.8f * u::m ||
+                       depth_out (36.0f * u::m) < 4.8f * u::m
+                   : depth_out (4.5f * u::m) < 0.5f * u::m ||
+                       depth_out (8.0f * u::m) < 0.8f * u::m)
             continue;
           stand = terrain::at_elevation (
             plan (stand), s.ground.elevation (plan (stand)) + 0.1f * u::m);
+          if (swim) {
+            stand = at_height (
+              plan (stand),
+              water_surface_at (
+                s.ground.world, s.ground.surface (), &sheets, stand, 0.0) -
+                1.45f * u::m);
+          }
           s.session.walker ().spawn (stand, out);
           s.session.logic ().m_fp_eye = s.session.walker ().eye_position ();
-          std::cerr << "moppe: fish script: a bank "
+          std::cerr << "moppe: " << walk << " script: a bank "
                     << length (position_value (stand) -
                                position_value (s.spawn))
                     << " m from the spawn" << std::endl;
@@ -88,7 +103,7 @@ namespace moppe::game {
         }
       }
     }
-    std::cerr << "moppe: fish script: no open water near the spawn\n";
+    std::cerr << "moppe: " << walk << " script: no open water near the spawn\n";
   }
 
   void WalkScripts::stage_place (const ScriptStage& s) {
@@ -486,6 +501,12 @@ namespace moppe::game {
     }
     if (script == "camp")
       return camp (s, interval);
+    if (script == "swim") {
+      input.drive = t > 1.5f * u::s && t < 21.0f * u::s ? ahead : still;
+      input.run = t > 9.0f * u::s && t < 11.3f * u::s;
+      input.boost = t > 17.0f * u::s && t < 20.0f * u::s ? held : let_go;
+      return input;
+    }
     if (script == "fish") {
       // Cast, strike at the take, and cast again; with two fish in
       // the creel, turn from the water, light a fire, fry one, and eat.

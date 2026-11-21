@@ -443,7 +443,10 @@ namespace moppe::game {
     switch (w.session.logic ().m_doing.way) {
     case Doing::Way::foot:
       if (!camp.resting) {
-        state.thumb = "Jump";
+        state.swimming = w.session.walker ().swimming ();
+        state.submerged =
+          w.session.walker ().state ().swim == Walker::Swim::submerged;
+        state.thumb = state.swimming ? "Swim up" : "Jump";
       }
       break;
     case Doing::Way::glider:

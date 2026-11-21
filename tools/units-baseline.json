@@ -44,18 +44,18 @@
     "Game logic": {
       "share": 82.4,
       "files": 47,
-      "typed": 1814,
+      "typed": 1820,
       "raw_float": 221,
       "raw_vector": 167,
       "escapes": 970
     },
     "HUD & map": {
-      "share": 81.0,
+      "share": 81.1,
       "files": 8,
-      "typed": 675,
-      "raw_float": 140,
+      "typed": 688,
+      "raw_float": 142,
       "raw_vector": 18,
-      "escapes": 217
+      "escapes": 219
     },
     "Places & camp": {
       "share": 91.4,
@@ -92,7 +92,7 @@
     "Roads & trails": {
       "share": 82.0,
       "files": 10,
-      "typed": 1008,
+      "typed": 1009,
       "raw_float": 164,
       "raw_vector": 58,
       "escapes": 120
@@ -106,20 +106,20 @@
       "escapes": 200
     },
     "Tests": {
-      "share": 37.3,
+      "share": 37.6,
       "files": 83,
-      "typed": 586,
-      "raw_float": 789,
+      "typed": 593,
+      "raw_float": 792,
       "raw_vector": 194,
-      "escapes": 1356
+      "escapes": 1360
     },
     "Vehicles & on-foot body": {
-      "share": 76.9,
+      "share": 77.3,
       "files": 47,
-      "typed": 2146,
-      "raw_float": 223,
-      "raw_vector": 420,
-      "escapes": 632
+      "typed": 2171,
+      "raw_float": 217,
+      "raw_vector": 421,
+      "escapes": 647
     }
   }
 }

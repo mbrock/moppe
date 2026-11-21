@@ -1545,7 +1545,8 @@ namespace moppe::game {
                                 world,
                                 trunks,
                                 water,
-                                seconds_into_play (logic.m_total_time));
+                                seconds_into_play (logic.m_total_time),
+                                logic.m_controls.lift);
     // The jeep stands braked wherever its driver left it.
     mov::Car& jeep = session.jeep ();
     jeep.set_trunks (trunks);

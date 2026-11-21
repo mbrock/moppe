@@ -44,6 +44,7 @@ namespace moppe {
       constexpr const char* mount_key = "B";
       constexpr const char* restart_key = "A";
       constexpr const char* ride_key = "Y";
+      constexpr const char* dive_key = "LT";
       constexpr const char* hammock_key = "LB";
       constexpr const char* fire_key = "RB";
       constexpr const char* map_key = "";
@@ -52,6 +53,7 @@ namespace moppe {
       constexpr const char* mount_key = "";
       constexpr const char* restart_key = "";
       constexpr const char* ride_key = "";
+      constexpr const char* dive_key = "";
       constexpr const char* hammock_key = "";
       constexpr const char* fire_key = "";
       constexpr const char* map_key = "";
@@ -60,6 +62,7 @@ namespace moppe {
       constexpr const char* mount_key = "F";
       constexpr const char* restart_key = "R";
       constexpr const char* ride_key = "Space";
+      constexpr const char* dive_key = "Shift";
       constexpr const char* hammock_key = "R";
       constexpr const char* fire_key = "T";
       constexpr const char* map_key = "M";
@@ -1905,6 +1908,9 @@ namespace moppe {
           }
         key = keyed;
         action = *keyed ? st.prompt_keyed : st.prompt_unkeyed;
+      } else if (st.swimming && *ride_key) {
+        key = st.submerged ? ride_key : dive_key;
+        action = st.submerged ? "Swim up" : "Dive";
       } else if (st.thumb_hint && st.thumb && *ride_key) {
         key = ride_key;
         action = st.thumb;
@@ -1918,6 +1924,8 @@ namespace moppe {
         offer ("Space", st.thumb);
       if (st.flying)
         offer ("Shift", "Descend");
+      if (st.swimming)
+        offer ("Shift", "Dive");
       if (st.skids)
         offer ("Shift", "Skid");
       if (st.wheelies)

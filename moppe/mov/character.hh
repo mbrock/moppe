@@ -13,6 +13,7 @@ namespace moppe::mov {
   struct CharacterIntent {
     velocity_t wish_velocity {};
     bool jump = false;
+    bool swimming = false; // seek the whole velocity, without gravity
   };
 
   // A person-sized kinematic capsule moved with Box3D's mover planes. The

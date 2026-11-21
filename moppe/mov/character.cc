@@ -241,7 +241,14 @@ namespace moppe::mov {
       quantity_cast<isq::length> (s.step_offset * decay (step_ease, dt));
 
     velocity_t wish = horizontal (intent.wish_velocity);
-    if (s.grounded) {
+    if (intent.swimming) {
+      // The water carries the body in all three axes. Keep the same
+      // sweep and support probe below, including contact with the bed.
+      s.grounded = false;
+      s.jump_buffer = s.coyote = s.airborne_time = 0.0f * u::s;
+      s.step_offset = 0.0f * u::m;
+      v = approach (v, intent.wish_velocity, 9.0f * u::m / pow<2> (u::s) * dt);
+    } else if (s.grounded) {
       // Climbing costs pace: up a slope at the walkable limit a body makes
       // a little over half its level speed.
       const direction_t downhill = horizontal (s.ground_normal);

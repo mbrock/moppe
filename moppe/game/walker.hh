@@ -21,8 +21,8 @@ namespace moppe {
     // walk played quickly.
     inline meters_t stride_cycle_length (speed_t speed) {
       constexpr speed_t still = 0.0f * (u::m / u::s);
-      return 1.3f * u::m + 0.27f * u::s * speed +
-             0.14f * u::s * std::max (still, speed - 3.6f * (u::m / u::s));
+      return 1.10f * u::m + 0.23f * u::s * speed +
+             0.19f * u::s * std::max (still, speed - 3.6f * (u::m / u::s));
     }
 
     // Turning on the spot, each gait cycle swings the body round this
@@ -99,6 +99,7 @@ namespace moppe {
       static constexpr speed_t wade_speed = 2.0f * u::m / u::s; // knee deep
       static constexpr meters_t eye_height = 1.62f * u::m;
 
+      enum class Swim { none, surface, submerged };
       struct State {
         mov::Character::State body {};
         direction_t heading = unit_direction (Vec3 (0, 0, 1));
@@ -120,6 +121,7 @@ namespace moppe {
         radians_per_second_t turn_speed {};
         bool turning {};
         radians_t lag {};
+        Swim swim = Swim::none;
       };
 
       Walker ();
@@ -173,7 +175,8 @@ namespace moppe {
                    const WorldParams& world,
                    const mov::TrunkField* trunks = nullptr,
                    const terrain::WaterSheets* water = nullptr,
-                   double time = 0.0);
+                   double time = 0.0,
+                   control_signal_t swim_lift = {});
 
       position_t position () const {
         return m_body.position ();
@@ -199,7 +202,10 @@ namespace moppe {
         return m_turn_speed;
       }
       bool grounded () const {
-        return m_body.grounded ();
+        return !swimming () && m_body.grounded ();
+      }
+      bool swimming () const {
+        return m_swim != Swim::none;
       }
       proportion_t stride_phase () const {
         return m_phase;
@@ -223,6 +229,7 @@ namespace moppe {
       radians_per_second_t m_turn_speed {};
       bool m_turning = false;
       radians_t m_lag {};
+      Swim m_swim = Swim::none;
       position_t m_tether;
       meters_t m_tether_shortest {};
       meters_t m_tether_longest {};

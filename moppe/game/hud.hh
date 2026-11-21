@@ -86,6 +86,8 @@ namespace moppe {
       const char* prompt_unkeyed = nullptr;
       // Flying it: whether it is low and slow enough to step out.
       bool flying = false;
+      bool swimming = false;
+      bool submerged = false;
       bool can_step_out = false;
       // Riding a bike, whose rear brake Shift stamps on.
       bool skids = false;

@@ -17,7 +17,7 @@ namespace moppe::game {
     // the walk's side view, that to the ride camera, and that to the
     // animal camera.
     rest (session, ground);
-    walk_side (session);
+    walk_side (session, ground);
     ride (session, ground, interval);
     follow_animal (session, ground, interval);
   }
@@ -92,7 +92,8 @@ namespace moppe::game {
     camera_place (camera, at, at + camera_shift (along (gaze, 10.0f * u::m)));
   }
 
-  void CaptureCameras::walk_side (GameSession& session) {
+  void CaptureCameras::walk_side (GameSession& session,
+                                  const WorldGround& ground) {
     static const bool side = [] {
       const char* view = moppe::environment ("MOPPE_WALK_CAMERA");
       return view && std::string_view (view) == "side";
@@ -104,6 +105,28 @@ namespace moppe::game {
     const direction_t right = camera_right (heading);
     const position_t at =
       position (position_value (walker.position ()) + Vec3 (0, 0.9f, 0));
+    if (walker.swimming ()) {
+      // Above the stroke while afloat, below it looking back toward the
+      // light once the swimmer dives, clear of the bed in the shallows.
+      const meters_t below = still_water_at (ground.world,
+                                             ground.surface (),
+                                             &ground.generated.water_surface (),
+                                             at) -
+                             position_value (at)[1] * u::m;
+      const meters_t lift =
+        1.25f * u::m -
+        2.65f * u::m * smoothstep (0.8f, 2.8f, meters_value (below));
+      position_t eye = at + camera_shift (along (right, 2.45f * u::m) +
+                                          along (heading, 0.85f * u::m));
+      eye = at_height (plan (eye),
+                       std::max (position_value (at)[1] * u::m + lift,
+                                 terrain::surface_elevation_value (
+                                   ground.elevation (plan (eye))) *
+                                     u::m +
+                                   0.25f * u::m));
+      camera_place (session.camera (), eye, at);
+      return;
+    }
     camera_place (session.camera (),
                   at + camera_shift (along (right, 4.0f * u::m)) +
                     camera_shift (displacement (Vec3 (0, 0.25f, 0))),

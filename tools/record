@@ -28,6 +28,7 @@
 #             the autopilot on the mountainbike   (MOPPE_DEMO=mountain_bike)
 #   long_john the autopilot on the Long John       (MOPPE_DEMO=long_john)
 #   walk      a walk, a run, and two jumps             (MOPPE_WALK=tour)
+#   swim      tread water, swim out, dive and resurface (MOPPE_WALK=swim)
 #   turn      looking round standing, stepping round, a quick spin, and
 #             sharp turns walking and running          (MOPPE_WALK=turn)
 #   forage    picking mushrooms                        (MOPPE_WALK=forage)
@@ -176,6 +177,7 @@ case $scene in
   mountain_bike) stage MOPPE_DEMO=mountain_bike; : "${seconds:=20}" ;;
   long_john) stage MOPPE_DEMO=long_john; : "${seconds:=20}" ;;
   walk) stage MOPPE_WALK=tour MOPPE_WALK_CAMERA=chase; : "${seconds:=16}" ;;
+  swim) stage MOPPE_WALK=swim MOPPE_WALK_CAMERA=side; : "${seconds:=23}" ;;
   turn) stage MOPPE_WALK=turn MOPPE_WALK_CAMERA=chase; : "${seconds:=20}" ;;
   forage) stage MOPPE_WALK=forage; : "${seconds:=25}" ;;
   animals) stage MOPPE_WALK=animals MOPPE_ANIMAL_CAMERA=6; : "${seconds:=36}" ;;
@@ -240,7 +242,7 @@ if [[ -z $window && $(uname) == Linux && -n $gpu ]] &&
 then
   # gamescope and the X server it starts say a good deal; the game's own
   # lines are the ones that matter.
-  said='^moppe: \(video\|camp\|walk\|the day\|multiplayer\|boat\|jet ski\|fish\)\|[Ee]rror\|what()'
+  said='^moppe: \(video\|camp\|walk\|the day\|multiplayer\|boat\|jet ski\|fish\|swim\)\|[Ee]rror\|what()'
   gamescope -W "$width" -H "$height" -w "$width" -h "$height" \
     --backend headless -- "$game" --fullscreen "$@" 2>&1 |
     grep --line-buffered "$said" >&2 || true

@@ -82,11 +82,10 @@ namespace moppe {
           m_facing (unit_direction (Vec3 (0, 0, 1))) {}
 
     Walker::State Walker::state () const {
-      return {
-        m_body.state (), m_heading,      m_turn,  m_walk,         m_strafe,
-        m_run,           m_jump_request, m_phase, m_stride_speed, m_facing,
-        m_turn_speed,    m_turning,      m_lag
-      };
+      return { m_body.state (), m_heading, m_turn,         m_walk,
+               m_strafe,        m_run,     m_jump_request, m_phase,
+               m_stride_speed,  m_facing,  m_turn_speed,   m_turning,
+               m_lag,           m_swim };
     }
 
     void Walker::restore (const State& state) {
@@ -103,6 +102,7 @@ namespace moppe {
       m_turn_speed = state.turn_speed;
       m_turning = state.turning;
       m_lag = state.lag;
+      m_swim = state.swim;
     }
 
     void Walker::turn_by (radians_t angle) {
@@ -127,6 +127,7 @@ namespace moppe {
       m_walk = {};
       m_strafe = {};
       m_jump_request = false;
+      m_swim = Swim::none;
       m_phase = {};
       m_stride_speed = 0 * u::m / u::s;
     }
@@ -143,7 +144,8 @@ namespace moppe {
                          const WorldParams& world,
                          const mov::TrunkField* trunks,
                          const terrain::WaterSheets* water,
-                         double time) {
+                         double time,
+                         control_signal_t swim_lift) {
       if (abs (m_turn) > 0.01f * control_signal[one]) {
         const radians_per_second_t rate =
           -m_turn.numerical_value_in (one) * 2.4f * u::rad / u::s;
@@ -156,8 +158,18 @@ namespace moppe {
       const meters_t depth =
         water_surface_at (world, surface, water, feet, time) -
         position_value (feet)[1] * u::m;
+      // Strike out at chest depth; stand again when the bed takes the
+      // feet in shallower water. A passing trough is not a shore.
+      constexpr meters_t waterline = 1.28f * u::m;
+      if (!swimming () && depth >= 1.38f * u::m)
+        m_swim = Swim::surface;
+      else if (depth <= 0.0f * u::m ||
+               (m_body.grounded () && depth < 1.16f * u::m))
+        m_swim = Swim::none;
       const speed_t speed =
-        std::min (m_run ? run_speed : walk_speed, wading_speed (depth));
+        swimming ()
+          ? 1.85f * u::m / u::s
+          : std::min (m_run ? run_speed : walk_speed, wading_speed (depth));
 
       const Vec3& ahead = direction_value (m_heading);
       const direction_t right =
@@ -183,7 +195,8 @@ namespace moppe {
         const Vec3& flow = velocity_value (current);
         wish += moppe::velocity (
           Vec3 (flow[0], 0.0f, flow[2]) *
-          (0.6f * std::min (1.0f, meters_value (depth) - 0.15f)));
+          (swimming () ? 1.0f
+                       : 0.6f * std::min (1.0f, meters_value (depth) - 0.15f)));
       }
 
       // On the rope, what would take the walker further out, or in
@@ -214,7 +227,22 @@ namespace moppe {
         m_tethered = false;
       }
 
-      m_body.step (dt, { wish, m_jump_request }, surface, trunks);
+      if (swimming ()) {
+        if (swim_lift < -0.1f * control_signal[one])
+          m_swim = Swim::submerged;
+        else if (depth <= waterline + 0.08f * u::m)
+          m_swim = Swim::surface;
+        // Tread at the moving waterline. Once deliberately submerged,
+        // neutral holds depth and the rise control brings the head up.
+        const speed_t lift =
+          m_swim == Swim::surface
+            ? std::clamp ((depth - waterline) * 7.0f / u::s,
+                          -2.0f * u::m / u::s,
+                          2.0f * u::m / u::s)
+            : swim_lift.numerical_value_in (one) * 1.4f * u::m / u::s;
+        velocity_value (wish)[1] = speed_value (lift);
+      }
+      m_body.step (dt, { wish, m_jump_request, swimming () }, surface, trunks);
       m_jump_request = false;
 
       // The stride counts only ground the feet actually covered: pressed
@@ -269,11 +297,21 @@ namespace moppe {
       m_turn_speed = turned / dt;
       m_lag = aside - turned;
 
-      if (grounded ()) {
-        m_stride_speed = step_speed;
-        m_phase +=
-          (dt * gait_rate (step_speed, m_turn_speed)).numerical_value_in (one) *
-          proportion[one];
+      if (grounded () || swimming ()) {
+        if (swimming ()) {
+          // Ease from sculling upright to a full stroke, independent of
+          // the current: a drifting swimmer need not stroke at all.
+          const speed_t change = 5.0f * u::m / pow<2> (u::s) * dt;
+          m_stride_speed += std::clamp (
+            amount.numerical_value_in (one) * speed - m_stride_speed,
+            -change,
+            change);
+        } else
+          m_stride_speed = step_speed;
+        const per_second_t rate =
+          swimming () ? (0.46f + 0.46f * amount.numerical_value_in (one)) / u::s
+                      : gait_rate (step_speed, m_turn_speed);
+        m_phase += (dt * rate).numerical_value_in (one) * proportion[one];
         m_phase -=
           std::floor (m_phase.numerical_value_in (one)) * proportion[one];
       }
@@ -294,6 +332,10 @@ namespace moppe {
     }
 
     position_t Walker::eye_position () const {
+      if (swimming ())
+        return moppe::position (position_value (position ()) +
+                                direction_value (m_facing) * 0.45f +
+                                Vec3 (0, 1.46f, 0));
       const mov::Character::State body = m_body.state ();
       // A subtle bob, lowest as each foot strikes: a centimetre or two at
       // a walk, a little more at a run, nothing standing or in the air.

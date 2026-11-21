@@ -26,6 +26,7 @@ namespace moppe::game {
     constexpr std::uint8_t glider_carries_bike = 1 << 4;
     constexpr std::uint8_t walker_grounded = 1 << 5;
     constexpr std::uint8_t has_pan = 1 << 6;
+    constexpr std::uint8_t walker_swimming = 1 << 7;
 
     // What the player is doing, one byte on the wire: the bike, on
     // foot, the glider, the jeep, riding along in the jeep, then the
@@ -667,6 +668,8 @@ namespace moppe::game {
       flags |= has_walker;
     if (snapshot.walker && snapshot.walker->grounded)
       flags |= walker_grounded;
+    if (snapshot.walker && snapshot.walker->swimming)
+      flags |= walker_swimming;
     if (snapshot.hung)
       flags |= is_hung;
     if (snapshot.hearth_laid)
@@ -784,6 +787,7 @@ namespace moppe::game {
       walker.look_aside = in.number () * u::rad;
       walker.turn_speed = in.number () * u::rad / u::s;
       walker.grounded = (flags & walker_grounded) != 0;
+      walker.swimming = (flags & walker_swimming) != 0;
       snapshot.walker = walker;
     }
     if (flags & is_hung) {

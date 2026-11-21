@@ -205,6 +205,7 @@ namespace moppe::game {
     proportion_t stride_phase = 0.0f * proportion[one];
     speed_t stride_speed = 0.0f * u::m / u::s;
     bool grounded = true;
+    bool swimming = false;
     seconds_t airborne = 0.0f * u::s;
     // Up positive.
     speed_t vertical_speed = 0.0f * u::m / u::s;

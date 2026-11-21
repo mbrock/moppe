@@ -233,7 +233,8 @@ namespace moppe::game {
       list.push_back ({ .verb = Verb::let_go_rope,
                         .button = Button::mount,
                         .machine = *held });
-    if (around)
+    if (around &&
+        !(logic.m_doing == Doing::on_foot () && session.walker ().swimming ()))
       affording::by_hand (list, session, *around);
     affording::with_machines (list, session, terrain, around);
     return list;

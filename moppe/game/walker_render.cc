@@ -285,7 +285,8 @@ namespace moppe::game {
                       Outfit outfit) {
     const AvatarSkeleton k = pose_avatar (walker, time);
     figure::draw (draw, k, outfit);
-    draw_basket (draw, basket_frame (k), basket);
+    if (!walker.swimming)
+      draw_basket (draw, basket_frame (k), basket);
     if (walker.rope_end)
       draw_rope (draw,
                  k.wrist[1] +
@@ -301,6 +302,8 @@ namespace moppe::game {
                       const WalkerPose& walker,
                       seconds_t time,
                       std::span<const MushroomSite> basket) {
+    if (walker.swimming)
+      return;
     const AvatarSkeleton k = pose_avatar (walker, time);
     draw_basket (draw, basket_frame (k), basket);
     if (walker.rod)

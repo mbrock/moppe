@@ -32,6 +32,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.sequence = 99;
   sent.walker->heading = unit_direction (Vec3 (1, 0, 0));
   sent.walker->grounded = false;
+  sent.walker->swimming = true;
   sent.walker->look_pitch = -0.3f * inclination[u::rad];
   sent.fleet.bike.wheel_spin = 123.0f * u::rad;
   sent.hung = true;
@@ -76,6 +77,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (position_value (got->walker->position)[0], 12.5f, 1e-6f);
   MOPPE_CHECK_NEAR (direction_value (got->walker->heading)[0], 1.0f, 1e-6f);
   MOPPE_CHECK (!got->walker->grounded);
+  MOPPE_CHECK (got->walker->swimming);
   MOPPE_CHECK_NEAR (
     got->walker->look_pitch.numerical_value_in (u::rad), -0.3f, 1e-6f);
   MOPPE_CHECK_NEAR (radians_value (got->fleet.bike.wheel_spin), 123.0f, 1e-6f);

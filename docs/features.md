@@ -26,10 +26,18 @@ build, test, and change the code; read this when working on a feature.
   chest twist toward the look, and beyond some seventy degrees the feet
   step round on the spot after it (a fast spin keeps stepping the way
   it went); under way the body turns at a bounded rate and banks into
-  the turn. The walk bobs, sways, and counter-rotates; the run is its
-  own cycle, with a flight phase, a longer stride, a high knee and heel
-  kick, a deeper lean, and bent arms pumping. The other player sees the
-  same (companion wire version 10).
+  the turn. Walking, the sandals roll from heel to toe along the slope;
+  running, the heel folds up early and the foot comes back under the body
+  to land. The free arm pumps while the left hand steadies the basket;
+  a jump keeps the lead leg from takeoff. The other player sees the same.
+- Walk into chest-deep water and the hiker starts swimming. Move as on
+  foot for a front crawl, or stop to tread water. Hold `Shift` to dive;
+  release it to swim level underwater. Hold `Space` to rise (on a
+  controller, left trigger dives and right trigger rises). At the
+  surface the swimmer follows the waves; in a river the current carries
+  them. Swim into the shallows to stand again. `tools/record OUT.mp4 swim`
+  follows the swimmer from beside the bank, down and back up;
+  `MOPPE_WALK_CAMERA=eyes` records the same swim in first person.
 - The following camera (`game/chase_camera.*`, placed for each way of
   getting about by `GameSession::camera_rig`) is a boom swung about a
   point on the subject. Looking up lowers it below the subject and in

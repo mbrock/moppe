@@ -82,7 +82,7 @@ namespace moppe::game {
 
     // MOPPE_WALK_CAMERA=side: a camera locked beside the walking figure,
     // so the gait can be judged against the ground passing beneath it.
-    void walk_side (GameSession& session);
+    void walk_side (GameSession& session, const WorldGround& ground);
 
     // MOPPE_ANIMAL_CAMERA=<metres>, with MOPPE_WALK=animals[:SPECIES]: a
     // camera that far from the animal the walk began by, square to the
@@ -155,7 +155,7 @@ namespace moppe::game {
     step (const ScriptStage& s, std::string_view script, seconds_t interval);
 
   private:
-    void stage_fish (const ScriptStage& s);
+    void stage_bank (const ScriptStage& s);
     void stage_place (const ScriptStage& s);
     void stage_camp (const ScriptStage& s);
 

@@ -501,7 +501,8 @@ namespace moppe::game {
 
   std::optional<Angler> angler (const GameSession& session) {
     const GameLogicState& logic = session.logic ();
-    if (logic.m_doing == Doing::on_foot () && !logic.m_camp.resting) {
+    if (logic.m_doing == Doing::on_foot () && !logic.m_camp.resting &&
+        !session.walker ().swimming ()) {
       const Walker& walker = session.walker ();
       return Angler { walker.position (), walker.heading () };
     }
