@@ -207,6 +207,10 @@ namespace moppe {
       bool swimming () const {
         return m_swim != Swim::none;
       }
+      // Swimming under the surface rather than on it.
+      bool submerged () const {
+        return m_swim == Swim::submerged;
+      }
       proportion_t stride_phase () const {
         return m_phase;
       }

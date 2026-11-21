@@ -160,6 +160,22 @@ namespace moppe {
         platform::say ("Ouchies. That hurts.");
 
       m_capture_camera.override_camera (session (), world_ground (), dt);
+      // Whichever camera is in use keeps to the subject's side of the
+      // water, under it with a diver and over it otherwise.
+      const position_t eye = session ().camera ().position ();
+      const meters_t water =
+        water_surface_at (world (),
+                          surface (),
+                          &generated_world ().water_surface (),
+                          eye,
+                          seconds_into_play (logic ().m_total_time));
+      if (water > terrain::surface_elevation_value (
+                    world_ground ().elevation (plan (eye))) *
+                    u::m)
+        session ().camera ().hold_off_water (
+          water,
+          logic ().m_doing == Doing::on_foot () &&
+            session ().walker ().submerged ());
 
       update_frame_flare ();
     }

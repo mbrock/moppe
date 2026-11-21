@@ -82,7 +82,9 @@ namespace moppe::game {
 
     // MOPPE_WALK_CAMERA=side: a camera locked beside the walking figure,
     // so the gait can be judged against the ground passing beneath it.
-    void walk_side (GameSession& session, const WorldGround& ground);
+    void walk_side (GameSession& session,
+                    const WorldGround& ground,
+                    seconds_t interval);
 
     // MOPPE_ANIMAL_CAMERA=<metres>, with MOPPE_WALK=animals[:SPECIES]: a
     // camera that far from the animal the walk began by, square to the
@@ -111,6 +113,9 @@ namespace moppe::game {
                     std::string_view view,
                     seconds_t interval);
 
+    // The side camera's height over a swimmer, eased between afloat and
+    // under.
+    meters_t swim_lift = 1.25f * u::m;
     // The animal camera's subject, its side of it, and its eased aim.
     std::optional<std::size_t> watched;
     direction_t watch_side = unit_direction (Vec3 (1, 0, 0));

@@ -120,6 +120,17 @@ namespace moppe {
 
       // Directly position the camera (first-person mode bypasses the
       // chase smoothing entirely).
+      // Keeps the eye off the water's surface at `level`, under it with
+      // `below` and over it otherwise, so the lens is never half in.
+      void hold_off_water (meters_t level, bool below) {
+        constexpr meters_t clear = 0.35f * u::m;
+        Vec3 view = position_value (m_view);
+        const float y = view[1];
+        view[1] = below ? std::min (y, meters_value (level - clear))
+                        : std::max (y, meters_value (level + clear));
+        m_view = moppe::position (view);
+      }
+
       void place (position_t eye, position_t target) {
         m_position = eye;
         m_view = m_position;
