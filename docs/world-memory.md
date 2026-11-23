@@ -90,8 +90,9 @@ still determines each tree's LOD variation.
 | Far shadow classification | 1,169,856 | 359,360 |
 | Total including prefix and scatter | 3,509,568 | 791,872 |
 
-This view used 47× fewer camera classification lanes, 8.9× fewer
-classification lanes overall, and 4.4× fewer total dispatched threads.
+This 1,500-frame trailhead sample used 47× fewer camera classification
+lanes, 8.9× fewer classification lanes overall, and 4.4× fewer total
+dispatched threads.
 Counts include partially filled 64-lane workgroups. View, shadow direction
 and population change these counts.
 
@@ -106,8 +107,8 @@ antialiasing can change individual pixels.
 
 As a separate culling check, the same fixed-time ride was captured with
 normal selection and with every tile offered to the GPU. Mean absolute RGB
-difference was 0.59 on an 8-bit scale, with 99% of channel differences at
-most 5. A scalar test also checks every intersecting tree in periodic camera
+difference was 0.71 on an 8-bit scale, with 99% of channel differences at
+most 6. A scalar test also checks every intersecting tree in periodic camera
 and near/far shadow views, including two-axis wraps and tiles containing
 multiple workgroups. The compact water, sparse normals, cover quantization
 and odd-size area filter have numerical fixtures.

@@ -14,9 +14,19 @@ are process peaks from macOS `/usr/bin/time -l`, in GiB.
 
 | Backend | Evolution (s) | Whole benchmark (s) | Peak RSS | Peak footprint |
 |---|---:|---:|---:|---:|
+| CPU reference, current lake solver | 1424.24 | 1425.25 | 5.10 | 5.43 |
 | CPU reference, original lake solver | 2147.89 | 2148.83 | 4.82 | 5.45 |
 | Metal, 4096² throughout | 7.08 | 7.73 | 1.69 | 2.69 |
 | Metal, 512² → 1024² → 2048² → 4096² | 1.90 | 2.64 | 2.01 | 3.01 |
+
+The optimized CPU reference took 23 min 44 s. Its 64 MiB elevation grid
+was byte-identical to the original lake solver (FNV-1a
+`ec09fe78b1b5da29`). The original run took 35 min 48 s. The optimized
+reference ran alongside builds and renderer captures for part of its run.
+An isolated GPU repeat took 7.13 s for full Metal and 1.86 s for multigrid
+(7.83 and 2.55 s for the whole processes). Both repeats reproduced the
+height grids used in the figure. The full Metal solve was about 200× faster
+than the optimized CPU reference.
 
 | Measure at 4096² | CPU | Metal | Metal multigrid |
 |---|---:|---:|---:|
@@ -29,7 +39,8 @@ are process peaks from macOS `/usr/bin/time -l`, in GiB.
 | Coastal mouths draining ≥0.1 km² | 13 | 15 | 10 |
 
 Both Metal runs accounted for the entire drainage area at the outlets.
-Material balance errors were 5,062 and 4,186 m³ respectively, below
+The CPU material balance discrepancy was −0.015 m³. The Metal errors
+were 5,062 and 4,186 m³ respectively, below
 0.00004% of the approximately 13.56 billion m³ of uplift in each run.
 
 **Full-resolution Metal is the macOS default.** It closely follows the
@@ -41,14 +52,22 @@ seed. The same lighting, scale and 1.25 km detail area are shown below.
 
 ![10 km hillshades with matched detail windows for CPU, Metal and multigrid](orogeny-10km.png)
 
-In the native game with an empty cache, the full-resolution Metal default
-took **8.06 s for orogeny and 90.57 s to play**. Peak process RSS was
-4.01 GiB and peak physical footprint was 8.84 GiB, including the renderer.
-It built 18 places, 23 roads, a 13.46 km bus circuit with 16 stops and three
-buses. All 9,348 road profile samples met the grade limit. Computing the
-road-planning inputs before forming the roads avoids painting watercourses
-and material sheets twice. The game still builds ecology, roads and places,
-writes the complete cache and activates the renderer after erosion.
+An isolated native game with an empty cache took **7.07 s for orogeny and
+75.50 s to play** at 1280×720. Peak process RSS was 5.50 GiB and peak
+physical footprint was 10.22 GiB, including the renderer. A separate run
+alongside the CPU benchmark took 90.57 s to play, with 4.01 GiB peak RSS
+and 8.84 GiB peak footprint. Reloading the finished full-resolution world
+with its normal opening took **17.40 s**.
+
+The isolated cold run saved land at 20.0 s after process launch, finished
+road formation at 35.2 s, and completed vegetation, forest planting and
+guardrails by 59.5 s. The finished cache was on disk at 70.9 s. Placement,
+uploads, the HUD map and runtime handoff brought the game to its first
+playable frame. Computing the road-planning inputs before forming the roads
+avoids painting watercourses and material sheets twice.
+
+This world had 18 places, 23 roads and a 13.46 km bus circuit with 16 stops
+and three buses. All 9,348 road profile samples met the grade limit.
 [Play-time memory measurements](world-memory.md) cover repeated launches.
 
 In an earlier 1280×720 run with an empty cache, 4096² multigrid spent
