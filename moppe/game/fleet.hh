@@ -41,6 +41,7 @@ namespace moppe::game {
                                const B& c,
                                position_t at,
                                displacement_t local,
+                               plan_displacement_t offset,
                                impulse_t blow,
                                bool yes,
                                const mov::TrunkField* trunks) {
@@ -51,6 +52,7 @@ namespace moppe::game {
     { c.point (local) } -> std::same_as<position_t>;
     { c.mass () } -> std::convertible_to<kilograms_t>;
     b.push (at, blow);
+    b.shift (offset);
     b.set_parked (yes);
     b.set_trunks (trunks);
     b.restore (c.state ());

@@ -1432,6 +1432,48 @@ namespace moppe::game {
           DisplayColor (0.60f, 0.52f, 0.40f));
       }
     }
+
+    // The world tiles every period: a parked machine left behind in
+    // another copy is moved into the copy nearest the subject once it
+    // falls well past half a world away, so crossing a seam -- by bus,
+    // on foot, or in another machine -- still finds it where the map
+    // says it stands. The margin past half a period keeps one near the
+    // far side from hopping back and forth.
+    void recenter_fleet (GameSession& session,
+                         const map::SurfaceGeometry& surface) {
+      const meters_t period_x = surface.domain ().period_x ();
+      const meters_t period_z = surface.domain ().period_z ();
+      if (!(period_x > 0.0f * u::m) && !(period_z > 0.0f * u::m))
+        return;
+      const GameLogicState& logic = session.logic ();
+      const std::optional<Machine> driven = driven_machine (logic.m_doing);
+      const Vec3& subject = position_value (session.subject_position ());
+      for_each_machine (session.fleet (), [&] (Machine m, Drivable auto& b) {
+        if (driven == m)
+          return;
+        if (logic.m_haul.active && logic.m_haul.machine == m)
+          return;
+        if (logic.m_sling.hooked && logic.m_sling.load == m)
+          return;
+        const Vec3& at = position_value (b.position ());
+        const meters_t dx = (subject[0] - at[0]) * u::m;
+        const meters_t dz = (subject[2] - at[2]) * u::m;
+        const meters_t sx =
+          period_x > 0.0f * u::m && abs (dx) > 0.55f * period_x
+            ? terrain::whole_periods (meters_value (dx),
+                                      meters_value (period_x)) *
+                u::m
+            : 0.0f * u::m;
+        const meters_t sz =
+          period_z > 0.0f * u::m && abs (dz) > 0.55f * period_z
+            ? terrain::whole_periods (meters_value (dz),
+                                      meters_value (period_z)) *
+                u::m
+            : 0.0f * u::m;
+        if (sx != 0.0f * u::m || sz != 0.0f * u::m)
+          b.shift (plan_displacement (sx, sz));
+      });
+    }
   }
 
   GameSessionAdvanceResult
@@ -1700,6 +1742,7 @@ namespace moppe::game {
 
     strain_machines (session, dt, ground);
     bump_machines (session, strangers, ground);
+    recenter_fleet (session, surface);
 
     const position_t subject = session.subject_position ();
     const Vec3& vehicle_position = position_value (subject);

@@ -256,3 +256,96 @@ MOPPE_TEST (two_players_buses_keep_the_same_time) {
   MOPPE_CHECK (std::fabs (a - b) < 0.1);
   MOPPE_CHECK (std::fabs (a - 960.0) < 0.5);
 }
+
+MOPPE_TEST (bus_riding_stays_continuous_across_world_seam) {
+  map::SurfaceGeometry surface (terrain::TerrainDomain (
+    17,
+    17,
+    spatial_extent_in_metres (Vec3 (bus_test_period, 0, bus_test_period))));
+  map::rebuild_geometry (surface);
+  WorldParams world;
+  world.map_size =
+    spatial_extent_in_metres (Vec3 (bus_test_period, 60, bus_test_period));
+  world.resolution = 17;
+  GameSession session (world, surface);
+  session.start_on_foot ();
+  GameLogicState& logic = session.logic ();
+  BusStop first, second;
+  first.name = "A";
+  first.along = 0.0f * u::m;
+  second.name = "B";
+  second.along = 400.0f * u::m;
+  const plan_extent_t period =
+    plan_extent (bus_test_period * u::m, bus_test_period * u::m);
+  const BusLine line (bus_test_loop (), { first, second }, period);
+
+  // Standing by the bus in the next periodic copy: boarding keeps the
+  // seat in that copy instead of jumping a world period back.
+  const BusPose standing = line.where (play_time (0.0)).front ();
+  const position_t door = bus_door (standing);
+  const meters_t span = bus_test_period * u::m;
+  session.walker ().spawn (
+    position (position_value (door) + Vec3 (meters_value (span), 0.0f, 1.5f)),
+    unit_direction (Vec3 (0, 0, -1)));
+  board_bus (session, line, 0);
+  const position_t boarded = session.subject_position ();
+  MOPPE_CHECK (abs (position_value (boarded)[0] * u::m -
+                    (position_value (door)[0] * u::m + span)) < 5.0f * u::m);
+
+  // Riding all the way round and across the loop's seam: each step
+  // moves continuously without jumping by a period.
+  const seconds_t end = line.round_trip () + 30.0f * u::s;
+  position_t previous = boarded;
+  for (seconds_t t = 1.0f * u::s; t <= end; t += 1.0f * u::s) {
+    logic.m_total_time = play_time (seconds_value (t));
+    ride_bus (session, line);
+    const position_t now = session.subject_position ();
+    MOPPE_CHECK (length (position_value (now) - position_value (previous)) *
+                   u::m <
+                 25.0f * u::m);
+    previous = now;
+  }
+}
+
+MOPPE_TEST (parked_fleet_follows_player_across_world_seam) {
+  constexpr meters_t period = 256.0f * u::m;
+  map::SurfaceGeometry surface (terrain::TerrainDomain (
+    17,
+    17,
+    spatial_extent_in_metres (
+      Vec3 (meters_value (period), 0.0f, meters_value (period)))));
+  map::rebuild_geometry (surface);
+  WorldParams world;
+  world.map_size = spatial_extent_in_metres (
+    Vec3 (meters_value (period), 60.0f, meters_value (period)));
+  world.resolution = 17;
+  GameSession session (world, surface);
+  session.start_on_foot ();
+
+  const position_t berth = position (Vec3 (40.0f, 0.0f, 60.0f));
+  const direction_t east = unit_direction (Vec3 (1, 0, 0));
+  session.boat ().place (berth, east, 0.0f * u::m);
+  session.jet_ski ().place (
+    position (Vec3 (44.0f, 0.0f, 60.0f)), east, 0.0f * u::m);
+
+  // The player arrives at the same shore one full world period east.
+  session.walker ().spawn (
+    position (Vec3 (40.0f + meters_value (period), 0.0f, 61.5f)), east);
+  MOPPE_CHECK (!session.mount_within_reach ().has_value ());
+
+  advance_game_session (world,
+                        surface,
+                        session,
+                        InputFrame {},
+                        (1.0f / 60.0f) * u::s,
+                        nullptr,
+                        GroundCover {});
+
+  const meters_t boat_x =
+    position_value (session.boat ().position ())[0] * u::m;
+  const meters_t ski_x =
+    position_value (session.jet_ski ().position ())[0] * u::m;
+  MOPPE_CHECK (abs (boat_x - (40.0f * u::m + period)) < 1.0f * u::m);
+  MOPPE_CHECK (abs (ski_x - (44.0f * u::m + period)) < 1.0f * u::m);
+  MOPPE_CHECK (session.mount_within_reach () == Machine::boat);
+}

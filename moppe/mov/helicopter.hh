@@ -62,6 +62,8 @@ namespace moppe::mov {
 
     // Stands it on its skids on the ground at `at`, facing `heading`.
     void place (position_t at, direction_t heading);
+    // Moves it rigidly in the plane without disturbing its motion or sleep.
+    void shift (plan_displacement_t delta);
     void set_trunks (const TrunkField* trunks);
 
     // Ahead (positive) or back, -1..1; turn right (positive) or left;

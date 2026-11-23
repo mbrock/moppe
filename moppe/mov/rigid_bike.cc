@@ -1005,6 +1005,17 @@ namespace moppe {
       m_impl->build (state);
     }
 
+    void RigidBike::shift (plan_displacement_t delta) {
+      Impl& m = *m_impl;
+      RigidBikeState s = m.snapshot ();
+      const Vec3 by = lift (plan_value (delta));
+      s.chassis.position = s.chassis.position + by;
+      s.front_wheel.position = s.front_wheel.position + by;
+      s.rear_wheel.position = s.rear_wheel.position + by;
+      m.patch.origin_for (s.chassis.position, s.ground_column, s.ground_row);
+      m.build (s);
+    }
+
     const BikeRig& RigidBike::rig () const {
       return m_impl->rig;
     }

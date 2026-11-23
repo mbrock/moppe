@@ -1,11 +1,13 @@
 // Platform services shared by the Apple UIKit hosts and the Mac's core
 // probe: asset resolution, monotonic time, speech, and background work.
 
+// Apple's framework headers define the legacy pascal macro, which
+// collides with SI units. Load the project's headers before them.
+#include <moppe/platform/platform.hh>
+
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 #import <TargetConditionals.h>
-
-#include <moppe/platform/platform.hh>
 
 #include <chrono>
 #include <cstdint>

@@ -277,6 +277,8 @@ namespace moppe::mov {
 
     // Stands the car on the ground at `at`, facing along `heading`.
     void place (position_t at, direction_t heading);
+    // Moves it rigidly in the plane without disturbing its motion or sleep.
+    void shift (plan_displacement_t delta);
     // The obstacles its chassis meets; rebuilt into its world when the
     // field changes.
     void set_trunks (const TrunkField* trunks);

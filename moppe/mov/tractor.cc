@@ -780,6 +780,20 @@ namespace moppe::mov {
     m_impl->place (position_value (at), direction_value (heading));
   }
 
+  void Tractor::shift (plan_displacement_t delta) {
+    Impl& m = *m_impl;
+    State s = m.snapshot ();
+    const Vec3 by = lift (plan_value (delta));
+    s.chassis.position = s.chassis.position + by;
+    for (RigidBodyState& wheel : s.wheels)
+      wheel.position = wheel.position + by;
+    s.trailer.position = s.trailer.position + by;
+    for (RigidBodyState& wheel : s.trailer_wheels)
+      wheel.position = wheel.position + by;
+    m.patch.origin_for (s.chassis.position, s.ground_column, s.ground_row);
+    m.build (s);
+  }
+
   void Tractor::set_trunks (const TrunkField* trunks) {
     Impl& m = *m_impl;
     if (trunks == m.trunks)

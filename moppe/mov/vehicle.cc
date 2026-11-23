@@ -125,6 +125,10 @@ namespace moppe {
       m_rigid->restore (rigid);
     }
 
+    void Vehicle::shift (plan_displacement_t delta) {
+      m_rigid->shift (delta);
+    }
+
     void Vehicle::reset (const Vec3& position) {
       m_boost_input = {};
       m_boost_drive = {};

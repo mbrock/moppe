@@ -419,6 +419,9 @@ namespace moppe {
 
       RigidBikeState state () const;
       void restore (const RigidBikeState& state);
+      // Moves the assemblage rigidly in the plane without disturbing its
+      // motion.
+      void shift (plan_displacement_t delta);
 
       const BikeRig& rig () const;
 

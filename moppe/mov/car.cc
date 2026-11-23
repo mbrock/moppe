@@ -486,6 +486,17 @@ namespace moppe::mov {
     m_impl->place (position_value (at), direction_value (heading));
   }
 
+  void Car::shift (plan_displacement_t delta) {
+    Impl& m = *m_impl;
+    State s = m.snapshot ();
+    const Vec3 by = lift (plan_value (delta));
+    s.chassis.position = s.chassis.position + by;
+    for (RigidBodyState& wheel : s.wheels)
+      wheel.position = wheel.position + by;
+    m.patch.origin_for (s.chassis.position, s.ground_column, s.ground_row);
+    m.build (s);
+  }
+
   void Car::set_trunks (const TrunkField* trunks) {
     Impl& m = *m_impl;
     if (trunks == m.trunks)

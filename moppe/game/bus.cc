@@ -92,8 +92,10 @@ namespace moppe::game {
     }
   }
 
-  BusLine::BusLine (const terrain::Road& loop, std::vector<BusStop> stops)
-      : m_stops (std::move (stops)) {
+  BusLine::BusLine (const terrain::Road& loop,
+                    std::vector<BusStop> stops,
+                    plan_extent_t period)
+      : m_period (period), m_stops (std::move (stops)) {
     using namespace bus_parts;
     const std::size_t n = loop.points.size ();
     if (n < 2 || loop.heights.size () != n)
@@ -540,7 +542,7 @@ namespace moppe::game {
         stop.shelter = on_ground (shelter_off);
       stops.push_back (std::move (stop));
     }
-    BusLine planned (loop, std::move (stops));
+    BusLine planned (loop, std::move (stops), period);
     std::cerr << "moppe: bus: a loop of " << std::lround (meters_value (length))
               << " m, " << planned.stops ().size () << " stops, "
               << planned.buses () << " buses, "
@@ -624,6 +626,14 @@ namespace moppe::game {
         return buses[session.logic ().m_bus];
       }
 
+      // The ridden bus in the copy of the world nearest `near`, so
+      // boarding and crossing the loop's seam keep the seat continuous.
+      BusPose
+      near_copy (BusPose pose, const position_t& near, plan_extent_t period) {
+        pose.position = terrain::nearest_image (pose.position, near, period);
+        return pose;
+      }
+
       void take_seat (GameLogicState& logic, const BusPose& pose) {
         logic.m_seat_position = bus_seat (pose, logic.m_bus_seat);
         logic.m_seat_heading = pose.forward;
@@ -662,17 +672,23 @@ namespace moppe::game {
       return;
     session.clear_controls ();
     session.set_mode (Doing::on_the_bus ());
-    bus_parts::take_seat (logic, *pose);
+    bus_parts::take_seat (logic,
+                          bus_parts::near_copy (*pose,
+                                                session.walker ().position (),
+                                                line.period ()));
   }
 
   void leave_bus (GameSession& session, const BusLine& line) {
     const std::optional<BusPose> pose = bus_parts::ridden (session, line);
     if (!pose || pose->at_stop)
-      bus_parts::step_down (session,
-                            pose.value_or (BusPose {
-                              .position = session.logic ().m_seat_position,
-                              .forward = session.logic ().m_seat_heading,
-                            }));
+      bus_parts::step_down (
+        session,
+        pose ? bus_parts::near_copy (
+                 *pose, session.logic ().m_seat_position, line.period ())
+             : BusPose {
+                 .position = session.logic ().m_seat_position,
+                 .forward = session.logic ().m_seat_heading,
+               });
     else
       session.logic ().m_bus_alight = !session.logic ().m_bus_alight;
   }
@@ -686,9 +702,11 @@ namespace moppe::game {
       leave_bus (session, line);
       return;
     }
-    bus_parts::take_seat (logic, *pose);
-    if (logic.m_bus_alight && pose->at_stop)
-      bus_parts::step_down (session, *pose);
+    const BusPose here =
+      bus_parts::near_copy (*pose, logic.m_seat_position, line.period ());
+    bus_parts::take_seat (logic, here);
+    if (logic.m_bus_alight && here.at_stop)
+      bus_parts::step_down (session, here);
   }
 
   std::optional<std::size_t> bus_stop_near (const BusLine& line,

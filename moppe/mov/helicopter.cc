@@ -484,6 +484,14 @@ namespace moppe::mov {
     m_impl->place (at, direction_value (heading));
   }
 
+  void Helicopter::shift (plan_displacement_t delta) {
+    Impl& m = *m_impl;
+    State s = m.snapshot ();
+    s.body.position = s.body.position + lift (plan_value (delta));
+    m.patch.origin_for (s.body.position, s.ground_column, s.ground_row);
+    m.build (s);
+  }
+
   void Helicopter::set_trunks (const TrunkField* trunks) {
     Impl& m = *m_impl;
     if (trunks == m.trunks)

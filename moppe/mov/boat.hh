@@ -94,6 +94,8 @@ namespace moppe::mov {
 
     // Floats it upright at `at` on water at `level`, facing `heading`.
     void place (position_t at, direction_t heading, meters_t level);
+    // Moves it rigidly in the plane without disturbing its motion or sleep.
+    void shift (plan_displacement_t delta);
     void set_trunks (const TrunkField* trunks);
 
     void set_drive (control_signal_t drive);

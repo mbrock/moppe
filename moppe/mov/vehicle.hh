@@ -66,6 +66,8 @@ namespace moppe {
 
       State state () const;
       void restore (const State& state);
+      // Moves it rigidly in the plane without disturbing its motion.
+      void shift (plan_displacement_t delta);
 
       // The throttle is a normalized control signal in [-1, 1] that
       // commands the engine's force capability.

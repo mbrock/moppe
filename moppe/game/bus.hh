@@ -93,10 +93,16 @@ namespace moppe::game {
 
     BusLine () = default;
     // The loop and the stops along it, in order from its start.
-    BusLine (const terrain::Road& loop, std::vector<BusStop> stops);
+    BusLine (const terrain::Road& loop,
+             std::vector<BusStop> stops,
+             plan_extent_t period = {});
 
     bool empty () const noexcept {
       return m_along.size () < 2;
+    }
+
+    plan_extent_t period () const noexcept {
+      return m_period;
     }
 
     meters_t length () const noexcept {
@@ -136,6 +142,7 @@ namespace moppe::game {
     std::vector<meters_t> m_along;
     // A lap on: the last point less the first.
     plan_displacement_t m_lap {};
+    plan_extent_t m_period {};
     std::vector<BusStop> m_stops;
     // How far into a round a bus reaches each stop, and leaves it.
     std::vector<seconds_t> m_arrive, m_leave;
