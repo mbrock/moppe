@@ -815,14 +815,15 @@ namespace moppe::game {
     }
     // A stop called after a place it stands at is named by the place.
     for (const BusStop& stop : w.bus.stops ())
-      marks.push_back ({ .kind = Mark::Kind::BusStop,
-                         .position = stop.sign,
-                         .heading = stop.forward,
-                         .colour = DisplayColor (0.97f, 0.80f, 0.12f),
-                         .name = std::ranges::find (w.place_names, stop.name) !=
-                                     w.place_names.end ()
-                                   ? ""
-                                   : stop.name.c_str () });
+      marks.push_back (
+        { .kind = Mark::Kind::BusStop,
+          .position = position (terrain::torus_position_value (stop.sign)),
+          .heading = stop.forward,
+          .colour = DisplayColor (0.97f, 0.80f, 0.12f),
+          .name =
+            std::ranges::find (w.place_names, stop.name) != w.place_names.end ()
+              ? ""
+              : stop.name.c_str () });
     return marks;
   }
 
@@ -897,20 +898,16 @@ namespace moppe::game {
     const render::Font* font = hud.font ();
     if (!font)
       return;
-    const Vec3 eye = position_value (w.session.subject_position ());
+    const position_t subject = w.session.subject_position ();
     const plan_extent_t& period = w.places.period;
     const std::optional<std::size_t> stop =
-      bus_stop_near (w.bus, position (eye), shown_within, period);
+      bus_stop_near (w.bus, subject, shown_within, period);
     if (!stop)
       return;
     const BusStop& at = w.bus.stops ()[*stop];
-    const Vec3& sign = position_value (at.sign);
-    const meters_t dx = terrain::minimum_image_delta (
-      (sign[0] - eye[0]) * u::m, plan_value (period).x () * u::m);
-    const meters_t dz = terrain::minimum_image_delta (
-      (sign[2] - eye[2]) * u::m, plan_value (period).z () * u::m);
-    const meters_t off =
-      std::hypot (meters_value (dx), meters_value (dz)) * u::m;
+    const position_t sign =
+      at.sign.point_for (terrain::world_origin, subject, period);
+    const meters_t off = length (plan (sign) - plan (subject));
     const opacity_t shown =
       std::clamp ((shown_within - off) / (shown_within - faded_within),
                   0.0f * one,
@@ -920,8 +917,7 @@ namespace moppe::game {
     // Its foot over the bus's roof and the luggage on its rack, where
     // the camera sees it: the projection's local arithmetic, in metres.
     const FrameCamera& camera = frame.camera;
-    const Vec3 foot = Vec3 (
-      eye[0] + meters_value (dx), sign[1] + 3.4f, eye[2] + meters_value (dz));
+    const Vec3 foot = position_value (sign) + Vec3 (0.0f, 3.4f, 0.0f);
     const Vec3 to = foot - position_value (camera.position);
     const float ahead = dot (to, direction_value (camera.frame_forward));
     if (ahead < 0.5f || shown <= 0.0f * opacity[one])

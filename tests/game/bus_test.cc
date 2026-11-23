@@ -91,10 +91,11 @@ MOPPE_TEST (bus_stops_at_the_landing_and_past_each_branch_on_the_right) {
   // Eastward along +x, the right is +z: the signs stand south of the
   // road's line, past the tread, the shelters further back.
   for (const BusStop& stop : line.stops ()) {
-    const Vec3& sign = position_value (stop.sign);
+    const Vec3& sign = terrain::torus_position_value (stop.sign);
     MOPPE_CHECK (sign[2] > 503.5f && sign[2] < 506.0f);
     MOPPE_CHECK (stop.shelter.has_value () &&
-                 position_value (*stop.shelter)[2] > sign[2] + 1.0f);
+                 terrain::torus_position_value (*stop.shelter)[2] >
+                   sign[2] + 1.0f);
   }
 }
 
@@ -348,4 +349,40 @@ MOPPE_TEST (parked_fleet_follows_player_across_world_seam) {
   MOPPE_CHECK (abs (boat_x - (40.0f * u::m + period)) < 1.0f * u::m);
   MOPPE_CHECK (abs (ski_x - (44.0f * u::m + period)) < 1.0f * u::m);
   MOPPE_CHECK (session.mount_within_reach () == Machine::boat);
+}
+
+MOPPE_TEST (torus_frame_projection_round_trips_across_seams) {
+  constexpr meters_t span = 1000.0f * u::m;
+  const plan_extent_t period = plan_extent (span, span);
+
+  // An unwrapped world place past the seam wraps onto torus_origin in
+  // [0, period), preserving height.
+  const position_t world_at = position (Vec3 (1250.0f, 42.0f, -150.0f));
+  const terrain::torus_position_t on_torus =
+    world_at.point_for (terrain::torus_origin, period);
+  const Vec3& wrapped = terrain::torus_position_value (on_torus);
+  MOPPE_CHECK (abs (wrapped[0] * u::m - 250.0f * u::m) < 1e-3f * u::m);
+  MOPPE_CHECK (abs (wrapped[1] * u::m - 42.0f * u::m) < 1e-3f * u::m);
+  MOPPE_CHECK (abs (wrapped[2] * u::m - 850.0f * u::m) < 1e-3f * u::m);
+
+  // Projecting back into world_origin near a camera across the seam
+  // places it in that camera's periodic copy.
+  const position_t camera = position (Vec3 (1200.0f, 10.0f, -100.0f));
+  const position_t near =
+    on_torus.point_for (terrain::world_origin, camera, period);
+  const Vec3& projected = position_value (near);
+  MOPPE_CHECK (abs (projected[0] * u::m - 1250.0f * u::m) < 1e-3f * u::m);
+  MOPPE_CHECK (abs (projected[1] * u::m - 42.0f * u::m) < 1e-3f * u::m);
+  MOPPE_CHECK (abs (projected[2] * u::m - (-150.0f * u::m)) < 1e-3f * u::m);
+
+  // Plan frames project the same way and compute shortest torus offsets.
+  const terrain::torus_plan_position_t plan_torus =
+    plan (world_at).point_for (terrain::torus_plan_origin, period);
+  const plan_position_t plan_near =
+    plan_torus.point_for (terrain::world_plan_origin, plan (camera), period);
+  MOPPE_CHECK (length (plan_near - plan (world_at)) < 1e-3f * u::m);
+  const plan_displacement_t delta =
+    terrain::torus_offset (plan (camera), plan_torus, period);
+  MOPPE_CHECK (abs (x_of (delta) - 50.0f * u::m) < 1e-3f * u::m);
+  MOPPE_CHECK (abs (z_of (delta) - (-50.0f * u::m)) < 1e-3f * u::m);
 }

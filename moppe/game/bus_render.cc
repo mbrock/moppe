@@ -118,9 +118,10 @@ namespace moppe::game {
 
       // The frame a stop's things stand in: x along the road against the
       // buses' way, y up, and z out toward the road.
-      Mat4 facing_road (const position_t& at, const direction_t& buses_way) {
+      Mat4 facing_road (const terrain::torus_position_t& at,
+                        const direction_t& buses_way) {
         const direction_t toward_road = left_of (buses_way);
-        return Mat4::translation (position_value (at)) *
+        return Mat4::translation (terrain::torus_position_value (at)) *
                Mat4::basis (direction_value (left_of (toward_road)),
                             direction_value (up),
                             direction_value (toward_road));
@@ -187,7 +188,8 @@ namespace moppe::game {
     std::vector<mov::Trunk> colliders;
     for (const BusStop& stop : line.stops ()) {
       colliders.push_back (
-        { .root = position (position_value (stop.sign) + Vec3 (0, -0.2f, 0)),
+        { .root = position (terrain::torus_position_value (stop.sign) +
+                            Vec3 (0, -0.2f, 0)),
           .axis = up,
           .height = 2.8f * u::m,
           .radius = 0.12f * u::m });
@@ -295,12 +297,15 @@ namespace moppe::game {
     std::uint64_t id = motion_base;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
          ++i) {
-      const position_t& sign = line.stops ()[i].sign;
-      const position_t at = near_copy (sign, camera);
+      const terrain::torus_position_t& sign = line.stops ()[i].sign;
+      const position_t at =
+        sign.point_for (terrain::world_origin, camera, m_period);
       if (m_stops[i] &&
           length2 (displacement_value (at - camera)) < 1500.0f * 1500.0f)
-        renderer.draw_mesh (*m_stops[i],
-                            Mat4::translation (displacement_value (at - sign)));
+        renderer.draw_mesh (
+          *m_stops[i],
+          Mat4::translation (position_value (at) -
+                             terrain::torus_position_value (sign)));
     }
     if (!m_bus.wheel)
       return;
@@ -358,12 +363,15 @@ namespace moppe::game {
     using namespace bus_render_parts;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
          ++i) {
-      const position_t& sign = line.stops ()[i].sign;
-      const position_t at = near_copy (sign, camera);
+      const terrain::torus_position_t& sign = line.stops ()[i].sign;
+      const position_t at =
+        sign.point_for (terrain::world_origin, camera, m_period);
       if (m_stops[i] &&
           length2 (displacement_value (at - camera)) < 160.0f * 160.0f)
-        renderer.draw_mesh (*m_stops[i],
-                            Mat4::translation (displacement_value (at - sign)));
+        renderer.draw_mesh (
+          *m_stops[i],
+          Mat4::translation (position_value (at) -
+                             terrain::torus_position_value (sign)));
     }
     if (m_bus.body.empty ())
       return;

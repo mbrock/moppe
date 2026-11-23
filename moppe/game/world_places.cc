@@ -30,7 +30,8 @@ namespace moppe::game {
                          ground.place_ground (),
                          world_seed ^ 0xb05u);
     for (const BusStop& stop : bus.stops ())
-      layout.clearings.push_back ({ stop.shelter.value_or (stop.sign),
+      layout.clearings.push_back ({ position (terrain::torus_position_value (
+                                      stop.shelter.value_or (stop.sign))),
                                     stop.shelter ? 4.0f * u::m : 2.0f * u::m });
     session.logic ().m_beacons.assign (layout.sanctuaries.size (), Beacon {});
     // Each barn lived in has its row of nest boxes, with the eggs laid

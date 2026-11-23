@@ -4,6 +4,7 @@
 #include <moppe/gfx/math.hh>
 
 #include <cmath>
+#include <concepts>
 
 // The world is a torus.  These are the wrap operations everything that
 // lives on it shares; the period is always the full lattice extent.  A
@@ -120,6 +121,147 @@ namespace moppe::terrain {
                            p[1],
                            nearest_image (p[2], r[2], n.z ())));
   }
+
+  // ---- Torus coordinate frames (mp-units point origins) ----
+  //
+  // A place anchored on the periodic world (a bus stop, a landmark, a
+  // chart pin) lives on `torus_origin` / `torus_plan_origin`, separate
+  // from the unwrapped `world_origin` / `world_plan_origin` that bodies
+  // and cameras move in. The two frames never implicitly convert or
+  // subtract; crossing between them goes through `point_for` (powered by
+  // `mp_units::frame_projection` below) with the world's period and, when
+  // entering unwrapped space, the reference point to place it nearest.
+  inline constexpr auto world_origin =
+    mp_units::default_point_origin (isq::position_vector[si::metre]);
+  inline constexpr auto world_plan_origin =
+    mp_units::default_point_origin (horizontal_displacement[si::metre]);
+
+  inline constexpr struct torus_origin_t final
+      : mp_units::absolute_point_origin<isq::position_vector> {
+  } torus_origin;
+  inline constexpr struct torus_plan_origin_t final
+      : mp_units::absolute_point_origin<horizontal_displacement> {
+  } torus_plan_origin;
+
+  using torus_position_t = mp_units::
+    quantity_point<isq::position_vector[si::metre], torus_origin, Vec3>;
+  using torus_plan_position_t = mp_units::
+    quantity_point<horizontal_displacement[si::metre], torus_plan_origin, Vec2>;
+
+  template <class A, class B>
+  concept same_frame_difference = requires (A a, B b) { a - b; };
+  static_assert (!std::convertible_to<torus_position_t, position_t>);
+  static_assert (!std::convertible_to<position_t, torus_position_t>);
+  static_assert (!same_frame_difference<torus_position_t, position_t>);
+  static_assert (!std::convertible_to<torus_plan_position_t, plan_position_t>);
+  static_assert (!std::convertible_to<plan_position_t, torus_plan_position_t>);
+  static_assert (
+    !same_frame_difference<torus_plan_position_t, plan_position_t>);
+
+  inline torus_position_t torus_position (const Vec3& metres) {
+    return torus_origin + metres * isq::position_vector[si::metre];
+  }
+
+  inline torus_plan_position_t torus_plan_position (const Vec2& metres) {
+    return torus_plan_origin + metres * horizontal_displacement[si::metre];
+  }
+
+  inline torus_plan_position_t torus_plan_position (meters_t x, meters_t z) {
+    return torus_plan_position (Vec2 (meters_value (x), meters_value (z)));
+  }
+
+  inline const Vec3& torus_position_value (const torus_position_t& value) {
+    return value.quantity_ref_from (torus_origin)
+      .numerical_value_ref_in (si::metre);
+  }
+
+  inline const Vec2& torus_plan_value (const torus_plan_position_t& value) {
+    return value.quantity_ref_from (torus_plan_origin)
+      .numerical_value_ref_in (si::metre);
+  }
+
+  inline torus_plan_position_t plan (const torus_position_t& at) {
+    return torus_plan_position (moppe::plan (torus_position_value (at)));
+  }
+
+  inline torus_position_t at_height (const torus_plan_position_t& at,
+                                     meters_t y) {
+    return torus_position (Vec3 (torus_plan_value (at).x (),
+                                 meters_value (y),
+                                 torus_plan_value (at).z ()));
+  }
+
+  // Shortest way round the torus when either or both endpoints are torus
+  // points.
+  inline plan_displacement_t torus_offset (const torus_plan_position_t& from,
+                                           const torus_plan_position_t& to,
+                                           const plan_extent_t& period) {
+    return minimum_image (to - from, period);
+  }
+
+  inline plan_displacement_t torus_offset (const plan_position_t& from,
+                                           const torus_plan_position_t& to,
+                                           const plan_extent_t& period) {
+    return minimum_image (
+      plan_displacement (torus_plan_value (to) - plan_value (from)), period);
+  }
+
+  inline plan_displacement_t torus_offset (const torus_plan_position_t& from,
+                                           const plan_position_t& to,
+                                           const plan_extent_t& period) {
+    return minimum_image (
+      plan_displacement (plan_value (to) - torus_plan_value (from)), period);
+  }
 }
+
+template <>
+inline constexpr auto mp_units::frame_projection<moppe::terrain::torus_origin,
+                                                 moppe::terrain::world_origin> =
+  [] (moppe::terrain::torus_position_t at,
+      const moppe::position_t& near,
+      const moppe::plan_extent_t& period) {
+    return moppe::terrain::nearest_image (
+      moppe::position (moppe::terrain::torus_position_value (at)),
+      near,
+      period);
+  };
+
+template <>
+inline constexpr auto
+  mp_units::frame_projection<moppe::terrain::world_plan_origin,
+                             moppe::terrain::torus_plan_origin> =
+    [] (moppe::plan_position_t at, const moppe::plan_extent_t& period) {
+      return moppe::terrain::torus_plan_position (moppe::Vec2 (
+        moppe::plan_value (period).x () > 0.0f
+          ? moppe::terrain::wrap_coordinate (moppe::plan_value (at).x (),
+                                             moppe::plan_value (period).x ())
+          : moppe::plan_value (at).x (),
+        moppe::plan_value (period).z () > 0.0f
+          ? moppe::terrain::wrap_coordinate (moppe::plan_value (at).z (),
+                                             moppe::plan_value (period).z ())
+          : moppe::plan_value (at).z ()));
+    };
+
+template <>
+inline constexpr auto mp_units::frame_projection<moppe::terrain::world_origin,
+                                                 moppe::terrain::torus_origin> =
+  [] (const moppe::position_t& at, const moppe::plan_extent_t& period) {
+    return moppe::terrain::at_height (
+      moppe::plan (at).point_for (moppe::terrain::torus_plan_origin, period),
+      moppe::position_value (at)[1] * moppe::u::m);
+  };
+
+template <>
+inline constexpr auto
+  mp_units::frame_projection<moppe::terrain::torus_plan_origin,
+                             moppe::terrain::world_plan_origin> =
+    [] (moppe::terrain::torus_plan_position_t at,
+        const moppe::plan_position_t& near,
+        const moppe::plan_extent_t& period) {
+      return moppe::terrain::nearest_image (
+        moppe::plan_position (moppe::terrain::torus_plan_value (at)),
+        near,
+        period);
+    };
 
 #endif

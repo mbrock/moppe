@@ -50,12 +50,12 @@
       "escapes": 976
     },
     "HUD & map": {
-      "share": 81.2,
+      "share": 81.4,
       "files": 8,
       "typed": 692,
       "raw_float": 142,
-      "raw_vector": 18,
-      "escapes": 219
+      "raw_vector": 16,
+      "escapes": 214
     },
     "Places & camp": {
       "share": 91.4,
@@ -79,7 +79,7 @@
       "typed": 1113,
       "raw_float": 266,
       "raw_vector": 136,
-      "escapes": 622
+      "escapes": 620
     },
     "Rivers, water & sediment": {
       "share": 98.2,
@@ -98,19 +98,19 @@
       "escapes": 120
     },
     "Terrain & world generation": {
-      "share": 84.3,
+      "share": 84.5,
       "files": 39,
-      "typed": 983,
+      "typed": 1019,
       "raw_float": 139,
-      "raw_vector": 44,
-      "escapes": 200
+      "raw_vector": 48,
+      "escapes": 206
     },
     "Tests": {
-      "share": 38.1,
+      "share": 38.4,
       "files": 83,
-      "typed": 608,
+      "typed": 617,
       "raw_float": 792,
-      "raw_vector": 194,
+      "raw_vector": 196,
       "escapes": 1374
     },
     "Vehicles & on-foot body": {

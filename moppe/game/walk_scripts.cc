@@ -260,7 +260,8 @@ namespace moppe::game {
               std::string (script.substr (9)).c_str (), nullptr, 10)) %
             s.places.bus.stops ().size ();
       const BusStop& stop = s.places.bus.stops ()[n];
-      const position_t& sign = stop.sign;
+      const position_t sign = stop.sign.point_for (
+        terrain::world_origin, s.spawn, s.places.layout.period);
       const direction_t& forward = stop.forward;
       const Vec3 right (
         -direction_value (forward)[2], 0.0f, direction_value (forward)[0]);

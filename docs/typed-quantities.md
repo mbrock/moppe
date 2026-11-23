@@ -144,6 +144,21 @@ versions of the scalar functions. The period is one `plan_extent_t`
 overload calls the float arithmetic lane by lane, so moving onto it
 leaves the bits unchanged.
 
+Places anchored on the periodic world (such as `BusStop::sign` and
+`BusStop::shelter`) can carry their own `mp_units::absolute_point_origin`
+(`terrain::torus_origin` / `terrain::torus_plan_origin`, giving
+`terrain::torus_position_t` and `terrain::torus_plan_position_t`), apart
+from the unwrapped `terrain::world_origin` / `terrain::world_plan_origin`
+that bodies and cameras move in. They never implicitly convert or subtract;
+crossing between them goes through `mp_units::frame_projection`:
+
+```cpp
+// Project a torus place into the copy nearest the camera, or wrap back:
+const position_t at = stop.sign.point_for (terrain::world_origin, camera, period);
+const terrain::torus_position_t anchored =
+  here.point_for (terrain::torus_origin, period);
+```
+
 ## WorldGround
 
 Typed: `period ()`, `elevation (plan)`, `still_water (plan)`,

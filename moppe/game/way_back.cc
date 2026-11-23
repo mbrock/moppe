@@ -86,10 +86,9 @@ namespace moppe::game {
     place.machine =
       at_height (terrain::nearest_image (plan (road), plan (from), period),
                  wb::height_of (road));
-    const plan_position_t feet = terrain::nearest_image (
-      plan (at.sign) + plan (along (heading, -6.0f * u::m)),
-      plan (from),
-      period);
+    const plan_position_t feet =
+      (terrain::plan (at.sign) + plan (along (heading, -6.0f * u::m)))
+        .point_for (terrain::world_plan_origin, plan (from), period);
     place.feet =
       terrain::at_elevation (feet, ground.elevation (feet) + 0.1f * u::m);
     return place;

@@ -535,7 +535,8 @@ namespace moppe::game {
         const plan_position_t p =
           plan (centre + quantity_cast<isq::position_vector> (
                            moppe::along (right, off)));
-        return terrain::at_elevation (terrain::wrap (p, period), ground_at (p));
+        return terrain::at_elevation (p, ground_at (p))
+          .point_for (terrain::torus_origin, period);
       };
       stop.sign = on_ground (sign_off);
       if (best_sheltered)
@@ -717,7 +718,7 @@ namespace moppe::game {
     meters_t best = reach;
     for (std::size_t i = 0; i < line.stops ().size (); ++i) {
       const meters_t d = bus_parts::reach_of (terrain::torus_offset (
-        plan (at), plan (line.stops ()[i].sign), period));
+        plan (at), terrain::plan (line.stops ()[i].sign), period));
       if (d < best) {
         best = d;
         nearest = i;

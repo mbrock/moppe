@@ -16,6 +16,7 @@
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/terrain/roads.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <cstddef>
 #include <cstdint>
@@ -36,12 +37,12 @@ namespace moppe::game {
     // buses go.
     meters_t along {};
     // The foot of the sign's post, on the verge to the right going along,
-    // and the way the buses pass it, level.
-    position_t sign {};
+    // and the way the buses pass it, level. Anchored on the periodic torus.
+    terrain::torus_position_t sign {};
     direction_t forward = unit_direction (Vec3 (0, 0, 1));
     // A shelter behind the sign, its open front to the road, where the
     // verge is level enough to stand one: its middle on the ground.
-    std::optional<position_t> shelter;
+    std::optional<terrain::torus_position_t> shelter;
   };
 
   // Where a bus is, and how it stands: its position on the road under
