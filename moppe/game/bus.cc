@@ -104,7 +104,7 @@ namespace moppe::game {
     meters_t along = meters_t::zero ();
     for (std::size_t i = 0; i < n; ++i) {
       if (i > 0)
-        along += reach_of (loop.points[i] - loop.points[i - 1]);
+        along += bus_parts::reach_of (loop.points[i] - loop.points[i - 1]);
       m_along.push_back (along);
     }
     m_points = loop.points;
@@ -331,7 +331,7 @@ namespace moppe::game {
     };
     const auto distance_to = [&] (const terrain::RoadPlace& place,
                                   const plan_position_t& at) {
-      return reach_of (terrain::torus_offset (at, place.at, period));
+      return bus_parts::reach_of (terrain::torus_offset (at, place.at, period));
     };
 
     std::vector<Want> wants;
@@ -454,8 +454,8 @@ namespace moppe::game {
     {
       std::vector<meters_t> along (loop.points.size (), meters_t::zero ());
       for (std::size_t i = 1; i < loop.points.size (); ++i)
-        along[i] =
-          along[i - 1] + reach_of (loop.points[i] - loop.points[i - 1]);
+        along[i] = along[i - 1] +
+                   bus_parts::reach_of (loop.points[i] - loop.points[i - 1]);
       for (const terrain::RoadBridge& bridge : loop.bridges)
         decks.push_back ({ along[bridge.first] - 15.0f * u::m,
                            along[bridge.last] + 15.0f * u::m });

@@ -276,6 +276,8 @@ namespace moppe::terrain {
         julian_years_f64_t (parameters.uplift_duration) - elapsed;
       const julian_years_f64_t uplift_dt =
         std::clamp (uplift_remaining, julian_years_f64_t::zero (), dt);
+      const julian_years_f64_t remaining_uplift_after =
+        std::max (uplift_remaining, julian_years_f64_t::zero ());
 
       const FloodField flood =
         analyze_standing_water (current, parameters.sea_level);
@@ -343,8 +345,29 @@ namespace moppe::terrain {
                         cr::log2 (static_cast<float> (
                           (area / parameters.channel_initiation_area)
                             .numerical_value_in (mp_units::one)))));
+          double rock_erodibility = 1.0;
+          double rock_uplift_factor = 1.0;
+          if (parameters.lithology.enabled) {
+            const auto lap = grid.lap_position (grid.index (cell));
+            rock_uplift_factor = static_cast<double> (
+              parameters.lithology.uplift_factor_at (lap).numerical_value_in (
+                one));
+            // Exact Lagrangian rock elevation: rock parcels rise with tectonic
+            // uplift, so adding remaining uplift maps current bedrock elevation
+            // directly onto its present-day stratigraphic column.
+            const meters_f64_t bed_m =
+              mp_units::isq::height (current_heights[cell].delta_from_zero ()) -
+              meters_f64_t (mobile_sediment[cell]) +
+              remaining_uplift_after * (rock_uplift_factor * uplift_rate[cell]);
+            const SurfaceElevation rock_elevation =
+              surface_elevation_point (mp_units::value_cast<float> (bed_m));
+            const LithologySample rock = parameters.lithology.sample (
+              lap, rock_elevation, mobile_sediment[cell]);
+            rock_erodibility =
+              static_cast<double> (rock.erodibility.numerical_value_in (one));
+          }
           const auto incision_velocity =
-            channel_share *
+            channel_share * rock_erodibility *
             cr::pow (area_growth,
                      static_cast<double> (
                        parameters.area_exponent.numerical_value_in (one))) *
@@ -356,7 +379,8 @@ namespace moppe::terrain {
             throw std::overflow_error (
               "stream-power implicit weight is not finite");
 
-          const meters_f64_t uplift = uplift_dt * uplift_rate[cell];
+          const meters_f64_t uplift =
+            uplift_dt * (rock_uplift_factor * uplift_rate[cell]);
           const ElevationF64 uplifted = current_heights[cell] + uplift;
 
           // Backward Euler in affine form: the receiver, plus the cell's

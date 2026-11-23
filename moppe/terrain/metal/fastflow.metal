@@ -3,11 +3,24 @@ using namespace metal;
 
 constant uint none = 0xffffffffu;
 constant uint group_size = 128;
+constant float two_pi = 6.2831853071795864769f;
 struct Params {
-  uint width, height, level;
-  float dx, dz, dt, uplift_dt, sea;
+  uint width, height, level, step;
+  float dx, dz, dt, uplift_dt, remaining_uplift_dt, sea;
   float incision, reference_area, exponent, channel_area;
   float concentration, max_deposit, diffusion, critical, multiplier;
+};
+struct FissureGpu {
+  float4 line, shape, warp_a, warp_b, mod;
+};
+struct LithologyGpu {
+  uint enabled;
+  float unconformity_base_m, shale_thickness_m, transition_m;
+  float bedding_wavelength_m, bedding_contrast, limestone_erodibility,
+    shale_erodibility;
+  float gneiss_erodibility, granite_erodibility, cover_scale_m, pad0;
+  float4 fold_waves[6];
+  FissureGpu fissures[3];
 };
 struct Bucket {
   atomic_uint count;
@@ -86,9 +99,16 @@ kernel void receivers (constant Params& p [[buffer (0)]],
   uint r = i;
   float best = 0;
   if (!ocean[i]) {
+    // Fairfield-Leymarie Rho8 diagonal distance factor removes D8 grid
+    // alignment while preserving exact zero-grade tie-breaking on flats.
+    uint hash = i * 747796405u + p.step * 2891336453u + 277803737u;
+    hash = ((hash >> ((hash >> 28u) + 4u)) ^ hash) * 277803737u;
+    float u = float (((hash >> 22u) ^ hash) & 0x3fffffu) * (1.f / 4194304.f);
+    float diag_scale = (2.f - u) * 0.70710678f;
     for (uint k = 0; k < 8; ++k) {
       uint j = adjacent (i, k, p);
-      float grade = (h[i] - h[j]) / distance_to (i, j, p);
+      float run = distance_to (i, j, p) * ((k & 1u) ? diag_scale : 1.f);
+      float grade = (h[i] - h[j]) / run;
       if (grade > best || (grade == best && r != i && j < r)) {
         r = j;
         best = grade;
@@ -391,6 +411,96 @@ kernel void bin_chains (constant Params& p [[buffer (0)]],
     atomic_fetch_add_explicit (cursor + level, 1, memory_order_relaxed);
   ends[slot] = uint2 (i, tail);
 }
+// Conjugate fissure-corridor boost and tectonic uplift multiplier.
+float2 sample_fissure (float u, float v, constant LithologyGpu& g) {
+  float boost = 1.f;
+  float suppression = 0.f;
+  for (uint k = 0; k < 3; ++k) {
+    FissureGpu f = g.fissures[k];
+    float warp_a =
+      sin (two_pi * (f.warp_a.x * u + f.warp_a.y * v) + f.warp_a.z);
+    float warp_b =
+      sin (two_pi * (f.warp_b.x * u + f.warp_b.y * v) + f.warp_b.z);
+    float phase = two_pi * (f.line.x * u + f.line.y * v) + f.line.z +
+                  f.shape.z * warp_a + f.shape.w * warp_b;
+    float cycles = phase / two_pi;
+    float frac = cycles - floor (cycles);
+    float dist_m = min (frac, 1.f - frac) * f.line.w;
+    float core_band = smoothstep (f.shape.x, 0.f, dist_m);
+    float sag_band = smoothstep (2.1f * f.shape.x, 0.f, dist_m);
+    float mod_a =
+      0.5f + 0.5f * cos (two_pi * (f.mod.x * u + f.mod.y * v) + f.warp_b.w);
+    float mod_b =
+      0.5f +
+      0.5f * cos (two_pi * (2.f * f.mod.x * u + 2.f * f.mod.y * v + 0.37f) +
+                  f.warp_a.z);
+    float strike = 0.65f * mod_a + 0.35f * mod_b;
+    float continuity = 1.f - f.warp_a.w * (1.f - strike * strike);
+    float core = core_band * core_band * continuity;
+    float sag = sag_band * sag_band * continuity;
+    boost = max (boost, 1.f + (f.shape.y - 1.f) * core);
+    suppression = max (suppression, f.mod.z * sag);
+  }
+  return float2 (boost, max (0.35f, 1.f - suppression));
+}
+
+float sample_uplift_factor (uint i,
+                            constant Params& p,
+                            constant LithologyGpu& g) {
+  if (!g.enabled)
+    return 1.f;
+  float u = float (i % p.width) / float (p.width);
+  float v = float (i / p.width) / float (p.height);
+  return sample_fissure (u, v, g).y;
+}
+
+// Analytical 3D Fennoscandian stratigraphy and conjugate fissure corridors.
+// Mirrors moppe/terrain/lithology.cc exactly with zero per-cell storage.
+float sample_erodibility (uint i,
+                          float z_rock,
+                          float cover,
+                          float fissure_boost,
+                          constant Params& p,
+                          constant LithologyGpu& g) {
+  if (!g.enabled)
+    return 1.f;
+  float u = float (i % p.width) / float (p.width);
+  float v = float (i / p.width) / float (p.height);
+
+  float sum = 0.f, dome = 0.f;
+  for (uint k = 0; k < 6; ++k) {
+    float4 w = g.fold_waves[k];
+    float wave = cos (two_pi * (w.x * u + w.y * v) + w.w);
+    sum += w.z * wave;
+    if (k < 4)
+      dome += w.z * wave;
+  }
+  dome = smoothstep (6.f, 38.f, dome);
+  float unconf = g.unconformity_base_m + sum;
+  float above_unconf = z_rock - unconf;
+  float above_shale = above_unconf - g.shale_thickness_m;
+
+  float above_basement =
+    smoothstep (-g.transition_m, g.transition_m, above_unconf);
+  float limestone_share =
+    smoothstep (-g.transition_m, g.transition_m, above_shale);
+  float basement_share = 1.f - above_basement;
+  float shale_share = max (0.f, above_basement - limestone_share);
+
+  float bedding =
+    1.f + g.bedding_contrast *
+            sin (two_pi * max (0.f, above_shale) / g.bedding_wavelength_m);
+  float basement_k = mix (g.gneiss_erodibility, g.granite_erodibility, dome);
+  float limestone_k = g.limestone_erodibility * bedding;
+  float stratum_k = basement_share * basement_k +
+                    shale_share * g.shale_erodibility +
+                    limestone_share * limestone_k;
+
+  float bedrock_k = stratum_k * fissure_boost;
+  float cover_blend = smoothstep (0.f, g.cover_scale_m, cover);
+  return mix (bedrock_k, max (bedrock_k, 1.f), cover_blend);
+}
+
 // Solve backward Euler downstream-first. Store capacity and detachment
 // in metres of sediment over one cell (all cells have equal area).
 kernel void incise (constant Params& p [[buffer (0)]],
@@ -405,6 +515,8 @@ kernel void incise (constant Params& p [[buffer (0)]],
                     device float* solved [[buffer (9)]],
                     device float2* load [[buffer (10)]],
                     device float* spill [[buffer (11)]],
+                    device const Material* material [[buffer (12)]],
+                    constant LithologyGpu& lith [[buffer (13)]],
                     uint t [[thread_position_in_grid]]) {
   if (t >= atomic_load_explicit (&b[p.level].count, memory_order_relaxed))
     return;
@@ -418,10 +530,17 @@ kernel void incise (constant Params& p [[buffer (0)]],
     } else {
       // The highest bed on the carved path is this cell's spill level.
       spill[i] = max (h[i], spill[j]);
-      float raised = h[i] + p.uplift_dt * uplift[i];
+      float u = float (i % p.width) / float (p.width);
+      float v = float (i / p.width) / float (p.height);
+      float2 fis = lith.enabled ? sample_fissure (u, v, lith) : float2 (1.f);
+      float eff_uplift = uplift[i] * fis.y;
+      float raised = h[i] + p.uplift_dt * eff_uplift;
       float run = distance_to (i, j, p), a = area[i] * p.dx * p.dz;
       float share = smoothstep (-1.f, 1.f, log2 (a / p.channel_area));
-      float w = p.dt * p.incision * share *
+      float cover = material[i].cover;
+      float z_rock = h[i] - cover + p.remaining_uplift_dt * eff_uplift;
+      float rock_k = sample_erodibility (i, z_rock, cover, fis.x, p, lith);
+      float w = p.dt * p.incision * rock_k * share *
                 pow (a / p.reference_area, p.exponent) / run;
       float drop = max (0.f, raised - solved[j]);
       float cut = drop * (w / (1 + w));
@@ -447,6 +566,7 @@ kernel void transport (constant Params& p [[buffer (0)]],
                        device Budget* budget [[buffer (12)]],
                        device const uint* area [[buffer (13)]],
                        device const float* spill [[buffer (14)]],
+                       constant LithologyGpu& lith [[buffer (15)]],
                        uint t [[thread_position_in_grid]]) {
   if (t >= atomic_load_explicit (&b[p.level].count, memory_order_relaxed))
     return;
@@ -471,7 +591,7 @@ kernel void transport (constant Params& p [[buffer (0)]],
         depth > 0 ? 0 : min (load[i].x, max (0.f, capacity - incoming));
       float room = depth > 0 ? min (depth, p.max_deposit) : p.max_deposit;
       float fill = min (room, max (0.f, incoming - capacity));
-      float rise = p.uplift_dt * uplift[i];
+      float rise = p.uplift_dt * uplift[i] * sample_uplift_factor (i, p, lith);
       h[i] += rise - cut + fill;
       Material m = material[i];
       m.cover = max (0.f, m.cover - cut) + fill;

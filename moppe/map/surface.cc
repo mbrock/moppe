@@ -7,6 +7,7 @@
 #include <moppe/spatial/bundle_operations.hh>
 #include <moppe/spatial/bundle_storage.hh>
 #include <moppe/terrain/domain_storage.hh>
+#include <moppe/terrain/lithology.hh>
 #include <moppe/terrain/river.hh>
 
 #include <algorithm>
@@ -812,23 +813,16 @@ namespace moppe::map {
     const std::size_t count = domain.size ();
     constexpr auto signal = noise_signal[one];
 
-    // How deep the world's history cut each place: what it took away less
-    // what it laid back. The limestone's thickness is counted against the
-    // median of that cut, so a calm world keeps as much of its cover as a
-    // violent one.
-    const auto& eroded = get<eroded_surface_material> (geometry);
-    const auto& deposited = get<deposited_surface_material> (geometry);
     const auto& sediment = get<terrain::sediment_thickness> (geometry);
     const auto& normals = get<terrain::terrain_normal> (geometry);
     const auto& elevation = get<terrain::surface_elevation> (geometry);
-    std::vector<ElevationChange> cut (count), height (count);
+    std::vector<ElevationChange> height (count);
     std::vector<proportion_t> wet (count), thin (count), dry (count),
       soaked (count), peat (count), bare (count);
     // The ground normal's upward and southward lanes, each a share of its
     // unit length; a north face's southward share is negative.
     std::vector<proportion_t> up (count), south (count);
     for (std::size_t i = 0; i < count; ++i) {
-      cut[i] = eroded[i] - deposited[i];
       const meters_t soil = sediment[i];
       wet[i] = wetness[i];
       // Under a span of soil a root reaches bedrock; over two and a half
@@ -846,18 +840,6 @@ namespace moppe::map {
       south[i] = normal[2] * part;
       height[i] = elevation[i].delta_from_zero ();
     }
-    std::vector<ElevationChange> positive;
-    positive.reserve (count);
-    for (const ElevationChange value : cut)
-      if (value > ElevationChange::zero ())
-        positive.push_back (value);
-    ElevationChange median_cut = 1.0f * terrain::surface_elevation[u::m];
-    if (!positive.empty ()) {
-      const auto middle = positive.begin () + positive.size () / 2;
-      std::nth_element (positive.begin (), middle, positive.end ());
-      median_cut = std::max (*middle, 0.5f * terrain::surface_elevation[u::m]);
-    }
-    cut = smoothed (std::move (cut), domain, 10.0f * u::m);
     wet = smoothed (std::move (wet), domain, 12.0f * u::m);
     thin = smoothed (std::move (thin), domain, 25.0f * u::m);
     dry = smoothed (std::move (dry), domain, 25.0f * u::m);
@@ -881,34 +863,36 @@ namespace moppe::map {
         static_cast<std::uint32_t> (
           std::lround ((domain.period_x () / patch).numerical_value_in (one))));
     };
-    const std::uint32_t sheet_laps = laps (1700.0f * u::m);
     const std::uint32_t chance_laps = laps (160.0f * u::m);
     const ElevationChange sea =
       quantity_cast<terrain::surface_elevation> (water_level);
     const meters_t relief = std::max (land_top - water_level, 1.0f * u::m);
-    const ElevationChange edge =
-      std::max (0.06f * median_cut, 0.5f * terrain::surface_elevation[u::m]);
 
-    // The limestone first, everywhere, since a spring answers to the sheet
-    // above it on the slope.
+    // Sample the same 3D stratigraphic lithology that governed fluvial
+    // incision: surviving limestone caprock plateaus feed karst springs along
+    // their escarpment feet, while exposed crystalline granite domes and
+    // fissure-valley walls supply bare bedrock whalebacks and crags.
+    const terrain::Lithology lithology =
+      terrain::make_lithology (terrain::Seed { seed },
+                               domain.period_x (),
+                               domain.period_z (),
+                               terrain::surface_elevation_point (water_level));
     std::vector<proportion_t> limestone (count);
     parallel_sites (geometry.domain (), [&] (terrain::TerrainIndex site) {
       const std::size_t i = domain.offset (site);
-      const ElevationChange thickness =
-        quantity_cast<terrain::surface_elevation> (
-          median_cut *
-          (0.25f * signal + 1.0f * layered_noise (domain.lap_position (site),
-                                                  sheet_laps,
-                                                  seed ^ 0x11a7c0deU)));
-      limestone[i] = band (-edge, edge, thickness - cut[i]);
+      const terrain::SurfaceElevation bedrock =
+        elevation[i] - meters_t (sediment[i]);
+      const terrain::LithologySample strata =
+        lithology.sample (domain.lap_position (site), bedrock, sediment[i]);
+      limestone[i] = strata.limestone;
     });
     // The limestone is a sponge: the rain sinks through its joints and
     // runs along its foot, over the basement it cannot get into, until
     // the foot comes out on a hillside and the water with it. So a spring
-    // rises where the ground underfoot is basement and the slope above it,
-    // a few tens of metres up, is limestone; its water keeps the ground
-    // below soaked for a stone's throw down the slope, and the line of
-    // them breaks into separate seeps, each with its own tongue of fen.
+    // rises where the ground underfoot is below the limestone cap and the
+    // slope above it, a few tens of metres up, is limestone; its water keeps
+    // the ground below soaked for a stone's throw down the slope, and the
+    // line of them breaks into separate seeps, each with its own tongue of fen.
     std::vector<proportion_t> spring (count), rock (count);
     {
       const std::vector<ElevationChange> slope_height =
@@ -917,10 +901,10 @@ namespace moppe::map {
       const meters_t sz = domain.spacing_z ();
       const std::uint32_t seep_laps = laps (45.0f * u::m);
       constexpr meters_t reach[] = {
-        6.0f * u::m, 15.0f * u::m, 26.0f * u::m, 40.0f * u::m
+        8.0f * u::m, 18.0f * u::m, 32.0f * u::m, 50.0f * u::m
       };
       constexpr proportion_t fade[] = {
-        1.0f * part, 0.90f * part, 0.70f * part, 0.45f * part
+        1.0f * part, 0.95f * part, 0.85f * part, 0.65f * part
       };
       parallel_sites (geometry.domain (), [&] (terrain::TerrainIndex site) {
         const std::size_t i = domain.offset (site);
@@ -953,12 +937,20 @@ namespace moppe::map {
                     band (0.03f * grade[one], 0.10f * grade[one], steepness) *
                     band (0.45f * signal, 0.62f * signal, seeps) *
                     band (1.0f * u::m, 4.0f * u::m, height[i] - sea));
-        // Bare rock: basement under hardly any soil, on a knoll or ridge
-        // and dry enough that no peat grows over it.
+        // Bare rock: crystalline basement under thin soil on knolls, hard
+        // granite domes, and steep fissure-valley gorge walls.
+        const terrain::SurfaceElevation bedrock =
+          elevation[i] - meters_t (sediment[i]);
+        const terrain::LithologySample strata =
+          lithology.sample (domain.lap_position (site), bedrock, sediment[i]);
         const proportion_t knoll =
           band (-0.5f * u::m, 2.5f * u::m, height[i] - nearby[i]) +
-          0.5f * band (2.0f * u::m, 10.0f * u::m, height[i] - around[i]);
-        rock[i] = together ((whole - limestone[i]) * bare[i] *
+          0.5f * band (2.0f * u::m, 10.0f * u::m, height[i] - around[i]) +
+          0.45f * strata.granite_dome +
+          0.55f *
+            together (quantity_cast<proportion> (strata.fissure) *
+                      band (0.28f * grade[one], 0.55f * grade[one], steepness));
+        rock[i] = together (strata.basement * bare[i] *
                             std::min (knoll, whole) * (whole - soaked[i]));
       });
       spring = smoothed (std::move (spring), domain, 6.0f * u::m);

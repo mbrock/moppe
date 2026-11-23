@@ -326,7 +326,7 @@ namespace moppe::game {
     constexpr auto cubic_metre = u::m * u::m * u::m;
     constexpr auto julian_year = moppe::astronomy::Julian_year;
     constexpr auto slope_ratio = terrain::terrain_slope[mp_units::one];
-    constexpr auto share = proportion[mp_units::one];
+    constexpr auto proportion_unit = proportion[mp_units::one];
 
     void write_recipe (BinaryWriter& output,
                        const terrain::WorldRecipe& recipe) {
@@ -538,10 +538,10 @@ namespace moppe::game {
           output.quantity (point.flow_distance, u::m);
           output.quantity (point.contributing_area, square_metre);
           output.quantity (point.slope, slope_ratio);
-          output.quantity (point.waterfall, share);
-          output.quantity (point.standing_water, share);
+          output.quantity (point.waterfall, proportion_unit);
+          output.quantity (point.standing_water, proportion_unit);
           output.quantity (point.water_level.delta_from_zero (), u::m);
-          output.quantity (point.pooled, share);
+          output.quantity (point.pooled, proportion_unit);
         }
       }
       output.scalar (static_cast<std::uint64_t> (rivers.waterfalls.size ()));
@@ -596,10 +596,10 @@ namespace moppe::game {
               !input.quantity (point.flow_distance, u::m) ||
               !input.quantity (point.contributing_area, square_metre) ||
               !input.quantity (point.slope, slope_ratio) ||
-              !input.quantity (point.waterfall, share) ||
-              !input.quantity (point.standing_water, share) ||
+              !input.quantity (point.waterfall, proportion_unit) ||
+              !input.quantity (point.standing_water, proportion_unit) ||
               !input.quantity (water_level, u::m) ||
-              !input.quantity (point.pooled, share))
+              !input.quantity (point.pooled, proportion_unit))
             return false;
           point.place = plan_position (x, z);
           point.water_level = terrain::surface_elevation_point (water_level);

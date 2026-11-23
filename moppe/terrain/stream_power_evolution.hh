@@ -3,6 +3,7 @@
 
 #include <moppe/terrain/domain.hh>
 #include <moppe/terrain/fractional_drainage.hh>
+#include <moppe/terrain/lithology.hh>
 #include <moppe/terrain/sediment_transport.hh>
 
 #include <functional>
@@ -61,6 +62,10 @@ namespace moppe::terrain {
     // routing; values must remain below one.
     ChannelPersistence channel_persistence =
       0.35f * moppe::terrain::channel_persistence[mp_units::one];
+    // Analytical 3D bedrock stratigraphy and conjugate fissure corridors. Off
+    // by default so idealized synthetic evolution tests stay uniform; enabled
+    // by WorldRecipe for generated worlds.
+    Lithology lithology {};
   };
 
   struct StreamPowerEvolutionReport {

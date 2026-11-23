@@ -98,20 +98,20 @@
       "escapes": 120
     },
     "Terrain & world generation": {
-      "share": 85.2,
-      "files": 42,
-      "typed": 1050,
-      "raw_float": 135,
+      "share": 86.5,
+      "files": 44,
+      "typed": 1176,
+      "raw_float": 137,
       "raw_vector": 47,
-      "escapes": 208
+      "escapes": 256
     },
     "Tests": {
-      "share": 39.3,
-      "files": 85,
-      "typed": 647,
+      "share": 40.0,
+      "files": 86,
+      "typed": 667,
       "raw_float": 802,
       "raw_vector": 199,
-      "escapes": 1396
+      "escapes": 1408
     },
     "Vehicles & on-foot body": {
       "share": 77.6,

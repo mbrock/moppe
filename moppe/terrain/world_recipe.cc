@@ -63,6 +63,10 @@ namespace moppe::terrain {
                               mp_units::si::metre /
                               moppe::astronomy::Julian_year;
     m_evolution.sea_level = surface_elevation_point (water_datum);
+    m_evolution.lithology = make_lithology (seed,
+                                            extent_value (extent)[0] * u::m,
+                                            extent_value (extent)[2] * u::m,
+                                            m_evolution.sea_level);
     m_trail_formation.sea_level = surface_elevation_point (water_datum);
   }
 

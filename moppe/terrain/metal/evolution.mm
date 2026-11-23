@@ -26,8 +26,8 @@ namespace moppe::terrain {
       ;
 
     struct Params {
-      unsigned width, height, level;
-      float dx, dz, dt, uplift_dt, sea;
+      unsigned width, height, level, step;
+      float dx, dz, dt, uplift_dt, remaining_uplift_dt, sea;
       float incision, reference_area, exponent, channel_area;
       float concentration, max_deposit, diffusion, critical, multiplier;
     };
@@ -38,6 +38,80 @@ namespace moppe::terrain {
       float exported;
       unsigned drained;
     };
+    struct FissureGpu {
+      float line[4];
+      float shape[4];
+      float warp_a[4];
+      float warp_b[4];
+      float mod[4];
+    };
+    struct alignas (16) LithologyGpuBlock {
+      unsigned enabled = 0;
+      float unconformity_base_m = 0.0f;
+      float shale_thickness_m = 26.0f;
+      float transition_m = 3.5f;
+      float bedding_wavelength_m = 14.0f;
+      float bedding_contrast = 0.22f;
+      float limestone_erodibility = 0.26f;
+      float shale_erodibility = 2.50f;
+      float gneiss_erodibility = 0.78f;
+      float granite_erodibility = 0.38f;
+      float cover_scale_m = 2.0f;
+      float pad0 = 0.0f;
+      float fold_waves[6][4] {};
+      FissureGpu fissures[3] {};
+    };
+    static_assert (sizeof (LithologyGpuBlock) == 384);
+
+    LithologyGpuBlock pack_lithology (const Lithology& lith) {
+      LithologyGpuBlock g {};
+      if (!lith.enabled)
+        return g;
+      g.enabled = 1u;
+      g.unconformity_base_m = surface_elevation_value (lith.unconformity_base);
+      g.shale_thickness_m = meters_value (lith.shale_thickness);
+      g.transition_m = meters_value (lith.transition_half_width);
+      g.bedding_wavelength_m = meters_value (lith.bedding_wavelength);
+      g.bedding_contrast = lith.bedding_contrast.numerical_value_in (one);
+      g.limestone_erodibility =
+        lith.limestone_erodibility.numerical_value_in (one);
+      g.shale_erodibility = lith.shale_erodibility.numerical_value_in (one);
+      g.gneiss_erodibility = lith.gneiss_erodibility.numerical_value_in (one);
+      g.granite_erodibility = lith.granite_erodibility.numerical_value_in (one);
+      g.cover_scale_m = meters_value (lith.cover_scale);
+      for (size_t k = 0; k < lith.fold_waves.size (); ++k) {
+        const FoldWave& w = lith.fold_waves[k];
+        g.fold_waves[k][0] = float (w.cycles_x);
+        g.fold_waves[k][1] = float (w.cycles_z);
+        g.fold_waves[k][2] = meters_value (w.amplitude);
+        g.fold_waves[k][3] = radians_value (w.phase);
+      }
+      for (size_t k = 0; k < lith.fissures.size (); ++k) {
+        const FissureFamily& f = lith.fissures[k];
+        auto& dst = g.fissures[k];
+        dst.line[0] = float (f.cycles_x);
+        dst.line[1] = float (f.cycles_z);
+        dst.line[2] = radians_value (f.phase);
+        dst.line[3] = meters_value (f.spacing);
+        dst.shape[0] = meters_value (f.half_width);
+        dst.shape[1] = f.boost.numerical_value_in (one);
+        dst.shape[2] = radians_value (f.warp_amplitude_a);
+        dst.shape[3] = radians_value (f.warp_amplitude_b);
+        dst.warp_a[0] = float (f.warp_a_x);
+        dst.warp_a[1] = float (f.warp_a_z);
+        dst.warp_a[2] = radians_value (f.warp_a_phase);
+        dst.warp_a[3] = f.modulation_depth.numerical_value_in (one);
+        dst.warp_b[0] = float (f.warp_b_x);
+        dst.warp_b[1] = float (f.warp_b_z);
+        dst.warp_b[2] = radians_value (f.warp_b_phase);
+        dst.warp_b[3] = radians_value (f.modulation_phase);
+        dst.mod[0] = float (f.modulation_x);
+        dst.mod[1] = float (f.modulation_z);
+        dst.mod[2] = f.uplift_suppression.numerical_value_in (one);
+        dst.mod[3] = 0.0f;
+      }
+      return g;
+    }
     constexpr unsigned bucket_size = 4 * sizeof (unsigned);
 
     class Compute {
@@ -212,6 +286,9 @@ namespace moppe::terrain {
       Buffer invalid = gpu.buffer (sizeof (unsigned), true);
       *static_cast<unsigned*> (invalid.contents) = 0;
       Buffer budget = gpu.buffer (n * sizeof (Budget), true);
+      const LithologyGpuBlock packed_lith = pack_lithology (model.lithology);
+      Buffer lith = gpu.buffer (sizeof (LithologyGpuBlock), true);
+      std::memcpy (lith.contents, &packed_lith, sizeof (LithologyGpuBlock));
       auto* height = static_cast<float*> (h.contents);
       {
         std::vector<SurfaceElevation> initial (n);
@@ -250,9 +327,11 @@ namespace moppe::terrain {
         unsigned (d.width ()),
         unsigned (d.height ()),
         0,
+        0,
         meters_value (d.spacing_x ()),
         meters_value (d.spacing_z ()),
         dt,
+        0,
         0,
         surface_elevation_value (model.sea_level),
         model.reference_incision_rate.numerical_value_in (u::m / year),
@@ -268,9 +347,12 @@ namespace moppe::terrain {
         model.maximum_hillslope_diffusivity_multiplier.numerical_value_in (one)
       };
       for (unsigned s = first_step; s < first_step + steps; ++s) {
+        p.step = s;
         p.dt = std::min (dt, model.duration.numerical_value_in (year) - s * dt);
-        p.uplift_dt = std::clamp (
-          model.uplift_duration.numerical_value_in (year) - s * dt, 0.f, p.dt);
+        const float uplift_rem =
+          model.uplift_duration.numerical_value_in (year) - s * dt;
+        p.uplift_dt = std::clamp (uplift_rem, 0.f, p.dt);
+        p.remaining_uplift_dt = std::max (uplift_rem, 0.f);
         p.max_deposit =
           p.dt * model.maximum_deposition_rate.numerical_value_in (u::m / year);
         gpu.begin ();
@@ -344,7 +426,9 @@ namespace moppe::terrain {
                     uplift,
                     solved,
                     load,
-                    minima },
+                    minima,
+                    material,
+                    lith },
                   p.level);
         }
         for (p.level = 0; p.level < levels; ++p.level)
@@ -362,7 +446,8 @@ namespace moppe::terrain {
                     material,
                     budget,
                     area,
-                    minima },
+                    minima,
+                    lith },
                   p.level);
         float diffusion =
           p.dt * model.diffusivity.numerical_value_in (square_metre / year);

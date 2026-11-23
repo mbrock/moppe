@@ -1,5 +1,6 @@
 #include <moppe/map/surface.hh>
 #include <moppe/nhal/renderer/field_texture.hh>
+#include <moppe/terrain/lithology.hh>
 
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/render/texture_pixels.hh>
@@ -507,24 +508,29 @@ MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
   using namespace moppe;
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     64, 64, spatial_extent_in_metres (Vec3 (640, 0, 640))));
-  std::ranges::fill (
-    spatial::get<terrain::surface_elevation> (surface),
-    moppe::terrain::surface_elevation_point (100.0f * mp_units::si::metre));
-  // Most of the ground lost ten metres; one band hardly any, another two
-  // hundred, far more than any limestone sheet drawn against that median.
   const terrain::TerrainDomain& domain = surface.domain ();
-  const auto cut_at = [] (std::size_t column) {
-    return column < 16 ? 0.1f : column < 32 ? 200.0f : 10.0f;
-  };
-  for (const terrain::TerrainIndex site : spatial::sites (surface))
-    spatial::get<map::eroded_surface_material> (surface[site]) =
-      cut_at (site.column) * map::eroded_surface_material[u::m];
+  const terrain::Lithology lith =
+    terrain::make_lithology (terrain::Seed { 0x5eedU },
+                             domain.period_x (),
+                             domain.period_z (),
+                             terrain::surface_elevation_point (50.0f * u::m));
+  // One band stands high on the intact limestone caprock above the shale; the
+  // next band is cut down into the crystalline basement beneath the
+  // unconformity.
+  for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+    const terrain::SurfaceElevation unconf =
+      lith.unconformity_at (domain.lap_position (site));
+    const meters_t offset = site.column < 16   ? 55.0f * u::m
+                            : site.column < 32 ? -30.0f * u::m
+                                               : 5.0f * u::m;
+    spatial::get<terrain::surface_elevation> (surface[site]) = unconf + offset;
+  }
   map::rebuild_geometry (surface);
   const map::VegetationMap biomes = map::analyze_vegetation (
     surface,
     spatial::get<terrain::soil_wetness> (test::uniform_moisture (domain, 0.2f)),
     50.0f * u::m,
-    150.0f * u::m,
+    250.0f * u::m,
     0x5eedU,
     map::undisturbed (domain));
   const auto limestone = [&] (std::size_t column) {
@@ -538,21 +544,27 @@ MOPPE_TEST (biomes_read_limestone_where_erosion_left_the_cover) {
 
 MOPPE_TEST (springs_rise_at_the_foot_of_the_limestone_and_feed_a_fen) {
   using namespace moppe;
-  // A hillside falling along x, limestone on its upper part and basement
-  // below; a broad band of other rows, eroded about as deep as the world's
-  // median, only sets the sheet's thickness.
+  // A hillside falling along x across the real stratigraphic limestone
+  // contact: limestone caprock on the upper slope, shale and basement below.
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     128, 96, spatial_extent_in_metres (Vec3 (640, 0, 480))));
+  const terrain::TerrainDomain& domain = surface.domain ();
+  const terrain::Lithology lith =
+    terrain::make_lithology (terrain::Seed { 0x5eedU },
+                             domain.period_x (),
+                             domain.period_z (),
+                             terrain::surface_elevation_point (50.0f * u::m));
+  const terrain::SurfaceElevation contact =
+    lith.unconformity_at (domain.lap_position ({ 48, 16 })) + 26.0f * u::m;
   for (const terrain::TerrainIndex site : spatial::sites (surface)) {
     const float x = 5.0f * static_cast<float> (site.column);
+    // Cross the limestone escarpment contact near column 48 (x = 240 m) with a
+    // 0.30 escarpment slope falling along +x; keep elevation below land_top so
+    // the hillside stays warm enough for spring fens.
     spatial::get<terrain::surface_elevation> (surface[site]) =
-      terrain::surface_elevation_point ((100.0f + 0.15f * (640.0f - x)) *
-                                        mp_units::si::metre);
+      contact + (0.30f * (240.0f - x)) * u::m;
     spatial::get<terrain::sediment_thickness> (surface[site]) =
       1.0f * terrain::sediment_thickness[u::m];
-    const float cut = site.row >= 32 ? 10.0f : site.column < 48 ? 0.1f : 200.0f;
-    spatial::get<map::eroded_surface_material> (surface[site]) =
-      cut * map::eroded_surface_material[u::m];
   }
   map::rebuild_geometry (surface);
   const map::VegetationMap vegetation = map::analyze_vegetation (
@@ -573,9 +585,9 @@ MOPPE_TEST (springs_rise_at_the_foot_of_the_limestone_and_feed_a_fen) {
                            .numerical_value_in (one));
     return most;
   };
-  MOPPE_CHECK (most_fen (42, 52) > 0.2f);   // just below the contact
-  MOPPE_CHECK (most_fen (20, 40) < 0.02f);  // on the limestone
-  MOPPE_CHECK (most_fen (90, 110) < 0.02f); // far down the basement
+  MOPPE_CHECK (most_fen (48, 66) > 0.2f);   // just below the escarpment contact
+  MOPPE_CHECK (most_fen (10, 30) < 0.02f);  // high on the limestone cap
+  MOPPE_CHECK (most_fen (95, 115) < 0.02f); // far down the basement
 }
 
 MOPPE_TEST (the_basement_shows_bare_where_a_knoll_kept_no_soil) {

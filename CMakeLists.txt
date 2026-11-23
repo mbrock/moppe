@@ -358,6 +358,7 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
   moppe/terrain/geological.cc
+  moppe/terrain/lithology.cc
   moppe/terrain/world_recipe.cc
 )
 
@@ -870,6 +871,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/spatial/bundle_storage_test.cc
     tests/terrain/domain_test.cc
     tests/terrain/geological_test.cc
+    tests/terrain/lithology_test.cc
     tests/terrain/lowest_ready_test.cc
     tests/terrain/world_recipe_test.cc
     tests/terrain/readings_test.cc

@@ -376,6 +376,15 @@ namespace moppe::terrain {
                  mp_units::dimensionless,
                  mp_units::non_negative,
                  mp_units::subkind);
+  // Local bedrock erodibility relative to the stream-power reference rate:
+  // below one for hard granite and limestone caprock, above one for soft
+  // shale interbeds and fractured fissure corridors.
+  QUANTITY_SPEC (erodibility_factor,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::subkind);
+  // How strongly a site lies within a structural bedrock fissure corridor.
+  QUANTITY_SPEC (fissure_intensity, proportion);
 
   // ---- Human use ----
 
