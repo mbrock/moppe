@@ -15,7 +15,7 @@ namespace moppe::game {
     // Mushrooms are drawn larger than life, so a child walking through the
     // woods spots them over the moss and the long grass as an eager
     // forager would.
-    constexpr scale_factor_t storybook_scale = 3.4f * scale_factor[one];
+    constexpr scale_factor_t storybook_scale = 2.8f * scale_factor[one];
     // The share of trees with a group of mushrooms around them, and how
     // much likelier one is near the trailhead: a good autumn, so that a
     // walk from it finds some.
@@ -331,11 +331,11 @@ namespace moppe::game {
         6,
         8.0f,
         draw_funnel_chanterelle },
-      { "porcini", "porcini", true, 0.17f * u::m, 1, 2.6f, draw_porcini },
+      { "porcini", "porcini", true, 0.13f * u::m, 1, 2.6f, draw_porcini },
       { "fly agaric",
         "fly agarics",
         false,
-        0.24f * u::m,
+        0.15f * u::m,
         1,
         3.6f,
         draw_fly_agaric },
