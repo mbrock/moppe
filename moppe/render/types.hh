@@ -69,7 +69,7 @@ namespace moppe {
       // Lambert + specular (1) vs. emissive passthrough (0); 2..255 is lit
       // and a weathered film worn (lit - 2) / 253, at the uv in metres.
       uint8_t lit;
-      uint8_t fogged;  // distance haze applied
+      uint8_t fogged;  // haze in bit 0, coat roughness in bits 1..7
       uint8_t wind;    // 0..255 lean with the gust, growing up the plant
       uint8_t flutter; // 0..255 shake of foliage, growing out from the stem
       Surface surface;
@@ -79,8 +79,9 @@ namespace moppe {
     // Per-run fixed-function-ish state.  Kept tiny on purpose: it maps
     // to a handful of precompiled pipeline/depth-stencil objects.
     struct DrawState {
-      bool blend;    // src-alpha / one-minus-src-alpha
-      bool additive; // src-alpha / one: glow that sums to white
+      bool blend;         // src-alpha / one-minus-src-alpha
+      bool glass = false; // composite this model finish after opaque geometry
+      bool additive;      // src-alpha / one: glow that sums to white
       bool depth_test;
       bool depth_write;
       bool cull; // back faces, CCW front
@@ -90,7 +91,7 @@ namespace moppe {
             depth_write (true), cull (true) {}
 
       bool operator== (const DrawState& o) const {
-        return blend == o.blend && additive == o.additive &&
+        return glass == o.glass && blend == o.blend && additive == o.additive &&
                depth_test == o.depth_test && depth_write == o.depth_write &&
                cull == o.cull;
       }

@@ -708,20 +708,16 @@
   (vec2 (- (* a (swizzle uv :x)) (* b (swizzle uv :y)))
         (+ (* b (swizzle uv :x)) (* a (swizzle uv :y)))))
 
-;;; One scale of the sheet at a place in the world (UV, 0 to 1 across it),
-;;; faded to the sheet's mean where a pixel of FOOTPRINT metres no longer
-;;; resolves it.  EXTENT is the world's width in metres.
 (define-shader-abstraction read-detail (sheet sampler uv lattice extent
                                         footprint)
   (let ((a (first (symbol-value lattice)))
         (b (second (symbol-value lattice)))
         (tiles (detail-tiles (symbol-value lattice))))
-    `(let* ((detail-wavelength (/ ,extent ,(* tiles 64.0))))
-       (mix (vec4 0.5 0.5 0.5 0.7)
-            (sample-level ,sheet ,sampler (turn-uv ,uv ,a ,b) 0.0)
-            (- 1.0 (smoothstep (* 0.3 detail-wavelength)
-                               (* 0.8 detail-wavelength)
-                               ,footprint))))))
+    ;; The 512-texel tile stores several octaves in each channel. Sample
+    ;; their filtered mean over the pixel's footprint at this scale.
+    `(sample-level ,sheet ,sampler (turn-uv ,uv ,a ,b)
+                   (* 1.442695 (log (max 1.0 (/ (* ,footprint ,(* tiles 512.0))
+                                                 ,extent)))))))
 
 ;;; The relief's slope along the world's x and z at one root-mean-square a
 ;;; unit, from a read at that lattice step.
@@ -853,6 +849,14 @@
 (define-shader-function shore-metres (lane)
   (* (- (* lane 2.0) 1.0) 8.0))
 
+(define-shader-function turf-colour (lush grazed)
+  (mix (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush)
+       (vec3 0.44 0.48 0.21) (* 0.5 grazed)))
+
+(define-shader-function shade-fill (visibility overcast)
+  (mix (mix (vec3 0.88 0.95 1.07) (vec3 0.97 0.98 0.99) overcast)
+       (vec3 1.0 1.0 1.0) visibility))
+
 ;;; LAND is moisture, erosion, deposition, forest cover; FLOOR is the
 ;;; signed shore lane, snow support, trail, home base; STAND the canopy's
 ;;; closure and the fallen leaves; PLANTS and MORE the field layer's shares
@@ -911,8 +915,7 @@
                       0.0 1.0))
          ;; A pasture's turf is cropped short and paler.
          (grazed (swizzle scars :y))
-         (turf (mix (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush)
-                    (vec3 0.44 0.48 0.21) (* 0.5 grazed)))
+         (turf (turf-colour lush grazed))
          (lichen-share (swizzle plants :x))
          (heather-share (swizzle plants :y))
          (bilberry-share (swizzle plants :z))
@@ -1895,7 +1898,8 @@
                (shading :vec4 :location 4)   ; lit, fogged, foliage, 0
                (here :vec4 :location 5)
                (then :vec4 :location 6)
-               (made :vec4 :location 7))     ; render::Surface
+               (made :vec4 :location 7)
+               (coat-roughness :float :location 8))     ; render::Surface
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (vertices :storage-buffer :binding 1 :element :uint)
                  (draw :uniform-block :binding 2 :members #.*draw*)
@@ -1939,11 +1943,13 @@
                                        (byte-of packed (uint 8.0))
                                        (byte-of packed (uint 16.0))))
                            (byte-of packed (uint 24.0))))
-    ;; Lit and fogged are switches, 0 or 1 in their bytes, not fractions;
+    (set-output coat-roughness (/ (float (logand (shift-right flags (uint 9))
+                                                 (uint 127))) 127.0))
+    ;; Bit 8 carries fog. Lit values above 1 carry wear;
     ;; lit above 1 is a weathered film, worn (lit - 2) / 253, which the
     ;; fourth lane carries as one more than its wear.
     (set-output shading (vec4 (min (* 255.0 (byte-of flags (uint 0.0))) 1.0)
-                              (min (* 255.0 (byte-of flags (uint 8.0))) 1.0)
+                              (float (logand (shift-right flags (uint 8)) (uint 1)))
                               flutter
                               (* (step 1.5 (* 255.0 (byte-of flags
                                                              (uint 0.0))))
@@ -1970,8 +1976,10 @@
          (overcast (smoothstep 0.70 1.0 cloudiness))
          (grey (* fog (+ 0.92 (* 0.14 (clamp rise 0.0 1.0)))))
          (closed (mix veiled grey (* overcast 0.9))))
-    (mix closed (* fog 1.06)
-         (* mist (- 1.0 (smoothstep -0.02 0.22 rise))))))
+    (mix atmosphere
+         (mix closed (* fog 1.06)
+              (* mist (- 1.0 (smoothstep -0.02 0.22 rise))))
+         (smoothstep -0.24 0.0 rise))))
 
 ;;; GGX's distribution of microfacet normals, for alpha = roughness
 ;;; squared, and the height-correlated Smith visibility that goes with it.
@@ -1996,7 +2004,7 @@
 ;;; sees, 0 to 1: the ground's own facets and whatever shades it hide some.
 (define-shader-function material-light (albedo made n eye sun diffuse-light
                                         sun-light sky-light sky-dir fog cloud
-                                        mist seen)
+                                        mist seen body-opacity coat-rough)
   (let* ((metallic (swizzle made :x))
          (rough (max (swizzle made :y) 0.03))
          (coat (swizzle made :z))
@@ -2030,18 +2038,22 @@
          (body (* (* albedo (- 1.0 metallic)) diffuse-light
                   (- (vec3 1.0 1.0 1.0) f-env)))
          (mirror (* f-env blurred))
-         (fc (* coat (+ 0.04 (* 0.96 grazing))))
-         (a2c 0.0011)
+         (fc (* coat (+ 0.04 (* (max 0.0 (- 0.96 coat-rough)) grazing))))
+         (rc (max 0.18 coat-rough))
+         (a2c (* rc rc rc rc))
+         (coat-sky (mix sky-seen (hemisphere-lobes sky-light reflected
+                                                   (smoothstep 0.6 0.95 cloud))
+                        (smoothstep 0.02 0.5 coat-rough)))
          (coat-glint (* coat (* (+ 0.04 (* 0.96 schlick))
                                 (* 3.14159265 (ggx n-dot-h a2c)
                                    (smith n-dot-l n-dot-v a2c) n-dot-l))))
          (cloth (* sheen (* 0.35 (expt (max (- 1.0 n-dot-v) 0.0) 3.0))
                    (mix albedo (vec3 1.0 1.0 1.0) 0.4) diffuse-light))
-         (base-light (+ body (* glint sun-light)))
-         (reflection (* seen (+ (* mirror (- 1.0 fc)) (* fc sky-seen)))))
+         (base-light (+ (* body-opacity body) (* glint sun-light)))
+         (reflection (* seen (+ (* mirror (- 1.0 fc)) (* fc coat-sky)))))
     (vec4 (+ (* base-light (- 1.0 fc)) (* coat-glint sun-light) cloth
              reflection)
-          (clamp (+ (swizzle f-env :y) fc) 0.0 1.0))))
+          (clamp (+ (* (swizzle f-env :y) (- 1.0 fc)) fc) 0.0 1.0))))
 
 ;;; A sea-only, periodic travel-time field (game/shore_surf.cc), sampled at
 ;;; the same lattice sites as the ground but at its own bounded resolution.
@@ -2289,9 +2301,7 @@
          ;; Shade is lit by the sky alone: bluer than the sun's light
          ;; under a clear sky, but only grey under cloud.
          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
-         (fill (mix (mix (vec3 0.88 0.95 1.07) (vec3 0.97 0.98 0.99)
-                         overcast)
-                    (vec3 1.0 1.0 1.0) direct))
+         (fill (shade-fill direct overcast))
          (to-eye (/ (- eye world) (max distance 0.0001)))
          (crystals (* (swizzle powder :x) (- 1.0 packed) direct
                       (- 1.0 overcast)
@@ -2353,7 +2363,7 @@
                                           (mix 1.0 (smoothstep 0.0 0.3
                                                                mirror-rise)
                                                (smoothstep 0.15 0.5
-                                                           rough))))
+                                                           rough))) 1.0 0.0)
                        :xyz)))
     (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz) flash 5.0))
                                    world eye fog-color
@@ -2607,7 +2617,8 @@
               (shading :vec4 :location 4)
               (here :vec4 :location 5)
               (then :vec4 :location 6)
-              (made :vec4 :location 7))
+              (made :vec4 :location 7)
+               (coat-roughness :float :location 8))
      :outputs ((color :vec4 :location 0)
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
@@ -2639,16 +2650,20 @@
                    (vec2 0.0 0.0)))
          (albedo (mix (swizzle base :xyz) (vec3 0.27 0.235 0.20)
                       (swizzle worn :x)))
+         (dx (derivative-x n))
+         (dy (derivative-y n))
+         (variance (min 0.18 (* 0.25 (+ (dot dx dx) (dot dy dy)))))
+         (base-rough (mix (clamp (+ (swizzle made :y) (swizzle worn :y))
+                                 0.0 1.0) 0.85 (swizzle worn :x)))
          (finish (vec4 (swizzle made :x)
-                       (mix (clamp (+ (swizzle made :y) (swizzle worn :y))
-                                   0.0 1.0)
-                            0.85 (swizzle worn :x))
+                       (min 1.0 (sqrt (+ (* base-rough base-rough) variance)))
                        (mix (swizzle made :z) 0.05 (swizzle worn :x))
                        (swizzle made :w)))
          ;; The rider, the bike, and the props stand in the same sun as the
          ;; ground: under a crown or a hill's shadow they lose the direct
          ;; light and keep the bluer sky, as the terrain does.
-         (direct (sun-lit shadow-map shadow-compare world 0.15 0.5))
+         (direct (sun-lit shadow-map shadow-compare world
+                          (mix 0.18 0.045 lambert) 0.5))
          (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) direct))
          (sun-light (* (swizzle sun-diffuse :xyz) direct))
          ;; Sunlit ground throws warm light up into the lower faces, so a
@@ -2676,7 +2691,11 @@
                                      (swizzle sky-sun :xyz)
                                      (swizzle fog-color :xyz)
                                      (swizzle sun-direction :w)
-                                     (swizzle relief :w) 1.0))
+                                     (swizzle relief :w) (mix 0.55 1.0 direct)
+                                     (swizzle base :w)
+                                     (min 1.0 (sqrt (+ (* coat-roughness
+                                                         coat-roughness)
+                                                      variance)))))
          ;; See-through, it lets through what its tint and its mirror do
          ;; not stop: drawn blended, the more opaque the more it reflects.
          (clear (* is-material (step (swizzle base :w) 0.99)))
@@ -2687,7 +2706,7 @@
                        clear))
          ;; Blended as src-alpha over what lies behind, the reflection
          ;; must come out undimmed by its own opacity.
-         (made-lit (+ (swizzle made-light :xyz) sky-rim))
+         (made-lit (swizzle made-light :xyz))
          (through (/ made-lit (max opacity 0.05)))
          (lit (mix plain through is-material))
          (shaded (mix albedo lit (swizzle shading :x)))
@@ -2889,7 +2908,8 @@
                    (or (and shadow (or (< (swizzle mode :x) 1.5)
                                        (> crown 1.2)))
                        (>= crown-pixels 4.0)))
-          (let* ((pixels (* 0.5 height scale))
+          (let* ((stagger (+ 0.88 (* 0.24 (tree-hash index (uint 63)))))
+                 (pixels (* 0.5 height scale stagger))
                  ;; Classes by topology: birch and pine, spruce, fell birch.
                  (species (if (= kind (uint 1)) (uint 1)
                               (if (= kind (uint 3)) (uint 2) (uint 0))))
@@ -2916,7 +2936,7 @@
   (height :float) (crown-base :float) (crown-radius :float)
   (trunk-radius :float) (seed-turn :float) (closure :float)
   (seed :uint) (conifer :bool) (pine :bool) (fell :bool) (snag :bool)
-  (sides :uint) (crown-sides :uint) (masses :uint) (branches :bool)
+  (sides :uint) (crown-sides :uint) (detail-pixels :float) (branches :bool)
   (eye :vec3) (pixel :float))
 
 ;;; No stem is drawn thinner than a pixel.  A trunk or bough that would be
@@ -2946,8 +2966,9 @@
   (/ (swizzle covered :x) (max (swizzle covered :y) 0.000001)))
 
 (define-shader-function grow-tree (root-height up-radius ecology identity root
-                                   tier crown-scale eye pixel)
-  (let* ((seed (bit-cast :uint (swizzle identity :x)))
+                                   pixels crown-scale eye pixel)
+  (let* ((tier (tree-tier pixels))
+         (seed (bit-cast :uint (swizzle identity :x)))
          (conifer (= (bit-cast :uint (swizzle identity :y)) (uint 1)))
          ;; A Scots pine draws with the birch's clumps, held flat and high
          ;; on a long clear trunk that leans more than a spruce's.
@@ -2992,11 +3013,7 @@
      :seed seed :conifer conifer :pine pine :fell fell :snag snag
      :sides sides
      :crown-sides (if (= sides (uint 10)) (uint 9) sides)
-     :masses (if conifer
-                 (tier-step tier :tree-masses-spruce)
-                 (if fell
-                     (tier-step tier :tree-masses-fell)
-                     (tier-step tier :tree-masses-birch)))
+     :detail-pixels pixels
      :branches (or fell (and (not conifer) (>= tier (branch-tier))))
      :eye eye :pixel pixel)))
 
@@ -3021,7 +3038,6 @@
          (conifer (tree-shape-conifer tree))
          (sides (tree-shape-sides tree))
          (crown-sides (tree-shape-crown-sides tree))
-         (masses (tree-shape-masses tree))
          (trunk-vertices (* sides (uint 4)))
          (is-trunk (< index trunk-vertices))
          ;; Rings at the flared root, breast height, the crown's base, and
@@ -3092,16 +3108,15 @@
          (fmass (float mass))
          (span (- height crown-base))
          (twist (+ seed-turn (* 1.7 fmass)))
-         (tiers (float masses))
-         ;; A spruce: overlapping tiers narrowing upward, a broad skirt in
-         ;; the open and a narrow spire in a closed stand.
-         (f0 (/ fmass tiers))
-         (f1 (/ (+ fmass 1.0) tiers))
-         (jitter (/ (* 0.18 (- (tree-hash seed (+ (uint 20) mass)) 0.5)) tiers))
+         ;; Three whorls define the silhouette. The next two fill the gaps
+         ;; halfway up each interval, without moving the first three.
+         (f0 (if (< mass (uint 3)) (/ fmass 3.0) (/ (- fmass 2.5) 3.0)))
+         (jitter (* 0.06 (- (tree-hash seed (+ (uint 20) mass)) 0.5)))
          (cone-base (+ crown-base (* span (+ (* 0.90 f0) jitter))))
-         (cone-top (if (= (+ mass (uint 1)) masses) height
-                       (+ crown-base (* span (min (+ (* 0.90 f1) (/ 0.95 tiers))
-                                                  1.0)))))
+         (cone-top (if (= mass (uint 2)) height
+                       (+ crown-base (* span (min (+ (* 0.90 f0)
+                                                     (if (< mass (uint 3))
+                                                         0.55 0.38)) 1.0)))))
          (cone-radius (* crown-radius
                          (mix 1.0 0.72 (tree-shape-closure tree))
                          (- 1.0 (* 0.80 f0))
@@ -3123,9 +3138,10 @@
                             (vec3 0.0 0.0 0.0))))
          ;; A birch clump, spiralling up the stem by the golden angle in a
          ;; narrow oval envelope, so sky shows between them.
-         (rise (clamp (/ (+ fmass 0.5
-                            (* 0.6 (- (tree-hash seed (+ (uint 80) mass)) 0.5)))
-                         tiers)
+         ;; A low-discrepancy sequence spans the crown even in its first
+         ;; four clumps. Each rank has the same site in every topology.
+         (rise (clamp (+ (fract (+ 0.12 (* 0.618034 fmass)))
+                         (* 0.06 (- (tree-hash seed (+ (uint 80) mass)) 0.5)))
                       0.0 1.0))
          (pine (tree-shape-pine tree))
          ;; A pine's crown is an umbrella: its clumps reach as far out at
@@ -3146,13 +3162,8 @@
          ;; clump hangs off a twig forking from the stem's upper part.
          (stem (/ mass (uint 2)))
          (twig (= (logand mass (uint 1)) (uint 1)))
-         (stems (float (max (/ masses (uint 2)) (uint 1))))
-         (stem-turn (+ seed-turn
-                       (/ (* pi2 (+ (float stem)
-                                    (* 0.6 (- (tree-hash seed
-                                                         (+ (uint 1000) stem))
-                                              0.5))))
-                          stems)))
+         (stem-turn (+ seed-turn (* 2.39996 (float stem))
+                       (* 0.60 (- (tree-hash seed (+ (uint 1000) stem)) 0.5))))
          (stem-out (+ (* right (cos stem-turn)) (* forward (sin stem-turn))))
          (stem-reach (* crown-radius
                         (+ 0.60 (* 0.50 (tree-hash seed
@@ -3216,7 +3227,7 @@
                            (* crown-radius
                               (+ 0.50 (* 0.34 (tree-hash seed
                                                          (+ (uint 110) mass))))
-                              (- 1.0 (* 0.35 rise)) (sqrt (/ 10.0 tiers)))))
+                              (- 1.0 (* 0.35 rise)) (if (< mass (uint 4)) 1.24 0.92))))
          (clump-up (normalize
                     (+ up (* right (* 0.5 (- (tree-hash seed (+ (uint 130) mass))
                                              0.5)))
@@ -3309,6 +3320,18 @@
                     (if is-branch branch-point
                         (if conifer cone-point
                             (if snag attach leaf-point)))))
+         ;; Grow newly admitted organs from their attachment over a band
+         ;; of pixels. Branches on the original clumps have their own tier.
+         (initial (if conifer (uint 3) (if fell (uint 6) (uint 4))))
+         (middle (if conifer (uint 4) (if fell (uint 10) (uint 7))))
+         (start (if (>= mass middle) 60.0
+                    (if (>= mass initial) 20.0 0.0)))
+         (start (if (and is-branch (not fell)) (max start 40.0) start))
+         (growth (if (or is-trunk (= start 0.0)) 1.0
+                     (smoothstep start (* 1.22 start)
+                                 (tree-shape-detail-pixels tree))))
+         (anchor (if conifer (+ root (* up cone-base)) attach))
+         (point (if (< growth 1.0) (mix anchor point growth) point))
          (foliage (and (not is-trunk) (not is-branch))))
     (make-tree-vertex
      :position point
@@ -3360,8 +3383,7 @@
          (hue (- (tree-hash seed (uint 50)) 0.5))
          (wobble (- (tree-hash seed (+ (uint 400) (* mass (uint 16)) corner))
                     0.5))
-         (shade (+ 0.92 (/ (* 0.12 fmass)
-                           (max (- (float (tree-shape-masses tree)) 1.0) 1.0))
+         (shade (+ 0.92 (* 0.12 (tree-vertex-crown-height vertex))
                    (* -0.06 (tree-hash seed (uint 51)))
                    (if conifer 0.0
                        (+ (* 0.16 (- (tree-hash seed (+ (uint 200) mass)) 0.5))
@@ -3463,7 +3485,7 @@
                           (tree-root (swizzle root-height :xyz)
                                      (swizzle world :xy)
                                      (swizzle camera-position :xyz))
-                          (tree-tier pixels) 1.0
+                          pixels 1.0
                           (swizzle camera-position :xyz)
                           (/ (* 2.0 (sqrt (dot (swizzle view-up :xyz)
                                                (swizzle view-up :xyz))))
@@ -3530,12 +3552,8 @@
          (to-eye (- eye world-position))
          (view (/ to-eye (max (sqrt (dot to-eye to-eye)) 0.001)))
          (light (swizzle sun-direction :xyz))
-         ;; Crowns are faceted: one normal per triangle, from the surface's
-         ;; own screen derivatives, turned toward the eye.
-         (facet (normalize (cross3 (derivative-x world-position)
-                                   (derivative-y world-position))))
-         (facing (if (< (dot facet view) 0.0) (* -1.0 facet) facet))
-         (n (if (> foliage 0.5) facing (normalize surface-normal)))
+         ;; The vertex normal follows the envelope of the whole crown.
+         (n (normalize surface-normal))
          ;; Where the trunk meets the ground the light fails and the bark
          ;; changes: moss climbs a spruce's buttresses, and a birch's pale
          ;; bark gives way to its dark, fissured base.
@@ -3549,7 +3567,7 @@
          ;; Crowns keep metres of light-depth margin so a crown does not
          ;; shadow itself solid; trunks stay precise.
          (lit (sun-lit shadow-map shadow-compare world-position
-                       (if (> foliage 0.5) 7.0 1.5) 0.5))
+                       (if (> foliage 0.5) 1.5 0.35) 0.5))
          (visibility (mix 0.18 1.0 lit))
          ;; Foliage wraps the light a little: a crown is porous.
          (sun (if (> foliage 0.5)
@@ -3832,15 +3850,14 @@
                                                          0.5)))))
          ;; Ling: its foliage and faded spikes, seen together.
          (ling (smoothstep 0.15 0.45 (swizzle plants :y)))
-         (ling-tint (srgb (ling-colour (ling-bloom rise (swizzle heath :y))
-                                       0.5 0.55)))
+         (ling-tint (ling-colour (ling-bloom rise (swizzle heath :y))
+                                       0.5 0.55))
          (edge (mix 0.25 0.60 clump))
          (turf (* (smoothstep (- edge 0.05) (+ edge 0.05) holds)
                   (step 0.001 density)
                   (mix 0.38 1.0 cover)))
-         (tint (* (vec3 0.185 0.315 0.112)
-                  (vec3 (- 1.12 (* 0.24 moisture)) (+ 0.84 (* 0.30 moisture))
-                        (+ 0.82 (* 0.22 moisture))))))
+         (tint (turf-colour (smoothstep 0.08 0.62 moisture)
+                            (swizzle scars :y))))
     (make-grass-medium
      ;; Ling holds its ground as a closed carpet wherever it roots.
      ;; Ling holds its ground as a closed carpet wherever it roots, a
@@ -3871,22 +3888,22 @@
      ;; Sedge is straw-green, the alvar's turf parched, and among the
      ;; dwarf birch and heather the blades take their ruska.
      :blade-tint (mix (mix
-                  (mix (mix (mix (mix tint (srgb (vec3 0.56 0.58 0.26))
+                  (mix (mix (mix (mix tint (vec3 0.56 0.58 0.26)
                                      (smoothstep 0.1 0.4 (swizzle more :y)))
-                                (srgb (vec3 0.58 0.55 0.30))
+                                (vec3 0.58 0.55 0.30)
                                 (smoothstep 0.1 0.4 (swizzle more :z)))
-                           (mix (mix (* (srgb (heath-colour (swizzle heath :x)
-                                                            moisture 0.04))
+                           (mix (mix (* (heath-colour (swizzle heath :x)
+                                                            moisture 0.04)
                                         0.92)
                                      ling-tint (* 0.85 ling))
-                                (srgb (vec3 0.80 0.52 0.15))
+                                (vec3 0.80 0.52 0.15)
                                 (* turned
                                    (smoothstep 0.1 0.4 (swizzle more :x))))
                            shrubs)
-                      (srgb (vec3 0.50 0.46 0.24))
+                      (vec3 0.50 0.46 0.24)
                       (* 0.6 (clamp (swizzle stand :y) 0.0 1.0)))
-                  (srgb (vec3 0.46 0.14 0.13)) (* 0.80 fireweed))
-                  (srgb (vec3 0.30 0.52 0.12)) (* 0.85 fen))
+                  (vec3 0.46 0.14 0.13) (* 0.80 fireweed))
+                  (vec3 0.30 0.52 0.12) (* 0.85 fen))
      :heather ling)))
 
 ;;; Meadow flowers arrive in single-species colonies, never as confetti:
@@ -3951,6 +3968,26 @@
     (* (smoothstep (- threshold 0.52) (+ threshold 0.52) wanted)
        (smoothstep 0.0 0.52 wanted))))
 
+(define-shader-function pad-distance (xz frame half-size)
+  (let* ((d (- xz (swizzle frame :xy)))
+         (axis (swizzle frame :zw))
+         (local (vec2 (dot d axis)
+                      (- (* (swizzle d :y) (swizzle axis :x))
+                         (* (swizzle d :x) (swizzle axis :y))))))
+    (- (abs local) (swizzle half-size :xy))))
+
+(define-shader-function yard-cover (xz house house-size barn barn-size)
+  (let* ((h (pad-distance xz house house-size))
+         (b (pad-distance xz barn barn-size))
+         (outside (max b (vec2 0.0 0.0)))
+         (margin (swizzle barn-size :z)))
+    (* (step 0.0 (max (swizzle h :x) (swizzle h :y)))
+       (step 0.0 (max (swizzle b :x) (swizzle b :y)))
+       (if (> margin 0.0)
+           (mix 0.12 1.0 (smoothstep 0.0 (max margin 0.001)
+                                      (sqrt (dot outside outside))))
+           1.0))))
+
 (define-shader grass-tiles-compute
     (:stage :compute
      :workgroup-size (64 1 1)
@@ -3994,7 +4031,7 @@
                           (> w (* -1.0 tile))
                           (< (abs (swizzle clip :x)) margin)
                           (< (abs (swizzle clip :y)) margin)))
-             (uv (field-uv centre lattice))
+             (uv (+ (field-uv centre lattice) (/ (vec2 0.5 0.5) (swizzle lattice :w))))
              (normal (unpack-normal
                       (swizzle (sample-level normals linear-repeat uv 0.0)
                                :xy)))
@@ -4047,35 +4084,9 @@
              ;; Nothing roots on a road's bared batters, or its tread.
              (faces (road-faces road-segments road-index centre height
                                 near-road))
-             ;; Nor under a house's floor.
-             (bare-d (- centre (swizzle bare :xy)))
-             (bare-u (+ (* (swizzle bare-d :x) (swizzle bare :z))
-                        (* (swizzle bare-d :y) (swizzle bare :w))))
-             (bare-v (- (* (swizzle bare-d :y) (swizzle bare :z))
-                        (* (swizzle bare-d :x) (swizzle bare :w))))
-             (indoors (and (< (abs bare-u) (swizzle bare-size :x))
-                           (< (abs bare-v) (swizzle bare-size :y))))
-             ;; Nor in the barn, and round it the yard is trodden and
-             ;; cropped short, thinning out to the meadow.
-             (yard-d (- centre (swizzle yard :xy)))
-             (yard-u (+ (* (swizzle yard-d :x) (swizzle yard :z))
-                        (* (swizzle yard-d :y) (swizzle yard :w))))
-             (yard-v (- (* (swizzle yard-d :y) (swizzle yard :z))
-                        (* (swizzle yard-d :x) (swizzle yard :w))))
-             (in-barn (and (< (abs yard-u) (swizzle yard-size :x))
-                           (< (abs yard-v) (swizzle yard-size :y))))
-             (yard-out (vec2 (max 0.0 (- (abs yard-u) (swizzle yard-size :x)))
-                             (max 0.0 (- (abs yard-v)
-                                         (swizzle yard-size :y)))))
-             (trodden (if (> (swizzle yard-size :z) 0.0)
-                          (mix 0.12 1.0
-                               (smoothstep 0.0 (swizzle yard-size :z)
-                                           (sqrt (dot yard-out yard-out))))
-                          1.0))
              (clear (* (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
                        (- 1.0 (swizzle verge :x))
-                       (if indoors 0.0 1.0)
-                       (if in-barn 0.0 trodden)))
+                       (yard-cover centre bare bare-size yard yard-size)))
              (wanted (* (max (* leaf (blade-resolved pixels)) heads)
                         fade 32.0 clear))
              (identity (cell-identity cell))
@@ -4163,7 +4174,8 @@
                      (* (vec2 (+ 0.03 (* 0.94 (plant-hash identity (uint 1))))
                               (+ 0.03 (* 0.94 (plant-hash identity (uint 2)))))
                         tile)))
-         (uv (field-uv root-xz lattice))
+         (detail-uv (field-uv root-xz lattice))
+         (uv (+ detail-uv (/ (vec2 0.5 0.5) (swizzle lattice :w))))
          (ground-normal (normalize
                          (unpack-normal
                           (swizzle (sample-level normals linear-repeat uv 0.0)
@@ -4182,7 +4194,7 @@
                               (swizzle (sample-level landscape linear-repeat
                                                      uv 0.0)
                                        :w))
-                  (read-heath detail linear-repeat uv)
+                  (read-heath detail linear-repeat detail-uv)
                   (sample-level plants linear-repeat uv 0.0)
                   (sample-level more-plants linear-repeat uv 0.0)
                   (sample-level scars linear-repeat uv 0.0)
@@ -4277,7 +4289,8 @@
                            ;; Clipped low by the wind on the fjäll.
                            (- 1.0 (* 0.45 (smoothstep 0.45 0.80 bloom-rise)))
                            (+ 0.85 (* 0.30 (plant-hash identity (uint 12)))))
-                        (* scale 0.65 spread))))
+                        (* (sqrt presence) (grass-medium-canopy-height medium)
+                           (+ 0.65 (* 0.65 vigour vigour)) spread 1.55))))
          (stem-width (* scale 0.010))
          (width (if flower
                     (* stem-width
@@ -4317,12 +4330,12 @@
          (bloom (clamp (+ (ling-bloom bloom-rise 0.5) (* 0.5 ling-young))
                        0.0 1.0))
          ;; An old stand's wood shows grey through its thinning foliage.
-         (ling-leaf (srgb (mix (mix (vec3 0.28 0.31 0.17)
+         (ling-leaf (mix (mix (vec3 0.28 0.31 0.17)
                                     (vec3 0.40 0.33 0.21)
                                     (plant-hash identity (uint 31)))
                                (vec3 0.40 0.38 0.35)
-                               (* 0.6 (smoothstep 0.70 0.85 ling-old)))))
-         (ling-spike (srgb (mix (mix (vec3 0.58 0.40 0.54)
+                               (* 0.6 (smoothstep 0.70 0.85 ling-old))))
+         (ling-spike (mix (mix (vec3 0.58 0.40 0.54)
                                      (vec3 0.43 0.27 0.24)
                                      (smoothstep 0.65 0.95
                                                  (plant-hash identity
@@ -4330,7 +4343,7 @@
                                 (vec3 0.52 0.48 0.46)
                                 (smoothstep (- bloom 0.15) (+ bloom 0.15)
                                             (plant-hash identity
-                                                        (uint 37))))))
+                                                        (uint 37)))))
          ;; The mover parts the field: upper sections lean away and lie
          ;; down toward the centre of its footprint.
          (from-mover (- root-xz (swizzle interaction :xz)))
@@ -4477,7 +4490,7 @@
          (ensemble-sky (* 0.5 (+ sky (hemisphere-light ambient-light
                                                        (* -1.0 n)))))
          (sun-light (swizzle sun-diffuse :xyz))
-         (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) cast))
+         (fill (shade-fill cast (smoothstep 0.6 0.95 (swizzle sun-direction :w))))
          (scatter (* sun-light (vec3 0.92 1.05 0.78)
                      (mix 0.12 0.20 (clamp (swizzle l :y) 0.0 1.0))
                      (clamp shade 0.0 1.0) (clamp (- 1.0 cast) 0.0 1.0)))
@@ -4665,7 +4678,8 @@
          (corner (vec2 (float (mod vertex-index (uint 5)))
                        (float (/ vertex-index (uint 5)))))
          (xz (* (+ cell (/ corner 4.0)) (swizzle window :w)))
-         (uv (field-uv xz lattice))
+         (detail-uv (field-uv xz lattice))
+         (uv (+ detail-uv (/ (vec2 0.5 0.5) (swizzle lattice :w))))
          (normal (normalize
                   (unpack-normal
                    (swizzle (sample-level normals linear-repeat uv 0.0) :xy))))
@@ -4683,7 +4697,7 @@
                                   (swizzle (sample-level landscape
                                                          linear-repeat uv 0.0)
                                            :w))
-                      (read-heath detail linear-repeat uv)
+                      (read-heath detail linear-repeat detail-uv)
                   (sample-level plants linear-repeat uv 0.0)
                   (sample-level more-plants linear-repeat uv 0.0)
                   (sample-level scars linear-repeat uv 0.0)
@@ -4748,7 +4762,7 @@
 ;;; the viewer, never a sampled normal.
 (define-shader-function sward-radiance (tint axis sun view sun-light
                                         sun-shine ambient cast visibility
-                                        sun-mean)
+                                        sun-mean overcast lamp-fill)
   (let* ((base (srgb (* tint (+ 0.58 (* 0.66 0.72)))))
          (up (normalize axis))
          (helper (if (< (abs (swizzle up :y)) 0.92) (vec3 0.0 1.0 0.0)
@@ -4781,8 +4795,8 @@
          (along (dot up half))
          (axial (sqrt (clamp (- 1.0 (* along along)) 0.0 1.0)))
          (sheen (* (expt axial 10.0) (+ 0.12 (* 0.88 toward toward))))
-         (fill (mix (vec3 0.80 0.92 1.14) (vec3 1.0 1.0 1.0) cast)))
-    (+ (* fill (* base sky))
+         (fill (shade-fill cast overcast)))
+    (+ (* base (+ (* fill sky) lamp-fill))
        (* (+ reflected transmitted
              (* sun-shine (* 0.055 sheen sun-mean)))
           visibility))))
@@ -4887,7 +4901,8 @@
          (faces (road-faces road-segments road-index field-xz
                             (swizzle ground-position :y) road-found))
          (verge (road-verge road-segments road-index field-xz road-found))
-         (open (* (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
+         (open (* (yard-cover field-xz bare bare-size yard yard-size)
+                  (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
                   (- 1.0 (swizzle verge :x))))
          ;; Beer-Lambert coverage of the upper leaves this rung owns.
          (fraction (* (clamp density-fraction 0.0 1.0) open))
@@ -4901,7 +4916,10 @@
                                    (+ (* (swizzle ambient :xyz)
                                          (mix 1.0 0.82 forest))
                                       scatter)
-                                   cast visibility sun-mean))
+                                   cast visibility sun-mean
+                                   (smoothstep 0.6 0.95 (swizzle sun-direction :w))
+                                   (lamp-light lamp lamp-color world-position
+                                               (vec3 0.0 1.0 0.0))))
          ;; March from the envelope toward the ground plane, no further
          ;; than the medium's lateral correlation length.
          (n (normalize ground-normal))
@@ -7233,6 +7251,19 @@
 ;;; Alchemy-style obscurance over a jittered spiral of depth taps: crevices,
 ;;; trunk bases, and the floor of the sward darken by how much nearby
 ;;; geometry leans over them.
+(define-shader-abstraction depth-tangent (step)
+  `(let* ((minus-uv (- uv ,step))
+          (plus-uv (+ uv ,step))
+          (zm (swizzle (sample scene-depth nearest-clamp minus-uv) :x))
+          (zp (swizzle (sample scene-depth nearest-clamp plus-uv) :x))
+          (dm (abs (- (view-depth zm near far) depth)))
+          (dp (abs (- (view-depth zp near far) depth)))
+          (ahead (<= dp dm))
+          (at (if ahead plus-uv minus-uv))
+          (sample-z (if (> (min dm dp) radius) z (if ahead zp zm)))
+          (p (depth-position at sample-z camera forward right up near far)))
+     (if ahead (- p position) (- position p))))
+
 (define-shader gtao-fragment
     (:stage :fragment
      :inputs ((uv :vec2 :location 0)
@@ -7249,8 +7280,6 @@
          (far (swizzle occlusion :w))
          (z (swizzle (sample scene-depth nearest-clamp uv) :x))
          (position (depth-position uv z camera forward right up near far))
-         (normal (normalize (cross3 (derivative-y position)
-                                    (derivative-x position))))
          (depth (view-depth z near far))
          ;; Close to the eye the radius would span most of the frame, its
          ;; taps each a cache miss of their own; it shrinks there to a
@@ -7258,6 +7287,10 @@
          (reach-up (/ (swizzle occlusion :x)
                       (* 2.0 depth (sqrt (dot up up)))))
          (radius (* (swizzle occlusion :x) (min 1.0 (/ 0.083 reach-up))))
+         (dx (depth-tangent (vec2 (swizzle blur :x) 0.0)))
+         (dy (depth-tangent (vec2 0.0 (swizzle blur :y))))
+         (face (cross3 dx dy))
+         (normal (normalize (if (> (dot face forward) 0.0) (* -1.0 face) face)))
          (uv-radius (* (/ radius (* 2.0 depth))
                        (vec2 (/ 1.0 (sqrt (dot right right)))
                              (/ 1.0 (sqrt (dot up up))))))
@@ -7276,7 +7309,11 @@
                     (to-tap (- tap position))
                     (lean (/ (* (max 0.0 (- (dot to-tap normal) bias)) radius)
                              (max (dot to-tap to-tap) 0.01))))
-               (+ total (if (> tap-z 0.000001) lean 0.0)))))
+               (+ total (if (> tap-z 0.000001)
+                            (* lean (- 1.0 (smoothstep (* 0.25 radius radius)
+                                                      (* radius radius)
+                                                      (dot to-tap to-tap))))
+                            0.0)))))
          (ao (clamp (- 1.0 (/ (* (swizzle occlusion :y) obscurance) 10.0))
                     0.0 1.0)))
     (set-output color (vec4 (if (> z 0.000001) ao 1.0) 0.0 0.0 1.0))))

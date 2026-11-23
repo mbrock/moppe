@@ -66,6 +66,7 @@ namespace moppe {
       draw_actor_layers (r, frame);
 
       draw_water_surfaces (r, frame);
+      r.draw_model_glass ();
       draw_boat_wakes (r, frame);
       draw_effect_layers (r, frame);
 

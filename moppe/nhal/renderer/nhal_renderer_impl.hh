@@ -152,7 +152,8 @@ namespace moppe::nhal {
 
     // -- resources the game holds -----------------------------------------
 
-    struct NhalTexture final : render::Texture {
+    struct NhalTexture final : render::Texture,
+                               std::enable_shared_from_this<NhalTexture> {
       Device* device = nullptr;
       nhal::Texture handle;
       ~NhalTexture () override {
@@ -160,7 +161,8 @@ namespace moppe::nhal {
       }
     };
 
-    struct NhalMesh final : render::Mesh {
+    struct NhalMesh final : render::Mesh,
+                            std::enable_shared_from_this<NhalMesh> {
       Device* device = nullptr;
       Buffer vertices;
       std::vector<DrawList::Run> runs;
@@ -482,6 +484,7 @@ namespace moppe::nhal {
 
       float scene_focal_pixels () const override;
 
+      void draw_model_glass () override;
       void draw_mesh (const render::Mesh& mesh,
                       const Mat4& model,
                       std::uint64_t motion_id) override;
@@ -603,12 +606,21 @@ namespace moppe::nhal {
       // `streamed_before`, where given, holds each streamed vertex as it
       // was last frame, for the motion.
       void draw_runs (const Transient& streamed,
-                      Buffer baked,
-                      const std::vector<DrawList::Run>& runs,
+                      const NhalMesh* mesh,
+                      std::span<const DrawList::Run> runs,
                       const Mat4& model,
                       const Mat4& previous,
                       Pipeline program = {},
                       const Transient* streamed_before = nullptr);
+
+      struct GlassRun {
+        Transient vertices, previous_vertices;
+        std::shared_ptr<const NhalMesh> mesh;
+        std::shared_ptr<const NhalTexture> texture;
+        DrawList::Run run;
+        Mat4 model, previous;
+      };
+      std::vector<GlassRun> m_glass;
 
       // The part of an upload from `bytes` on.
       static Transient advanced (Transient slice, std::uint64_t bytes);

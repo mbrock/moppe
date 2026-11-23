@@ -83,7 +83,8 @@ namespace moppe {
       void material (proportion_t metallic,
                      proportion_t roughness,
                      proportion_t coat,
-                     proportion_t sheen);
+                     proportion_t sheen,
+                     proportion_t coat_roughness = 0.03f * proportion[one]);
       void plain ();
       void normal (const Vec3& n);
       void normal (const direction_t& n);
@@ -163,6 +164,7 @@ namespace moppe {
       bool m_lit;
       uint8_t m_worn;
       bool m_fogged;
+      uint8_t m_coat_roughness = 0;
       uint8_t m_wind;
       uint8_t m_flutter;
       Surface m_surface;

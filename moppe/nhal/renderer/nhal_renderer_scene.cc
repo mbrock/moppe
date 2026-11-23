@@ -58,7 +58,7 @@ namespace moppe::nhal {
         m_current_vertices[motion_id].assign (now.begin (), now.end ());
       }
       draw_runs (vertices,
-                 Buffer {},
+                 nullptr,
                  list.runs (),
                  Mat4 {},
                  Mat4 {},
@@ -134,7 +134,22 @@ namespace moppe::nhal {
           previous = found->second;
         m_current_models[motion_id] = model;
       }
-      draw_runs ({}, m.vertices, m.runs, model, previous);
+      draw_runs ({}, &m, m.runs, model, previous);
+    }
+
+    void NhalRenderer::draw_model_glass () {
+      if (m_glass.empty ())
+        return;
+      open_scene ();
+      for (const GlassRun& g : m_glass)
+        draw_runs (g.vertices,
+                   g.mesh.get (),
+                   std::span (&g.run, 1),
+                   g.model,
+                   g.previous,
+                   uber (g.run.state),
+                   g.previous_vertices.data ? &g.previous_vertices : nullptr);
+      m_glass.clear ();
     }
 
     Pipeline NhalRenderer::uber (const DrawState& state) {
@@ -154,6 +169,8 @@ namespace moppe::nhal {
       desc.blend[0] = state.additive ? Blend::additive
                       : state.blend  ? Blend::alpha
                                      : Blend::none;
+      desc.preserve_color[1] =
+        !state.depth_write && (state.blend || state.additive);
       desc.depth_format = Format::d32_float;
       desc.depth_compare =
         state.depth_test ? CompareOp::greater_equal : CompareOp::always;
@@ -169,8 +186,8 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::draw_runs (const Transient& streamed,
-                                  Buffer baked,
-                                  const std::vector<DrawList::Run>& runs,
+                                  const NhalMesh* mesh,
+                                  std::span<const DrawList::Run> runs,
                                   const Mat4& model,
                                   const Mat4& previous,
                                   Pipeline program,
@@ -204,6 +221,18 @@ namespace moppe::nhal {
       for (const DrawList::Run& run : runs) {
         if (!run.count)
           continue;
+        if (run.state.glass && !program) {
+          const auto* texture = static_cast<const NhalTexture*> (run.texture);
+          m_glass.push_back (
+            { streamed,
+              streamed_before ? *streamed_before : Transient {},
+              mesh ? mesh->shared_from_this () : nullptr,
+              texture ? texture->shared_from_this () : nullptr,
+              run,
+              model,
+              previous });
+          continue;
+        }
         if (first || run.state != current) {
           m_device->set_pipeline (program ? program : uber (run.state));
           current = run.state;
@@ -216,9 +245,9 @@ namespace moppe::nhal {
         const std::uint64_t offset =
           std::uint64_t (run.first - first) * sizeof (render::Vertex);
         m_device->set_buffer (0, m_frame_block);
-        if (baked) {
-          m_device->set_buffer (1, baked, offset);
-          m_device->set_buffer (3, baked, offset);
+        if (mesh) {
+          m_device->set_buffer (1, mesh->vertices, offset);
+          m_device->set_buffer (3, mesh->vertices, offset);
         } else {
           m_device->set_buffer (1, advanced (streamed, offset));
           m_device->set_buffer (

@@ -473,7 +473,7 @@ namespace moppe::nhal {
         rd.Width = desc.width;
         rd.Height = desc.height;
         rd.DepthOrArraySize = 1;
-        rd.MipLevels = 1;
+        rd.MipLevels = static_cast<UINT16> (desc.mip_levels);
         rd.Format = sampled_depth ? DXGI_FORMAT_R32_TYPELESS : format;
         rd.SampleDesc.Count = desc.samples;
         if (desc.usage & usage_render_target)
@@ -512,27 +512,31 @@ namespace moppe::nhal {
 
       void write_texture (Texture handle,
                           std::span<const std::byte> pixels,
-                          std::uint32_t row_bytes) override {
+                          std::uint32_t row_bytes,
+                          std::uint32_t level) override {
         D3DTexture& t = m_textures[handle];
+        const auto width = std::max (1u, t.desc.width >> level);
+        const auto height = std::max (1u, t.desc.height >> level);
         const auto rd = t.resource->GetDesc ();
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint {};
         UINT64 total = 0;
         m_device->GetCopyableFootprints (
-          &rd, 0, 1, 0, &footprint, nullptr, nullptr, &total);
+          &rd, level, 1, 0, &footprint, nullptr, nullptr, &total);
         if (!row_bytes)
-          row_bytes = t.desc.width * bytes_per_pixel (t.desc.format);
+          row_bytes = width * bytes_per_pixel (t.desc.format);
         std::vector<std::byte> staged (total);
-        for (std::uint32_t y = 0; y < t.desc.height; ++y)
-          std::memcpy (
-            staged.data () + footprint.Footprint.RowPitch * y,
-            pixels.data () + std::size_t (row_bytes) * y,
-            std::min<std::size_t> (row_bytes, footprint.Footprint.RowPitch));
+        for (std::uint32_t y = 0; y < height; ++y)
+          std::memcpy (staged.data () + footprint.Footprint.RowPitch * y,
+                       pixels.data () + std::size_t (row_bytes) * y,
+                       std::min<std::size_t> (
+                         row_bytes, width * bytes_per_pixel (t.desc.format)));
         ComPtr<ID3D12Resource> staging = staging_buffer (staged);
         begin_setup ();
         transition (m_setup.Get (), t, D3D12_RESOURCE_STATE_COPY_DEST);
         D3D12_TEXTURE_COPY_LOCATION to {};
         to.pResource = t.resource.Get ();
         to.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        to.SubresourceIndex = level;
         D3D12_TEXTURE_COPY_LOCATION from {};
         from.pResource = staging.Get ();
         from.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
@@ -555,7 +559,8 @@ namespace moppe::nhal {
         for (std::uint32_t i = 0; i < desc.color_count; ++i) {
           pd.RTVFormats[i] = dxgi_format (desc.color_formats[i]);
           auto& blend = pd.BlendState.RenderTarget[i];
-          blend.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+          blend.RenderTargetWriteMask =
+            desc.preserve_color[i] ? 0 : D3D12_COLOR_WRITE_ENABLE_ALL;
           blend.SrcBlend = blend.SrcBlendAlpha = D3D12_BLEND_ONE;
           blend.DestBlend = blend.DestBlendAlpha = D3D12_BLEND_ZERO;
           blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
@@ -1109,7 +1114,7 @@ namespace moppe::nhal {
             D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
           view.ViewDimension = multisampled ? D3D12_SRV_DIMENSION_TEXTURE2DMS
                                             : D3D12_SRV_DIMENSION_TEXTURE2D;
-          view.Texture2D.MipLevels = 1;
+          view.Texture2D.MipLevels = t.desc.mip_levels;
           m_device->CreateShaderResourceView (
             t.resource.Get (), &view, m_srv_pool.cpu (t.srv));
         }

@@ -172,7 +172,7 @@ namespace moppe::nhal {
       if (!m.vertices || m_scene_closed)
         return;
       open_scene ();
-      draw_runs ({}, m.vertices, m.runs, model, model, m_water.waterfall);
+      draw_runs ({}, &m, m.runs, model, model, m_water.waterfall);
     }
   }
 }

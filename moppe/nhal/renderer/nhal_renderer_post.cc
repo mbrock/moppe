@@ -78,6 +78,9 @@ namespace moppe::nhal {
                          params.strength.numerical_value_in (mp_units::one),
                          params.near_plane.numerical_value_in (u::m),
                          params.far_plane.numerical_value_in (u::m) };
+      post.blur = {
+        1.0f / float (m_scene_width), 1.0f / float (m_scene_height), 0, 0
+      };
       m_post.block = post;
       auto pass = [&] (Texture target, const char* label) {
         RenderPassDesc desc;

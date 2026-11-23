@@ -140,6 +140,7 @@ namespace moppe::nhal {
       if (m_scene_closed)
         return;
       open_scene ();
+      draw_model_glass ();
       const float rain = m_params.rain.numerical_value_in (one);
       if (rain > 0.0f) {
         // The rain, last in the scene so it falls in front of

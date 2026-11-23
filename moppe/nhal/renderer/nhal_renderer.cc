@@ -6,6 +6,9 @@
 
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
 
+#include <bit>
+#include <cmath>
+
 namespace moppe::nhal {
   namespace detail {
     // The shaders read streamed vertices by word (world.lisp's
@@ -26,6 +29,69 @@ namespace moppe::nhal {
     static_assert (offsetof (V, color) == word * streamed::color);
     static_assert (offsetof (V, lit) == word * streamed::lit);
     static_assert (offsetof (V, surface) == word * streamed::surface);
+
+    // Box-filter in linear light. Fractional taps include both edges of
+    // odd-sized images. Alpha weights keep transparent colours out of RGB.
+    static void upload_rgba (Device& device,
+                             Texture texture,
+                             const TextureDesc& desc,
+                             std::span<const std::uint8_t> pixels) {
+      const bool srgb = desc.format == Format::rgba8_unorm_srgb;
+      static const auto linear = [] {
+        std::array<float, 256> values {};
+        for (unsigned i = 0; i < values.size (); ++i) {
+          const float v = float (i) / 255.0f;
+          values[i] =
+            v <= 0.04045f ? v / 12.92f : std::pow ((v + 0.055f) / 1.055f, 2.4f);
+        }
+        return values;
+      }();
+      auto w = desc.width, h = desc.height;
+      std::vector<std::uint8_t> storage;
+      for (unsigned level = 0; level < desc.mip_levels; ++level) {
+        device.write_texture (texture, std::as_bytes (pixels), 0, level);
+        if (level + 1 == desc.mip_levels)
+          break;
+        const auto nw = std::max (1u, w / 2), nh = std::max (1u, h / 2);
+        std::vector<std::uint8_t> next (std::size_t (nw) * nh * 4);
+        for (unsigned y = 0; y < nh; ++y)
+          for (unsigned x = 0; x < nw; ++x) {
+            const double x0 = double (x) * w / nw, x1 = double (x + 1) * w / nw;
+            const double y0 = double (y) * h / nh, y1 = double (y + 1) * h / nh;
+            std::array<double, 4> sum {};
+            double weight = 0;
+            for (unsigned j = unsigned (y0); j < y1; ++j)
+              for (unsigned i = unsigned (x0); i < x1; ++i) {
+                const double area =
+                  (std::min (x1, i + 1.0) - std::max (x0, double (i))) *
+                  (std::min (y1, j + 1.0) - std::max (y0, double (j)));
+                const auto* src =
+                  pixels.data () + (std::size_t (j) * w + i) * 4;
+                // Linear data textures have four independent channels.
+                const double rgb_weight = srgb ? area * src[3] : area;
+                weight += rgb_weight;
+                for (unsigned c = 0; c < 3; ++c)
+                  sum[c] +=
+                    rgb_weight * (srgb ? linear[src[c]] : src[c] / 255.0);
+                sum[3] += area * src[3];
+              }
+            auto* dst = next.data () + (std::size_t (y) * nw + x) * 4;
+            for (unsigned c = 0; c < 3; ++c) {
+              double v = weight > 0 ? sum[c] / weight : 0;
+              if (srgb)
+                v = v <= 0.0031308 ? 12.92 * v
+                                   : 1.055 * std::pow (v, 1 / 2.4) - 0.055;
+              dst[c] = std::uint8_t (std::lround (255 * v));
+            }
+            dst[3] =
+              std::uint8_t (std::lround (sum[3] / ((x1 - x0) * (y1 - y0))));
+          }
+        w = nw;
+        h = nh;
+        storage = std::move (next);
+        pixels = storage;
+      }
+    }
 
     NhalRenderer::NhalRenderer (std::unique_ptr<Device> device,
                                 const WorldShaders& shaders,
@@ -50,14 +116,16 @@ namespace moppe::nhal {
         { 1, 1, Format::rgba8_unorm, usage_sampled, 1, "clear" });
       m_device->write_texture (m_clear, std::as_bytes (std::span (clear)));
       const render::GroundDetail detail = render::make_ground_detail ();
-      m_terrain.detail = m_device->create_texture ({ render::GroundDetail::size,
-                                                     render::GroundDetail::size,
-                                                     Format::rgba8_unorm,
-                                                     usage_sampled,
-                                                     1,
-                                                     "ground detail" });
-      m_device->write_texture (m_terrain.detail,
-                               std::as_bytes (std::span (detail.pixels)));
+      constexpr auto side = render::GroundDetail::size;
+      const TextureDesc sheet { side,
+                                side,
+                                Format::rgba8_unorm,
+                                usage_sampled,
+                                1,
+                                "ground detail",
+                                std::bit_width (unsigned (side)) };
+      m_terrain.detail = m_device->create_texture (sheet);
+      upload_rgba (*m_device, m_terrain.detail, sheet, detail.pixels);
       // No current at all, for water drawn before (or without) a flow.
       const std::uint16_t still[4] = { 0, 0, 0, 0 };
       m_water.still = m_device->create_texture (
@@ -91,12 +159,15 @@ namespace moppe::nhal {
       texture->device = m_device.get ();
       texture->width = desc.width;
       texture->height = desc.height;
-      texture->handle = m_device->create_texture ({ std::uint32_t (desc.width),
-                                                    std::uint32_t (desc.height),
-                                                    Format::rgba8_unorm_srgb,
-                                                    usage_sampled,
-                                                    1,
-                                                    "game texture" });
+      const auto width = std::uint32_t (desc.width);
+      const auto height = std::uint32_t (desc.height);
+      const unsigned levels = desc.filter == render::TextureFilter::Mipmap
+                                ? std::bit_width (std::max (width, height))
+                                : 1;
+      const TextureDesc image { width,         height, Format::rgba8_unorm_srgb,
+                                usage_sampled, 1,      "game texture",
+                                levels };
+      texture->handle = m_device->create_texture (image);
       const std::size_t texels = std::size_t (desc.width) * desc.height;
       std::vector<std::uint8_t> rgba (texels * 4, 255);
       const auto* source = static_cast<const std::uint8_t*> (pixels);
@@ -106,8 +177,7 @@ namespace moppe::nhal {
       } else if (source) {
         std::memcpy (rgba.data (), source, rgba.size ());
       }
-      m_device->write_texture (texture->handle,
-                               std::as_bytes (std::span (rgba)));
+      upload_rgba (*m_device, texture->handle, image, rgba);
       return texture;
     }
 

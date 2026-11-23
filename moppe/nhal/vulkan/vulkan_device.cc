@@ -305,7 +305,7 @@ namespace moppe::nhal {
         info.imageType = VK_IMAGE_TYPE_2D;
         info.format = vk_format (desc.format);
         info.extent = { desc.width, desc.height, 1 };
-        info.mipLevels = 1;
+        info.mipLevels = desc.mip_levels;
         info.arrayLayers = 1;
         info.samples = vk_samples (desc.samples);
         info.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -326,27 +326,30 @@ namespace moppe::nhal {
         t.memory = allocate_memory (needs, Placement::device);
         check (vkBindImageMemory (m_device, t.image, t.memory, 0),
                "bind image memory");
-        t.view = make_view (t.image, info.format, depth);
+        t.view = make_view (t.image, info.format, depth, desc.mip_levels);
         name (VK_OBJECT_TYPE_IMAGE, std::uint64_t (t.image), desc.label);
         return m_textures.insert<Texture> (t);
       }
 
       void write_texture (Texture handle,
                           std::span<const std::byte> pixels,
-                          std::uint32_t row_bytes) override {
+                          std::uint32_t row_bytes,
+                          std::uint32_t level) override {
         VkTextureRow& t = m_textures[handle];
+        const auto width = std::max (1u, t.desc.width >> level);
+        const auto height = std::max (1u, t.desc.height >> level);
         const std::uint32_t texel = bytes_per_pixel (t.desc.format);
         if (!row_bytes)
-          row_bytes = t.desc.width * texel;
+          row_bytes = width * texel;
         VkBufferRow staging =
           staging_buffer (pixels.first (std::min<std::size_t> (
-            pixels.size (), std::size_t (row_bytes) * t.desc.height)));
+            pixels.size (), std::size_t (row_bytes) * height)));
         VkCommandBuffer cb = begin_setup ();
-        barrier (cb, { { &t, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, true } });
+        barrier (cb, { { &t, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, false } });
         VkBufferImageCopy region {};
         region.bufferRowLength = row_bytes / texel;
-        region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-        region.imageExtent = { t.desc.width, t.desc.height, 1 };
+        region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1 };
+        region.imageExtent = { width, height, 1 };
         vkCmdCopyBufferToImage (cb,
                                 staging.buffer,
                                 t.image,
@@ -428,6 +431,8 @@ namespace moppe::nhal {
           b.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+          if (desc.preserve_color[i])
+            b.colorWriteMask = 0;
           if (desc.blend[i] == Blend::none)
             continue;
           const bool additive = desc.blend[i] == Blend::additive;
@@ -1829,7 +1834,10 @@ namespace moppe::nhal {
         return row;
       }
 
-      VkImageView make_view (VkImage image, VkFormat format, bool depth) {
+      VkImageView make_view (VkImage image,
+                             VkFormat format,
+                             bool depth,
+                             std::uint32_t levels = 1) {
         VkImageViewCreateInfo info { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
         info.image = image;
         info.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -1837,7 +1845,7 @@ namespace moppe::nhal {
         info.subresourceRange = { depth ? VK_IMAGE_ASPECT_DEPTH_BIT
                                         : VK_IMAGE_ASPECT_COLOR_BIT,
                                   0,
-                                  1,
+                                  levels,
                                   0,
                                   1 };
         VkImageView view;
@@ -2082,7 +2090,7 @@ namespace moppe::nhal {
                                    ? VK_IMAGE_ASPECT_DEPTH_BIT
                                    : VK_IMAGE_ASPECT_COLOR_BIT,
                                  0,
-                                 1,
+                                 row.desc.mip_levels,
                                  0,
                                  1 };
           images.push_back (b);

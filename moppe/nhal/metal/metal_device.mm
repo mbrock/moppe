@@ -246,6 +246,7 @@ namespace moppe::nhal {
         td.width = desc.width;
         td.height = desc.height;
         td.sampleCount = desc.samples;
+        td.mipmapLevelCount = desc.mip_levels;
         td.usage = MTLTextureUsageUnknown;
         if (desc.usage & usage_sampled)
           td.usage |= MTLTextureUsageShaderRead;
@@ -269,18 +270,20 @@ namespace moppe::nhal {
       // so a texture must not be rewritten while a frame still reads it.
       void write_texture (Texture handle,
                           std::span<const std::byte> pixels,
-                          std::uint32_t row_bytes) override {
+                          std::uint32_t row_bytes,
+                          std::uint32_t level) override {
         MetalTexture& t = m_textures[handle];
+        const auto width = std::max (1u, t.desc.width >> level);
+        const auto height = std::max (1u, t.desc.height >> level);
         if (t.texture.storageMode != MTLStorageModeShared)
           throw std::invalid_argument (
             "NHAL: only sampled-only textures can be written");
         if (!row_bytes)
-          row_bytes = t.desc.width * bytes_per_pixel (t.desc.format);
-        [t.texture
-          replaceRegion:MTLRegionMake2D (0, 0, t.desc.width, t.desc.height)
-            mipmapLevel:0
-              withBytes:pixels.data ()
-            bytesPerRow:row_bytes];
+          row_bytes = width * bytes_per_pixel (t.desc.format);
+        [t.texture replaceRegion:MTLRegionMake2D (0, 0, width, height)
+                     mipmapLevel:level
+                       withBytes:pixels.data ()
+                     bytesPerRow:row_bytes];
       }
 
       Pipeline
@@ -297,6 +300,8 @@ namespace moppe::nhal {
         for (std::uint32_t i = 0; i < desc.color_count; ++i) {
           auto* color = d.colorAttachments[i];
           color.pixelFormat = pixel_format (desc.color_formats[i]);
+          if (desc.preserve_color[i])
+            color.writeMask = MTLColorWriteMaskNone;
           if (desc.blend[i] == Blend::none)
             continue;
           color.blendingEnabled = YES;

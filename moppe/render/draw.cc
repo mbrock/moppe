@@ -29,6 +29,7 @@ namespace moppe {
       m_wind = 0;
       m_flutter = 0;
       m_surface = Surface ();
+      m_coat_roughness = 0;
       m_texture = 0;
       m_state = DrawState ();
       m_in_begin = false;
@@ -162,19 +163,24 @@ namespace moppe {
                              float roughness,
                              float coat,
                              float sheen) {
+      m_coat_roughness = PackedRgba8::quantize (0.03f) >> 1;
       m_surface = Surface::of (metallic, roughness, coat, sheen);
     }
     void DrawList::material (proportion_t metallic,
                              proportion_t roughness,
                              proportion_t coat,
-                             proportion_t sheen) {
+                             proportion_t sheen,
+                             proportion_t coat_roughness) {
       material (metallic.numerical_value_in (one),
                 roughness.numerical_value_in (one),
                 coat.numerical_value_in (one),
                 sheen.numerical_value_in (one));
+      m_coat_roughness =
+        PackedRgba8::quantize (coat_roughness.numerical_value_in (one)) >> 1;
     }
     void DrawList::plain () {
       m_surface = Surface ();
+      m_coat_roughness = 0;
     }
     void DrawList::set_texture (const Texture* t) {
       m_texture = t;
@@ -218,7 +224,7 @@ namespace moppe {
       v.v = m_v;
       v.color = m_color;
       v.lit = m_lit ? std::max<uint8_t> (m_worn, 1) : 0;
-      v.fogged = m_fogged ? 1 : 0;
+      v.fogged = (m_coat_roughness << 1) | unsigned (m_fogged);
       v.wind = m_wind;
       v.flutter = m_flutter;
       v.surface = m_surface;

@@ -1,6 +1,8 @@
 #include <moppe/game/model_mesh.hh>
 #include <moppe/gfx/mat4.hh>
 
+#include <algorithm>
+
 namespace moppe::game::model_mesh {
   void record (render::DrawList& dl, const Mesh& mesh) {
     // What lets light through (glass, a lamp's lens is lit) is drawn
@@ -10,38 +12,44 @@ namespace moppe::game::model_mesh {
       return paint.transmission > 0.5f * proportion[one] && !paint.unlit;
     };
     const render::DrawState before = dl.state ();
-    bool clear = false;
-    dl.begin (render::Prim::Triangles);
-    for (const Triangle& t : mesh.triangles) {
-      const Paint& paint = mesh.paints[t.paint];
-      if (see_through (paint) != clear) {
-        dl.end ();
-        clear = see_through (paint);
-        render::DrawState state = before;
-        state.blend = clear;
-        state.depth_write = !clear && before.depth_write;
-        dl.state (state);
-        dl.begin (render::Prim::Triangles);
+    const bool has_glass = std::ranges::any_of (mesh.paints, see_through);
+    for (const bool clear : { false, true }) {
+      if (clear && !has_glass)
+        break;
+      render::DrawState state = before;
+      state.glass = clear;
+      state.blend = clear || before.blend;
+      state.depth_write = !clear && before.depth_write;
+      dl.state (state);
+      dl.begin (render::Prim::Triangles);
+      for (const Triangle& t : mesh.triangles) {
+        const Paint& paint = mesh.paints[t.paint];
+        if (has_glass && see_through (paint) != clear)
+          continue;
+        dl.lit (!paint.unlit);
+        const proportion_t opaque = 1.0f * proportion[one];
+        dl.color (paint.colour,
+                  clear ? opaque - 0.7f * paint.transmission : opaque);
+        dl.material (paint.metallic,
+                     paint.roughness,
+                     paint.coat,
+                     paint.sheen,
+                     paint.coat_roughness);
+        // The exported vertex table is raw storage: each vertex becomes a
+        // model-space offset and a unit normal here. Its wear stays the
+        // plain float, whose negative means no film.
+        for (const std::uint16_t i : t.vertex) {
+          const Vertex& v = mesh.vertices[i];
+          dl.normal (
+            unit_direction (Vec3 (v.normal[0], v.normal[1], v.normal[2])));
+          dl.uv (v.film[0], v.film[1]);
+          dl.worn (v.wear);
+          dl.vertex (
+            displacement (Vec3 (v.position[0], v.position[1], v.position[2])));
+        }
       }
-      dl.lit (!paint.unlit);
-      const proportion_t opaque = 1.0f * proportion[one];
-      dl.color (paint.colour,
-                clear ? opaque - 0.7f * paint.transmission : opaque);
-      dl.material (paint.metallic, paint.roughness, paint.coat, paint.sheen);
-      // The exported vertex table is raw storage: each vertex becomes a
-      // model-space offset and a unit normal here. Its wear stays the
-      // plain float, whose negative means no film.
-      for (const std::uint16_t i : t.vertex) {
-        const Vertex& v = mesh.vertices[i];
-        dl.normal (
-          unit_direction (Vec3 (v.normal[0], v.normal[1], v.normal[2])));
-        dl.uv (v.film[0], v.film[1]);
-        dl.worn (v.wear);
-        dl.vertex (
-          displacement (Vec3 (v.position[0], v.position[1], v.position[2])));
-      }
+      dl.end ();
     }
-    dl.end ();
     dl.state (before);
     dl.lit (true);
     dl.plain ();

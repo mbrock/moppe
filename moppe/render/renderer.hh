@@ -480,6 +480,8 @@ namespace moppe {
       virtual void draw_mesh (const Mesh& mesh,
                               const Mat4& model,
                               uint64_t motion_id = 0) = 0;
+      virtual void draw_model_glass () {}
+
       // How many of the scene's pixels a metre spans a metre ahead of the
       // camera of the frame begun last (its focal length in those pixels),
       // so that a caller can leave out detail finer than a pixel: a thing

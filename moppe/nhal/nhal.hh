@@ -125,6 +125,7 @@ namespace moppe::nhal {
     TextureUsage usage = usage_sampled;
     std::uint32_t samples = 1;
     const char* label = nullptr;
+    std::uint32_t mip_levels = 1;
   };
 
   // Handles index the device's tables; the generation catches stale use.
@@ -179,6 +180,7 @@ namespace moppe::nhal {
     StageCode fragment;
     std::array<Format, 8> color_formats {};
     std::array<Blend, 8> blend {};
+    std::array<bool, 8> preserve_color {};
     std::uint32_t color_count = 1;
     Format depth_format = Format::undefined;
     // Reversed-Z by default: nearer is greater.
@@ -287,11 +289,12 @@ namespace moppe::nhal {
     // Upload buffers only: the CPU address, valid for the buffer's life.
     virtual void* contents (Buffer buffer) = 0;
     virtual Texture create_texture (const TextureDesc& desc) = 0;
-    // Replaces the whole texture; rows are tightly packed unless
+    // Replaces one whole mip level; rows are tightly packed unless
     // row_bytes says otherwise. Completes before the next frame's work.
     virtual void write_texture (Texture texture,
                                 std::span<const std::byte> pixels,
-                                std::uint32_t row_bytes = 0) = 0;
+                                std::uint32_t row_bytes = 0,
+                                std::uint32_t level = 0) = 0;
     virtual Pipeline
     create_render_pipeline (const RenderPipelineDesc& desc) = 0;
     virtual Pipeline

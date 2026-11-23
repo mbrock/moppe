@@ -447,6 +447,7 @@ namespace moppe::nhal {
         info.size = { desc.width, desc.height, 1 };
         info.format = wgpu_format (desc.format);
         info.sampleCount = std::max (desc.samples, 1u);
+        info.mipLevelCount = desc.mip_levels;
         // Multisampled textures are attachments only.
         if (info.sampleCount == 1)
           info.usage = WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
@@ -463,39 +464,42 @@ namespace moppe::nhal {
 
       void write_texture (Texture handle,
                           std::span<const std::byte> pixels,
-                          std::uint32_t row_bytes) override {
+                          std::uint32_t row_bytes,
+                          std::uint32_t level) override {
         const TextureRow& t = m_textures[handle];
+        const auto width = std::max (1u, t.desc.width >> level);
+        const auto height = std::max (1u, t.desc.height >> level);
         const std::uint32_t texel = bytes_per_pixel (t.desc.format);
         if (!row_bytes)
-          row_bytes = t.desc.width * texel;
+          row_bytes = width * texel;
         std::vector<std::uint16_t> halves;
         if (t.desc.format == Format::rg16_snorm) {
           // Each row's signed pairs as half floats, tightly packed.
-          halves.resize (std::size_t (t.desc.width) * t.desc.height * 2);
-          for (std::uint32_t y = 0; y < t.desc.height; ++y) {
+          halves.resize (std::size_t (width) * height * 2);
+          for (std::uint32_t y = 0; y < height; ++y) {
             const std::byte* from =
               pixels.data () + std::size_t (y) * row_bytes;
-            std::uint16_t* to =
-              halves.data () + std::size_t (y) * t.desc.width * 2;
-            for (std::uint32_t i = 0; i < t.desc.width * 2; ++i) {
+            std::uint16_t* to = halves.data () + std::size_t (y) * width * 2;
+            for (std::uint32_t i = 0; i < width * 2; ++i) {
               std::int16_t value;
               std::memcpy (&value, from + i * 2, sizeof value);
               to[i] = half_from_snorm (value);
             }
           }
           pixels = std::as_bytes (std::span (halves));
-          row_bytes = t.desc.width * texel;
+          row_bytes = width * texel;
         }
         WGPUTexelCopyTextureInfo target = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
         target.texture = t.texture;
-        const WGPUTexelCopyBufferLayout layout { 0, row_bytes, t.desc.height };
-        const WGPUExtent3D extent { t.desc.width, t.desc.height, 1 };
+        target.mipLevel = level;
+        const WGPUTexelCopyBufferLayout layout { 0, row_bytes, height };
+        const WGPUExtent3D extent { width, height, 1 };
         wgpuQueueWriteTexture (
           m_queue,
           &target,
           pixels.data (),
           std::min<std::size_t> (pixels.size (),
-                                 std::size_t (row_bytes) * t.desc.height),
+                                 std::size_t (row_bytes) * height),
           &layout,
           &extent);
       }
@@ -1166,6 +1170,8 @@ namespace moppe::nhal {
           WGPUColorTargetState& target = targets[i];
           target = WGPU_COLOR_TARGET_STATE_INIT;
           target.format = wgpu_format (desc.color_formats[i]);
+          if (desc.preserve_color[i])
+            target.writeMask = WGPUColorWriteMask_None;
           if (desc.blend[i] == Blend::none)
             continue;
           const bool additive = desc.blend[i] == Blend::additive;

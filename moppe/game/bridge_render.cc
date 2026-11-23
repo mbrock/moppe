@@ -88,6 +88,31 @@ namespace moppe::game {
       face (along (w, -hw), along (v, hv), along (u, hu));
     }
 
+    // A quad facing `facing`, whichever way its corners go round.
+    void quad (render::DrawList& dl,
+               displacement_t p0,
+               displacement_t p1,
+               displacement_t p2,
+               displacement_t p3,
+               const direction_t& facing) {
+      // The corners' cross product, square metres: its way is the normal.
+      Vec3 n =
+        cross (displacement_value (p1 - p0), displacement_value (p3 - p0));
+      if (dot (n, direction_value (facing)) < 0.0f) {
+        std::swap (p1, p3);
+        n = -n;
+      }
+      if (length2 (n) < 1e-12f)
+        return;
+      dl.normal (unit_direction (normalized (n)));
+      dl.vertex (p0);
+      dl.vertex (p1);
+      dl.vertex (p2);
+      dl.vertex (p0);
+      dl.vertex (p2);
+      dl.vertex (p3);
+    }
+
     // A beam from `a` to `b`, `half` across and `depth` high.
     void beam (render::DrawList& dl,
                const displacement_t& a,
@@ -162,10 +187,10 @@ namespace moppe::game {
         };
         // The way across at each point, left of the way along.
         const auto side_at = [&] (std::size_t k) {
-          const Vec3& a = position_value (at (k > first ? k - 1 : k));
-          const Vec3& b = position_value (at (k < last ? k + 1 : k));
-          const Vec3 d = normalized (Vec3 (b[0] - a[0], 0.0f, b[2] - a[2]));
-          return unit_direction (Vec3 (-d[2], 0.0f, d[0]));
+          const position_t a = at (k > first ? k - 1 : k);
+          const position_t b = at (k < last ? k + 1 : k);
+          const Vec2 d = plan_value (plan (b)) - plan_value (plan (a));
+          return unit_direction (normalized (Vec3 (-d.z (), 0.0f, d.x ())));
         };
 
         render::DrawList dl;
@@ -197,7 +222,9 @@ namespace moppe::game {
           const direction_t u = unit_direction (
             displacement_value (b - a) / std::max (meters_value (run), 1e-3f));
           const direction_t side = unit_direction (
-            normalized ((direction_value (sa) + direction_value (sb)) * 0.5f));
+            normalized (cross (direction_value (u), direction_value (up))));
+          const direction_t deck_up = unit_direction (
+            cross (direction_value (side), direction_value (u)));
           // Planks across the way, a little more than a third of a metre
           // each, laid on the stringers; their top is the deck the
           // physics drives on.
@@ -207,52 +234,83 @@ namespace moppe::game {
             const blend_weight_t t =
               (static_cast<float> (p) + 0.5f) / planks * blend_weight[one];
             const displacement_t c =
-              between (a, b, t) - along (up, 0.04f * u::m);
+              between (a, b, t) - along (deck_up, 0.04f * u::m);
             box (dl,
                  c,
                  u,
                  side,
-                 up,
+                 deck_up,
                  0.5f * run / static_cast<float> (planks) - 0.015f * u::m,
                  half + 0.15f * u::m,
                  0.04f * u::m,
                  plank,
                  shade_of (0.82f, 0.3f, jitter (++seed)));
           }
-          // Two stringers under the deck, and the kerbs along its edges.
-          for (const meters_t s : { -1.5f * u::m, 1.5f * u::m })
-            beam (dl,
-                  a + along (sa, s) - along (up, 0.38f * u::m),
-                  b + along (sb, s) - along (up, 0.38f * u::m),
-                  0.16f * u::m,
-                  0.6f * u::m,
-                  tarred);
-          // Each side in turn, left of the way and right of it.
+          // Long timbers share a cross section at each station. Adjacent
+          // spans meet on the bend, with end grain only at the two banks.
+          const auto timber = [&] (meters_t offset,
+                                   meters_t y,
+                                   meters_t width,
+                                   meters_t depth,
+                                   DisplayColor colour,
+                                   scale_factor_t shade) {
+            const auto corner = [&] (bool end, int x, int z) {
+              return (end ? b : a) +
+                     along (end ? sb : sa, offset + float (x) * width) +
+                     along (up, y + float (z) * depth);
+            };
+            dl.color (scale_display (colour, shade));
+            for (const int sign : { -1, 1 }) {
+              quad (dl,
+                    corner (false, -1, sign),
+                    corner (true, -1, sign),
+                    corner (true, 1, sign),
+                    corner (false, 1, sign),
+                    sign > 0 ? up : -up);
+              quad (dl,
+                    corner (false, sign, -1),
+                    corner (true, sign, -1),
+                    corner (true, sign, 1),
+                    corner (false, sign, 1),
+                    sign > 0 ? side : -side);
+            }
+            for (const bool end : { false, true }) {
+              if (end ? k != last : k != first + 1)
+                continue;
+              quad (dl,
+                    corner (end, -1, -1),
+                    corner (end, -1, 1),
+                    corner (end, 1, 1),
+                    corner (end, 1, -1),
+                    end ? u : -u);
+            }
+          };
           for (const int sign : { -1, 1 }) {
-            const float s = static_cast<float> (sign);
-            const meters_t e = s * (half + 0.12f * u::m);
-            beam (dl,
-                  a + along (sa, e) + along (up, 0.1f * u::m),
-                  b + along (sb, e) + along (up, 0.1f * u::m),
-                  0.12f * u::m,
-                  0.2f * u::m,
-                  rail,
-                  0.9f * scale_factor[one]);
-            // The railing: a top rail and a mid rail.
-            const meters_t r = s * (half + 0.3f * u::m);
-            beam (dl,
-                  a + along (sa, r) + along (up, 1.05f * u::m),
-                  b + along (sb, r) + along (up, 1.05f * u::m),
-                  0.05f * u::m,
-                  0.12f * u::m,
-                  rail);
-            beam (dl,
-                  a + along (sa, r) + along (up, 0.55f * u::m),
-                  b + along (sb, r) + along (up, 0.55f * u::m),
-                  0.04f * u::m,
-                  0.09f * u::m,
-                  rail,
-                  0.92f * scale_factor[one]);
+            timber (sign * 1.5f * u::m,
+                    -0.38f * u::m,
+                    0.16f * u::m,
+                    0.30f * u::m,
+                    tarred,
+                    1.0f * scale_factor[one]);
+            timber (float (sign) * (half + 0.12f * u::m),
+                    0.1f * u::m,
+                    0.12f * u::m,
+                    0.1f * u::m,
+                    rail,
+                    0.9f * scale_factor[one]);
+            const meters_t edge = float (sign) * (half + 0.3f * u::m);
+            timber (edge,
+                    1.05f * u::m,
+                    0.05f * u::m,
+                    0.06f * u::m,
+                    rail,
+                    1.0f * scale_factor[one]);
+            timber (edge,
+                    0.55f * u::m,
+                    0.04f * u::m,
+                    0.045f * u::m,
+                    rail,
+                    0.92f * scale_factor[one]);
           }
           // Posts every two metres or so.
           while (next_post <= walked + run) {
@@ -334,11 +392,11 @@ namespace moppe::game {
           const meters_t bank = ground (plan (at (k))) - 1.5f * u::m;
           const meters_t c_y = cv[1] * u::m;
           const meters_t bottom = std::min (bank, c_y - 1.0f * u::m);
-          const meters_t height = c_y - 0.06f * u::m - bottom;
+          const meters_t height = c_y - 0.14f * u::m - bottom;
           box (dl,
                displacement (
                  Vec3 (cv[0], meters_value (bottom + 0.5f * height), cv[2])) +
-                 along (flat, 0.6f * u::m),
+                 along (flat, 0.8f * u::m),
                flat,
                side,
                up,
@@ -372,30 +430,6 @@ namespace moppe::game {
     };
     constexpr std::size_t spans_a_mesh = 40;
     const direction_t up = unit_direction (Vec3 (0.0f, 1.0f, 0.0f));
-    // A quad facing `facing`, whichever way its corners go round.
-    const auto quad = [] (render::DrawList& dl,
-                          displacement_t p0,
-                          displacement_t p1,
-                          displacement_t p2,
-                          displacement_t p3,
-                          const direction_t& facing) {
-      // The corners' cross product, square metres: its way is the normal.
-      Vec3 n =
-        cross (displacement_value (p1 - p0), displacement_value (p3 - p0));
-      if (dot (n, direction_value (facing)) < 0.0f) {
-        std::swap (p1, p3);
-        n = -n;
-      }
-      if (length2 (n) < 1e-12f)
-        return;
-      dl.normal (unit_direction (normalized (n)));
-      dl.vertex (p0);
-      dl.vertex (p1);
-      dl.vertex (p2);
-      dl.vertex (p0);
-      dl.vertex (p2);
-      dl.vertex (p3);
-    };
     // The beam from one line point to the next, both faces: the road's
     // side bulging toward it, the back a sheet's thickness behind.
     const auto beam_span = [&] (render::DrawList& dl,
@@ -491,7 +525,8 @@ namespace moppe::game {
           beam_span (dl, mid, o, tip, o, 0.92f * scale_factor[one]);
         }
         // The posts behind the beam on spacers, down into the ground.
-        for (std::size_t i = first; i <= last; ++i) {
+        const std::size_t first_post = first == 0 ? 0 : first + 1;
+        for (std::size_t i = first_post; i <= last; ++i) {
           const displacement_t p = line (i, origin);
           const direction_t o = out (i);
           const direction_t t =
@@ -537,7 +572,6 @@ namespace moppe::game {
 
   void BridgeSurface::draw (render::Renderer& renderer,
                             const position_t& camera) const {
-    std::uint64_t motion = 0x62726964000ULL;
     const Vec3& eye = position_value (camera);
     const Vec2& period = plan_value (m_period);
     for (const Bridge& bridge : m_bridges) {
@@ -554,7 +588,7 @@ namespace moppe::game {
       renderer.draw_mesh (
         *bridge.mesh,
         Mat4::translation (position_value (at_height (image, 0.0f * u::m))),
-        ++motion);
+        0);
     }
   }
 }
