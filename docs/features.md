@@ -203,7 +203,10 @@ build, test, and change the code; read this when working on a feature.
   which the buses, all driving on the right, leave free; on foot, or
   from the boat or the jet ski, which stay afloat where they were, one
   stands on the verge behind the sign, where its board says when the
-  next bus comes. A rope or a slung load is let go first. The view does
+  next bus comes. When the view settles, the timetable advances until the
+  next bus is five seconds away. On foot within 12 m of a sign, G skips
+  the wait in place. A bus already at the stop or closer than five seconds
+  keeps its schedule. A rope or a slung load is let go first. The view does
   not cut: it rises up and back out of play's view, flies over at a
   height clear of the ground between, and comes down into play's view
   at the stop, which it hands back as it ends (`WayBack`, five and a

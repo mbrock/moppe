@@ -609,6 +609,14 @@ namespace moppe::game {
     return logic.m_total_time + logic.m_bus_lead;
   }
 
+  void
+  wait_for_bus (GameLogicState& logic, const BusLine& line, std::size_t stop) {
+    constexpr duration_t approach = 5.0 * si::second;
+    const BusDue due = line.due (stop, bus_time (logic));
+    if (!due.here && due.wait > approach)
+      logic.m_bus_lead += due.wait - approach;
+  }
+
   std::optional<std::size_t> bus_at_hand (const BusLine& line,
                                           const position_t& feet,
                                           play_time_t now,

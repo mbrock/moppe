@@ -180,6 +180,10 @@ namespace moppe::game {
   // same buses and can ride one together.
   [[nodiscard]] play_time_t bus_time (const GameLogicState& logic);
 
+  // Advance the timetable to five seconds before the next arrival.
+  void
+  wait_for_bus (GameLogicState& logic, const BusLine& line, std::size_t stop);
+
   // Where one gets on and off: on the road by its door, on its right,
   // and where a rider sits inside, in the world (unwrapped as the pose
   // is): `seat` 0 the front row's by the door (bus_model::seat_01), 1

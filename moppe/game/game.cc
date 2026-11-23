@@ -133,6 +133,8 @@ namespace moppe {
           set_down (session (), m_way_back.place ());
           session ().settle_camera (surface ());
         }
+        if (!m_way_back.active ())
+          wait_for_bus (logic (), m_places.bus, m_way_back.place ().stop);
       }
       m_company.ride_along (session (), input);
       m_company.keep_time (session ());
@@ -380,6 +382,15 @@ namespace moppe {
       if (m_way_back.active () || !can_take_way_back (session ()))
         return;
       const WorldGround ground = world_ground ();
+      if (logic ().m_doing == Doing::on_foot ()) {
+        if (const auto stop = bus_stop_near (m_places.bus,
+                                             subject_position (),
+                                             12.0f * u::m,
+                                             ground.period ())) {
+          wait_for_bus (logic (), m_places.bus, *stop);
+          return;
+        }
+      }
       const std::optional<RoadsidePlace> place =
         roadside_near (m_places.bus, ground, subject_position ());
       if (!place)

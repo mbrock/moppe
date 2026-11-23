@@ -126,6 +126,15 @@ MOPPE_TEST (buses_keep_their_timetable_round_the_loop) {
   MOPPE_CHECK (!due.here);
   MOPPE_CHECK (std::fabs (due.wait.numerical_value_in (si::second) - 67.625) <
                0.01);
+  GameLogicState waiting {};
+  wait_for_bus (waiting, line, 0);
+  MOPPE_CHECK (bus_time (waiting) == play_time (0.0));
+  wait_for_bus (waiting, line, 1);
+  MOPPE_CHECK (line.due (1, bus_time (waiting)).wait == 5.0 * si::second);
+  const auto approaching = bus_time (waiting);
+  wait_for_bus (waiting, line, 1);
+  MOPPE_CHECK (bus_time (waiting) == approaching);
+  MOPPE_CHECK (waiting.m_total_time == play_time (0.0));
   // Halfway through the run, at its middle (the run is symmetric).
   const BusPose middle = line.where (play_time (20.0 + 47.625 / 2)).front ();
   MOPPE_CHECK (std::fabs (middle.along.numerical_value_in (u::m) - 200.0f) <
