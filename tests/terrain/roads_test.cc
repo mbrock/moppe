@@ -633,3 +633,42 @@ MOPPE_TEST (a_road_into_water_ends_on_the_bank_above_it) {
   MOPPE_CHECK_NEAR (surface_elevation_value (formed.heights[5]), 60.0f, 0.05f);
   MOPPE_CHECK (built.steep_points == 0);
 }
+
+// A road cut into a sloping hillside carves an uphill roadside ditch
+// lower than its shoulder so hillside runoff stays off the tread.
+MOPPE_TEST (a_road_cut_into_a_hillside_carves_a_roadside_ditch) {
+  constexpr std::size_t side = 100;
+  std::vector<float> heights (side * side, 0.0f);
+  for (std::size_t z = 0; z < side; ++z)
+    for (std::size_t x = 0; x < side; ++x)
+      heights[z * side + x] =
+        50.0f + 0.04f * (200.0f - 2.0f * x) + 0.25f * (2.0f * z);
+  const ElevationMap terrain = make_elevation_map (
+    TerrainDomain (
+      side, side, 2.0f * mp_units::si::metre, 2.0f * mp_units::si::metre),
+    heights);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (0.0f * mp_units::si::metre));
+  const DrainageGraph drainage = analyze_drainage (terrain);
+  RoadNetwork network;
+  Road road { .kind = Road::Kind::Road };
+  for (meters_t x = 20.0f * u::m; x <= 180.0f * u::m; x += 4.0f * u::m)
+    road.points.push_back (plan_position (x, 100.0f * u::m));
+  network.roads = { road };
+  RoadFormation parameters;
+  parameters.culvert_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
+  parameters.bridge_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
+  const RoadFormationResult built = form_roads (terrain.domain (),
+                                                elevations (terrain),
+                                                network,
+                                                flood,
+                                                drainage,
+                                                parameters);
+  // Mid-road at x = 100 (col 50), centerline at z = 100 (row 50).
+  // The uphill cut side is +z; the ditch floor lies ~5 m north of the
+  // centerline (row 52..53, z = 104..106), lower than the tread's edge.
+  const SurfaceElevation centre = built.heights[50 * side + 50];
+  const SurfaceElevation ditch =
+    std::min (built.heights[52 * side + 50], built.heights[53 * side + 50]);
+  MOPPE_CHECK (centre - ditch > 0.35f * mp_units::si::metre);
+}

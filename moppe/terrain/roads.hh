@@ -135,6 +135,10 @@ namespace moppe::terrain {
     slope_t crown = 0.025f * terrain_slope[one];
     slope_t cut_slope = 1.0f * terrain_slope[one];
     slope_t fill_slope = 0.6f * terrain_slope[one];
+    // The roadside ditch along cuts: a trench just outside the shoulder
+    // that intercepts hillside runoff before it can reach the tread.
+    meters_t ditch_depth = 0.55f * u::m;
+    meters_t ditch_width = 1.5f * u::m;
     // The steepest a cart road climbs, and the length over which a change
     // of grade is eased (its vertical curves).
     grade_t maximum_grade = 0.10f * grade[one];

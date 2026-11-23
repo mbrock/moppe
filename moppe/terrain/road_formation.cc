@@ -508,21 +508,43 @@ namespace moppe::terrain {
         for (std::size_t k = bridge.first; k <= bridge.last; ++k)
           spanned[k] = true;
       const auto water_at = [&] (std::size_t k) {
-        const std::size_t cell = ground.nearest_cell (road.points[k]);
-        const meters_t still = standing (cell);
-        const square_meters_t area = drainage.contributing_area_at (cell);
-        return std::pair (still > 1e-3f * u::m ? still : river_depth (area),
-                          area);
+        const auto [cx, cz] = ground.nearest (road.points[k]);
+        const std::size_t here = ground.cell (cx, cz);
+        meters_t depth = standing (here);
+        square_meters_t area = drainage.contributing_area_at (here);
+        for (int dz = -1; dz <= 1; ++dz)
+          for (int dx = -1; dx <= 1; ++dx) {
+            const square_meters_t a =
+              drainage.contributing_area_at (ground.cell (cx + dx, cz + dz));
+            if (a >= parameters.culvert_area && depth <= 1e-3f * u::m)
+              depth = std::max (depth, river_depth (a));
+            area = std::max (area, a);
+          }
+        return std::pair (depth, area);
+      };
+      // Points lie four metres apart on a two-metre lattice, so a
+      // one-cell stream can pass between two points without landing on
+      // either's nearest cell; check the cell and its eight neighbours
+      // for streams, while standing water beside the road is handled by
+      // `floors` below.
+      const auto crosses_near = [&] (std::size_t k) {
+        const auto [cx, cz] = ground.nearest (road.points[k]);
+        if (standing (ground.cell (cx, cz)) > 1e-3f * u::m)
+          return true;
+        for (int dz = -1; dz <= 1; ++dz)
+          for (int dx = -1; dx <= 1; ++dx)
+            if (drainage.contributing_area_at (
+                  ground.cell (cx + dx, cz + dz)) >= parameters.culvert_area)
+              return true;
+        return false;
       };
       for (std::size_t i = 0; i < n;) {
-        if (spanned[i] ||
-            !crosses_water (ground.nearest_cell (road.points[i]))) {
+        if (spanned[i] || !crosses_near (i)) {
           ++i;
           continue;
         }
         std::size_t j = i;
-        while (j + 1 < n && !spanned[j + 1] &&
-               crosses_water (ground.nearest_cell (road.points[j + 1])))
+        while (j + 1 < n && !spanned[j + 1] && crosses_near (j + 1))
           ++j;
         std::size_t lowest = i;
         SurfaceElevation surface = below_all;
@@ -775,12 +797,10 @@ namespace moppe::terrain {
       result.influence[cell] = covered (
         smooth ((d - std::max (tread, 0.75f * spacing)) / (1.5f * u::m)));
       // The embankment is built through standing water and over a
-      // stream, but along a culvert's line the ground is left as it was,
-      // for the water to pass under the tread; and a stream beside the
-      // tread keeps its channel through the batters.
-      if (claim.culvert < 0.75f * spacing)
-        continue;
-      if (d > formation &&
+      // stream, but along a culvert's line and on any stream cell the
+      // ground is left as it was, so the water passes under the tread
+      // without being dammed by the embankment.
+      if (claim.culvert < 0.75f * spacing ||
           drainage.contributing_area_at (cell) >= parameters.culvert_area)
         continue;
       const SurfaceElevation g = original[cell];
@@ -792,9 +812,22 @@ namespace moppe::terrain {
           claim.height - parameters.crown * std::min (d, parameters.half_width);
       } else {
         const meters_t out = d - formation;
-        shaped = std::clamp (g,
-                             edge - parameters.fill_slope * out,
-                             edge + parameters.cut_slope * out);
+        const SurfaceElevation fill = edge - parameters.fill_slope * out;
+        // On a cut side, drop from the shoulder into a roadside ditch
+        // before climbing the cut batter, so hillside runoff stays off
+        // the tread.
+        const meters_t ditch_drop =
+          parameters.ditch_depth > 0.0f * u::m
+            ? meters_t (parameters.ditch_depth / parameters.fill_slope)
+            : 0.0f * u::m;
+        const SurfaceElevation ditch_floor = edge - parameters.ditch_depth;
+        const SurfaceElevation cut =
+          out <= ditch_drop ? fill
+          : out <= ditch_drop + parameters.ditch_width
+            ? ditch_floor
+            : ditch_floor + parameters.cut_slope *
+                              (out - ditch_drop - parameters.ditch_width);
+        shaped = std::clamp (g, fill, cut);
         // The last few metres of reach ease_profile back to the ground, so
         // where a batter has not met it no step is left.
         shaped =

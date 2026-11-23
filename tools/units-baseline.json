@@ -90,9 +90,9 @@
       "escapes": 186
     },
     "Roads & trails": {
-      "share": 82.1,
+      "share": 82.2,
       "files": 10,
-      "typed": 1015,
+      "typed": 1022,
       "raw_float": 164,
       "raw_vector": 58,
       "escapes": 120
@@ -106,10 +106,10 @@
       "escapes": 206
     },
     "Tests": {
-      "share": 38.4,
+      "share": 38.6,
       "files": 83,
-      "typed": 617,
-      "raw_float": 792,
+      "typed": 621,
+      "raw_float": 793,
       "raw_vector": 196,
       "escapes": 1374
     },
