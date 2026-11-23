@@ -84,7 +84,7 @@
     "Rivers, water & sediment": {
       "share": 98.2,
       "files": 17,
-      "typed": 1056,
+      "typed": 1050,
       "raw_float": 14,
       "raw_vector": 5,
       "escapes": 186
@@ -98,20 +98,20 @@
       "escapes": 120
     },
     "Terrain & world generation": {
-      "share": 84.5,
+      "share": 84.6,
       "files": 39,
-      "typed": 1023,
-      "raw_float": 139,
+      "typed": 1022,
+      "raw_float": 138,
       "raw_vector": 48,
-      "escapes": 206
+      "escapes": 205
     },
     "Tests": {
       "share": 38.6,
       "files": 84,
-      "typed": 621,
+      "typed": 622,
       "raw_float": 793,
       "raw_vector": 196,
-      "escapes": 1374
+      "escapes": 1377
     },
     "Vehicles & on-foot body": {
       "share": 77.4,

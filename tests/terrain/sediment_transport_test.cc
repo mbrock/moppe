@@ -221,7 +221,9 @@ MOPPE_TEST (critical_hillslope_flux_accelerates_only_steep_faces) {
   MOPPE_CHECK (surface_elevation_value (steep_critical.heights[4]) <
                surface_elevation_value (steep_linear.heights[4]));
   MOPPE_CHECK (steep_critical.transferred > steep_linear.transferred);
-  MOPPE_CHECK (steep_critical.sweeps > steep_linear.sweeps);
+  // For dx = 10 m and D * dt = 10 m² the old 4x bound took two
+  // sweeps, under-resolving the steep derivative inside the smooth ramp.
+  MOPPE_CHECK (count_value (steep_critical.sweeps) > 2);
   MOPPE_CHECK_NEAR (
     static_cast<float> (test_balance_value (steep_critical.balance_residual)),
     0.0f,
@@ -342,8 +344,8 @@ MOPPE_TEST (lateral_valley_postings_conserve_the_centerline_volume) {
 MOPPE_TEST (lateral_deposition_raises_a_valley_floor_not_a_center_ridge) {
   const TerrainDomain domain (9, 5, 1.0f * u::m, 1.0f * u::m);
   const FractionalFlowDomain flow = flat_flow_domain (domain);
-  const std::array<float, 9> profile { 10.0f, 5.0f, 5.0f, 0.0f, 0.0f,
-                                       0.0f,  5.0f, 5.0f, 10.0f };
+  const std::array<float, 9> profile { -2.0f, -2.0f, 1.0f, 0.0f, 0.0f,
+                                       0.0f,  5.0f,  5.0f, 10.0f };
   std::vector<float> height_values (domain.size ());
   for (std::size_t row = 0; row < domain.height (); ++row)
     std::copy (profile.begin (),
@@ -362,6 +364,7 @@ MOPPE_TEST (lateral_deposition_raises_a_valley_floor_not_a_center_ridge) {
 
   const LateralDepositionResult result = spread_valley_deposition (
     flow, elevations, areas, tangents, centerline, ocean);
+  MOPPE_CHECK (result.deposited[2 * 9 + 1] == SedimentVolume::zero ());
   for (std::size_t row = 1; row <= 3; ++row)
     for (std::size_t column = 3; column <= 5; ++column)
       MOPPE_CHECK_NEAR (
@@ -390,7 +393,7 @@ MOPPE_TEST (lake_storage_is_distributed_without_overfilling_the_basin) {
     domain.size (), Vec3 (1.0f, 0.0f, 0.0f) * channel_tangent[mp_units::one]);
   std::vector<SedimentVolume> centerline (domain.size (),
                                           SedimentVolume::zero ());
-  centerline[domain.offset ({ 3, 3 })] = test_sediment_volume (6.0);
+  centerline[domain.offset ({ 2, 2 })] = test_sediment_volume (3.0);
   const std::vector<SedimentVolume> maximum (domain.size (),
                                              test_sediment_volume (1.0));
 
@@ -412,11 +415,11 @@ MOPPE_TEST (lake_storage_is_distributed_without_overfilling_the_basin) {
       MOPPE_CHECK_NEAR (local_m3, 0.0f, 0.0f);
     }
   }
-  MOPPE_CHECK (occupied_lake_cells == 9);
-  MOPPE_CHECK_NEAR (static_cast<float> (deposited_m3), 6.0f, 1e-6f);
+  MOPPE_CHECK (occupied_lake_cells == 4);
+  MOPPE_CHECK_NEAR (static_cast<float> (deposited_m3), 3.0f, 1e-6f);
   MOPPE_CHECK_NEAR (
     static_cast<float> (test_sediment_value (result.lake_storage)),
-    6.0f,
+    3.0f,
     1e-6f);
   MOPPE_CHECK (result.exported == SedimentVolume::zero ());
   MOPPE_CHECK_NEAR (test_balance_value (result.balance_residual), 0.0f, 1e-6f);
@@ -458,6 +461,12 @@ MOPPE_TEST (mouth_deposition_fans_out_and_exports_excess_accommodation) {
                                      .width_per_sqrt_area =
                                        0.0f * proportion[mp_units::one] };
 
+  const StandingWaterStorage storage =
+    standing_water_storage_capacity (flood, census, areas, maximum, footprint);
+  const auto mouth_volume = flood.water_depths ()[mouth] * domain.cell_area ();
+  MOPPE_CHECK (storage.ocean_mouth_capacity[mouth].numerical_value_in (
+                 cubic_metre) > mouth_volume.numerical_value_in (cubic_metre));
+
   const StandingWaterDepositionResult result =
     spread_standing_water_deposition (
       flood, census, flow, areas, tangents, centerline, maximum, footprint);
@@ -474,7 +483,8 @@ MOPPE_TEST (mouth_deposition_fans_out_and_exports_excess_accommodation) {
   }
   const double exported_m3 = test_sediment_value (result.exported);
   MOPPE_CHECK (occupied > 1);
-  MOPPE_CHECK (deposited_m3 > 0.0);
+  MOPPE_CHECK (result.deposited[domain.offset ({ 6, 4 })] >
+               SedimentVolume::zero ());
   MOPPE_CHECK (exported_m3 > 0.0);
   MOPPE_CHECK_NEAR (
     static_cast<float> (deposited_m3 + exported_m3), 100.0f, 1e-6f);
@@ -493,10 +503,10 @@ MOPPE_TEST (fluvial_transport_entrains_cover_before_cutting_bedrock) {
                                       test_sediment_volume (20.0),
                                       test_sediment_volume (20.0),
                                       test_sediment_volume (20.0) };
-  const std::array cover { test_sediment_volume (8.0),
-                           test_sediment_volume (0.0),
-                           test_sediment_volume (0.0),
-                           test_sediment_volume (0.0) };
+  std::array cover { test_sediment_volume (8.0),
+                     test_sediment_volume (0.0),
+                     test_sediment_volume (0.0),
+                     test_sediment_volume (0.0) };
   const std::array<std::uint8_t, 4> ocean { 0, 1, 1, 1 };
   const auto route_at_capacity = [&] (double capacity_m3) {
     const std::array capacity { test_sediment_volume (capacity_m3),
@@ -517,11 +527,16 @@ MOPPE_TEST (fluvial_transport_entrains_cover_before_cutting_bedrock) {
   MOPPE_CHECK_NEAR (
     test_sediment_value (exposed_bedrock.entrained_cover[0]), 8.0f, 0.0f);
   MOPPE_CHECK_NEAR (
-    test_sediment_value (exposed_bedrock.bedrock_detached[0]), 4.0f, 0.0f);
+    test_sediment_value (exposed_bedrock.bedrock_detached[0]), 2.0f, 0.0f);
   MOPPE_CHECK_NEAR (
-    test_sediment_value (exposed_bedrock.exported_to_ocean), 12.0f, 0.0f);
+    test_sediment_value (exposed_bedrock.exported_to_ocean), 10.0f, 0.0f);
   MOPPE_CHECK_NEAR (
     test_balance_value (exposed_bedrock.balance_residual), 0.0f, 0.0f);
+
+  cover[0] = test_sediment_volume (30.0);
+  const SedimentRoutingResult deep_cover = route_at_capacity (20.0);
+  MOPPE_CHECK (deep_cover.entrained_cover[0] == potential[0]);
+  MOPPE_CHECK (deep_cover.bedrock_detached[0] == SedimentVolume::zero ());
 }
 
 MOPPE_TEST (sediment_routes_from_source_to_ocean_without_loss) {

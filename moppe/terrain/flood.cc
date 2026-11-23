@@ -336,32 +336,25 @@ namespace moppe::terrain {
                        .mean_depth = 0.0f * mp_units::si::metre,
                        .volume = 0.0f * mp_units::si::metre *
                                  mp_units::si::metre * mp_units::si::metre,
-                       .surface_level = 0.0f * mp_units::si::metre,
-                       .ocean_connected = false,
+                       .surface_level =
+                         surface_elevation_value (level[origin]) * u::m,
+                       .ocean_connected = flood.ocean[origin] != 0,
                        .outlet_cell = WaterBody::no_cell,
                        .spill_cell = WaterBody::no_cell,
                        .classification = WaterBodyClass::Puddle,
                        .inradius = 0.0f * mp_units::si::metre,
                        .channel_like = false };
-      meters_f64_t surface_sum = 0.0 * u::m;
-      SurfaceElevation lowest_level = surface_elevation_point (
-        std::numeric_limits<float>::infinity () * u::m);
-      std::vector<std::uint32_t> members;
       body_at_cell[origin] = id;
       frontier.push (origin);
       while (!frontier.empty ()) {
         const std::uint32_t cell = frontier.front ();
         frontier.pop ();
-        members.push_back (cell);
         const std::size_t x = cell % width;
         const std::size_t y = cell / width;
         const meters_t depth_m = depth[cell];
         ++body.cells;
         body.maximum_depth = std::max (body.maximum_depth, depth_m);
         body.volume += depth_m * cell_area;
-        surface_sum +=
-          static_cast<double> (surface_elevation_value (level[cell])) * u::m;
-        lowest_level = std::min (lowest_level, level[cell]);
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
@@ -369,7 +362,8 @@ namespace moppe::terrain {
           const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
-          if (depth[next] > wet_epsilon) {
+          if (depth[next] > wet_epsilon && level[next] == level[origin] &&
+              flood.ocean[next] == flood.ocean[origin]) {
             if (body_at_cell[next] == LakeCensus::dry) {
               body_at_cell[next] = id;
               frontier.push (next);
@@ -379,13 +373,6 @@ namespace moppe::terrain {
       }
       body.area = static_cast<float> (body.cells) * cell_area;
       body.mean_depth = body.volume / body.area;
-      body.surface_level =
-        static_cast<float> ((surface_sum / static_cast<double> (body.cells))
-                              .numerical_value_in (u::m)) *
-        mp_units::si::metre;
-      body.ocean_connected =
-        flood.has_ocean &&
-        abs (level[members.front ()] - flood.sea_level) <= wet_epsilon;
       if (!body.ocean_connected) {
         // A priority-flood path can leave a connected flat, cross a dry
         // saddle, and re-enter the same flat.  Use its final departure as the
@@ -393,10 +380,10 @@ namespace moppe::terrain {
         // departure would point that tree back into itself. A cell's level
         // is never below its spill receiver's, so once the path is below
         // the body's lowest level it cannot come back, and the walk ends.
-        std::uint32_t cell = members.front ();
+        std::uint32_t cell = origin;
         std::size_t steps = 0;
         while (flood.spill_receiver[cell] != cell && steps < count &&
-               !(level[cell] < lowest_level)) {
+               !(level[cell] < level[origin])) {
           const std::uint32_t next = flood.spill_receiver[cell];
           if (body_at_cell[cell] == id && body_at_cell[next] != id) {
             body.outlet_cell = cell;
@@ -431,12 +418,10 @@ namespace moppe::terrain {
       // Two cells of inradius limits channel classification to pools four to
       // five cells wide. Wider flooded reaches can hide arms the alignment
       // never visits and should remain terminating standing bodies.
-      constexpr float channel_inradius_cells = 2.05f;
       const meters_t cell_step =
         std::min (flood.domain ().spacing_x (), flood.domain ().spacing_z ());
-      // Only wet cells' distances are read, and the nearest dry cell to a
-      // wet one is a shore cell, so the sweep starts at the shore and
-      // spreads through water alone.
+      const meters_t channel_inradius_limit = 2.05f * cell_step;
+      // Start one step inside each body's boundary and propagate inward.
       std::vector<std::int32_t> shore_distance (count, -1);
       std::queue<std::uint32_t> sweep;
       // The neighbour of a cell whose column and row are known: a fixed
@@ -458,12 +443,12 @@ namespace moppe::terrain {
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const std::uint32_t cell = static_cast<std::uint32_t> (y * width + x);
-          if (body_at_cell[cell] == LakeCensus::dry &&
+          if (body_at_cell[cell] != LakeCensus::dry &&
               std::ranges::any_of (flood_neighbors, [&] (FloodOffset offset) {
                 return body_at_cell[neighbour (cell, x, y, offset)] !=
-                       LakeCensus::dry;
+                       body_at_cell[cell];
               })) {
-            shore_distance[cell] = 0;
+            shore_distance[cell] = 1;
             sweep.push (cell);
           }
         }
@@ -480,7 +465,7 @@ namespace moppe::terrain {
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
           if (shore_distance[next] < 0 &&
-              body_at_cell[next] != LakeCensus::dry) {
+              body_at_cell[next] == body_at_cell[cell]) {
             shore_distance[next] = shore_distance[cell] + 1;
             sweep.push (next);
           }
@@ -497,7 +482,7 @@ namespace moppe::terrain {
       for (WaterBody& body : bodies)
         body.channel_like = !body.ocean_connected &&
                             water_body_is_permanent (body) &&
-                            body.inradius <= channel_inradius_cells * cell_step;
+                            body.inradius <= channel_inradius_limit;
     }
     return LakeCensus (std::move (body_at_cell), std::move (bodies));
   }

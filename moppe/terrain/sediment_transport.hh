@@ -84,7 +84,7 @@ namespace moppe::terrain {
   // lets one lake share a finite accommodation budget and lets an ocean mouth
   // retain a bounded part of its incoming load; all remaining ocean flux is
   // exported. Non-ocean sinks retain incoming material locally. Stored mobile
-  // cover consumes spare capacity before the router may detach bedrock.
+  // cover and bedrock share the implicit incision budget, cover first.
   SedimentRoutingResult
   route_sediment (const FractionalFlowDomain& flow,
                   std::span<const SedimentVolume> potential_detachment,

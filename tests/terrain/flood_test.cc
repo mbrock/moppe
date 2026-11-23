@@ -176,6 +176,26 @@ MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
   MOPPE_CHECK (census.water_bodies ()[0].spill_cell == 5);
 }
 
+MOPPE_TEST (lake_membership_respects_level_and_ocean_connection) {
+  const TerrainDomain grid (3, 3);
+  FloodSurface surface (grid);
+  auto& levels = spatial::get<surface_elevation> (surface);
+  auto& depths = spatial::get<standing_water_depth> (surface);
+  std::ranges::fill (levels, surface_elevation_point (1.0f * u::m));
+  levels[2] = surface_elevation_point (2.0f * u::m);
+  std::fill_n (depths.begin (), 3, 1.0f * standing_water_depth[u::m]);
+  const FloodField flood { .surface = std::move (surface),
+                           .sea_level = surface_elevation_point (1.0f * u::m),
+                           .has_ocean = true,
+                           .ocean = { 1, 0, 0, 0, 0, 0, 0, 0, 0 },
+                           .spill_receiver = { 0, 0, 1, 0, 0, 0, 0, 0, 0 } };
+  const LakeCensus census = census_lakes (flood);
+  MOPPE_CHECK (census.domain ().size () == 3);
+  MOPPE_CHECK (census.water_bodies ()[0].ocean_connected);
+  MOPPE_CHECK (!census.water_bodies ()[1].ocean_connected);
+  MOPPE_CHECK (census.water_bodies ()[2].spill_cell == 1);
+}
+
 MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
   // Two permanent bodies of similar volume but different shape: a one-cell
   // wide flooded channel strip and a compact seven-by-seven lake. The shape
