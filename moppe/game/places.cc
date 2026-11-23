@@ -366,13 +366,16 @@ namespace moppe::game {
           return sea - g.ground (plan (p));
         };
         const direction_t deeper = deep (side) >= deep (-side) ? side : -side;
-        best->berth = terrain::at_elevation (
-          plan (ahead (head, deeper, jetty.half_width + 0.85f * u::m)), sea);
+        best->berth =
+          terrain::at_elevation (
+            plan (ahead (head, deeper, jetty.half_width + 0.85f * u::m)), sea)
+            .point_for (terrain::torus_origin, g.period);
         best->berth_forward = -jetty.out;
         best->bollard =
           ahead (ahead (jetty.root, jetty.out, jetty.length - 0.9f * u::m),
                  deeper,
-                 jetty.half_width - 0.12f * u::m);
+                 jetty.half_width - 0.12f * u::m)
+            .point_for (terrain::torus_origin, g.period);
         return best;
       }
 
@@ -1789,7 +1792,10 @@ namespace moppe::game {
         Random post (seed);
         timber (dl, post, 0.7f * proportion[one]);
         box (dl,
-             ahead (plan.landing->bollard, up, 0.25f * u::m),
+             ahead (plan.landing->bollard.point_for (
+                      terrain::world_origin, jetty.root, plan.period),
+                    up,
+                    0.25f * u::m),
              left_of (jetty.out),
              up,
              jetty.out,

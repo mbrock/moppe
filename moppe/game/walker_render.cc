@@ -193,7 +193,7 @@ namespace moppe::game {
           std::max (0.25f, 0.85f - 0.3f * layer) * proportion[one];
         const float a = radians_value (around);
         MushroomSite lying = basket[i];
-        lying.base =
+        const position_t at =
           b.rim +
           shift (
             along (b.forward, meters_t (out * rim_length * std::cos (a)))) +
@@ -203,7 +203,7 @@ namespace moppe::game {
         lying.lean = (0.5f + 0.8f * hash_lane (seed, 22)) * inclination[u::rad];
         lying.lean_toward =
           radians_value (basket_tau * hash_lane (seed, 23)) * heading[u::rad];
-        draw_mushroom (dl, lying);
+        draw_mushroom (dl, lying, at);
       }
     }
 

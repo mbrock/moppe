@@ -116,13 +116,15 @@ namespace moppe::game {
     if (script == "landing" && s.places.layout.landing) {
       // On the strand, looking past the jetty to the skiff beside it.
       const Landing& landing = *s.places.layout.landing;
+      const position_t berth_at = landing.berth.point_for (
+        terrain::world_origin, landing.jetty.root, s.places.layout.period);
       const Vec3 root = position_value (landing.jetty.root);
-      const Vec3 berth = position_value (landing.berth);
+      const Vec3 berth = position_value (berth_at);
       const Vec3 back = root - berth;
       const Vec3 aside =
         berth - (root + direction_value (landing.jetty.out) *
                           landing.jetty.length.numerical_value_in (u::m));
-      stand = { position (berth + back * 0.55f + aside * 6.0f), landing.berth };
+      stand = { position (berth + back * 0.55f + aside * 6.0f), berth_at };
     } else if (script == "sanctuary" && !s.places.layout.sanctuaries.empty ()) {
       const Sanctuary& sanctuary = s.places.layout.sanctuaries.front ();
       // Inside the wall by its gap, on the level top, facing the fire.
@@ -701,7 +703,9 @@ namespace moppe::game {
       const auto target = s.mushrooms.nearest (
         position (feet), 60.0f * u::m, m_state.forage_refused);
       if (target) {
-        Vec3 toward = position_value (s.mushrooms.site (*target).base) - feet;
+        Vec3 toward =
+          position_value (s.mushrooms.base_near (*target, position (feet))) -
+          feet;
         toward[1] = 0.0f;
         const meters_t distance = length (toward) * u::m;
         const Vec3 heading = direction_value (walker.heading ());

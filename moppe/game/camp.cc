@@ -851,10 +851,11 @@ namespace moppe::game {
       const meters_t out_from_middle = eggs > 0                ? 0.125f * u::m
                                        : mushrooms.size () > 1 ? 0.07f * u::m
                                                                : 0.0f * u::m;
-      lying.base = place + shift (along (compass (around), out_from_middle)) +
-                   shift (along (world_up, 0.03f * u::m));
+      position_t at = place +
+                      shift (along (compass (around), out_from_middle)) +
+                      shift (along (world_up, 0.03f * u::m));
       if (fish)
-        lying.base += shift (
+        at += shift (
           along (out, 0.09f * u::m) +
           along (across, 0.11f * ((i + eggs) % 2 ? 1.0f : -1.0f) * u::m));
       lying.scale = 0.5f * mushrooms[i].scale;
@@ -862,7 +863,7 @@ namespace moppe::game {
       lying.lean_toward =
         radians_value (around + 1.9f * u::rad) * heading[u::rad];
       lying.cooked = cooked;
-      draw_mushroom (dl, lying);
+      draw_mushroom (dl, lying, at);
     }
     dl.end ();
     dl.state (render::DrawState ());

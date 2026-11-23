@@ -386,14 +386,14 @@ namespace moppe {
           const float t = age / 0.45f;
           MushroomSite rising = m_mushrooms.site (basket.picked.back ());
           const Vec3& walker_at = position_value (actors.walker->position);
-          rising.base = m_mushrooms.base_near (basket.picked.back (),
-                                               actors.walker->position);
+          position_t rising_base = m_mushrooms.base_near (
+            basket.picked.back (), actors.walker->position);
           const Vec3 to =
             walker_at +
             normalized (direction_value (actors.walker->heading)) * 0.2f +
             Vec3 (0, 0.55f, 0);
-          rising.base = position (position_value (rising.base) +
-                                  (to - position_value (rising.base)) * t +
+          rising_base = position (position_value (rising_base) +
+                                  (to - position_value (rising_base)) * t +
                                   Vec3 (0, 0.35f * std::sin (PI * t), 0));
           rising.scale *= 1.0f - 0.5f * t;
           rising.yaw += 3.0f * t * heading[u::rad];
@@ -401,7 +401,7 @@ namespace moppe {
           m_world_dl.lit (true);
           m_world_dl.fogged (true);
           m_world_dl.begin (render::Prim::Triangles);
-          draw_mushroom (m_world_dl, rising);
+          draw_mushroom (m_world_dl, rising, rising_base);
           m_world_dl.end ();
         }
       }

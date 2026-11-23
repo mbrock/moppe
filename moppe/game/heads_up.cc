@@ -704,10 +704,13 @@ namespace moppe::game {
   std::vector<MapSheet::Mark> HeadsUp::map_marks (const HudWorld& w) {
     using Mark = MapSheet::Mark;
     const DisplayColor dark (0.09f, 0.09f, 0.10f);
+    const auto on_map = [&] (const position_t& at) {
+      return at.point_for (terrain::torus_origin, w.places.period);
+    };
     std::vector<Mark> marks;
     const Doing mode = w.session.logic ().m_doing;
     marks.push_back ({ .kind = Mark::Kind::Walker,
-                       .position = w.session.subject_position (),
+                       .position = on_map (w.session.subject_position ()),
                        .heading = w.session.subject_heading (),
                        .colour = dark,
                        .name = "" });
@@ -720,79 +723,84 @@ namespace moppe::game {
         if (std::string_view (figure::colour_names[c]) == "jacket")
           jacket = figure::outfit_colour (c, w.company.their_outfit ());
       marks.push_back ({ .kind = Mark::Kind::Companion,
-                         .position = position (at),
+                         .position = on_map (position (at)),
                          .heading = unit_direction (Vec3 (0, 0, -1)),
                          .colour = jacket,
                          .name = "companion" });
     }
     if (mode != Doing::driving (Machine::bike) && !w.session.can_drop_bike ())
       marks.push_back ({ .kind = Mark::Kind::Bike,
-                         .position = w.session.bike ().position (),
+                         .position = on_map (w.session.bike ().position ()),
                          .colour = dark,
                          .name = "bike" });
     if (mode != Doing::driving (Machine::jeep))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.jeep ().position (),
+                         .position = on_map (w.session.jeep ().position ()),
                          .colour = dark,
                          .name = "jeep" });
     if (mode != Doing::driving (Machine::tractor))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.tractor ().position (),
+                         .position = on_map (w.session.tractor ().position ()),
                          .colour = DisplayColor (0.70f, 0.12f, 0.08f),
                          .name = "tractor" });
     if (mode != Doing::driving (Machine::caddy))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.caddy ().position (),
+                         .position = on_map (w.session.caddy ().position ()),
                          .colour = DisplayColor (0.22f, 0.50f, 0.45f),
                          .name = "Caddy" });
     if (mode != Doing::driving (Machine::mountain_bike))
-      marks.push_back ({ .kind = Mark::Kind::Bike,
-                         .position = w.session.mountain_bike ().position (),
-                         .colour = DisplayColor (0.06f, 0.30f, 0.22f),
-                         .name = "mountainbike" });
+      marks.push_back (
+        { .kind = Mark::Kind::Bike,
+          .position = on_map (w.session.mountain_bike ().position ()),
+          .colour = DisplayColor (0.06f, 0.30f, 0.22f),
+          .name = "mountainbike" });
     if (mode != Doing::driving (Machine::long_john))
-      marks.push_back ({ .kind = Mark::Kind::Bike,
-                         .position = w.session.long_john ().position (),
-                         .colour = DisplayColor (0.58f, 0.575f, 0.57f),
-                         .name = "Long John" });
+      marks.push_back (
+        { .kind = Mark::Kind::Bike,
+          .position = on_map (w.session.long_john ().position ()),
+          .colour = DisplayColor (0.58f, 0.575f, 0.57f),
+          .name = "Long John" });
     if (mode != Doing::driving (Machine::helicopter))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.helicopter ().position (),
-                         .colour = DisplayColor (0.20f, 0.30f, 0.20f),
-                         .name = "helicopter" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = on_map (w.session.helicopter ().position ()),
+          .colour = DisplayColor (0.20f, 0.30f, 0.20f),
+          .name = "helicopter" });
     if (mode != Doing::driving (Machine::boat))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.boat ().position (),
+                         .position = on_map (w.session.boat ().position ()),
                          .colour = DisplayColor (0.62f, 0.48f, 0.30f),
                          .name = "boat" });
     if (mode != Doing::driving (Machine::jet_ski))
       marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.jet_ski ().position (),
+                         .position = on_map (w.session.jet_ski ().position ()),
                          .colour = DisplayColor (0.04f, 0.56f, 0.58f),
                          .name = "jet ski" });
     if (mode != Doing::driving (Machine::snowmobile))
-      marks.push_back ({ .kind = Mark::Kind::Jeep,
-                         .position = w.session.fleet ().snowmobile.position (),
-                         .colour = DisplayColor (0.82f, 0.27f, 0.09f),
-                         .name = "snowmobile" });
+      marks.push_back (
+        { .kind = Mark::Kind::Jeep,
+          .position = on_map (w.session.fleet ().snowmobile.position ()),
+          .colour = DisplayColor (0.82f, 0.27f, 0.09f),
+          .name = "snowmobile" });
     const Camp& camp = w.session.logic ().m_camp;
     if (camp.hung || camp.fire)
       marks.push_back (
         { .kind = Mark::Kind::Camp,
-          .position = camp.hung ? hammock_middle (camp.hammock) : camp.hearth,
+          .position =
+            on_map (camp.hung ? hammock_middle (camp.hammock) : camp.hearth),
           .colour = DisplayColor (0.80f, 0.38f, 0.08f),
           .name = "camp" });
     // The buses where the timetable has them, and their stops; the
     // stops last of all, so drawn under everything.
     for (const BusPose& bus : w.bus.where (bus_time (w.session.logic ())))
       marks.push_back ({ .kind = Mark::Kind::Bus,
-                         .position = bus.position,
+                         .position = on_map (bus.position),
                          .heading = bus.forward,
                          .colour = DisplayColor (0.66f, 0.09f, 0.07f),
                          .name = "bus" });
     using Place = terrain::RoadPlace::Kind;
     marks.push_back ({ .kind = Mark::Kind::Place,
-                       .position = w.home_base,
+                       .position = on_map (w.home_base),
                        .colour = place_kind (Place::Trailhead).ink,
                        .name = "trailhead" });
     // The road network's places, by name; last, so drawn under the
@@ -808,22 +816,21 @@ namespace moppe::game {
       const bool quiet = place.abandoned > age_t::zero ();
       marks.push_back (
         { .kind = Mark::Kind::Place,
-          .position = terrain::at_elevation (place.at, place.height),
+          .position = on_map (terrain::at_elevation (place.at, place.height)),
           .colour = quiet ? kind.quiet_ink : kind.ink,
           .name = w.place_names[p].c_str (),
           .place = place.kind });
     }
     // A stop called after a place it stands at is named by the place.
     for (const BusStop& stop : w.bus.stops ())
-      marks.push_back (
-        { .kind = Mark::Kind::BusStop,
-          .position = position (terrain::torus_position_value (stop.sign)),
-          .heading = stop.forward,
-          .colour = DisplayColor (0.97f, 0.80f, 0.12f),
-          .name =
-            std::ranges::find (w.place_names, stop.name) != w.place_names.end ()
-              ? ""
-              : stop.name.c_str () });
+      marks.push_back ({ .kind = Mark::Kind::BusStop,
+                         .position = stop.sign,
+                         .heading = stop.forward,
+                         .colour = DisplayColor (0.97f, 0.80f, 0.12f),
+                         .name = std::ranges::find (w.place_names, stop.name) !=
+                                     w.place_names.end ()
+                                   ? ""
+                                   : stop.name.c_str () });
     return marks;
   }
 
@@ -862,7 +869,7 @@ namespace moppe::game {
                  : mark.kind == Kind::BusStop ? Pin::Kind::BusStop
                                               : Pin::Kind::Machine;
       pin.place = mark.place;
-      pin.position = plan (mark.position);
+      pin.position = terrain::plan (mark.position);
       pin.colour = mark.colour;
     }
   }

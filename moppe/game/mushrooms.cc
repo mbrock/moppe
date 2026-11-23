@@ -94,7 +94,8 @@ namespace moppe::game {
                           std::min (1.0f, cooked - 1.0f) * blend_weight[one]);
     }
 
-    MushroomFrame mushroom_frame (const MushroomSite& site) {
+    MushroomFrame mushroom_frame (const MushroomSite& site,
+                                  const position_t& at) {
       const Vec3 tilt (libm::cos (site.lean_toward) * libm::sin (site.lean),
                        libm::cos (site.lean),
                        libm::sin (site.lean_toward) * libm::sin (site.lean));
@@ -102,7 +103,7 @@ namespace moppe::game {
       const Vec3 across (libm::cos (site.yaw), 0.0f, libm::sin (site.yaw));
       const Vec3 north = normalized (cross (across, up));
       const Vec3 east = cross (up, north);
-      return { .base = site.base,
+      return { .base = at,
                .up = unit_direction (up),
                .east = unit_direction (east),
                .north = unit_direction (north),
@@ -496,7 +497,8 @@ namespace moppe::game {
         site.lean = 0.18f * hash_lane (one_seed, 4) * inclination[u::rad];
         site.lean_toward =
           quantity_cast<heading> (mushroom_tau * hash_lane (one_seed, 5));
-        site.base = terrain::at_elevation (spot, ground - 0.01f * u::m);
+        site.base = terrain::at_elevation (spot, ground - 0.01f * u::m)
+                      .point_for (terrain::torus_origin, period);
         plan.sites.push_back (site);
       }
     }
@@ -505,8 +507,15 @@ namespace moppe::game {
     return plan;
   }
 
+  void draw_mushroom (render::DrawList& list,
+                      const MushroomSite& site,
+                      const position_t& at) {
+    row (site.kind).draw (list, mushroom_frame (site, at), site.seed);
+  }
+
   void draw_mushroom (render::DrawList& list, const MushroomSite& site) {
-    row (site.kind).draw (list, mushroom_frame (site), site.seed);
+    draw_mushroom (
+      list, site, position (terrain::torus_position_value (site.base)));
   }
 
   std::uint64_t MushroomPatch::tile_key (int x, int z) const {
@@ -530,22 +539,21 @@ namespace moppe::game {
       std::floor (meters_value (z) / meters_value (m_tile_z)));
   }
 
-  MushroomPatch::TileMesh* MushroomPatch::mesh_at (const position_t& at) {
-    const plan_position_t spot = plan (at);
-    const auto found =
-      m_meshes.find (tile_key (tile_x (x_of (spot)), tile_z (z_of (spot))));
+  MushroomPatch::TileMesh*
+  MushroomPatch::mesh_at (const terrain::torus_position_t& at) {
+    const terrain::torus_plan_position_t spot = terrain::plan (at);
+    const auto found = m_meshes.find (
+      tile_key (tile_x (terrain::x_of (spot)), tile_z (terrain::z_of (spot))));
     return found == m_meshes.end () ? nullptr : &found->second;
   }
 
   position_t MushroomPatch::base_near (std::uint32_t index,
                                        const position_t& reference) const {
-    position_t near = m_plan.sites[index].base;
-    Vec3& base = position_value (near);
-    const Vec3& to = position_value (reference);
     const Vec3& period = extent_value (m_plan.period);
-    base[0] += terrain::whole_periods (to[0] - base[0], period[0]);
-    base[2] += terrain::whole_periods (to[2] - base[2], period[2]);
-    return near;
+    return m_plan.sites[index].base.point_for (
+      terrain::world_origin,
+      reference,
+      plan_extent (period[0] * u::m, period[2] * u::m));
   }
 
   void MushroomPatch::rebuild (MushroomPlan plan) {
@@ -568,8 +576,11 @@ namespace moppe::game {
     fit (period[0] * u::m, m_tile_x, m_tiles_x);
     fit (period[2] * u::m, m_tile_z, m_tiles_z);
     for (std::uint32_t i = 0; i < m_plan.sites.size (); ++i) {
-      const plan_position_t at = moppe::plan (m_plan.sites[i].base);
-      m_tiles[tile_key (tile_x (x_of (at)), tile_z (z_of (at)))].push_back (i);
+      const terrain::torus_plan_position_t at =
+        terrain::plan (m_plan.sites[i].base);
+      m_tiles[tile_key (tile_x (terrain::x_of (at)),
+                        tile_z (terrain::z_of (at)))]
+        .push_back (i);
     }
   }
 

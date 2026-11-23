@@ -10,7 +10,7 @@ using namespace moppe::game;
 namespace {
   MushroomSite mushroom_at (float x, float z, MushroomKind kind) {
     MushroomSite site;
-    site.base = position (Vec3 (x, 10.0f, z));
+    site.base = terrain::torus_position (Vec3 (x, 10.0f, z));
     site.kind = kind;
     return site;
   }

@@ -310,7 +310,7 @@ namespace moppe {
                         m_home_base_position));
       if (const auto first =
             m_mushrooms.nearest (m_spawn_position, 400.0f * u::m)) {
-        const position_t at = m_mushrooms.site (*first).base;
+        const position_t at = m_mushrooms.base_near (*first, m_spawn_position);
         const position_t spawn = m_spawn_position;
         std::cerr << "moppe: nearest mushrooms ("
                   << mushroom_plural (m_mushrooms.site (*first).kind) << ") "

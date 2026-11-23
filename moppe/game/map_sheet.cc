@@ -397,32 +397,38 @@ namespace moppe::game {
     const bool near = m_view == View::Near && !marks.empty ();
     const meters_t span = near ? std::min (period_x, 1800.0f * u::m) : period_x;
     const meters_t span_z = span * period_z / period_x;
-    const plan_position_t middle = marks.empty ()
-                                     ? plan_position (0.0f, 0.0f)
-                                     : plan (marks.front ().position);
-    const meters_t west = near ? x_of (middle) - 0.5f * span : 0.0f * u::m;
-    const meters_t north = near ? z_of (middle) - 0.5f * span_z : 0.0f * u::m;
+    const terrain::torus_plan_position_t middle =
+      marks.empty () ? terrain::torus_plan_position (Vec2 (0.0f, 0.0f))
+                     : terrain::plan (marks.front ().position);
+    const meters_t west =
+      near ? terrain::x_of (middle) - 0.5f * span : 0.0f * u::m;
+    const meters_t north =
+      near ? terrain::z_of (middle) - 0.5f * span_z : 0.0f * u::m;
     const points_per_metre_t scale = side / span;
     const meters_t kilometre = 1000.0f * u::m;
 
-    // Where a place in the world falls on the sheet, if it does.
-    const auto place =
-      [&] (const plan_position_t& at, points_t& x, points_t& y) {
-        meters_t dx, dz;
-        if (near) {
-          dx = sheet_delta (x_of (at) - (west + 0.5f * span), period_x) +
-               0.5f * span;
-          dz = sheet_delta (z_of (at) - (north + 0.5f * span_z), period_z) +
-               0.5f * span_z;
-        } else {
-          dx = x_of (at) - period_x * std::floor (ratio (x_of (at) / period_x));
-          dz = z_of (at) - period_z * std::floor (ratio (z_of (at) / period_z));
-        }
-        x = map_x + dx * scale;
-        y = map_y + dz * scale;
-        return dx >= 0.0f * u::m && dx <= span && dz >= 0.0f * u::m &&
-               dz <= span_z;
-      };
+    // Where a place on the torus falls on the sheet, if it does.
+    const auto place = [&] (const terrain::torus_plan_position_t& at,
+                            points_t& x,
+                            points_t& y) {
+      meters_t dx, dz;
+      if (near) {
+        dx = sheet_delta (terrain::x_of (at) - (west + 0.5f * span), period_x) +
+             0.5f * span;
+        dz =
+          sheet_delta (terrain::z_of (at) - (north + 0.5f * span_z), period_z) +
+          0.5f * span_z;
+      } else {
+        dx = terrain::x_of (at) -
+             period_x * std::floor (ratio (terrain::x_of (at) / period_x));
+        dz = terrain::z_of (at) -
+             period_z * std::floor (ratio (terrain::z_of (at) / period_z));
+      }
+      x = map_x + dx * scale;
+      y = map_y + dz * scale;
+      return dx >= 0.0f * u::m && dx <= span && dz >= 0.0f * u::m &&
+             dz <= span_z;
+    };
 
     render::DrawState state;
     state.blend = true;
@@ -546,8 +552,12 @@ namespace moppe::game {
     std::vector<Top> tops;
     for (const ReliefMap::Summit& top : m_sheet.summits) {
       points_t x, y;
-      if (!place (top.position, x, y) || x > map_x + side - 30.0f * u::pt ||
-          y < map_y + 10.0f * u::pt || y > map_y + side - 6.0f * u::pt)
+      if (!place (
+            top.position.point_for (terrain::torus_plan_origin, m_sheet.period),
+            x,
+            y) ||
+          x > map_x + side - 30.0f * u::pt || y < map_y + 10.0f * u::pt ||
+          y > map_y + side - 6.0f * u::pt)
         continue;
       set_ink (dl, height_ink, solid);
       disc (dl, x, y, 1.6f * u::pt);
@@ -565,7 +575,7 @@ namespace moppe::game {
     std::vector<Placed> placed;
     for (const Mark& mark : marks) {
       points_t x, y;
-      if (place (plan (mark.position), x, y))
+      if (place (terrain::plan (mark.position), x, y))
         placed.push_back ({ x, y, &mark });
     }
     std::ranges::stable_sort (placed, std::greater<> {}, [] (const Placed& p) {

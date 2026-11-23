@@ -6,6 +6,7 @@
 #include <moppe/map/surface.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
+#include <moppe/terrain/torus.hh>
 #include <moppe/terrain/watercourse.hh>
 
 #include <cstdint>
@@ -25,9 +26,10 @@ namespace moppe::game {
   bool mushroom_edible (MushroomKind kind);
 
   // One mushroom standing on the forest floor. `base` is where its stem
-  // enters the ground; `scale` multiplies its kind's ordinary height.
+  // enters the ground on the periodic torus; `scale` multiplies its
+  // kind's ordinary height.
   struct MushroomSite {
-    position_t base {};
+    terrain::torus_position_t base {};
     scale_factor_t scale = 1.0f * scale_factor[one];
     heading_t yaw = 0.0f * heading[si::radian];
     // How far it leans from upright, and which way.
@@ -59,8 +61,12 @@ namespace moppe::game {
                   meters_t sea_level,
                   const position_t& trailhead);
 
-  // Records one mushroom, as planned, into `list` in world space. The
-  // basket and the picking animation reuse it with their own transform.
+  // Records one mushroom into `list` at `at` in world space, or as
+  // planned in the base copy of the torus. The basket, the pan, and the
+  // picking animation pass their own world-space `at`.
+  void draw_mushroom (render::DrawList& list,
+                      const MushroomSite& site,
+                      const position_t& at);
   void draw_mushroom (render::DrawList& list, const MushroomSite& site);
 
   // The planned mushrooms on the ground: meshes built tile by tile as the
@@ -117,7 +123,7 @@ namespace moppe::game {
     std::uint64_t tile_key (int x, int z) const;
     int tile_x (meters_t x) const;
     int tile_z (meters_t z) const;
-    TileMesh* mesh_at (const position_t& at);
+    TileMesh* mesh_at (const terrain::torus_position_t& at);
 
     MushroomPlan m_plan;
     // The tiles' size and how many there are to the world (none counted

@@ -23,6 +23,7 @@
 #include <moppe/render/renderer.hh>
 #include <moppe/terrain/domain.hh>
 #include <moppe/terrain/roads.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <array>
 #include <cstddef>
@@ -68,11 +69,12 @@ namespace moppe::game {
   struct Landing {
     std::size_t place = 0;
     Jetty jetty;
-    // Where the skiff lies alongside, and which way its bow points.
-    position_t berth {};
+    // Where the skiff lies alongside on the periodic torus, and which way
+    // its bow points.
+    terrain::torus_position_t berth {};
     direction_t berth_forward {};
-    // The post its painter is tied to.
-    position_t bollard {};
+    // The post its painter is tied to, on the periodic torus.
+    terrain::torus_position_t bollard {};
   };
 
   // A peak sanctuary's stones.

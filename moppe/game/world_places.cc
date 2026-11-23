@@ -365,19 +365,27 @@ namespace moppe::game {
     const position_t& eye = frame.camera.position;
     constexpr meters_t near = 30.0f * u::m;
     const Building* nearest = nullptr;
-    for (const Building* barn : kept_barns ())
-      if (world_places_far2 (barn->at, eye) < near * near &&
-          (!nearest || world_places_far2 (barn->at, eye) <
-                         world_places_far2 (nearest->at, eye)))
+    position_t nearest_at {};
+    for (const Building* barn : kept_barns ()) {
+      const position_t copy =
+        terrain::nearest_image (barn->at, eye, layout.period);
+      if (world_places_far2 (copy, eye) < near * near &&
+          (!nearest || world_places_far2 (copy, eye) <
+                         world_places_far2 (nearest_at, eye))) {
         nearest = barn;
+        nearest_at = copy;
+      }
+    }
     if (!nearest)
       return;
     const Mat4 barn = building_frame (*nearest);
     const bool lantern = dark > 0.5f * proportion[one];
     // The barn's frame and the model's points are floats (farm_model).
-    const position_t at = position (barn.transform_point (
-      lantern ? farm_model::barn_lantern - Vec3 (0.0f, 0.2f, 0.0f)
-              : Vec3 (0.0f, 2.4f, meters_value (barn_front) - 0.9f)));
+    const position_t at = position (
+      barn.transform_point (
+        lantern ? farm_model::barn_lantern - Vec3 (0.0f, 0.2f, 0.0f)
+                : Vec3 (0.0f, 2.4f, meters_value (barn_front) - 0.9f)) +
+      displacement_value (nearest_at - nearest->at));
     if (lighting.lamp_reach > 0.0f * u::m &&
         world_places_far2 (lighting.lamp_position, eye) <=
           world_places_far2 (at, eye))

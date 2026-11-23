@@ -113,7 +113,11 @@ MOPPE_TEST (the_landing_jetty_runs_out_to_water_deep_enough_to_moor) {
                     0.3f);
   // The skiff lies afloat beside its head, bow to the land.
   const float depth =
-    places_test_sea - places_test_ground_under (country, landing.berth);
+    places_test_sea -
+    places_test_ground_under (country,
+                              landing.berth.point_for (terrain::world_origin,
+                                                       landing.jetty.root,
+                                                       plan.period));
   MOPPE_CHECK (depth > 1.5f);
   MOPPE_CHECK (direction_value (landing.berth_forward)[0] > 0.9f);
   MOPPE_CHECK (cleared (plan, landing.jetty.root));

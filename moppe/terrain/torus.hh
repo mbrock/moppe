@@ -180,6 +180,14 @@ namespace moppe::terrain {
       .numerical_value_ref_in (si::metre);
   }
 
+  inline meters_t x_of (const torus_plan_position_t& at) {
+    return torus_plan_value (at).x () * u::m;
+  }
+
+  inline meters_t z_of (const torus_plan_position_t& at) {
+    return torus_plan_value (at).z () * u::m;
+  }
+
   inline torus_plan_position_t plan (const torus_position_t& at) {
     return torus_plan_position (moppe::plan (torus_position_value (at)));
   }

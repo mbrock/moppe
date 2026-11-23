@@ -11,6 +11,7 @@
 #include <moppe/platform/input.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <array>
 #include <functional>
@@ -209,7 +210,8 @@ namespace moppe {
           };
           Kind kind = Kind::Machine;
           terrain::RoadPlace::Kind place = terrain::RoadPlace::Kind::Trailhead;
-          plan_position_t position = plan_position (0.0f, 0.0f);
+          terrain::torus_plan_position_t position =
+            terrain::torus_plan_position (Vec2 (0.0f, 0.0f));
           DisplayColor colour { 0.1f, 0.1f, 0.1f };
         };
         std::array<Pin, 64> pins {};

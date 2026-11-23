@@ -7,6 +7,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/text.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <span>
 #include <string>
@@ -43,7 +44,7 @@ namespace moppe::game {
         BusStop,
       };
       Kind kind = Kind::Walker;
-      position_t position = moppe::position (Vec3 ());
+      terrain::torus_position_t position = terrain::torus_position (Vec3 ());
       // The way it faces, for those drawn as arrows.
       direction_t heading = unit_direction (Vec3 (0.0f, 0.0f, 1.0f));
       DisplayColor colour { 0.1f, 0.1f, 0.1f };

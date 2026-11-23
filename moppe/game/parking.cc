@@ -98,11 +98,14 @@ namespace moppe::game {
       const Landing& landing = *lot.places.landing;
       mov::Boat& boat = lot.session.boat ();
       boat.set_trunks (&lot.trunks);
-      const Vec3& berth = position_value (landing.berth);
-      boat.place (landing.berth,
+      const position_t moored = landing.berth.point_for (
+        terrain::world_origin, lot.spawn, lot.ground.period ());
+      const Vec3& berth = position_value (moored);
+      boat.place (moored,
                   outward ? -landing.berth_forward : landing.berth_forward,
                   berth[1] * u::m);
-      m_mooring = landing.jetty.root;
+      m_mooring = terrain::nearest_image (
+        landing.jetty.root, moored, lot.ground.period ());
       m_mooring_out = landing.jetty.out;
       const Vec3& spawn = position_value (lot.spawn);
       std::cerr << "moppe: boat moored at the landing's jetty, "
@@ -177,14 +180,17 @@ namespace moppe::game {
     const direction_t beam = left_of (bow);
     std::vector<position_t> berths;
     if (lot.places.landing && m_mooring &&
-        length2 (position_value (*m_mooring) -
-                 position_value (lot.places.landing->jetty.root)) < 1.0f) {
+        length (terrain::torus_offset (plan (*m_mooring),
+                                       plan (lot.places.landing->jetty.root),
+                                       lot.ground.period ())) < 1.0f * u::m) {
       // Across the jetty from the boat, a little nearer its head.
       const Jetty& jetty = lot.places.landing->jetty;
+      const position_t root =
+        terrain::nearest_image (jetty.root, berth, lot.ground.period ());
       const direction_t out = jetty.out;
       const direction_t side = left_of (out);
       const meters_t across =
-        dot (position_value (berth) - position_value (jetty.root),
+        dot (position_value (berth) - position_value (root),
              direction_value (side)) *
         u::m;
       const meters_t beyond =
