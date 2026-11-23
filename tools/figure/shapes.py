@@ -208,6 +208,8 @@ def mesh_object(name, cage, mat, collection, origin=V((0, 0, 0)),
         mod = obj.modifiers.new("smooth", "SUBSURF")
         mod.levels = levels
         mod.render_levels = levels
+    elif bevel > 0 and smooth:
+        obj.modifiers.new("face-weighted normals", "WEIGHTED_NORMAL")
     return obj
 
 

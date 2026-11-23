@@ -23,6 +23,7 @@ import math
 import os
 import sys
 
+import bmesh
 import bpy
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -126,12 +127,48 @@ def build():
     print(f"wrote {OUT}: {len(coll.objects)} objects")
 
 
+def glaze_cabin(cabin, materials):
+    """Inset panes directly into the pod so the gasket shares both edges."""
+    mesh = cabin.data
+    mesh.materials.append(materials["glass"])
+    mesh.materials.append(materials["black"])
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    # Loft writes twelve panels per station, starting at the left side
+    # and passing under the belly first. Follow the belt line around the
+    # nose, then keep a strip of painted roof between the two door lights.
+    panes = [[], [], []]
+    for face in bm.faces:
+        station, sector = divmod(face.index, 12)
+        if station in (1, 2) and sector >= 6:
+            panes[0].append(face)
+        elif station in (3, 4):
+            if sector in (6, 7):
+                panes[1].append(face)
+            elif sector in (10, 11):
+                panes[2].append(face)
+    for pane in panes:
+        for face in pane:
+            face.material_index = 1
+        # Support loops on both sides keep subdivision from pulling a
+        # rubber strip across half a pane or flattening the pod's nose.
+        for width, depth, material in ((0.035, 0, 0), (0.026, -0.008, 2),
+                                       (0.025, 0, 1)):
+            rim = bmesh.ops.inset_region(bm, faces=pane, thickness=width,
+                                         depth=depth, use_even_offset=True)
+            for face in rim["faces"]:
+                face.material_index = material
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+
+
 def body(coll, m):
     b = assembly("body", coll, V((0, 0, 0)), mesh="body")
 
     # The cabin: a rounded pod, deepest under the seats, drawn back into
     # the tail boom.
-    part(b, "cabin", loft([
+    cabin = part(b, "cabin", loft([
         (V((0, 1.02, 2.02)), 0.16, 0.16),
         (V((0, 1.10, 1.86)), 0.50, 0.46),
         (V((0, 1.26, 1.40)), 0.72, 0.66),
@@ -141,10 +178,7 @@ def body(coll, m):
         (V((0, 1.66, -1.55)), 0.30, 0.34),
     ], RIGHT, sides=12), m["paint"], levels=2)
 
-    # The canopy bulges out of the front of it, tinted, and down to the
-    # doors' windows.
-    part(b, "canopy", blob(V((0, 1.50, 0.86)), (0.75, 0.62, 1.08), 16, 10),
-         m["glass"], levels=1)
+    glaze_cabin(cabin, m)
     for s in (-1, 1):
         part(b, f"door_frame{s}", tube([V((s * 0.74, 0.95, -0.28)),
                                         V((s * 0.78, 1.55, -0.30)),
