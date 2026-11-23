@@ -160,7 +160,8 @@ namespace moppe::game {
         "",
         1,
         "<KM>",
-        "Make the world this many kilometres across (5; up to 10).",
+        "Make the world this many kilometres across (default 10, range 2.5 to "
+        "10).",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -259,9 +260,7 @@ namespace moppe::game {
         options.world.resolution = 1024;
       if (options.world_size) {
         // More country over the same samples, so a wider world costs no
-        // more memory and is coarser underfoot; --terrain-resolution buys
-        // the grain back where there is the memory for it (generating a
-        // 4096 world peaks at 5 GB).
+        // more grid memory. --terrain-resolution sets its independent grain.
         const meters_t across = *options.world_size;
         const meters_t height = extent_value (options.world.map_size)[1] * u::m;
         options.world.map_size = spatial_extent_in_metres (Vec3 (

@@ -6,7 +6,7 @@
 namespace moppe {
   namespace game {
     std::uint32_t MoppeGame::this_world () const {
-      return world_tag (recipe_cache_identity (recipe ()));
+      return m_company_world_tag;
     }
 
     void MoppeGame::make_room (const CompanionSnapshot& theirs) {

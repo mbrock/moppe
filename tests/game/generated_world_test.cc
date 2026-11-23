@@ -146,6 +146,8 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
   const std::unique_ptr<game::GeneratedWorld> written =
     build_test_world (recipe, game::WorldParams {});
   game::save_world_cache (*written, cache.string ());
+  const auto identity = game::read_world_cache_identity (cache.string ());
+  MOPPE_CHECK (identity && identity->extent == recipe.extent ());
   std::ofstream (cache / "old-marker") << "old";
   game::save_world_cache (*written, cache.string ());
   MOPPE_CHECK (!std::filesystem::exists (cache / "old-marker"));

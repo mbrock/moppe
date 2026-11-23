@@ -75,7 +75,7 @@ jobs:
           path: build-web/land-cache
           key: >-
             land-1024-play-123-${{ hashFiles('moppe/terrain/**',
-            'moppe/map/**', 'moppe/spatial/**', 'moppe/game/land.*',
+            'moppe/map/**', 'moppe/spatial/**', 'moppe/game/land.*', 'moppe/game/world.hh',
             'moppe/*.hh', 'third_party/core-math/**', 'CMakeLists.txt',
             'flake.lock') }}
 

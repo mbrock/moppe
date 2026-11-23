@@ -222,6 +222,12 @@ namespace moppe::platform {
 
   std::string cache_path (const std::string& relative) {
     static const std::string base = [] {
+      // Isolate cold and warm generation measurements from the player's cache.
+      if (const char* path = moppe::environment ("MOPPE_CACHE_DIR");
+          path && *path) {
+        std::filesystem::create_directories (path);
+        return std::string (path);
+      }
       std::filesystem::path root;
       [[maybe_unused]] const char* home = moppe::environment ("HOME");
 #ifdef __APPLE__

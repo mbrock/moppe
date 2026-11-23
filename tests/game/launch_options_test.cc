@@ -142,7 +142,8 @@ MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
 }
 
 MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
-  MOPPE_CHECK (parsed ({}).world.resolution != 1024);
+  MOPPE_CHECK (parsed ({}).world.resolution == 4096);
+  MOPPE_CHECK (extent_value (parsed ({}).world.map_size)[0] == 10000);
   MOPPE_CHECK (parsed ({ "--terrain-resolution", "1024" }).world.resolution ==
                1024);
   // A wider world is spread over the same samples unless more are asked

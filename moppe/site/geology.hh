@@ -11,8 +11,8 @@
 #include <vector>
 
 namespace moppe::site {
-  // The game's default world: 5 km across, its sea at 50 m.
-  inline constexpr meters_t land_period = 5000.0f * u::m;
+  // The game's default world: 10 km across, its sea at 50 m.
+  inline constexpr meters_t land_period = 10000.0f * u::m;
   inline constexpr meters_t land_sea_level = 50.0f * u::m;
 
   // Heights in metres, `lattice` squared of them, rows from the north

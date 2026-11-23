@@ -55,12 +55,13 @@
   console there. Every push to master is published at
   <https://moppe.swa.sh> (a timer on swa running `tools/publish-web`) and
   on GitHub Pages (`.github/workflows/pages.yml`).
-- World generation is bit-identical across platforms (docs/determinism.md):
+- CPU reference world generation is bit-identical across platforms (docs/determinism.md):
   the project builds with `-ffp-contract=off`, generation code calls
   `moppe::cr::` (correctly rounded CORE-MATH) instead of `std::sin`,
   `std::pow`, `std::hypot` and the like, and `Vec3`'s reductions are spelled
   out. `world-fingerprint` (a developer tool) hashes every stage so two
-  machines can be diffed line by line.
+  machines can be diffed line by line. Local Metal evolution is validated by
+  geomorphology and material balance. Use CPU bakes for shared assets.
 - Linux package and Steam Deck: `nix build .#moppe` (x86_64-linux) builds
   the game with its own Mesa Vulkan driver for hosts without NixOS's;
   docs/steam-deck.md installs it on a Deck (`nix profile install
@@ -112,7 +113,7 @@
   the shared console lease, and launches it (see docs/nhal.md);
   `nix run .#deploy-moppe-core-xbox` runs the headless core probe.
   `tools/deploy-xbox [DEPLOY ARGS]` (or `make xbox`) is the same deploy
-  with the default 2048 world baked on the Mac (`tools/bake-world`, kept
+  with the console's 2048-sample world baked on the Mac (`tools/bake-world`, kept
   in `~/Library/Caches/Moppe/baked/` until the terrain code changes) in
   the package, so the console starts in seconds instead of generating
   for minutes; the pure `nix run` ships none and generates a 1024 world.
@@ -144,8 +145,8 @@
   `tools/record` would take hours. There, as a rule of thumb:
   - Settle what can be settled without pixels: unit tests,
     `world-fingerprint`, logs, and analysis of the fields and state.
-  - Keep to the default world (seed 123, 2048 samples, play): its land
-    comes from `tools/fetch-land` and the finished world loads from the
+  - Use a baked world (desktop default 4096 samples, 10 km): its land
+    comes from `tools/bake-land` or a published `tools/fetch-land` asset and the finished world loads from the
     cache after the first launch. Generate another, or pass
     delete the cache, only when generation is
     what changed. Pin the scene (`MOPPE_OPENING=none`, `MOPPE_CLOCK`,

@@ -26,8 +26,8 @@ namespace moppe::terrain {
       return { Seed { next () }, Seed { next () }, Seed { next () } };
     }
 
-    // The shapes are counted in cycles across the five kilometres the
-    // world ordinarily runs.
+    // Cycles are counted across the original five-kilometre domain. At ten
+    // kilometres the finest mountain octave uses all 256 lattice entries.
     constexpr meters_t ordinary_period = 5000.0f * u::m;
     constexpr NoiseShape ordinary_warp_shape { 3, 4, 2, 0.5f };
     constexpr NoiseShape ordinary_continent_shape { 3, 4, 2, 0.5f };

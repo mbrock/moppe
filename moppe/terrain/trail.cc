@@ -1,6 +1,7 @@
 #include <moppe/correct_math.hh>
 #include <moppe/terrain/trail.hh>
 
+#include <moppe/parallel.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
@@ -226,6 +227,14 @@ namespace moppe::terrain {
       int height;
       meters_t spacing_x;
       meters_t spacing_y;
+      // A* revisits a directed edge for each incoming heading and candidate
+      // circuit. Its fine-grid earthwork profile is identical on each visit.
+      std::vector<std::array<EdgeProfile, 8>> edges;
+
+      static int edge_slot (int dx, int dy) {
+        const int index = (dy + 1) * 3 + dx + 1;
+        return index > 4 ? index - 1 : index;
+      }
 
       int wrap_x (int x) const {
         return wrap_index (x, width);
@@ -424,7 +433,8 @@ namespace moppe::terrain {
     PlanningGrid planning_grid (const TerrainDomain& domain,
                                 std::span<const SurfaceElevation> elevations,
                                 const DrainageGraph& drainage,
-                                const FloodField& flood) {
+                                const FloodField& flood,
+                                ElevationChange earthwork_budget) {
       const TerrainDomain& source = domain;
       const int source_width = static_cast<int> (source.width ());
       const int source_height = static_cast<int> (source.height ());
@@ -440,18 +450,34 @@ namespace moppe::terrain {
                               source.spacing_z () / planning_spacing))),
                     std::min (8, source_height),
                     source_height);
-      return { .domain = domain,
-               .elevations = elevations,
-               .drainage = drainage,
-               .flood = flood,
-               .source_width = source_width,
-               .source_height = source_height,
-               .width = width,
-               .height = height,
-               .spacing_x = static_cast<float> (source_width) *
-                            source.spacing_x () / static_cast<float> (width),
-               .spacing_y = static_cast<float> (source_height) *
-                            source.spacing_z () / static_cast<float> (height) };
+      PlanningGrid grid { .domain = domain,
+                          .elevations = elevations,
+                          .drainage = drainage,
+                          .flood = flood,
+                          .source_width = source_width,
+                          .source_height = source_height,
+                          .width = width,
+                          .height = height,
+                          .spacing_x = static_cast<float> (source_width) *
+                                       source.spacing_x () /
+                                       static_cast<float> (width),
+                          .spacing_y = static_cast<float> (source_height) *
+                                       source.spacing_z () /
+                                       static_cast<float> (height),
+                          .edges = {} };
+      grid.edges.resize (static_cast<std::size_t> (width) * height);
+      parallel_for (grid.edges.size (), 1024, [&] (size_t begin, size_t end) {
+        for (size_t from = begin; from < end; ++from)
+          for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+              if (!dx && !dy)
+                continue;
+              auto to = grid.node (grid.x (from) + dx, grid.y (from) + dy);
+              grid.edges[from][grid.edge_slot (dx, dy)] =
+                grid.edge_profile (from, to, earthwork_budget);
+            }
+      });
+      return grid;
     }
 
     TrailAlignment
@@ -538,22 +564,33 @@ namespace moppe::terrain {
       return alignment;
     }
 
-    meters_t nearest_water (const PlanningGrid& grid,
-                            std::size_t node,
-                            meters_t search_distance) {
+    struct WaterSearchOffset {
+      int dx, dy;
+      meters_t distance;
+    };
+
+    std::vector<WaterSearchOffset>
+    water_search_offsets (const PlanningGrid& grid, meters_t search_distance) {
       const int reach = std::max (
         1,
         static_cast<int> (std::ceil (in_one (
           search_distance / std::min (grid.spacing_x, grid.spacing_y)))));
-      meters_t nearest = std::numeric_limits<float>::infinity () * u::m;
+      std::vector<WaterSearchOffset> offsets;
       for (int dy = -reach; dy <= reach; ++dy)
-        for (int dx = -reach; dx <= reach; ++dx) {
-          const std::size_t candidate =
-            grid.node (grid.x (node) + dx, grid.y (node) + dy);
-          if (grid.wet (candidate))
-            nearest = std::min (nearest, grid.distance (node, candidate));
-        }
-      return nearest;
+        for (int dx = -reach; dx <= reach; ++dx)
+          offsets.push_back ({ dx, dy, grid.distance (0, grid.node (dx, dy)) });
+      std::ranges::sort (offsets, {}, &WaterSearchOffset::distance);
+      return offsets;
+    }
+
+    meters_t nearest_water (const PlanningGrid& grid,
+                            std::size_t node,
+                            std::span<const WaterSearchOffset> offsets) {
+      const int x = grid.x (node), y = grid.y (node);
+      for (const auto& offset : offsets)
+        if (grid.wet (grid.node (x + offset.dx, y + offset.dy)))
+          return offset.distance;
+      return std::numeric_limits<float>::infinity () * u::m;
     }
 
     struct HomeBaseSite {
@@ -566,6 +603,8 @@ namespace moppe::terrain {
                        const TrailFormation& parameters) {
       const SurfaceElevation sea = sea_elevation (grid, parameters);
       const meters_t target_water = parameters.home_base_water_distance;
+      const auto water_offsets =
+        water_search_offsets (grid, target_water * 2.5f);
       const int shelter_reach = std::clamp (
         static_cast<int> (std::round (
           in_one (120.0f * u::m / std::min (grid.spacing_x, grid.spacing_y)))),
@@ -590,7 +629,7 @@ namespace moppe::terrain {
         if (above_sea < parameters.minimum_height_above_sea ||
             slope > 0.75f * terrain_slope[one])
           continue;
-        const meters_t water = nearest_water (grid, node, target_water * 2.5f);
+        const meters_t water = nearest_water (grid, node, water_offsets);
         if (!std::isfinite (meters_value (water)))
           continue;
 
@@ -771,8 +810,6 @@ namespace moppe::terrain {
       if (grid.wet (start))
         return reachable;
       const grade_t maximum_grade = parameters.maximum_grade;
-      const ElevationChange earthwork_budget =
-        parameters.maximum_cut + parameters.maximum_fill;
       std::queue<std::size_t> frontier;
       reachable[start] = 1;
       frontier.push (start);
@@ -791,7 +828,7 @@ namespace moppe::terrain {
             if (run <= 0.0f * u::m)
               continue;
             const PlanningGrid::EdgeProfile profile =
-              grid.edge_profile (current, next, earthwork_budget);
+              grid.edges[current][grid.edge_slot (dx, dy)];
             if (profile.maximum_achievable_grade >
                 maximum_grade + feasible_grade_slack)
               continue;
@@ -908,8 +945,6 @@ namespace moppe::terrain {
       frontier.push ({ grid.distance (start, goal), start_state });
       const grade_t maximum_grade = parameters.maximum_grade;
       const grade_t designed_grade = parameters.designed_grade;
-      const ElevationChange earthwork_budget =
-        parameters.maximum_cut + parameters.maximum_fill;
       // Construction capacity is a feasibility limit, not a discount. A
       // larger cut/fill allowance must not make a steep edge more attractive
       // than a contour-following edge that needs less work.
@@ -946,7 +981,7 @@ namespace moppe::terrain {
           if (run <= 0.0f * u::m)
             continue;
           const PlanningGrid::EdgeProfile profile =
-            grid.edge_profile (current_node, next, earthwork_budget);
+            grid.edges[current_node][grid.edge_slot (dx, dy)];
           const ElevationChange rise =
             abs (grid.elevation (next) - grid.elevation (current_node));
           const grade_t route_grade =
@@ -1409,7 +1444,11 @@ namespace moppe::terrain {
         "trail network readings do not match terrain");
 
     const PlanningGrid planner =
-      planning_grid (grid, elevations, drainage, flood);
+      planning_grid (grid,
+                     elevations,
+                     drainage,
+                     flood,
+                     parameters.maximum_cut + parameters.maximum_fill);
     std::optional<CoarseCircuitPlan> chosen;
     std::vector<CellIndex> chosen_cells;
     const std::vector<HomeBaseSite> sites =

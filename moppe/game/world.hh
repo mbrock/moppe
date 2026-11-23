@@ -15,8 +15,8 @@ namespace moppe {
       meters_t water_level;    // sea level above the model zero datum
       attenuation_t fog_scale; // atmospheric attenuation per metre
       WorldParams ()
-          : map_size (spatial_extent_in_metres (Vec3 (5000, 320, 5000))),
-            resolution (2048), water_level (50 * u::m),
+          : map_size (spatial_extent_in_metres (Vec3 (10000, 320, 10000))),
+            resolution (4096), water_level (50 * u::m),
             fog_scale (0.0004f / u::m) {}
 
       position_t spawn_position () const {

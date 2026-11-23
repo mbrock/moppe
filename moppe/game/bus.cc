@@ -349,8 +349,19 @@ namespace moppe::game {
         wants.push_back ({ meters_t::zero (), 0, names[p], false });
         break;
       }
-    if (wants.empty ())
-      wants.push_back ({ meters_t::zero (), 0, "", false });
+    if (wants.empty ()) {
+      const auto trailhead =
+        std::ranges::find (network.places,
+                           terrain::RoadPlace::Kind::Trailhead,
+                           &terrain::RoadPlace::kind);
+      const size_t i = trailhead - network.places.begin ();
+      wants.push_back ({ meters_t::zero (),
+                         0,
+                         i < names.size () && trailhead != network.places.end ()
+                           ? names[i]
+                           : "",
+                         false });
+    }
     // Just past each cart road that leaves it, for the place that road
     // leads toward: the nearest of the places off the loop to where it
     // branches.

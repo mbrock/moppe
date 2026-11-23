@@ -98,27 +98,16 @@ namespace moppe::terrain {
     };
   }
 
-  FloodField
-  detail::analyze_standing_water (const TerrainDomain& grid,
-                                  std::span<const SurfaceElevation> elevations,
-                                  SurfaceElevation sea_level) {
-    MOPPE_PROFILE_ZONE ("analyze_standing_water");
-    if (!std::isfinite (surface_elevation_value (sea_level)))
-      throw std::invalid_argument ("standing-water sea level must be finite");
-
+  std::vector<std::uint32_t>
+  ocean_component (const TerrainDomain& grid,
+                   std::span<const SurfaceElevation> elevations,
+                   SurfaceElevation sea_level) {
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
     };
-
-    std::vector<SurfaceElevation> water (
-      count,
-      surface_elevation_point (std::numeric_limits<float>::infinity () * u::m));
-    std::vector<CellIndex> receiver (count, CellIndex { 0 });
-    std::vector<std::uint8_t> visited (count, 0);
-    LevelHeap frontier;
 
     // A torus has no exterior boundary that identifies the ocean. Treat the
     // largest connected below-sea component as the global ocean; enclosed
@@ -163,6 +152,33 @@ namespace moppe::terrain {
       }
     }
 
+    return global_ocean;
+  }
+
+  FloodField
+  detail::analyze_standing_water (const TerrainDomain& grid,
+                                  std::span<const SurfaceElevation> elevations,
+                                  SurfaceElevation sea_level) {
+    MOPPE_PROFILE_ZONE ("analyze_standing_water");
+    if (!std::isfinite (surface_elevation_value (sea_level)))
+      throw std::invalid_argument ("standing-water sea level must be finite");
+
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
+    const std::size_t count = width * height;
+    const auto index = [width] (std::size_t x, std::size_t y) {
+      return y * width + x;
+    };
+
+    std::vector<SurfaceElevation> water (
+      count,
+      surface_elevation_point (std::numeric_limits<float>::infinity () * u::m));
+    std::vector<CellIndex> receiver (count, CellIndex { 0 });
+    std::vector<std::uint8_t> visited (count, 0);
+    LevelHeap frontier;
+
+    const auto global_ocean = ocean_component (grid, elevations, sea_level);
+    std::queue<std::uint32_t> sea_frontier;
     std::vector<std::uint8_t> ocean_cell (count, 0);
     if (!global_ocean.empty ()) {
       MOPPE_PROFILE_ZONE ("flood.seed_global_ocean");

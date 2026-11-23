@@ -2,12 +2,12 @@
   "comment": "Typed-quantity ratchet for tools/units-report --check. Regenerate with tools/units-report --update.",
   "areas": {
     "Checkpoints & caches": {
-      "share": 97.1,
+      "share": 99.0,
       "files": 5,
-      "typed": 102,
-      "raw_float": 3,
+      "typed": 104,
+      "raw_float": 1,
       "raw_vector": 0,
-      "escapes": 14
+      "escapes": 17
     },
     "Companion / multiplayer": {
       "share": 71.8,
@@ -18,12 +18,12 @@
       "escapes": 80
     },
     "Developer tools & site": {
-      "share": 62.8,
-      "files": 52,
-      "typed": 451,
+      "share": 62.9,
+      "files": 53,
+      "typed": 452,
       "raw_float": 229,
       "raw_vector": 38,
-      "escapes": 179
+      "escapes": 181
     },
     "Forest & flora": {
       "share": 88.4,
@@ -92,26 +92,26 @@
     "Roads & trails": {
       "share": 82.2,
       "files": 10,
-      "typed": 1022,
+      "typed": 1026,
       "raw_float": 164,
       "raw_vector": 58,
       "escapes": 120
     },
     "Terrain & world generation": {
-      "share": 84.6,
-      "files": 39,
-      "typed": 1022,
-      "raw_float": 138,
+      "share": 84.7,
+      "files": 41,
+      "typed": 1036,
+      "raw_float": 139,
       "raw_vector": 48,
-      "escapes": 205
+      "escapes": 206
     },
     "Tests": {
-      "share": 38.6,
-      "files": 84,
-      "typed": 622,
-      "raw_float": 793,
+      "share": 38.9,
+      "files": 85,
+      "typed": 632,
+      "raw_float": 798,
       "raw_vector": 196,
-      "escapes": 1377
+      "escapes": 1382
     },
     "Vehicles & on-foot body": {
       "share": 77.4,

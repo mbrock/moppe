@@ -734,7 +734,9 @@ namespace moppe::terrain {
     const SedimentVolume negligible = 1e-12 * sediment_volume[cubic_metre];
     std::vector<SedimentVolume> deposited (count, none);
     std::vector<SedimentVolume> remaining_capacity (count, none);
-    std::vector<std::size_t> lake_frontier;
+    std::vector<std::uint32_t> lake_frontier;
+    std::vector<std::uint32_t> available_cells (census.water_bodies ().size ());
+    const auto membership = census.membership ().values ();
     std::vector<std::uint32_t> lake_visit (count, WaterBody::no_cell.value);
     const WorkingArea cell_area = domain.cell_area ();
     const meters_t spacing_x = domain.spacing_x ();
@@ -764,6 +766,8 @@ namespace moppe::terrain {
         const SedimentVolume accommodation =
           sediment_volume_of (depth * cell_area);
         remaining_capacity[cell] = std::min (accommodation, maximum);
+        if (remaining_capacity[cell] > none)
+          ++available_cells[body.value];
       }
     }
 
@@ -790,7 +794,10 @@ namespace moppe::terrain {
         lake_visit[cell] = cell;
         SedimentVolume remaining = load;
         std::size_t first = 0;
-        while (first < lake_frontier.size () && remaining > none) {
+        // A full lake can have many inlets. Once its last cell fills,
+        // subsequent loads can pass straight through without a flood walk.
+        while (first < lake_frontier.size () && remaining > none &&
+               available_cells[body.value]) {
           const std::size_t end = lake_frontier.size ();
           SedimentVolume capacity = none;
           for (std::size_t i = first; i < end; ++i)
@@ -807,20 +814,26 @@ namespace moppe::terrain {
                 : sediment_volume_of (remaining * local / capacity);
             deposited[site] += share;
             remaining_capacity[site] -= share;
+            if (local > none && remaining_capacity[site] <= none)
+              --available_cells[body.value];
             remaining = std::max (none, remaining - share);
             capacity = std::max (none, capacity - local);
             if (!advance)
               continue;
-            const TerrainIndex from = domain.index (site);
-            for (int dz = -1; dz <= 1; ++dz)
-              for (int dx = -1; dx <= 1; ++dx) {
-                const std::size_t next =
-                  domain.offset (domain.shifted (from, dx, dz));
-                if (lake_visit[next] == cell ||
-                    census.membership ().values ()[next] != body)
+            const auto width = domain.width ();
+            const auto x = site % width;
+            const auto west = x ? x - 1 : width - 1;
+            const auto east = x + 1 == width ? 0 : x + 1;
+            const auto row = site - x;
+            const auto north = row ? row - width : count - width;
+            const auto south = row + width == count ? 0 : row + width;
+            for (auto base : { north, row, south })
+              for (auto col : { west, x, east }) {
+                const auto next = base + col;
+                if (lake_visit[next] == cell || membership[next] != body)
                   continue;
                 lake_visit[next] = cell;
-                lake_frontier.push_back (next);
+                lake_frontier.push_back (static_cast<std::uint32_t> (next));
               }
           }
           first = end;

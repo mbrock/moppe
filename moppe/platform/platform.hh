@@ -109,6 +109,9 @@ namespace moppe {
       }
       virtual void tick (seconds_t interval) = 0;
       virtual void render (render::Renderer& r) = 0;
+      virtual bool loading () const {
+        return false;
+      }
       virtual void key (Key k, bool down) {
         (void)k;
         (void)down;

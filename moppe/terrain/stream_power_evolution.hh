@@ -117,6 +117,12 @@ namespace moppe::terrain {
     IterationCount, IterationCount, std::span<const SurfaceElevation>)>;
 
   namespace detail {
+    void validate_stream_power_evolution (
+      const TerrainDomain& domain,
+      std::span<const SurfaceElevation> elevations,
+      std::span<const meters_per_julian_year_t> uplift_rate,
+      const StreamPowerEvolution& parameters);
+
     StreamPowerEvolutionResult evolve_stream_power (
       const TerrainDomain& domain,
       std::span<const SurfaceElevation> elevations,

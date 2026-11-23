@@ -361,6 +361,22 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/world_recipe.cc
 )
 
+set(MOPPE_LOCAL_EVOLUTION_SOURCES moppe/terrain/local_evolution.cc)
+if(APPLE AND NOT MOPPE_MOBILE_APPLE)
+  list(APPEND MOPPE_LOCAL_EVOLUTION_SOURCES moppe/terrain/metal/evolution.mm)
+  set(fastflow_source "${CMAKE_CURRENT_SOURCE_DIR}/moppe/terrain/metal/fastflow.metal")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${fastflow_source}")
+  file(READ "${fastflow_source}" fastflow_msl)
+  file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/fastflow.inc"
+    CONTENT [=[R"moppe_msl(@fastflow_msl@)moppe_msl"]=] @ONLY)
+  set_source_files_properties(moppe/terrain/metal/evolution.mm PROPERTIES
+    INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}")
+  set_source_files_properties(moppe/terrain/local_evolution.cc PROPERTIES
+    COMPILE_DEFINITIONS MOPPE_METAL_EVOLUTION)
+  set_source_files_properties(moppe/terrain/metal/evolution.mm PROPERTIES
+    COMPILE_OPTIONS "-fobjc-arc")
+endif()
+
 set(MOPPE_WORLD_SOURCES
   moppe/map/surface.cc
   moppe/game/generated_world.cc
@@ -542,8 +558,11 @@ endfunction()
 # recompiles them (and they, being data, are never edited by hand).
 add_library(moppe-models STATIC ${MOPPE_MODEL_SOURCES})
 set_target_properties(moppe-models PROPERTIES UNITY_BUILD OFF)
-add_library(moppe-engine STATIC ${MOPPE_ENGINE_SOURCES})
+add_library(moppe-engine STATIC ${MOPPE_ENGINE_SOURCES} ${MOPPE_LOCAL_EVOLUTION_SOURCES})
 target_link_libraries(moppe-engine PUBLIC moppe-models)
+if(APPLE AND NOT MOPPE_MOBILE_APPLE)
+  target_link_libraries(moppe-engine PRIVATE "-framework Metal" "-framework Foundation")
+endif()
 foreach(library moppe-models moppe-engine)
   moppe_configure_code_target(${library})
   if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
@@ -779,10 +798,14 @@ endfunction()
 if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   add_executable(terrain-orogeny-benchmark EXCLUDE_FROM_ALL
     moppe/terrain/orogeny_benchmark.cc
+    ${MOPPE_LOCAL_EVOLUTION_SOURCES}
     ${MOPPE_TERRAIN_SOURCES}
     ${MOPPE_WORLD_SOURCES}
   )
   moppe_configure_code_target(terrain-orogeny-benchmark)
+  if(APPLE)
+    target_link_libraries(terrain-orogeny-benchmark PRIVATE "-framework Metal" "-framework Foundation")
+  endif()
 
   add_executable(terrain-trail-soak EXCLUDE_FROM_ALL
     moppe/terrain/trail_soak.cc
@@ -817,6 +840,7 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   moppe_configure_code_target(world-fingerprint)
   if(WIN32)
     target_link_libraries(world-fingerprint PRIVATE psapi)
+    target_link_libraries(terrain-orogeny-benchmark PRIVATE psapi)
   endif()
 
   # Where each river's water stands and where it runs dry.
@@ -918,6 +942,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     MOPPE_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   if(APPLE)
     target_sources(moppe-tests PRIVATE
+      tests/terrain/local_evolution_test.mm
       ${MOPPE_APPLE_COMMON_SOURCES})
     moppe_configure_apple_target(moppe-tests)
     target_sources(moppe-tests PRIVATE
@@ -950,6 +975,7 @@ if(APPLE AND MOPPE_IOS)
   )
   moppe_configure_code_target(moppe-ios)
   target_link_libraries(moppe-ios PRIVATE moppe-engine)
+  target_compile_definitions(moppe-ios PRIVATE MOPPE_PHONE_WORLD)
   moppe_configure_apple_target(moppe-ios)
   moppe_add_nhal_renderer(moppe-ios msl metal
     moppe/nhal/renderer/world_shaders_metal.cc)
@@ -1016,7 +1042,7 @@ if(APPLE AND MOPPE_TVOS)
         "MOPPE_TVOS_BAKED_WORLD is not a directory: "
         "${MOPPE_TVOS_BAKED_WORLD}")
     endif()
-    target_compile_definitions(moppe-tvos PRIVATE
+    target_compile_definitions(moppe-engine PRIVATE
       MOPPE_BUNDLED_WORLD_CACHE="world/apple-tv-default")
   endif()
   target_link_libraries(moppe-tvos PRIVATE "-framework UIKit")
@@ -1583,7 +1609,8 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
     # A package may ship a finished world baked on the host
     # (tools/bake-world); the game starts in it instead of generating one.
     target_compile_definitions(moppe-xbox PRIVATE
-      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS
+      NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(moppe-engine PRIVATE
       MOPPE_BUNDLED_WORLD_CACHE="world/default")
     install(TARGETS moppe-xbox RUNTIME DESTINATION bin)
     install(DIRECTORY fonts textures data DESTINATION share/moppe-xbox)

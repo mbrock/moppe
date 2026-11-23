@@ -3,17 +3,15 @@
 # folder, so the game starts from it instead of generating it, and prints
 # its path.
 #
-#   tools/fetch-land [RESOLUTION [PROFILE [SEED]]]   (default 2048 play 123)
+#   tools/fetch-land [RESOLUTION [PROFILE [SEED]]]   (default 4096 play 123)
 #
-# Land is the same on every platform (docs/determinism.md): what this
-# downloads is exactly what the game would generate. It exits non-zero when
-# nothing is published for the recipe; the game then generates it, and
-# tools/publish-land can share it. MOPPE_LAND_DIR overrides the folder.
+# Published land comes from the CPU baker. It exits non-zero when nothing
+# is published for the recipe. MOPPE_LAND_DIR overrides the folder.
 
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-resolution="${1:-2048}"
+resolution="${1:-4096}"
 profile="${2:-play}"
 seed="${3:-123}"
 if [[ "$(uname)" == Darwin ]]; then

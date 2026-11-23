@@ -73,6 +73,8 @@ BOUNDARIES = (
     # GPU hardware layer, its devices and demo, and the renderer's
     # uniform structs that mirror the shaders' layouts lane for lane.
     ("NHAL GPU layer", ("moppe/nhal/*",)),
+    # Packed Metal terrain fields and uniforms at the GPU storage boundary.
+    ("Metal terrain compute", ("moppe/terrain/metal/*",)),
     # Column-major float matrices handed straight to the GPU, and the
     # renderer API's plain vertex and colour types.
     ("Matrices & render types",
@@ -105,7 +107,7 @@ AREAS = (
     ("Developer tools & site", (
         "atelier/*", "lavoir/*", "moppe/site/*",
         "moppe/terrain/*_bake.cc", "moppe/terrain/world_fingerprint.cc",
-        "moppe/terrain/orogeny_benchmark.cc",
+        "moppe/terrain/orogeny_benchmark.cc", "moppe/terrain/benchmark_memory.hh",
         "moppe/terrain/river_census.cc", "moppe/terrain/trail_soak.cc",
         "moppe/game/testbed.cc", "moppe/game/core_probe.*")),
     ("Tests", ("tests/*",)),

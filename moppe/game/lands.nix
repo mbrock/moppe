@@ -1,9 +1,8 @@
 # The published land (lands.json) for the source's LAND_VERSION
 # (moppe/game/land.hh), unpacked into one folder of land files that a package
 # ships in its worlds/ folder (CMake's MOPPE_LANDS_DIR). Each is fetched by
-# its recorded hash, and each is exactly what the game would generate for its
-# recipe on any platform (docs/determinism.md), so a package with none still
-# works: it generates on first launch.
+# its recorded hash from the reference CPU bake. Packages without a matching
+# asset generate locally on first launch (docs/determinism.md).
 { pkgs }:
 let
   inherit (pkgs) lib;

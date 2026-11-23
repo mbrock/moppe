@@ -1,23 +1,28 @@
 # Determinism across platforms
 
-A seed makes the same world, bit for bit, on every platform the game builds
-for. That lets a finished world be shared as a cache: whatever machine baked
-it, any other would have computed exactly the same thing.
+The CPU reference computes identical land for a given recipe on supported
+platforms. `tools/bake-world` uses that reference and packages the finished
+world, including river beds, roads and forests. `tools/bake-land` packages the
+four land fields. Both bakers and `world-fingerprint` select CPU evolution
+independently of the local game setting. To play a shared bake on desktop,
+set `MOPPE_BAKED_WORLD` to the directory printed by `tools/bake-world`. The
+loader reads its extent, seed, profile and resolution from its header.
 
-Verified on 2026-10-09 with `world-fingerprint 2048 play 123` (the default
-world) on an Apple M2 Pro (macOS, AppleClang, libc++) and an Intel i7-10700K
+Local GPU generation may produce different heights and stream trees. A shared
+session should load the same baked asset on every peer. The multiplayer world
+tag includes the finished terrain heights. Local Metal caches carry the backend
+and algorithm version. A bundled finished world, bundled land, or downloaded
+reference land takes precedence when starting the matching recipe.
+
+## CPU reference
+
+Verified on 2026-10-09 with `world-fingerprint 2048 play 123` (the former 5 km default) on an Apple M2 Pro (macOS, AppleClang, libc++) and an Intel i7-10700K
 (NixOS, Clang 21, libstdc++), and again at 257 and 1025 samples, with x86-64
 and x86-64-v3 code generation: every stage, every geological step, and every
 file of the finished world agree. Verified again on 2026-10-12, with the
 rivers' beds in the land (v3), on an Apple M5, an AMD Ryzen 9 7950X3D, and
 the i7: all 76 lines the same, and the same as the files the game itself
 had cached on the Mac.
-
-Two machines that show different worlds for one seed are therefore running
-different code. A finished world is cached under the version of the code
-that made it, so a checkout a few commits behind keeps playing the land of
-its own commit; compare `git log -1` on both before suspecting the
-arithmetic.
 
 ## What the rules are
 
@@ -55,7 +60,7 @@ total -- break ties by cell index -- when adding a sort or a heap.
 
 ## Checking it
 
-`world-fingerprint [RESOLUTION [PROFILE [SEED]]]` (a developer tool:
+`world-fingerprint [RESOLUTION [PROFILE [SEED [KM]]]]` (a developer tool:
 configure with `-DMOPPE_BUILD_DEVELOPER_TOOLS=ON`) prints a hash after every
 generation stage, after each geological step, and of each file of the
 finished world. Run it on two machines and `diff` the output; the first
@@ -79,7 +84,7 @@ thread a contiguous range, and the rule is that a body writes only its own
 range's elements: a cell's route, a face's flux, a row's partial sum.
 Totals are added by row and then the rows in order, never per thread, since
 float addition does not associate. `MOPPE_THREADS=N` overrides the count;
-the default 2048 land hashes the same with 10 threads on the M2 and 16 on
+the original 2048 land hashes the same with 10 threads on the M2 and 16 on
 the i7.
 
 ## Cost
@@ -92,9 +97,18 @@ most of those calls were algebra that plain arithmetic does exactly. x86
 builds target x86-64-v3 so CORE-MATH's exact arithmetic uses hardware FMA
 (7% faster on the i7; the same bits).
 
-## Not covered
+## GPU acceptance
 
-GPU computation. Metal, Vulkan, and Direct3D do not promise IEEE-exact
-division, fusion, or transcendentals, so a GPU stage cannot be part of the
-canonical world; `MOPPE_METAL_OROGENY=1` (docs/orogeny-performance.md) is
-such a stage and makes a world that only the same GPU reproduces.
+`MOPPE_OROGENY=cpu|metal|metal-multigrid` selects the local solver on macOS.
+Metal uses single-receiver flow with saddle carving, while the CPU uses
+fractional D-infinity flow. Near-tie decisions, floating-point evaluation,
+channel width and the positions of individual tributaries may vary.
+
+The Metal tests compare two seeded landscapes with the CPU at the same extent,
+resolution and geological age. They check the elevation distribution, exposed
+land fraction, largest coastal catchment and number of substantial river
+mouths using the CPU hydrology analyzer. Independent budgets compare final
+surface volume plus exported sediment with the initial surface and uplift.
+The contributing areas at outlets must sum to the entire periodic domain,
+including in the all-land regression. The full-size comparison and hillshades
+are in [Orogeny performance](orogeny-performance.md).

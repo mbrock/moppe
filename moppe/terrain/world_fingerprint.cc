@@ -18,6 +18,7 @@
 #include <moppe/terrain/world_recipe.hh>
 
 #include <moppe/environment.hh>
+#include <moppe/terrain/benchmark_memory.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -35,20 +36,9 @@
 #include <string>
 #include <vector>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-// psapi.h needs the Windows types above.
-#include <psapi.h>
-// Unity builds include the terrain sources after this file.
-#undef near
-#undef far
-#elif defined(__APPLE__)
+#ifdef __APPLE__
 #include <mach/mach.h>
-#include <sys/resource.h>
-#else
-#include <sys/resource.h>
+#elif !defined(_WIN32)
 #include <unistd.h>
 #endif
 
@@ -81,24 +71,6 @@ namespace {
 #endif
   }
 
-  // Megabytes at the most there has been.
-  double peak_mb () {
-#ifdef _WIN32
-    PROCESS_MEMORY_COUNTERS info {};
-    if (!GetProcessMemoryInfo (GetCurrentProcess (), &info, sizeof (info)))
-      return 0.0;
-    return static_cast<double> (info.PeakWorkingSetSize) / 1048576.0;
-#else
-    rusage usage {};
-    getrusage (RUSAGE_SELF, &usage);
-#ifdef __APPLE__
-    return static_cast<double> (usage.ru_maxrss) / 1048576.0;
-#else
-    return static_cast<double> (usage.ru_maxrss) / 1024.0;
-#endif
-#endif
-  }
-
   void cost (const std::string& stage) {
     static const bool wanted =
       moppe::environment ("MOPPE_FINGERPRINT_COST") != nullptr;
@@ -112,7 +84,7 @@ namespace {
                   stage.c_str (),
                   std::chrono::duration<double> (now - before).count (),
                   resident_mb (),
-                  peak_mb ());
+                  moppe::benchmark::peak_rss_mib ());
     before = Clock::now ();
   }
 
@@ -187,8 +159,7 @@ int main (int argc, char** argv) {
       parse_profile (argc > 2 ? argv[2] : "play");
     const std::uint32_t seed =
       argc > 3 ? static_cast<std::uint32_t> (std::stoul (argv[3])) : 123;
-    // The game's default extent, as tools/bake-world bakes it, or as wide
-    // as --world-size would make it.
+    // The historical 5 km CPU fixture. Pass 10 for the desktop default.
     const meters_t across =
       (argc > 4 ? std::stof (argv[4]) * 1000.0f : 5000.0f) * u::m;
     const WorldRecipe recipe = make_world_recipe (

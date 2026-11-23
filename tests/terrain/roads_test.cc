@@ -77,6 +77,26 @@ namespace {
   }
 }
 
+MOPPE_TEST (inland_bus_loop_can_start_at_the_trailhead) {
+  const TerrainDomain domain (32, 32, 20.0f * u::m, 20.0f * u::m);
+  auto terrain =
+    make_elevation_map (domain, std::vector<float> (domain.size (), 60));
+  auto flood = analyze_standing_water (terrain, elevation (50));
+  auto roads = plan_roads (domain,
+                           elevations (terrain),
+                           flood,
+                           analyze_drainage (terrain),
+                           {},
+                           1e6f * u::m * u::m,
+                           CellIndex { 100 },
+                           elevation (50),
+                           7);
+  MOPPE_CHECK (std::ranges::none_of (roads.places, [] (const auto& place) {
+    return place.kind == RoadPlace::Kind::Landing;
+  }));
+  MOPPE_CHECK (std::ranges::count (roads.roads, true, &Road::loop) == 1);
+}
+
 MOPPE_TEST (roads_reach_the_sea_round_lakes_and_mires_rather_than_through) {
   const ElevationMap terrain = lake_country ();
   const FloodField flood = analyze_standing_water (

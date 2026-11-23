@@ -199,6 +199,11 @@ namespace moppe::terrain {
   bool water_body_terminates_rivers (const WaterBody& body,
                                      const WaterPermanence& permanence = {});
 
+  std::vector<std::uint32_t>
+  ocean_component (const TerrainDomain& grid,
+                   std::span<const SurfaceElevation> elevations,
+                   SurfaceElevation sea_level);
+
   namespace detail {
     FloodField
     analyze_standing_water (const TerrainDomain& domain,

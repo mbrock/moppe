@@ -27,6 +27,9 @@ int main (int argc, char** argv) {
   MOPPE_PROFILE_ZONE ("main");
 
   game::LaunchOptions options;
+#ifdef MOPPE_PHONE_WORLD
+  options.world.resolution = 2048;
+#endif
 #ifdef MOPPE_DEFAULT_APPLE_TV_GRAPHICS
   options.graphics = game::apple_tv_graphics_settings ();
   // The Apple TV bundle carries this exact evolved landscape. Command-line
@@ -56,7 +59,8 @@ int main (int argc, char** argv) {
   // the command line can still ask for another, which is then generated.
   if (const std::optional bundled =
         game::read_world_cache_identity (game::bundled_world_cache ())) {
-    options.world.resolution = bundled->resolution;
+    options.world.map_size = bundled->extent;
+    options.terrain_resolution = bundled->resolution;
     options.seed = bundled->seed;
     options.generation_profile = bundled->profile;
   }

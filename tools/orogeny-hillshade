@@ -1,0 +1,145 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# dependencies = ["numpy", "matplotlib", "scipy"]
+# ///
+"""Compare CPU, Metal and multigrid height dumps from terrain-orogeny-benchmark."""
+
+import argparse
+import heapq
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.ndimage import label
+
+
+def reduce_grid(h, scale):
+    n = h.shape[0] // scale
+    return h.reshape(n, scale, n, scale).mean(axis=(1, 3))
+
+
+def hillshade(h, spacing):
+    dx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) / (2 * spacing)
+    dz = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) / (2 * spacing)
+    return (.7071 + .5 * dx + .5 * dz) / np.sqrt(1 + dx * dx + dz * dz)
+
+
+def watersheds(h, spacing):
+    """Measure outlets on a common periodic grid with an independent priority flood."""
+    n = h.shape[0]
+    wet, count = label(h <= 50, np.ones((3, 3)))
+    parent = np.arange(count + 1)
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    # Join every eight-neighbour edge that crosses either periodic seam.
+    for grid in (wet, wet.T):
+        for offset in (-1, 0, 1):
+            for a, b in zip(grid[0], np.roll(grid[-1], offset)):
+                if a and b:
+                    parent[root(b)] = root(a)
+    if count:
+        wet = np.array([root(i) for i in range(count + 1)])[wet]
+        ocean = wet == (1 + np.bincount(wet.ravel())[1:].argmax())
+    else:
+        ocean = np.zeros_like(h, dtype=bool)
+        ocean.flat[np.argmin(h)] = True
+    seen = ocean.copy()
+    downstream = np.full(h.size, -1, dtype=int)
+    queue = [(max(50., float(h[y, x])), int(y*n+x))
+             for y, x in zip(*np.nonzero(ocean))]
+    heapq.heapify(queue)
+    order = []
+    level = np.maximum(h, 50.).copy()
+    neighbors = [(dx, dy, np.hypot(dx, dy))
+                 for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dx or dy]
+    while queue:
+        z, i = heapq.heappop(queue)
+        y, x = divmod(i, n)
+        order.append(i)
+        for dx, dy, _ in neighbors:
+            xx, yy = (x + dx) % n, (y + dy) % n
+            if seen[yy, xx]:
+                continue
+            seen[yy, xx] = True
+            j = yy*n + xx
+            downstream[j] = i
+            level[yy, xx] = max(z, h[yy, xx])
+            heapq.heappush(queue, (level[yy, xx], j))
+    # Use steepest descent away from filled flats. A strict drop is earlier
+    # in the flood order. On flats the flood predecessor leads to the spill.
+    index = np.arange(h.size).reshape(h.shape)
+    slope = np.zeros_like(h)
+    for dx, dy, distance in neighbors:
+        drop = (level - np.roll(level, (-dy, -dx), (0, 1))) / distance
+        use = (drop > slope) & ~ocean
+        downstream.reshape(h.shape)[use] = np.roll(index, (-dy, -dx), (0, 1))[use]
+        slope[use] = drop[use]
+    area = np.ones(h.size)
+    mouths = []
+    for i in reversed(order):
+        j = downstream[i]
+        if j >= 0:
+            area[j] += area[i]
+            if ocean.flat[j]:
+                mouths.append(area[i] * spacing**2 / 1e6)
+    assert area[ocean.ravel()].sum() == h.size
+    return max(mouths, default=0), sum(a >= .1 for a in mouths)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("directory", type=Path)
+    p.add_argument("--km", type=float, default=10)
+    p.add_argument("--output", type=Path, required=True)
+    args = p.parse_args()
+    fig, axes = plt.subplots(2, 3, figsize=(12, 8.1), layout="constrained")
+    print("backend,p10_m,p50_m,p90_m,p99_m,dry_percent,median_625m_relief_m,"
+          "mean_slope_deg,largest_basin_km2,mouths_over_0.1km2")
+    for col, (backend, name) in enumerate([("cpu", "CPU reference"),
+                                            ("metal", "Metal"),
+                                            ("metal-multigrid", "Metal multigrid")]):
+        h = np.fromfile(args.directory / (backend + ".f32"), dtype=np.float32)
+        n = int(np.sqrt(h.size))
+        h = h.reshape(n, n)
+        spacing = args.km * 1000 / n
+        scale = max(1, n // 512)
+        overview = reduce_grid(h, scale)
+        basin, mouths = watersheds(overview, spacing * scale)
+        blocks = h.reshape(16, n//16, 16, n//16)
+        relief = blocks.max(axis=(1, 3)) - blocks.min(axis=(1, 3))
+        gradient = np.gradient(h, spacing)
+        slope = np.degrees(np.arctan(np.hypot(*gradient))).mean()
+        values = [*np.percentile(h, [10, 50, 90, 99]), 100*(h>50).mean(),
+                  np.median(relief), slope, basin, mouths]
+        print(backend + "," + ",".join(f"{v:.3f}" for v in values), flush=True)
+        # Same land window, physical light direction and grayscale in all panels.
+        x, y = n*5//16, n*7//16
+        width = n//8
+        for row, (data, step) in enumerate([(overview, spacing*scale),
+                                             (h, spacing)]):
+            shade = hillshade(data, step)
+            ax = axes[row, col]
+            if row:
+                shade = shade[y:y+width, x:x+width]
+            ax.imshow(shade, cmap="gray", vmin=-.2, vmax=1, interpolation="antialiased")
+            ax.set_xticks([])
+            ax.set_yticks([])
+        axes[0, col].set_title(name)
+        axes[0, col].add_patch(plt.Rectangle((x/scale, y/scale), width/scale,
+                                              width/scale, edgecolor="#ffa83a",
+                                              facecolor="none", linewidth=1.2))
+    axes[0, 0].set_ylabel(f"{args.km:g} km extent")
+    axes[1, 0].set_ylabel(f"{args.km/8:g} km detail")
+    fig.savefig(args.output, dpi=150)
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    main()

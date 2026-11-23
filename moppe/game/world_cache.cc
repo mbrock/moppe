@@ -71,7 +71,8 @@ namespace moppe::game {
     // bus (Road::loop).
     // Version 39 widens the roads, the bus's lane among them.
     // Version 40 cuts roadside ditches along road cuts.
-    constexpr std::uint32_t CACHE_VERSION = 40;
+    // Version 41 permits inland bus routes and bakes river beds before trails.
+    constexpr std::uint32_t CACHE_VERSION = 41;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
@@ -343,14 +344,23 @@ namespace moppe::game {
                        mp_units::one);
     }
 
+    std::optional<spatial_extent_t> read_extent (BinaryReader& input) {
+      std::array<meters_t, 3> lanes {};
+      for (auto& lane : lanes)
+        if (!input.quantity (lane, u::m) || !isfinite (lane) ||
+            lane <= 0 * u::m)
+          return std::nullopt;
+      return spatial_extent_in_metres (Vec3 (meters_value (lanes[0]),
+                                             meters_value (lanes[1]),
+                                             meters_value (lanes[2])));
+    }
+
     bool read_recipe (BinaryReader& input, const terrain::WorldRecipe& recipe) {
       std::array<char, CACHE_MAGIC.size ()> magic {};
       std::uint32_t version = 0;
       std::uint32_t resolution = 0;
       std::uint32_t seed = 0;
       std::uint32_t profile = 0;
-      // The extent's lanes as the file has them.
-      float lanes[3] {};
       meters_t water {};
       julian_years_t uplift {};
       square_meters_t channel_initiation_area {};
@@ -362,11 +372,9 @@ namespace moppe::game {
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
         return false;
-      for (float& lane : lanes)
-        if (!input.scalar (lane))
-          return false;
-      const spatial_extent_t extent =
-        spatial_extent_in_metres (Vec3 (lanes[0], lanes[1], lanes[2]));
+      const auto extent = read_extent (input);
+      if (!extent)
+        return false;
       const auto& evolution = recipe.evolution ();
       return input.quantity (water, u::m) &&
              input.quantity (uplift, julian_year) &&
@@ -383,7 +391,7 @@ namespace moppe::game {
              seed == recipe.seed ().value &&
              profile ==
                static_cast<std::uint32_t> (recipe.generation_profile ()) &&
-             extent == recipe.extent () && water == recipe.water_datum () &&
+             *extent == recipe.extent () && water == recipe.water_datum () &&
              uplift == evolution.uplift_duration &&
              channel_initiation_area == evolution.channel_initiation_area &&
              runoff == evolution.fluvial_transport.runoff_rate &&
@@ -933,7 +941,11 @@ namespace moppe::game {
         profile > static_cast<std::uint32_t> (
                     terrain::TerrainGenerationProfile::Research))
       return std::nullopt;
+    const auto extent = read_extent (input);
+    if (!extent)
+      return std::nullopt;
     return WorldCacheIdentity {
+      .extent = *extent,
       .resolution = static_cast<int> (resolution),
       .seed = seed,
       .profile = static_cast<terrain::TerrainGenerationProfile> (profile),

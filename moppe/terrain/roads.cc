@@ -334,35 +334,39 @@ namespace moppe::terrain {
       const FineGround source { elevations,    flood,    source_width,
                                 source_height, source_x, source_z };
       lattice.earthwork.assign (count * steps.size (), 0.0f * u::m);
-      for (std::size_t node = 0; node < count; ++node) {
-        const meters_t ax =
-          static_cast<float> (static_cast<int> (
-            source_cell (lattice.x (node), lattice.y (node)) % source_width)) *
-          source_x;
-        const meters_t az =
-          static_cast<float> (static_cast<int> (
-            source_cell (lattice.x (node), lattice.y (node)) / source_width)) *
-          source_z;
-        const plan_position_t a = plan_position (ax, az);
-        for (std::size_t k = 0; k < steps.size (); ++k) {
-          const std::size_t other = lattice.node (
-            lattice.x (node) + steps[k][0], lattice.y (node) + steps[k][1]);
-          const plan_displacement_t d = plan_displacement (
-            steps[k][0] * lattice.spacing_x, steps[k][1] * lattice.spacing_z);
-          const int samples =
-            std::max (2,
-                      static_cast<int> (std::ceil (static_cast<float> (
-                        hypot (d) / std::max (source_x, source_z)))));
-          meters_t off = 0.0f * u::m;
-          for (int i = 1; i < samples; ++i) {
-            const float t = static_cast<float> (i) / samples;
-            const SurfaceElevation line = interpolate (
-              lattice.elevation[node], lattice.elevation[other], t);
-            off += rise (line, source.at (a + d * t));
+      parallel_for (count, 2048, [&] (size_t begin, size_t end) {
+        for (std::size_t node = begin; node < end; ++node) {
+          const meters_t ax =
+            static_cast<float> (static_cast<int> (
+              source_cell (lattice.x (node), lattice.y (node)) %
+              source_width)) *
+            source_x;
+          const meters_t az =
+            static_cast<float> (static_cast<int> (
+              source_cell (lattice.x (node), lattice.y (node)) /
+              source_width)) *
+            source_z;
+          const plan_position_t a = plan_position (ax, az);
+          for (std::size_t k = 0; k < steps.size (); ++k) {
+            const std::size_t other = lattice.node (
+              lattice.x (node) + steps[k][0], lattice.y (node) + steps[k][1]);
+            const plan_displacement_t d = plan_displacement (
+              steps[k][0] * lattice.spacing_x, steps[k][1] * lattice.spacing_z);
+            const int samples =
+              std::max (2,
+                        static_cast<int> (std::ceil (static_cast<float> (
+                          hypot (d) / std::max (source_x, source_z)))));
+            meters_t off = 0.0f * u::m;
+            for (int i = 1; i < samples; ++i) {
+              const float t = static_cast<float> (i) / samples;
+              const SurfaceElevation line = interpolate (
+                lattice.elevation[node], lattice.elevation[other], t);
+              off += rise (line, source.at (a + d * t));
+            }
+            lattice.earthwork[node * steps.size () + k] = off / (samples - 1);
           }
-          lattice.earthwork[node * steps.size () + k] = off / (samples - 1);
         }
-      }
+      });
       return lattice;
     }
 
@@ -375,8 +379,18 @@ namespace moppe::terrain {
       // How much less an existing way costs to follow than to build.
       proportion_t reuse = 1.0f * proportion[one];
 
+      // The terrain price of a directed edge is shared by every search.
+      // Only the reuse discount changes as roads are laid.
+      std::vector<meters_t> price;
+      Mover (const Lattice& lattice, Kind kind, proportion_t reuse);
+
+      meters_t cost (std::size_t node, std::size_t k, std::uint8_t way) const {
+        const meters_t base = price[node * steps.size () + k];
+        const bool reused = kind == Kind::Cart ? way == Built : way != None;
+        return reused ? meters_t (base * reuse) : base;
+      }
+
       meters_t step (const Lattice& lattice,
-                     const std::vector<std::uint8_t>& ways,
                      std::size_t a,
                      std::size_t b,
                      meters_t run,
@@ -403,8 +417,6 @@ namespace moppe::terrain {
           cost += meters_t (
             run * (1.5f * lattice.forest[b] + 6.0f * lattice.mire[b] +
                    1.0f * lattice.wetness[b] + per_earthwork * earthwork));
-          if (ways[b] == Built)
-            cost = meters_t (cost * reuse);
         } else {
           if (lattice.water[b] != Lattice::Dry || pitch > 0.5f * grade[one])
             return unreachable;
@@ -414,8 +426,6 @@ namespace moppe::terrain {
           cost +=
             meters_t (run * (0.4f * lattice.forest[b] + 2.0f * lattice.mire[b] +
                              0.3f * lattice.wetness[b]));
-          if (ways[b] != None)
-            cost = meters_t (cost * reuse);
         }
         return cost;
       }
@@ -432,23 +442,18 @@ namespace moppe::terrain {
 
     // What the mover pays for step k (of steps) from a node, unreachable
     // where it may not go.
-    meters_t step_cost (const Lattice& lattice,
-                        const std::vector<std::uint8_t>& ways,
-                        const Mover& mover,
-                        std::size_t node,
-                        std::size_t k) {
+    meters_t terrain_cost (const Lattice& lattice,
+                           const Mover& mover,
+                           std::size_t node,
+                           std::size_t k) {
       const int x = lattice.x (node);
       const int y = lattice.y (node);
       const auto [dx, dy] = steps[k];
       const std::size_t next = lattice.node (x + dx, y + dy);
       const meters_t run = hypot (
         plan_displacement (dx * lattice.spacing_x, dy * lattice.spacing_z));
-      meters_t step = mover.step (lattice,
-                                  ways,
-                                  node,
-                                  next,
-                                  run,
-                                  lattice.earthwork[node * steps.size () + k]);
+      meters_t step = mover.step (
+        lattice, node, next, run, lattice.earthwork[node * steps.size () + k]);
       // A knight's move passes over two cells on its way: both must be
       // passable too, or it would cut the corner of a mire or a lake.
       if (step < unreachable && (std::abs (dx) == 2 || std::abs (dy) == 2)) {
@@ -457,11 +462,21 @@ namespace moppe::terrain {
         for (const std::size_t over :
              { lattice.node (x + mx, y + my),
                lattice.node (x + (mx ? mx : dx), y + (my ? my : dy)) })
-          if (!(mover.step (lattice, ways, node, over, 0.5f * run) <
-                unreachable))
+          if (!(mover.step (lattice, node, over, 0.5f * run) < unreachable))
             step = unreachable;
       }
       return step;
+    }
+
+    Mover::Mover (const Lattice& lattice, Kind type, proportion_t discount)
+        : kind (type), reuse (discount),
+          price (lattice.size () * steps.size ()) {
+      parallel_for (lattice.size (), 2048, [&] (size_t begin, size_t end) {
+        for (size_t node = begin; node < end; ++node)
+          for (size_t k = 0; k < steps.size (); ++k)
+            price[node * steps.size () + k] =
+              terrain_cost (lattice, *this, node, k);
+      });
     }
 
     Search search (const Lattice& lattice,
@@ -486,7 +501,7 @@ namespace moppe::terrain {
         for (std::size_t k = 0; k < steps.size (); ++k) {
           const auto [dx, dy] = steps[k];
           const std::size_t next = lattice.node (x + dx, y + dy);
-          const meters_t step = step_cost (lattice, ways, mover, node, k);
+          const meters_t step = mover.cost (node, k, ways[next]);
           if (!(step < unreachable))
             continue;
           const meters_t reached = cost + step;
@@ -547,7 +562,7 @@ namespace moppe::terrain {
             lattice.node (lattice.x (node) + steps[k][0],
                           lattice.y (node) + steps[k][1]) +
             size * ((along < 0 || along >= period) ? 1 - lap : lap);
-          const meters_t step = step_cost (lattice, ways, mover, node, k);
+          const meters_t step = mover.cost (node, k, ways[next % size]);
           if (!(step < unreachable))
             continue;
           const meters_t reached = reached_cost + step;
@@ -1433,8 +1448,8 @@ namespace moppe::terrain {
     Planner planner {
       lattice, std::vector<std::uint8_t> (lattice.size (), None), {}, {}
     };
-    const Mover cart { Mover::Kind::Cart, 0.3f * proportion[one] };
-    const Mover walker { Mover::Kind::Walker, 0.5f * proportion[one] };
+    const Mover cart { lattice, Mover::Kind::Cart, 0.3f * proportion[one] };
+    const Mover walker { lattice, Mover::Kind::Walker, 0.5f * proportion[one] };
 
     // The trailhead roots the network.
     std::size_t trailhead =
@@ -1472,28 +1487,27 @@ namespace moppe::terrain {
             (best == lattice.size () || found.cost[node] < found.cost[best]))
           best = node;
       }
-      // The loop through it, once round the world whichever way round is
-      // cheaper, which the trailhead's road then joins; or, if no road can
-      // go round, the trailhead's road to the landing alone.
+      // Inland country can carry a bus even without a gentle landing.
+      // Try the same winding route from the trailhead in that case.
+      const bool has_landing = best != lattice.size ();
+      const auto terminus = has_landing ? best : trailhead;
       std::vector<std::size_t> round;
-      if (best != lattice.size ()) {
-        meters_t cheapest = unreachable;
-        for (const int axis : { 0, 1 }) {
-          auto [path, cost] =
-            search_round (lattice, planner.ways, best, cart, axis);
-          if (!path.empty () && cost < cheapest) {
-            cheapest = cost;
-            round = std::move (path);
-          }
+      meters_t cheapest = unreachable;
+      for (const int axis : { 0, 1 }) {
+        auto [path, cost] =
+          search_round (lattice, planner.ways, terminus, cart, axis);
+        if (!path.empty () && cost < cheapest) {
+          cheapest = cost;
+          round = std::move (path);
         }
       }
       if (!round.empty ()) {
         planner.lay_round (round);
-        planner.connect (trailhead,
-                         search (lattice, planner.ways, round, cart));
-        planner.network.places.push_back (
-          planner.place (RoadPlace::Kind::Landing, best));
-      } else if (best != lattice.size () && planner.connect (best, found))
+        if (has_landing)
+          planner.connect (trailhead,
+                           search (lattice, planner.ways, round, cart));
+      }
+      if (has_landing && (!round.empty () || planner.connect (best, found)))
         planner.network.places.push_back (
           planner.place (RoadPlace::Kind::Landing, best));
     }
@@ -1722,16 +1736,17 @@ namespace moppe::terrain {
       roads[road].abandoned = lived_on[road] || !(last_used[road] < never)
                                 ? 0.0f * years
                                 : last_used[road];
-    // The bus's round from the landing and back is a journey of its own,
-    // made as long as the landing has stood, and still made.
+    // The bus timetable keeps its road in service from the terminus.
+    auto landing =
+      std::ranges::find (places, RoadPlace::Kind::Landing, &RoadPlace::kind);
+    const auto& terminus =
+      landing == places.end () ? places.front () : *landing;
     for (Road& road : roads)
-      if (road.loop)
-        for (const RoadPlace& place : places)
-          if (place.kind == RoadPlace::Kind::Landing) {
-            ++road.traffic;
-            road.age = std::max (road.age, place.founded);
-            road.abandoned = 0.0f * years;
-          }
+      if (road.loop) {
+        ++road.traffic;
+        road.age = std::max (road.age, terminus.founded);
+        road.abandoned = 0.0f * years;
+      }
     const FineGround fine { elevations,
                             flood,
                             static_cast<int> (domain.width ()),

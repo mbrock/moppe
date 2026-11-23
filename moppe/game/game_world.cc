@@ -365,6 +365,14 @@ namespace moppe {
                                     std::unique_ptr<GeneratedWorld> completed) {
       MOPPE_PROFILE_ZONE ("MoppeGame::finish_loading");
       activate_completed_world (std::move (completed));
+      if (m_company.link) {
+        m_company_world_tag = world_tag (recipe_cache_identity (recipe ()));
+        const auto& h = spatial::get<terrain::surface_elevation> (surface ());
+        for (auto byte : std::as_bytes (std::span (h))) {
+          m_company_world_tag ^= std::to_integer<std::uint8_t> (byte);
+          m_company_world_tag *= 16777619u;
+        }
+      }
       prepare_world_water ();
       prepare_world_surface ();
       place_stars_and_player ();

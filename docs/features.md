@@ -148,12 +148,12 @@ build, test, and change the code; read this when working on a feature.
   rounded at a road's end. Near the camera the ground lies five
   centimetres under the ribbon, so the two never meet.
 - The loop and the bus (`moppe/game/bus.*`): the planner lays one road
-  once round the world through the landing (`Road::loop`, the cheaper
-  of the two ways round, by a search over two copies of the lattice
+  once round the world through the landing or inland trailhead
+  (`Road::loop`, the cheaper of the two ways round, by a search over two copies of the lattice
   joined at the seam), paved, with no turning place, and the
   trailhead's road and the rest branch from it; a world with no way
-  round (the 257-sample one) has none and no bus. `plan_bus_line`
-  stands a stop at the landing, one just past each branch named for
+  round has no bus service. `plan_bus_line`
+  stands a stop at the terminus, one just past each branch named for
   the place it leads toward ("Örnforsen vägskäl" when that is over
   600 m off), one by each farm near the loop, and more with names of
   their own (`name_bus_stop`: a -by, -backen, -kurvan, or a farm's
@@ -163,9 +163,8 @@ build, test, and change the code; read this when working on a feature.
   right, 0.9 m right of the road's line on its 6 m carriageway (all
   one way round, so they never meet), on a
   timetable from play's clock alone (gathering pace to 45 km/h,
-  braking for each stop, standing 6 s, and 20 s at the landing where
-  the round begins), evenly apart so one passes about every seven
-  minutes (two in the default world's 7 km loop); nothing of them is
+  braking for each stop, standing 6 s, and 20 s at the terminus),
+  with a target headway of eight minutes. Nothing of them is
   in `GameState` but how far their clock runs ahead of play's
   (`m_bus_lead`), which keeps two players' buses together. Near a stop, a board
   stands over its sign with its name and "Bus in 4 min" or "Bus here,
@@ -252,15 +251,12 @@ build, test, and change the code; read this when working on a feature.
   at its wheel wherever it stands (`take_over` in game_session.cc), and
   `Esc` or `` ` `` closes it (`Hud::draw_cheat_menu`). A
   `MOPPE_CONTROL_FILE` works it too: `` tap ` ``, `tap S`, `tap Space`.
-- A wider world: `--world-size <KM>` (5 by default, up to 10) makes the
-  world that many kilometres across, with more country rather than the
-  same country stretched (`terrain/geological.cc` counts its noise in
-  cycles per five kilometres). It keeps the ordinary 2048 samples, so
-  the ground is coarser; `--terrain-resolution 4096` buys the grain
-  back: generating that takes three and a quarter minutes on an M5 and
-  peaks at 5 GB (7.5 GB in the game, which fits a 16 GB machine with
-  nothing else heavy beside it), and the world then loads from its
-  cache.
+- The desktop world is 10 km by 10 km with 4096 samples per side,
+  giving 2.44 m spacing. `--world-size <KM>` accepts 2.5 to 10 and
+  `--terrain-resolution` sets the sample count independently. Geology keeps
+  its physical wavelengths as the world widens. On macOS local generation
+  uses Metal. The CPU baker supplies shared landscapes.
+  [Orogeny performance](orogeny-performance.md) measures both paths.
 - The HUD is deliberately one quiet speedometer, the chart, and fading
   prompts. `H`
   toggles the diagnostic overlay (frame rate, stunt and score readings,
@@ -327,7 +323,7 @@ build, test, and change the code; read this when working on a feature.
   them together under an arc of the sky carrying the sun and the moon
   by the hour: `cargo run --release -- render -o moppe-day.mp4`.
 - The opening is authored: `data/opening.txt` lists a few held shots of the
-  default world (seed 123, 2048 samples, play), each drifting gently
+  original 5 km world (seed 123, 2048 samples, play), each drifting gently
   (`push`/`truck`/`rise` metres, `pan`/`tilt`/`zoom` degrees, a breathing
   `sway`), joined by cuts or a dip through black (`fade`), with the title
   and a credit set in Slug fading over them (`caption`), ending with an

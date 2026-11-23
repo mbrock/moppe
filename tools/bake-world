@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bakes a finished world on this machine and prints its directory.
 #
-#   tools/bake-world [RESOLUTION [PROFILE [SEED]]]   (default 2048 play 123)
+#   tools/bake-world [RESOLUTION [PROFILE [SEED]]]   (default 4096 play 123)
 #
 # The world is a finished-world cache (moppe/game/world_cache.*): portable
 # data that a console or Apple TV package ships and loads as-is instead of
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-resolution="${1:-2048}"
+resolution="${1:-4096}"
 profile="${2:-play}"
 seed="${3:-123}"
 build_dir="${MOPPE_BAKE_BUILD_DIR:-$root/build-bake}"

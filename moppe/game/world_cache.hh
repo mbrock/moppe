@@ -23,8 +23,7 @@ namespace moppe::game {
   std::string world_cache_name (const terrain::WorldRecipe& recipe,
                                 const WorldCacheConfig& config);
 
-  // Every part of the recipe that shapes the world, as text: two recipes
-  // with the same identity make the same world.
+  // Adjustable recipe fields. Local GPU generation also needs a backend key.
   std::string recipe_cache_identity (const terrain::WorldRecipe& recipe);
 
   // A finished-world cache is a directory of typed Arrow fields plus compact
@@ -41,6 +40,7 @@ namespace moppe::game {
   // package that ships a baked world lets this choose the default recipe;
   // the full recipe is still validated when the world loads.
   struct WorldCacheIdentity {
+    spatial_extent_t extent;
     int resolution = 0;
     std::uint32_t seed = 0;
     terrain::TerrainGenerationProfile profile {};

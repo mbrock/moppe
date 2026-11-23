@@ -15,7 +15,10 @@
 #include <moppe/profile.hh>
 
 #include <moppe/map/surface.hh>
+#include <moppe/terrain/local_evolution.hh>
 #include <moppe/terrain/river.hh>
+
+#include <filesystem>
 
 #include <algorithm>
 #include <atomic>
@@ -48,6 +51,8 @@ namespace moppe::game {
   // world it is lives in the cache's own header, so the build names only
   // where it is; a different recipe is rejected by the header check.
   std::string bundled_world_cache () {
+    if (const char* path = environment ("MOPPE_BAKED_WORLD"))
+      return path;
 #ifdef MOPPE_BUNDLED_WORLD_CACHE
     const std::string directory =
       platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE);
@@ -144,7 +149,8 @@ namespace moppe::game {
     // The formed trails' network is left behind: a world finds its trails
     // in the formed surface, so one evolved here and one read from saved
     // land are the same world (docs/determinism.md).
-    void evolve_terrain (WorldLoadingState& state,
+    void evolve_terrain (terrain::EvolutionBackend& backend,
+                         WorldLoadingState& state,
                          const terrain::WorldRecipe& recipe,
                          map::SurfaceGeometry& terrain) {
       const auto report_geological_time =
@@ -191,8 +197,24 @@ namespace moppe::game {
 
       std::vector<meters_per_julian_year_t> uplift = map::initialize_terrain (
         terrain, recipe.seed (), recipe.water_datum (), report_field_rows);
-      map::evolve_terrain (
-        terrain, uplift, recipe.evolution (), report_geological_time);
+      if (backend != terrain::EvolutionBackend::Cpu) {
+        state.report ("Running geological time",
+                      terrain::backend_name (backend));
+        try {
+          const auto before = state.elapsed ();
+          terrain::evolve_local (terrain, uplift, recipe.evolution (), backend);
+          std::cerr << "moppe: " << terrain::backend_name (backend)
+                    << " orogeny in "
+                    << seconds_value (state.elapsed () - before) << " s\n";
+        } catch (const std::exception& error) {
+          std::cerr << "moppe: GPU evolution failed: " << error.what ()
+                    << ". Using the CPU reference.\n";
+          backend = terrain::EvolutionBackend::Cpu;
+        }
+      }
+      if (backend == terrain::EvolutionBackend::Cpu)
+        map::evolve_terrain (
+          terrain, uplift, recipe.evolution (), report_geological_time);
       state.report ("Refining the terrain",
                     "Shaping coasts, channels, and the overland route");
       const terrain::ChannelFormationResult beds =
@@ -262,11 +284,31 @@ namespace moppe::game {
                   << std::endl;
       }
 
-      const std::string world_cache_file =
-        world_cache_name (recipe, state.cache_config);
-      const std::string world_cache =
-        world_cache_file.empty () ? std::string {}
-                                  : platform::cache_path (world_cache_file);
+      const std::string land_name = land_file_name (recipe);
+      const char* land_override = moppe::environment ("MOPPE_MAPCACHE");
+      const std::string bundled_land =
+        platform::asset_path ("worlds/" + land_name);
+      const std::string canonical_land = platform::cache_path (land_name);
+      auto backend = terrain::local_evolution_backend ();
+      // A canonical asset takes precedence over any previously evolved terrain.
+      std::error_code ignored;
+      if (!land_override &&
+          (std::filesystem::is_regular_file (bundled_land, ignored) ||
+           std::filesystem::is_regular_file (canonical_land, ignored)))
+        backend = terrain::EvolutionBackend::Cpu;
+      auto local_path = [&] (const std::string& name) {
+        if (name.empty ())
+          return std::string {};
+        const std::string suffix =
+          backend == terrain::EvolutionBackend::Cpu
+            ? ""
+            : std::string (".") + terrain::backend_name (backend) + "-v1";
+        return platform::cache_path (name + suffix);
+      };
+      const auto world_cache_file =
+        land_override ? std::string {}
+                      : world_cache_name (recipe, state.cache_config);
+      std::string world_cache = local_path (world_cache_file);
       if (!world_cache.empty () &&
           state.cache_config.mode == WorldCacheMode::Reuse) {
         state.report ("Looking for a saved world",
@@ -288,18 +330,14 @@ namespace moppe::game {
         map::SurfaceGeometry (terrain::TerrainDomain (
           recipe.resolution (), recipe.resolution (), recipe.extent ()));
 
-      // The land: packaged with the game, downloaded (tools/fetch-land),
-      // or saved by an earlier launch are all the same land (land.hh), so
-      // the first found is used; failing all, it is generated and saved.
-      // MOPPE_MAPCACHE names the one file to read or write instead.
-      const std::string land_name = land_file_name (recipe);
-      const char* land_override = moppe::environment ("MOPPE_MAPCACHE");
-      const std::string saved_land =
-        land_override ? land_override : platform::cache_path (land_name);
+      const auto saved_land = [&] {
+        return land_override ? std::string (land_override)
+                             : local_path (land_name);
+      };
       std::vector<std::string> land_paths;
       if (!land_override)
-        land_paths.push_back (platform::asset_path ("worlds/" + land_name));
-      land_paths.push_back (saved_land);
+        land_paths.push_back (bundled_land);
+      land_paths.push_back (saved_land ());
 
       state.report ("Looking for the land",
                     "Checking for this profile and seed's finished land");
@@ -313,13 +351,14 @@ namespace moppe::game {
       } else {
         state.report ("Drawing the continents",
                       "Materializing the geological field");
-        evolve_terrain (state, recipe, surface);
+        evolve_terrain (backend, state, recipe, surface);
+        world_cache = local_path (world_cache_file);
         quantize_land (surface);
         state.report ("Saving the land",
                       "Keeping this expensive result for the next launch");
         try {
-          save_land (surface, saved_land);
-          std::cerr << "moppe: land saved: " << saved_land << std::endl;
+          save_land (surface, saved_land ());
+          std::cerr << "moppe: land saved: " << saved_land () << std::endl;
         } catch (const std::exception& error) {
           std::cerr << "moppe: warning: land cache save failed: "
                     << error.what () << std::endl;

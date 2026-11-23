@@ -379,6 +379,15 @@ namespace moppe::platform {
           m_game.controls (held_controls);
         const double wall =
           std::chrono::duration<double> (now - m_last).count ();
+#ifndef __EMSCRIPTEN__
+        // The loading sky needs few updates. Keep pumping input between
+        // frames and leave GPU bandwidth to the background world builder.
+        if (m_game.loading () && now < m_next_loading_frame) {
+          SDL_Delay (8);
+          return;
+        }
+        m_next_loading_frame = now + std::chrono::milliseconds (200);
+#endif
         m_last = now;
         const nhal::FrameTiming timing = m_device->next_frame_timing ();
         const FrameStep step = m_frame_clock.select (wall * u::s, timing);
@@ -544,6 +553,7 @@ namespace moppe::platform {
       points_t m_pointer_x {}, m_pointer_y {};
       FrameClock m_frame_clock;
       bool m_announced_display = false;
+      std::chrono::steady_clock::time_point m_next_loading_frame {};
       std::chrono::steady_clock::time_point m_start, m_last, m_report_start;
       bool m_report_fps = false;
       long m_report_frames = 0, m_report_displayed = 0;

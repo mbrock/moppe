@@ -77,3 +77,16 @@ MOPPE_TEST (geology_reports_completed_rows) {
   MOPPE_CHECK (completed == 17);
   MOPPE_CHECK (total == 17);
 }
+
+MOPPE_TEST (ten_kilometre_geology_reaches_the_periodic_lattice_limit) {
+  const auto extent = spatial_extent_in_metres (Vec3 (10000, 320, 10000));
+  const auto fine =
+    generate_geology (TerrainDomain (128, 128, extent), { 123 });
+  const auto coarse =
+    generate_geology (TerrainDomain (64, 64, extent), { 123 });
+  const auto& high = spatial::get<uplift_weight> (fine);
+  const auto& low = spatial::get<uplift_weight> (coarse);
+  for (size_t z = 0; z < 64; ++z)
+    for (size_t x = 0; x < 64; ++x)
+      MOPPE_CHECK (low[z * 64 + x] == high[2 * z * 128 + 2 * x]);
+}

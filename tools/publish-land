@@ -3,14 +3,14 @@
 # release (creating the release if need be), and records it in lands.json,
 # which tools/fetch-land and the Nix packages read.
 #
-#   tools/publish-land [RESOLUTION [PROFILE [SEED]]]   (default 2048 play 123)
+#   tools/publish-land [RESOLUTION [PROFILE [SEED]]]   (default 4096 play 123)
 #
 # Commit lands.json afterwards. Needs gh (authenticated) and zstd.
 
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-resolution="${1:-2048}"
+resolution="${1:-4096}"
 profile="${2:-play}"
 seed="${3:-123}"
 repository="${MOPPE_LAND_REPOSITORY:-mbrock/moppe}"
@@ -34,7 +34,7 @@ sha256="${sha256%% *}"
 if ! gh release view "$tag" --repo "$repository" > /dev/null 2>&1; then
   gh release create "$tag" --repo "$repository" --title "Land v$version" \
     --notes "Finished land for moppe's LAND_VERSION $version \
-(moppe/game/land.hh): the same bits any platform generates for each \
+(moppe/game/land.hh): the canonical CPU bake for each \
 recipe. tools/fetch-land downloads it; lands.json lists it."
 fi
 gh release upload "$tag" "$archive" --repo "$repository" --clobber

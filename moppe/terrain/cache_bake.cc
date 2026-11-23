@@ -63,12 +63,11 @@ int main (int argc, char** argv) {
     const int resolution = parse_positive_int (argv[2], "resolution");
     const TerrainGenerationProfile profile = parse_profile (argv[3]);
     const std::uint32_t seed = parse_seed (argv[4]);
-    const WorldRecipe recipe = make_world_recipe (
-      spatial_extent_in_metres (Vec3 (5000.0f, 320.0f, 5000.0f)),
-      resolution,
-      Seed { seed },
-      50.0f * u::m,
-      profile);
+    const WorldRecipe recipe = make_world_recipe (game::WorldParams {}.map_size,
+                                                  resolution,
+                                                  Seed { seed },
+                                                  50.0f * u::m,
+                                                  profile);
     map::SurfaceGeometry surface (
       TerrainDomain (static_cast<std::size_t> (resolution),
                      static_cast<std::size_t> (resolution),
@@ -83,6 +82,7 @@ int main (int argc, char** argv) {
     map::evolve_terrain (surface, uplift, recipe.evolution ());
     // As the game does: form the trails, then find their network in the
     // formed surface, so a world from saved land is the same.
+    (void)map::form_river_channels (surface, recipe.water_datum ());
     (void)map::form_terrain_trails (surface, recipe.trail_formation ());
     game::quantize_land (surface);
     TrailNetwork trails =

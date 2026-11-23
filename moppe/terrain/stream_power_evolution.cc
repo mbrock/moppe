@@ -99,32 +99,6 @@ namespace moppe::terrain {
           "invalid stream-power evolution parameters");
     }
 
-    void validate_stream_power_evolution (
-      const TerrainDomain& grid,
-      std::span<const SurfaceElevation> elevations,
-      std::span<const meters_per_julian_year_t> uplift_rate,
-      const StreamPowerEvolution& parameters) {
-
-      MOPPE_PROFILE_ZONE ("orogeny.validate");
-
-      const std::size_t count = grid.width () * grid.height ();
-
-      if (uplift_rate.size () != count)
-        throw std::invalid_argument (
-          "stream-power uplift field does not match terrain");
-
-      check_stream_power_evolution_parameters (parameters);
-
-      for (const auto& elevation : elevations)
-        if (!isfinite (elevation.delta_from_zero ()))
-          throw std::invalid_argument ("elevation must be finite");
-
-      for (const auto& uplift : uplift_rate)
-        if (!isfinite (uplift) || uplift < 0)
-          throw std::invalid_argument (
-            "uplift rate must be finite and non-negative");
-    }
-
     // The unit of the discrete time axis. Dividing a step size by it turns
     // "so many years, each step" into a pace, and paces are what the count
     // arithmetic below wants.
@@ -181,6 +155,32 @@ namespace moppe::terrain {
       return { tangents.begin (), tangents.end () };
     }
 
+  }
+
+  void detail::validate_stream_power_evolution (
+    const TerrainDomain& grid,
+    std::span<const SurfaceElevation> elevations,
+    std::span<const meters_per_julian_year_t> uplift_rate,
+    const StreamPowerEvolution& parameters) {
+
+    MOPPE_PROFILE_ZONE ("orogeny.validate");
+
+    const std::size_t count = grid.width () * grid.height ();
+
+    if (elevations.size () != count || uplift_rate.size () != count)
+      throw std::invalid_argument (
+        "stream-power uplift field does not match terrain");
+
+    check_stream_power_evolution_parameters (parameters);
+
+    for (const auto& elevation : elevations)
+      if (!isfinite (elevation.delta_from_zero ()))
+        throw std::invalid_argument ("elevation must be finite");
+
+    for (const auto& uplift : uplift_rate)
+      if (!isfinite (uplift) || uplift < 0)
+        throw std::invalid_argument (
+          "uplift rate must be finite and non-negative");
   }
 
   StreamPowerEvolutionResult detail::evolve_stream_power (

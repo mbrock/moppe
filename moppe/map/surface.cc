@@ -2,6 +2,7 @@
 #include <moppe/gfx/signal.hh>
 #include <moppe/map/surface.hh>
 
+#include <moppe/parallel.hh>
 #include <moppe/profile.hh>
 #include <moppe/spatial/bundle_operations.hh>
 #include <moppe/spatial/bundle_storage.hh>
@@ -401,6 +402,14 @@ namespace moppe::map {
   }
 
   namespace {
+    template <typename Body>
+    void parallel_sites (const terrain::TerrainDomain& domain, Body body) {
+      parallel_for (domain.size (), 8192, [&] (size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i)
+          body (domain.index (i));
+      });
+    }
+
     // A field smoothed over about RADIUS on the world torus: two passes of
     // a box along each axis, which is close to a tent of twice the radius.
     // A plant answers to a stand's ground, not a sample's, so vegetation
@@ -418,37 +427,57 @@ namespace moppe::map {
       };
       const int rx = cells (radius, domain.spacing_x ());
       const int rz = cells (radius, domain.spacing_z ());
-      std::vector<Value> line;
-      const auto pass =
-        [&] (int count, int stride, int lines, int step, int reach) {
-          line.resize (static_cast<std::size_t> (count));
-          // Each sample's weight in the box's mean: the filter's own
-          // arithmetic, which keeps the sum's kind.
-          const float scale = 1.0f / static_cast<float> (2 * reach + 1);
-          const auto wrap = [count] (int at) {
-            at %= count;
-            return at < 0 ? at + count : at;
-          };
-          for (int l = 0; l < lines; ++l) {
-            Value* base =
-              field.data () + static_cast<std::ptrdiff_t> (l) * step;
-            const auto at = [&] (int i) -> Value& {
-              return base[static_cast<std::ptrdiff_t> (wrap (i)) * stride];
-            };
-            Value sum = Value::zero ();
-            for (int k = -reach; k <= reach; ++k)
-              sum += at (k);
-            for (int i = 0; i < count; ++i) {
-              line[static_cast<std::size_t> (i)] = sum * scale;
-              sum += at (i + reach + 1) - at (i - reach);
-            }
-            for (int i = 0; i < count; ++i)
-              at (i) = line[static_cast<std::size_t> (i)];
-          }
-        };
+      std::vector<Value> output (field.size ());
+      const float wx = 1.0f / static_cast<float> (2 * rx + 1);
+      const float wz = 1.0f / static_cast<float> (2 * rz + 1);
       for (int twice = 0; twice < 2; ++twice) {
-        pass (width, 1, height, width, rx);
-        pass (height, width, width, 1, rz);
+        parallel_for (height, 16, [&] (size_t begin, size_t end) {
+          for (size_t z = begin; z < end; ++z) {
+            const Value* row = field.data () + z * width;
+            Value sum = Value::zero ();
+            for (int k = -rx; k <= rx; ++k)
+              sum += row[(k % width + width) % width];
+            int left = (width - rx % width) % width, right = (rx + 1) % width;
+            for (int x = 0; x < width; ++x) {
+              output[z * width + x] = sum * wx;
+              sum += row[right] - row[left];
+              if (++left == width)
+                left = 0;
+              if (++right == width)
+                right = 0;
+            }
+          }
+        });
+        // Adjacent columns travel together. Even at 4096 samples the
+        // vertical pass reads whole cache lines and keeps each column's
+        // running sum in exactly the order used by the serial filter.
+        constexpr size_t tile = 64;
+        parallel_for (
+          (width + tile - 1) / tile, 2, [&] (size_t begin, size_t end) {
+            for (size_t block = begin; block < end; ++block) {
+              const size_t x = block * tile;
+              const size_t lanes = std::min (tile, size_t (width) - x);
+              std::array<Value, tile> sum {};
+              for (int k = -rz; k <= rz; ++k) {
+                const int row = (k % height + height) % height;
+                for (size_t j = 0; j < lanes; ++j)
+                  sum[j] += output[size_t (row) * width + x + j];
+              }
+              int top = (height - rz % height) % height,
+                  bottom = (rz + 1) % height;
+              for (int z = 0; z < height; ++z) {
+                for (size_t j = 0; j < lanes; ++j) {
+                  field[size_t (z) * width + x + j] = sum[j] * wz;
+                  sum[j] += output[size_t (bottom) * width + x + j] -
+                            output[size_t (top) * width + x + j];
+                }
+                if (++top == height)
+                  top = 0;
+                if (++bottom == height)
+                  bottom = 0;
+              }
+            }
+          });
       }
       return field;
     }
@@ -837,7 +866,7 @@ namespace moppe::map {
     // The limestone first, everywhere, since a spring answers to the sheet
     // above it on the slope.
     std::vector<proportion_t> limestone (count);
-    for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+    parallel_sites (geometry.domain (), [&] (terrain::TerrainIndex site) {
       const std::size_t i = domain.offset (site);
       const ElevationChange thickness =
         quantity_cast<terrain::surface_elevation> (
@@ -846,7 +875,7 @@ namespace moppe::map {
                                                   sheet_laps,
                                                   seed ^ 0x11a7c0deU)));
       limestone[i] = band (-edge, edge, thickness - cut[i]);
-    }
+    });
     // The limestone is a sponge: the rain sinks through its joints and
     // runs along its foot, over the basement it cannot get into, until
     // the foot comes out on a hillside and the water with it. So a spring
@@ -867,7 +896,7 @@ namespace moppe::map {
       constexpr proportion_t fade[] = {
         1.0f * part, 0.90f * part, 0.70f * part, 0.45f * part
       };
-      for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+      parallel_sites (geometry.domain (), [&] (terrain::TerrainIndex site) {
         const std::size_t i = domain.offset (site);
         const auto at = [&] (int columns, int rows) {
           return domain.offset (domain.shifted (site, columns, rows));
@@ -905,13 +934,13 @@ namespace moppe::map {
           0.5f * band (2.0f * u::m, 10.0f * u::m, height[i] - around[i]);
         rock[i] = together ((whole - limestone[i]) * bare[i] *
                             std::min (knoll, whole) * (whole - soaked[i]));
-      }
+      });
       spring = smoothed (std::move (spring), domain, 6.0f * u::m);
       // The ice left the rock in whalebacks, not in the lines of the
       // spurs: what it scoured is read over a few tens of metres and broken
       // up by a noise of about that size.
       rock = smoothed (std::move (rock), domain, 9.0f * u::m);
-      for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+      parallel_sites (geometry.domain (), [&] (terrain::TerrainIndex site) {
         const std::size_t i = domain.offset (site);
         const noise_signal_t whaleback = layered_noise (
           domain.lap_position (site), laps (60.0f * u::m), seed ^ 0x9a817eU, 3);
@@ -920,11 +949,11 @@ namespace moppe::map {
           0.48f * part,
           rock[i] + quantity_cast<proportion> (quantity_cast<dimensionless> (
                       0.7f * (whaleback - 0.5f * signal))));
-      }
+      });
     }
 
     VegetationMap values (domain);
-    for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+    parallel_sites (geometry.domain (), [&] (terrain::TerrainIndex site) {
       const std::size_t i = domain.offset (site);
       const auto where = domain.lap_position (site);
       // How far up the land's relief the place stands; under the sea,
@@ -1022,7 +1051,7 @@ namespace moppe::map {
         quantity_cast<fireweed_abundance> (ground[7]);
       get<spring_fen_abundance> (reading) =
         quantity_cast<spring_fen_abundance> (ground[8]);
-    }
+    });
     return values;
   }
 
@@ -1050,7 +1079,7 @@ namespace moppe::map {
     const auto world_up = Vec3 (0.0f, 1.0f, 0.0f) * one;
     constexpr auto level_ground = terrain::terrain_normal[one];
 
-    for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+    parallel_sites (geometry.domain (), [&] (terrain::TerrainIndex site) {
       const auto ground = geometry[site];
       const auto ground_normal = get<terrain::terrain_normal> (ground);
       const auto ground_level =
@@ -1091,7 +1120,7 @@ namespace moppe::map {
 
       get<tree_habitat> (values[site]) =
         quantity_cast<tree_habitat> (treeishness);
-    }
+    });
     return values;
   }
 
@@ -1125,7 +1154,7 @@ namespace moppe::map {
     constexpr std::uint32_t breaks_per_lap = 23;
     constexpr auto signal = noise_signal[one];
 
-    for (const terrain::TerrainIndex site : spatial::sites (habitat)) {
+    parallel_sites (habitat.domain (), [&] (terrain::TerrainIndex site) {
       const auto where = domain.lap_position (site);
 
       const noise_signal_t stands = periodic_noise (
@@ -1195,7 +1224,7 @@ namespace moppe::map {
       // arithmetic.
       get<forest_cover> (values[site]) =
         quantity_cast<forest_cover> (std::clamp (wanted, 0.0f * part, whole));
-    }
+    });
     return values;
   }
 

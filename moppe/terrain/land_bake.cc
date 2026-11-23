@@ -6,6 +6,7 @@
 // tools/bake-land and tools/publish-land drive it.
 
 #include <moppe/game/land.hh>
+#include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/world_recipe.hh>
 
@@ -43,23 +44,28 @@ int main (int argc, char** argv) {
       throw std::invalid_argument (
         "usage: land-bake OUTPUT_DIRECTORY [RESOLUTION [PROFILE [SEED]]]");
     const std::filesystem::path output = argv[1];
-    const int resolution = argc > 2 ? std::stoi (argv[2]) : 2048;
+    const int resolution =
+      argc > 2 ? std::stoi (argv[2]) : game::WorldParams {}.resolution;
     const TerrainGenerationProfile profile =
       parse_profile (argc > 3 ? argv[3] : "play");
     const std::uint32_t seed =
       argc > 4 ? static_cast<std::uint32_t> (std::stoul (argv[4])) : 123;
     // The game's default extent and datum.
-    const WorldRecipe recipe = make_world_recipe (
-      spatial_extent_in_metres (Vec3 (5000.0f, 320.0f, 5000.0f)),
-      resolution,
-      Seed { seed },
-      50.0f * u::m,
-      profile);
+    const WorldRecipe recipe = make_world_recipe (game::WorldParams {}.map_size,
+                                                  resolution,
+                                                  Seed { seed },
+                                                  50.0f * u::m,
+                                                  profile);
     map::SurfaceGeometry surface (
       TerrainDomain (static_cast<std::size_t> (resolution),
                      static_cast<std::size_t> (resolution),
                      recipe.extent ()));
 
+    const std::filesystem::path file = output / game::land_file_name (recipe);
+    if (game::try_load_land (surface, file.string ())) {
+      std::cout << file.string () << std::endl;
+      return 0;
+    }
     const auto start = std::chrono::steady_clock::now ();
     const auto uplift =
       map::initialize_terrain (surface, recipe.seed (), recipe.water_datum ());
@@ -69,7 +75,6 @@ int main (int argc, char** argv) {
     game::quantize_land (surface);
 
     std::filesystem::create_directories (output);
-    const std::filesystem::path file = output / game::land_file_name (recipe);
     game::save_land (surface, file.string ());
     const auto elapsed = std::chrono::duration_cast<std::chrono::seconds> (
       std::chrono::steady_clock::now () - start);

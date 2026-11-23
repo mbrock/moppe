@@ -220,6 +220,9 @@ namespace moppe {
 
       void draw_effect_layers (render::Renderer& r, const FrameView& frame);
 
+      bool loading () const override {
+        return !m_ready;
+      }
       void render (render::Renderer& r) override;
 
       void render_loading (render::Renderer& r);
@@ -269,6 +272,7 @@ namespace moppe {
       // release first during normal teardown.
       std::unique_ptr<GameSession> m_session;
       WorldLoading m_loading;
+      std::uint32_t m_company_world_tag = 0;
       GraphicsSettings m_graphics;
       // The day and its weather.
       SkyClock m_sky;

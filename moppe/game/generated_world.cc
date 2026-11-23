@@ -272,7 +272,7 @@ namespace moppe::game {
               << " points steeper than the road's grade";
     for (const terrain::Road& road : roads.roads)
       if (road.loop)
-        std::cerr << ", a loop round the world through the landing";
+        std::cerr << ", a loop round the world";
     std::cerr << std::endl;
     map::rebuild_geometry (geometry);
     hydrology = analyze_hydrology (geometry, recipe);

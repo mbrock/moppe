@@ -6,12 +6,12 @@ as four fields --
 elevation, sediment, and the eroded and deposited material
 (`moppe/game/land.hh`). Everything else in a world (normals, standing water,
 lakes, drainage, rivers, readings, the forest plan) follows from the land in
-seconds. For the default 2048 world on an M2 Pro the land takes about 56 s
+seconds. For the historical 5 km, 2048-sample world on an M2 Pro the land takes about 56 s
 to make; the rest takes about 7.
 
-Worlds generate bit for bit the same on every platform
-(docs/determinism.md), so land is a cache anyone can share. The game takes
-the first of these it finds for its recipe, then derives the rest:
+Shared land is baked by the deterministic CPU reference. A local GPU can
+evolve its own terrain on a cache miss. See [the determinism
+contract](determinism.md). The game looks for these sources in order.
 
 1. land packaged with the game, in its `worlds/` folder (`MOPPE_LANDS_DIR`
    at configure time; the Nix packages fill it from `lands.json`), or
@@ -23,7 +23,8 @@ the first of these it finds for its recipe, then derives the rest:
 2. land in its cache folder (`~/Library/Caches/Moppe` on the Mac,
    `~/.cache/moppe` on Linux), downloaded by `tools/fetch-land`, baked by
    `tools/bake-land`, or saved by an earlier launch;
-3. otherwise it generates the land and saves it there.
+3. local GPU land in a backend-versioned cache, when using that backend;
+4. otherwise it generates the land and saves it under its backend's name.
 
 A world derived from land is the same as one generated from scratch, to the
 byte: a fresh world finds its trail network in the formed surface just as a

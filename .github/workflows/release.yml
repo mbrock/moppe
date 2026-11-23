@@ -130,7 +130,8 @@ jobs:
       # first launch need not generate it.
       - name: Fetch the land
         run: |
-          MOPPE_LAND_DIR="$RUNNER_TEMP/lands" tools/fetch-land
+          export MOPPE_LAND_DIR="$RUNNER_TEMP/lands"
+          tools/fetch-land || tools/bake-land
       # The last build directory saved on master: CMake's probes and the
       # SDL it fetched and compiled carry over, while everything from the
       # checkout, newer than its objects, is compiled again.
