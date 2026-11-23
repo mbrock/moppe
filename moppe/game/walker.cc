@@ -7,14 +7,14 @@ namespace moppe {
   namespace game {
     meters_t still_water_at (const WorldParams& world,
                              const map::SurfaceGeometry& surface,
-                             const terrain::WaterSheets* water,
+                             terrain::WaterView water,
                              const position_t& at) {
       if (!water)
         return world.water_level;
       const position_t where = at_height (plan (at), 0.0f * u::m);
       const meters_t level =
         terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (*water, where)) *
+          water.sample<terrain::surface_elevation> (where)) *
         u::m;
       const meters_t ground =
         terrain::surface_elevation_value (
@@ -25,26 +25,25 @@ namespace moppe {
     }
 
     terrain::SeaWaves water_waves_at (const map::SurfaceGeometry& surface,
-                                      const terrain::WaterSheets* water,
+                                      terrain::WaterView water,
                                       const position_t& at,
                                       double time) {
       if (!water)
         return {};
       const position_t where = at_height (plan (at), 0.0f * u::m);
       const terrain::ElevationChange standing =
-        spatial::sample<terrain::surface_elevation> (*water, where) -
+        water.sample<terrain::surface_elevation> (where) -
         spatial::sample<terrain::surface_elevation> (surface, where);
       return terrain::sea_waves_at (
         plan (at),
         time,
-        terrain::sea_wave_scale (
-          spatial::sample<terrain::wave_amplitude> (*water, where),
-          standing.numerical_value_in (u::m) * u::m));
+        terrain::sea_wave_scale (water.sample<terrain::wave_amplitude> (where),
+                                 standing.numerical_value_in (u::m) * u::m));
     }
 
     meters_t water_surface_at (const WorldParams& world,
                                const map::SurfaceGeometry& surface,
-                               const terrain::WaterSheets* water,
+                               terrain::WaterView water,
                                const position_t& at,
                                double time) {
       return still_water_at (world, surface, water, at) +
@@ -143,7 +142,7 @@ namespace moppe {
                          const map::SurfaceGeometry& surface,
                          const WorldParams& world,
                          const mov::TrunkField* trunks,
-                         const terrain::WaterSheets* water,
+                         terrain::WaterView water,
                          double time,
                          control_signal_t swim_lift) {
       if (abs (m_turn) > 0.01f * control_signal[one]) {
@@ -189,8 +188,9 @@ namespace moppe {
       // deeper they stand in it.
       if (water && depth > 0.15f * u::m) {
         const velocity_t current =
-          moppe::velocity (spatial::sample<terrain::water_velocity> (
-                             *water, at_height (plan (feet), 0.0f * u::m))
+          moppe::velocity (water
+                             .sample<terrain::water_velocity> (
+                               at_height (plan (feet), 0.0f * u::m))
                              .numerical_value_in (u::m / u::s));
         const Vec3& flow = velocity_value (current);
         wish += moppe::velocity (

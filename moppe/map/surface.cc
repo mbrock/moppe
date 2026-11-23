@@ -159,6 +159,32 @@ namespace moppe::map {
     }
   }
 
+  SurfaceNormal ground_normal_at (const SurfaceGeometry& surface,
+                                  const position_t& at) {
+    if (!spatial::get<terrain::terrain_normal> (surface).empty ())
+      return spatial::sample<terrain::terrain_normal> (surface, at);
+    const auto& d = surface.domain ();
+    const auto& h = spatial::get<terrain::surface_elevation> (surface);
+    return spatial::sample_field (d, at, [&] (terrain::TerrainIndex site) {
+      const auto centre = h[d.offset (site)];
+      const auto edge = [&] (int x, int z) {
+        return displacement (
+          Vec3 (meters_value (x * d.spacing_x ()),
+                (h[d.offset (d.shifted (site, x, z))] - centre)
+                  .numerical_value_in (u::m),
+                meters_value (z * d.spacing_z ())));
+      };
+      const std::array edges { edge (0, 1),  edge (1, 1),   edge (1, 0),
+                               edge (0, -1), edge (-1, -1), edge (-1, 0) };
+      SurfaceNormal sum {};
+      for (unsigned i = 0; i < edges.size (); ++i) {
+        auto face = cross (edges[i], edges[(i + 1) % edges.size ()]);
+        sum += face / face.magnitude () * terrain::terrain_normal[one];
+      }
+      return sum / sum.magnitude ();
+    });
+  }
+
   void rebuild_geometry (SurfaceGeometry& geometry) {
     MOPPE_PROFILE_ZONE ("map::rebuild_geometry");
     recompute_surface_normals (geometry);

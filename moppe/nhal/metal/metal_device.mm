@@ -7,15 +7,19 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import <QuartzCore/QuartzCore.h>
 
+#include <moppe/environment.hh>
 #include <moppe/nhal/metal/metal_device.hh>
 #include <moppe/nhal/presentation.hh>
 #include <moppe/nhal/table.hh>
 
 #include <array>
 #include <functional>
+#include <iostream>
+#include <mach/mach.h>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -665,6 +669,34 @@ namespace moppe::nhal {
       }
 
       void capture_frame (std::function<void (const Capture&)> done) override {
+        if (environment ("MOPPE_MEMORY_REPORT")) {
+          uint64_t buffers = 0, textures = 0;
+          for (id<MTLAllocation> resource in m_residency.allAllocations) {
+            if (std::string_view (environment ("MOPPE_MEMORY_REPORT")) ==
+                  "detail" &&
+                resource.allocatedSize >= (8u << 20)) {
+              id<MTLResource> labeled = (id<MTLResource>)resource;
+              std::cerr << "moppe: allocation "
+                        << (labeled.label.UTF8String ?: "(unnamed)") << " "
+                        << resource.allocatedSize << "\n";
+            }
+            if ([resource conformsToProtocol:@protocol (MTLTexture)])
+              textures += resource.allocatedSize;
+            else if ([resource conformsToProtocol:@protocol (MTLBuffer)])
+              buffers += resource.allocatedSize;
+          }
+          task_vm_info_data_t vm {};
+          mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+          if (task_info (mach_task_self (),
+                         TASK_VM_INFO,
+                         reinterpret_cast<task_info_t> (&vm),
+                         &count) == KERN_SUCCESS)
+            std::cerr << "moppe: memory at capture: rss=" << vm.resident_size
+                      << " footprint=" << vm.phys_footprint
+                      << " buffers=" << buffers << " textures=" << textures
+                      << " metal=" << m_device.currentAllocatedSize
+                      << " bytes\n";
+        }
         m_capture_request = std::move (done);
       }
 

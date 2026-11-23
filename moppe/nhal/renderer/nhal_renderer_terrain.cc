@@ -2,6 +2,7 @@
 // segments, and its chunks drawn at the levels the game's culling chose,
 // with the road ribbons laid again over them near the camera.
 
+#include <moppe/nhal/renderer/field_texture.hh>
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
 #include <moppe/terrain/torus.hh>
 
@@ -98,25 +99,24 @@ namespace moppe::nhal {
       const render::TexturePixels& bedrock) {
       auto sheet = [&] (Texture& texture,
                         const render::TexturePixels& pixels,
-                        const char* label) {
+                        const char* label,
+                        unsigned limit = 2048) {
         if (texture)
           m_device->destroy (texture);
         texture = {};
         if (pixels.empty () ||
             pixels.format () != render::PixelFormat::rgba8unorm)
           return;
-        texture = m_device->create_texture ({ std::uint32_t (pixels.width ()),
-                                              std::uint32_t (pixels.height ()),
-                                              Format::rgba8_unorm,
-                                              usage_sampled,
-                                              1,
-                                              label });
-        std::vector<std::byte> bytes (pixels.byte_size ());
-        pixels.write_into (bytes.data ());
-        m_device->write_texture (texture, bytes);
+        // The ground sheet carries narrow treads and signed shore edges.
+        // Preserve their native footprint for grass, snow and the ground.
+        texture =
+          field_texture (*m_device, pixels, Format::rgba8_unorm, label, limit);
       };
       sheet (m_terrain.landscape, landscape, "landscape materials");
-      sheet (m_terrain.ground, ground, "ground materials");
+      sheet (m_terrain.ground,
+             ground,
+             "ground materials",
+             std::max (ground.width (), ground.height ()));
       sheet (m_terrain.plants, plants, "plants");
       sheet (m_terrain.more_plants, more_plants, "more plants");
       sheet (m_terrain.scars, scars, "scars");

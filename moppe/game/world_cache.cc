@@ -203,9 +203,15 @@ namespace moppe::game {
     }
 
     template <typename Bundle>
-    bool load_bundle (Bundle& bundle, const std::filesystem::path& path) {
+    std::optional<Bundle> read_field (const std::filesystem::path& path,
+                                      const terrain::TerrainDomain& expected) {
       std::ifstream input (path, std::ios::binary);
-      return input && spatial::load_bundle (input, bundle);
+      if (input) {
+        auto field = spatial::read_bundle<Bundle> (input);
+        if (field && field->domain () == expected)
+          return field;
+      }
+      return std::nullopt;
     }
 
     class BinaryWriter {
@@ -773,15 +779,6 @@ namespace moppe::game {
     if (!topology || !read_recipe (topology, recipe))
       return {};
 
-    map::SurfaceGeometry surface (domain);
-    terrain::FloodSurface flood_surface (domain);
-    terrain::DrainageReadings drainage_readings (domain);
-    terrain::WaterSheets water (domain);
-    map::SurfaceReadings readings (domain);
-    terrain::TrailNetwork trails {
-      .domain = domain,
-      .use = terrain::TrailUseMap (domain),
-    };
     // Past a matching header, a rejection means a damaged or incompatible
     // cache rather than another world, so it says which part failed.
     const auto rejected = [&directory] (const char* part) {
@@ -789,24 +786,39 @@ namespace moppe::game {
                 << " did not validate" << std::endl;
       return std::unique_ptr<GeneratedWorld> {};
     };
-    if (!load_bundle (surface, file_in (directory, "surface.arrows")))
+    auto surface = read_field<map::SurfaceGeometry> (
+      file_in (directory, "surface.arrows"), domain);
+    if (!surface)
       return rejected ("surface.arrows");
-    if (!load_bundle (flood_surface, file_in (directory, "flood.arrows")))
+    auto flood_surface = read_field<terrain::FloodSurface> (
+      file_in (directory, "flood.arrows"), domain);
+    if (!flood_surface)
       return rejected ("flood.arrows");
-    if (!load_bundle (drainage_readings,
-                      file_in (directory, "drainage.arrows")))
+    auto drainage_readings = read_field<terrain::DrainageReadings> (
+      file_in (directory, "drainage.arrows"), domain);
+    if (!drainage_readings)
       return rejected ("drainage.arrows");
-    if (!load_bundle (water, file_in (directory, "water.arrows")))
+    auto water = read_field<terrain::WaterSheets> (
+      file_in (directory, "water.arrows"), domain);
+    if (!water)
       return rejected ("water.arrows");
-    if (!load_bundle (readings, file_in (directory, "readings.arrows")))
+    auto readings = read_field<map::SurfaceReadings> (
+      file_in (directory, "readings.arrows"), domain);
+    if (!readings)
       return rejected ("readings.arrows");
-    if (!load_bundle (trails.use, file_in (directory, "trail-use.arrows")))
+    auto trail_use = read_field<terrain::TrailUseMap> (
+      file_in (directory, "trail-use.arrows"), domain);
+    if (!trail_use)
       return rejected ("trail-use.arrows");
+    terrain::TrailNetwork trails {
+      .domain = domain,
+      .use = std::move (*trail_use),
+    };
 
-    terrain::FloodField flood { .surface = std::move (flood_surface) };
+    terrain::FloodField flood { .surface = std::move (*flood_surface) };
     terrain::LakeCensus lakes;
     terrain::DrainageGraph drainage { .readings =
-                                        std::move (drainage_readings) };
+                                        std::move (*drainage_readings) };
     terrain::RiverNetwork rivers;
     if (!read_flood (topology, flood, cells) ||
         !read_lakes (topology, lakes, cells) ||
@@ -828,7 +840,7 @@ namespace moppe::game {
       // The plan is cheap beside the evolved surface it reads: an outdated
       // plan is re-planted from the cached fields instead of discarding the
       // whole world.
-      forest = plan_global_forest (surface, readings, water, forest_seed);
+      forest = plan_global_forest (*surface, *readings, *water, forest_seed);
       try {
         save_forest_plan (*forest, forest_seed, forest_path);
       } catch (const std::exception& error) {
@@ -843,11 +855,11 @@ namespace moppe::game {
                          std::move (rivers));
     return std::make_unique<GeneratedWorld> (params,
                                              std::move (recipe),
-                                             std::move (surface),
+                                             std::move (*surface),
                                              std::move (hydrology),
-                                             std::move (water),
+                                             std::move (*water),
                                              std::move (trails),
-                                             std::move (readings),
+                                             std::move (*readings),
                                              std::move (roads),
                                              std::move (*forest));
   }

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cerrno>
 #include <charconv>
 #include <cmath>
 #include <concepts>
@@ -739,20 +740,33 @@ namespace moppe::spatial {
     }
 
     inline bool read_ipc_stream (std::istream& in, UniqueArrayStream& stream) {
-      const std::string bytes ((std::istreambuf_iterator<char> (in)),
-                               std::istreambuf_iterator<char> ());
-      if (bytes.empty ())
-        return false;
-
-      UniqueBuffer input;
-      if (!ok (ArrowBufferAppend (input.get (), bytes.data (), bytes.size ())))
-        return false;
-
-      UniqueInputStream ipc_input;
-      return ok (ArrowIpcInputStreamInitBuffer (ipc_input.get (),
-                                                input.get ())) &&
-             ok (ArrowIpcArrayStreamReaderInit (
-               stream.get (), ipc_input.get (), nullptr));
+      // Nanoarrow owns its decoded batch. Stream the encoded IPC bytes
+      // directly into its buffers, even for a non-seekable input.
+      UniqueInputStream input;
+      input->private_data = &in;
+      input->release = [] (ArrowIpcInputStream* self) {
+        self->release = nullptr;
+      };
+      input->read = [] (ArrowIpcInputStream* self,
+                        uint8_t* out,
+                        int64_t count,
+                        int64_t* received,
+                        ArrowError*) -> ArrowErrorCode {
+        auto& src = *static_cast<std::istream*> (self->private_data);
+        // Never unwind a C callback if the stream enables exceptions.
+        try {
+          src.read (reinterpret_cast<char*> (out), count);
+        } catch (const std::ios_base::failure&) {
+          if (!src.eof ())
+            return EIO;
+        } catch (...) {
+          return EIO;
+        }
+        *received = src.gcount ();
+        return src.bad () ? EIO : NANOARROW_OK;
+      };
+      return ok (
+        ArrowIpcArrayStreamReaderInit (stream.get (), input.get (), nullptr));
     }
 
     // A bundle is exactly one record batch, so a second one means this file

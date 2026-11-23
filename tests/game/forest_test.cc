@@ -1,5 +1,6 @@
 #include <moppe/game/forest.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/nhal/renderer/forest_grid.hh>
 
 #include <tests/recording_renderer.hh>
 #include <tests/surface_fixture.hh>
@@ -222,4 +223,79 @@ MOPPE_TEST (forest_uploads_typed_individuals_without_baking_tree_meshes) {
 
   forest.draw (renderer);
   MOPPE_CHECK (renderer.forest_draws == 1);
+}
+
+MOPPE_TEST (forest_tiles_include_visible_trees_across_periodic_seams) {
+  using namespace moppe;
+  using Grid = nhal::detail::ForestGrid;
+  std::vector<render::ForestInstance> trees;
+  constexpr meters_t period = 4096.f * u::m;
+  // A dense tile to exercise multiple workgroups and a sparse world
+  // whose neighbouring tiles cross both the origin and the antipode.
+  for (unsigned i = 0; i < 20000; ++i) {
+    const meters_t extent = i < 300 ? 111.f * u::m : period;
+    const meters_t x = fmod (i * 1949.25f * u::m, extent);
+    const meters_t z = fmod (i * 1277.75f * u::m, extent);
+    trees.push_back (
+      { .root = at_height (plan_position (x, z), float (i % 47) * u::m),
+        .height = (8.f + i % 43) * u::m,
+        .crown_radius = (1.f + i % 9) * u::m });
+  }
+  Grid grid;
+  const auto order =
+    grid.build (trees, Vec3 (meters_value (period), 0, meters_value (period)));
+  const auto check = [&] (const Mat4& matrix, Vec3 eye, bool shadow) {
+    const auto blocks = grid.visible_blocks (matrix, eye, 1080, shadow);
+    std::vector<bool> selected (trees.size ());
+    for (const auto& [first, count] : blocks) {
+      MOPPE_CHECK (count > 0 && count <= 64 && first + count <= order.size ());
+      for (unsigned n = first; n < first + count; ++n) {
+        MOPPE_CHECK (!selected[order[n]]);
+        selected[order[n]] = true;
+      }
+    }
+    MOPPE_CHECK (std::ranges::count (selected, true) < trees.size ());
+    const float rx = Grid::row_length (matrix, 0),
+                ry = Grid::row_length (matrix, 1);
+    const float rz = Grid::row_length (matrix, 2);
+    unsigned visible = 0;
+    for (size_t i = 0; i < trees.size (); ++i) {
+      const auto& tree = trees[i];
+      Vec3 p = position_value (tree.root);
+      p[0] = terrain::nearest_image (p[0], eye[0], meters_value (period));
+      p[2] = terrain::nearest_image (p[2], eye[2], meters_value (period));
+      p[1] += .52f * meters_value (tree.height);
+      const auto clip = [&] (int r) {
+        return p[0] * matrix.element (r) + p[1] * matrix.element (4 + r) +
+               p[2] * matrix.element (8 + r) + matrix.element (12 + r);
+      };
+      const meters_t crown = tree.crown_radius;
+      const meters_t bound = .55f * tree.height + 1.4f * crown;
+      const auto radius = meters_value (bound);
+      const float w = clip (3);
+      if (w <= -radius || std::abs (clip (0)) >= w + radius * rx ||
+          std::abs (clip (1)) >= w + radius * ry)
+        continue;
+      if (shadow ? (clip (2) < -radius * rz || clip (2) > w + radius * rz)
+                 : (crown * ry * 1080 < 4 * length (p - eye) * u::m))
+        continue;
+      ++visible;
+      MOPPE_CHECK (selected[i]);
+    }
+    MOPPE_CHECK (visible > 0);
+  };
+  for (Vec3 eye : { Vec3 (33, 70, 4090), Vec3 (-17321, 130, 17519) }) {
+    const auto camera =
+      Mat4::look_at (eye, eye + Vec3 (1, -.1f, 1), Vec3 (0, 1, 0));
+    check (Mat4::perspective_reversed (64.f * u::deg, 1.7f, .1f, 5000) * camera,
+           eye,
+           false);
+    const auto sun =
+      Mat4::look_at (eye + Vec3 (435, 800, 728), eye, Vec3 (0, 1, 0));
+    for (meters_t coverage : { 200.f * u::m, 1650.f * u::m }) {
+      const auto span = meters_value (coverage);
+      check (
+        Mat4::ortho (-span, span, -span, span, -5000, 5000) * sun, eye, true);
+    }
+  }
 }

@@ -6,6 +6,7 @@
 #include <moppe/mov/character.hh>
 #include <moppe/mov/trunk_field.hh>
 #include <moppe/terrain/sea_waves.hh>
+#include <moppe/terrain/water_view.hh>
 #include <moppe/terrain/watercourse.hh>
 
 #include <algorithm>
@@ -66,13 +67,13 @@ namespace moppe {
     // are placed by the water rather than float on it.
     meters_t still_water_at (const WorldParams& world,
                              const map::SurfaceGeometry& surface,
-                             const terrain::WaterSheets* water,
+                             terrain::WaterView water,
                              const position_t& at);
 
     // The waves at a place at `time` (the game's total time), as the water
     // program draws them: the sea's, a lake's barely, a river's none.
     terrain::SeaWaves water_waves_at (const map::SurfaceGeometry& surface,
-                                      const terrain::WaterSheets* water,
+                                      terrain::WaterView water,
                                       const position_t& at,
                                       double time);
 
@@ -80,7 +81,7 @@ namespace moppe {
     // waves on it, which is what floats, wades, and splashes.
     meters_t water_surface_at (const WorldParams& world,
                                const map::SurfaceGeometry& surface,
-                               const terrain::WaterSheets* water,
+                               terrain::WaterView water,
                                const position_t& at,
                                double time);
 
@@ -174,7 +175,7 @@ namespace moppe {
                    const map::SurfaceGeometry& surface,
                    const WorldParams& world,
                    const mov::TrunkField* trunks = nullptr,
-                   const terrain::WaterSheets* water = nullptr,
+                   terrain::WaterView water = nullptr,
                    double time = 0.0,
                    control_signal_t swim_lift = {});
 

@@ -25,39 +25,43 @@ namespace moppe::mov {
   }
 
   float ground_height (const map::SurfaceGeometry& surface, float x, float z) {
-    const float field = terrain::surface_elevation_value (
-      spatial::sample<terrain::surface_elevation> (
-        surface, moppe::position (Vec3 (x, 0.0f, z))));
-    if (&surface != roads_surface)
-      return field;
+    const plan_position_t at = moppe::plan_position (x, z);
+    const terrain::SurfaceElevation field =
+      spatial::sample<terrain::surface_elevation> (surface,
+                                                   at_height (at, 0.f * u::m));
     return terrain::surface_elevation_value (
-      the_roads->ground (moppe::plan_position (x, z),
-                         terrain::surface_elevation_point (field * u::m)));
+      &surface == roads_surface ? the_roads->ground (at, field) : field);
   }
 
   Vec3 ground_normal (const map::SurfaceGeometry& surface, float x, float z) {
-    Vec3 n = spatial::sample<terrain::terrain_normal> (
-               surface, moppe::position (Vec3 (x, 0.0f, z)))
-               .numerical_value_in (one);
+    const position_t at = moppe::position (Vec3 (x, 0, z));
     if (&surface == roads_surface) {
-      // Where a road's tread lies over any of the points round it, the
-      // ground's slope there is the road's, taken across them.
-      constexpr float h = 0.25f;
-      const auto field = [&] (float px, float pz) {
-        return terrain::surface_elevation_value (
+      // Use the road normal only when a neighbouring tread changes height.
+      constexpr meters_t step = 0.25f * u::m;
+      bool formed = false;
+      const auto height = [&] (meters_t dx, meters_t dz) {
+        const plan_position_t near =
+          moppe::plan_position (x_of (plan (at)) + dx, z_of (plan (at)) + dz);
+        const terrain::SurfaceElevation field =
           spatial::sample<terrain::surface_elevation> (
-            surface, moppe::position (Vec3 (px, 0.0f, pz))));
+            surface, at_height (near, 0.f * u::m));
+        const terrain::SurfaceElevation bed = the_roads->ground (near, field);
+        formed |= bed != field;
+        return bed;
       };
-      const float east = ground_height (surface, x + h, z);
-      const float west = ground_height (surface, x - h, z);
-      const float south = ground_height (surface, x, z + h);
-      const float north = ground_height (surface, x, z - h);
-      if (east != field (x + h, z) || west != field (x - h, z) ||
-          south != field (x, z + h) || north != field (x, z - h))
-        n =
-          Vec3 ((west - east) / (2.0f * h), 1.0f, (north - south) / (2.0f * h));
+      const terrain::ElevationChange across =
+        height (-step, 0.f * u::m) - height (step, 0.f * u::m);
+      const terrain::ElevationChange along =
+        height (0.f * u::m, -step) - height (0.f * u::m, step);
+      if (formed)
+        return normalized (
+          Vec3 ((across / (2.f * step)).numerical_value_in (one),
+                1.f,
+                (along / (2.f * step)).numerical_value_in (one)));
     }
-    return length2 (n) > 1e-8f ? normalized (n) : Vec3 (0, 1, 0);
+    const auto normal =
+      map::ground_normal_at (surface, at).numerical_value_in (one);
+    return length2 (normal) > 1e-8f ? normalized (normal) : Vec3 (0, 1, 0);
   }
 
   GroundPatch::GroundPatch (const map::SurfaceGeometry& surface, Params params)

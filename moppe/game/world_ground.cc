@@ -18,11 +18,8 @@ namespace moppe::game {
 
   terrain::SurfaceElevation
   WorldGround::still_water (const plan_position_t& at) const {
-    return terrain::surface_elevation_point (
-      still_water_at (world,
-                      surface (),
-                      &generated.water_surface (),
-                      at_height (at, 0.0f * u::m)));
+    return terrain::surface_elevation_point (still_water_at (
+      world, surface (), generated.water_view (), at_height (at, 0.0f * u::m)));
   }
 
   bool WorldGround::open (const plan_position_t& at,
@@ -122,7 +119,6 @@ namespace moppe::game {
     // PlaceGround is planned in bare metres; each reading crosses into it
     // here, from the typed queries. Each keeps a copy of this view, which
     // may not outlive it.
-    const terrain::WaterSheets& sheets = generated.water_surface ();
     const terrain::SurfaceElevation sea =
       terrain::surface_elevation_point (world.water_level);
     // Each reading keeps a copy of this view, which may not outlive it.
@@ -137,14 +133,14 @@ namespace moppe::game {
           return level (at) <= sea + 0.05f * u::m;
         },
       .current =
-        [&sheets] (const plan_position_t& at) {
-          return spatial::sample<terrain::water_velocity> (
-            sheets, at_height (at, 0.0f * u::m));
+        [g = *this] (const plan_position_t& at) {
+          return g.generated.water_view ().sample<terrain::water_velocity> (
+            at_height (at, 0.0f * u::m));
         },
       .forest =
-        [&readings = generated.readings ()] (const plan_position_t& at) {
-          return spatial::sample<map::forest_cover> (
-            readings, at_height (at, 0.0f * u::m));
+        [g = *this] (const plan_position_t& at) {
+          return g.generated.reading<map::forest_cover> (
+            at_height (at, 0.0f * u::m));
         },
       .roads = &generated.road_surface (),
       .sea_level = sea,

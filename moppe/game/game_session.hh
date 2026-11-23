@@ -6,6 +6,7 @@
 #include <moppe/game/input_frame.hh>
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
+#include <moppe/terrain/water_view.hh>
 
 #include <optional>
 #include <span>
@@ -315,7 +316,7 @@ namespace moppe::game {
                         seconds_t dt,
                         const mov::TrunkField* trunks = nullptr,
                         const GroundCover& ground = {},
-                        const terrain::WaterSheets* water = nullptr,
+                        terrain::WaterView water = nullptr,
                         std::span<const MachineBody> strangers = {},
                         const Surroundings* around = nullptr);
 }

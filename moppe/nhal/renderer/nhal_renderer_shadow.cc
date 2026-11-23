@@ -153,7 +153,7 @@ namespace moppe::nhal {
         m_device->set_buffer (4, m_forest.shadow_candidates[index]);
         for (std::uint32_t species = 0; species < forest_species; ++species) {
           shaders::forest_shadow::Draw draw {};
-          draw.class_ = { float (species * m_forest.count), 0, 0, 0 };
+          draw.class_ = { float (species), 0, 0, 0 };
           m_device->set_uniforms (2, draw);
           m_device->draw_indexed_indirect (
             far ? m_forest.far_indices : m_forest.indices,

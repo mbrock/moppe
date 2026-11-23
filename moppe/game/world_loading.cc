@@ -369,6 +369,12 @@ namespace moppe::game {
                     "Rebuilding normals and broad surface readings");
       map::rebuild_geometry (surface);
 
+      state.report ("Laying out the roads",
+                    "Joining the trailhead, the shore, the lakes, and the "
+                    "sanctuaries");
+      terrain::TrailNetwork trails =
+        terrain::analyze_trail_network (surface, recipe.trail_formation ());
+      auto [roads, use] = form_world_roads (surface, recipe, trails);
       Hydrology hydrology =
         analyze_hydrology (surface, recipe, [&state] (HydrologyStage stage) {
           const auto [title, detail] = hydrology_report (stage);
@@ -377,19 +383,9 @@ namespace moppe::game {
       log_standing_water (hydrology);
 
       state.report ("Assembling the world",
-                    "Painting water, moisture, materials, and the opening "
-                    "route");
-      terrain::TrailNetwork trails =
-        terrain::analyze_trail_network (surface, recipe.trail_formation ());
+                    "Painting water, moisture and materials");
       auto [water, readings] =
-        analyze_surface (surface, recipe, hydrology, trails.use);
-
-      state.report ("Laying out the roads",
-                    "Joining the trailhead, the shore, the lakes, and the "
-                    "sanctuaries");
-      terrain::RoadNetwork roads =
-        lay_world_roads (surface, recipe, hydrology, trails, water, readings);
-
+        analyze_surface (surface, recipe, hydrology, use);
       state.report ("Reading the ground's history",
                     "Burning, grazing, and letting the forest back in");
       disturb_surface (surface, recipe, water, roads, readings);

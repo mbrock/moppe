@@ -350,19 +350,15 @@ namespace moppe::game {
       at_height (plan (result.camera.position), 0.0f * u::m);
     const terrain::SurfaceElevation ground =
       spatial::sample<terrain::surface_elevation> (input.surface, where);
-    const float still_water =
-      input.water
-        ? terrain::surface_elevation_value (
-            spatial::sample<terrain::surface_elevation> (*input.water, where))
-        : input.world.water_level.numerical_value_in (u::m);
-    const float local_water =
+    const terrain::SurfaceElevation still_water =
+      input.water ? input.water.sample<terrain::surface_elevation> (where)
+                  : terrain::surface_elevation_point (input.world.water_level);
+    const terrain::SurfaceElevation local_water =
       still_water +
-      meters_value (water_waves_at (
-                      input.surface, input.water, result.camera.position, time)
-                      .height);
-    if (local_water > terrain::surface_elevation_value (ground))
-      result.camera_water_level =
-        terrain::surface_elevation_point (local_water * u::m);
+      water_waves_at (input.surface, input.water, result.camera.position, time)
+        .height;
+    if (local_water > ground)
+      result.camera_water_level = local_water;
 
     result.graphics = {
       .scene_scale = input.graphics.scene_scale,

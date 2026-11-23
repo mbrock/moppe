@@ -105,8 +105,7 @@ namespace moppe::render {
       sign | (static_cast<std::uint32_t> (exponent) << 10) | (mantissa >> 13));
   }
 
-  // The inverse, for reading a packed texture back. Tests and tools want it;
-  // the upload path never does.
+  // Decode a stored component for area filtering and readback.
   inline float half_to_float (std::uint16_t half) {
     const std::uint32_t sign = (static_cast<std::uint32_t> (half) & 0x8000u)
                                << 16;

@@ -378,7 +378,7 @@ namespace moppe::game {
   void ForestLandscape::draw (render::Renderer& renderer) const {
     if (m_tree_count)
       renderer.draw_forest ();
-    if (m_tree_count && !m_trunks.empty ())
+    if (m_tree_count)
       renderer.draw_falling_leaves ();
   }
 }

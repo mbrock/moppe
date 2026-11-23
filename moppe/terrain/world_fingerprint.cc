@@ -208,13 +208,10 @@ int main (int argc, char** argv) {
       analyze_trail_network (surface, recipe.trail_formation ());
     map::rebuild_geometry (surface);
     surface_lines ("geometry", surface);
+    auto [roads, use] = game::form_world_roads (surface, recipe, trails);
     game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
-    cost ("hydrology");
     auto [water, readings] =
-      game::analyze_surface (surface, recipe, hydrology, trails.use);
-    cost ("water and readings");
-    terrain::RoadNetwork roads = game::lay_world_roads (
-      surface, recipe, hydrology, trails, water, readings);
+      game::analyze_surface (surface, recipe, hydrology, use);
     cost ("roads");
     game::disturb_surface (surface, recipe, water, roads, readings);
     cost ("disturbance");

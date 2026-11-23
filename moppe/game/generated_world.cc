@@ -1,4 +1,6 @@
+#include <moppe/environment.hh>
 #include <moppe/game/generated_world.hh>
+#include <moppe/parallel.hh>
 
 #include <moppe/game/disturbance.hh>
 #include <moppe/profile.hh>
@@ -25,10 +27,10 @@ namespace moppe::game {
     return params;
   }
 
-  Hydrology analyze_hydrology (const map::SurfaceGeometry& geometry,
-                               const terrain::WorldRecipe& recipe,
-                               const HydrologyProgress& progress) {
-    MOPPE_PROFILE_ZONE ("game::analyze_hydrology");
+  static auto drain_surface (const map::SurfaceGeometry& geometry,
+                             const terrain::WorldRecipe& recipe,
+                             const HydrologyProgress& progress) {
+    MOPPE_PROFILE_ZONE ("game::drain_surface");
     const auto report = [&progress] (HydrologyStage stage) {
       if (progress)
         progress (stage);
@@ -45,11 +47,22 @@ namespace moppe::game {
     terrain::DrainageGraph drainage =
       terrain::analyze_wet_drainage (standing_water, lakes);
 
-    report (HydrologyStage::Channels);
+    return std::tuple (
+      std::move (standing_water), std::move (lakes), std::move (drainage));
+  }
+
+  Hydrology analyze_hydrology (const map::SurfaceGeometry& geometry,
+                               const terrain::WorldRecipe& recipe,
+                               const HydrologyProgress& progress) {
+    auto [standing_water, lakes, drainage] =
+      drain_surface (geometry, recipe, progress);
+    if (progress)
+      progress (HydrologyStage::Channels);
     terrain::FractionalDrainage channels =
       terrain::analyze_fractional_drainage (standing_water, lakes);
 
-    report (HydrologyStage::Rivers);
+    if (progress)
+      progress (HydrologyStage::Rivers);
     terrain::RiverNetwork rivers =
       terrain::extract_river_network (standing_water,
                                       lakes,
@@ -169,20 +182,13 @@ namespace moppe::game {
     }
   }
 
-  std::tuple<terrain::WaterSheets, map::SurfaceReadings>
-  analyze_surface (const map::SurfaceGeometry& geometry,
-                   const terrain::WorldRecipe& recipe,
-                   const Hydrology& hydrology,
-                   const terrain::TrailUseMap& use) {
-    MOPPE_PROFILE_ZONE ("game::analyze_surface");
-    const auto& [standing_water, lakes, drainage, rivers] = hydrology;
+  static auto read_vegetation (const map::SurfaceGeometry& geometry,
+                               const terrain::WorldRecipe& recipe,
+                               const terrain::TrailUseMap& use,
+                               const terrain::FloodField& standing_water,
+                               const terrain::LakeCensus& lakes,
+                               const terrain::DrainageGraph& drainage) {
     const meters_t water_level = recipe.water_datum ();
-
-    terrain::WaterSheets sheets = terrain::paint_watercourses (
-      geometry, standing_water, lakes, drainage, rivers);
-    const terrain::Waterline waterline =
-      terrain::extract_waterline (geometry, sheets, lakes.membership ());
-
     terrain::MoistureMap moisture =
       terrain::analyze_moisture (standing_water, lakes.membership (), drainage);
     // Where the forest stops is a fraction of this world's own relief, not a
@@ -216,6 +222,28 @@ namespace moppe::game {
     map::ForestCoverMap cover =
       map::analyze_forest_cover (habitat, use, vegetation, cover_seed (recipe));
 
+    return std::tuple (std::move (moisture),
+                       std::move (habitat),
+                       std::move (disturbance),
+                       std::move (vegetation),
+                       std::move (cover));
+  }
+
+  std::tuple<terrain::WaterSheets, map::SurfaceReadings>
+  analyze_surface (const map::SurfaceGeometry& geometry,
+                   const terrain::WorldRecipe& recipe,
+                   const Hydrology& hydrology,
+                   const terrain::TrailUseMap& use) {
+    MOPPE_PROFILE_ZONE ("game::analyze_surface");
+    const auto& [standing_water, lakes, drainage, rivers] = hydrology;
+    terrain::WaterSheets sheets = terrain::paint_watercourses (
+      geometry, standing_water, lakes, drainage, rivers);
+    const terrain::Waterline waterline =
+      terrain::extract_waterline (geometry, sheets, lakes.membership ());
+
+    auto [moisture, habitat, disturbance, vegetation, cover] =
+      read_vegetation (geometry, recipe, use, standing_water, lakes, drainage);
+
     // The join names the readings in the order the bundle declares them; a
     // world is finished when every one of them is present.
     return { std::move (sheets),
@@ -229,40 +257,34 @@ namespace moppe::game {
                             std::move (disturbance)) };
   }
 
-  terrain::RoadNetwork plan_world_roads (const map::SurfaceGeometry& geometry,
-                                         const terrain::WorldRecipe& recipe,
-                                         const Hydrology& hydrology,
-                                         const terrain::TrailNetwork& trails,
-                                         const map::SurfaceReadings& readings) {
-    const auto& [standing_water, lakes, drainage, rivers] = hydrology;
-    return terrain::plan_roads (
-      geometry.domain (),
-      spatial::get<terrain::surface_elevation> (geometry),
-      standing_water,
-      drainage,
-      { .forest_cover = spatial::get<map::forest_cover> (readings),
-        .mire = spatial::get<map::sphagnum_abundance> (readings),
-        .wetness = spatial::get<terrain::soil_wetness> (readings) },
-      rivers.minimum_area,
-      trails.plan.home_base,
-      terrain::surface_elevation_point (recipe.water_datum ()),
-      recipe.seed ().value ^ 0x5d1c0a7bU);
-  }
-
-  terrain::RoadNetwork lay_world_roads (map::SurfaceGeometry& geometry,
-                                        const terrain::WorldRecipe& recipe,
-                                        Hydrology& hydrology,
-                                        const terrain::TrailNetwork& trails,
-                                        terrain::WaterSheets& water,
-                                        map::SurfaceReadings& readings) {
-    MOPPE_PROFILE_ZONE ("game::lay_world_roads");
-    terrain::RoadNetwork roads =
-      plan_world_roads (geometry, recipe, hydrology, trails, readings);
-    const terrain::RoadFormationResult built =
-      map::form_terrain_roads (geometry,
-                               roads,
-                               std::get<terrain::FloodField> (hydrology),
-                               std::get<terrain::DrainageGraph> (hydrology));
+  std::pair<terrain::RoadNetwork, terrain::TrailUseMap>
+  form_world_roads (map::SurfaceGeometry& geometry,
+                    const terrain::WorldRecipe& recipe,
+                    const terrain::TrailNetwork& trails) {
+    MOPPE_PROFILE_ZONE ("game::form_world_roads");
+    auto [standing_water, lakes, drainage] =
+      drain_surface (geometry, recipe, {});
+    // Roads avoid mires and dense forest. Compute just their inputs on
+    // the unformed terrain. Channels and water sheets belong to the final bed.
+    auto roads = [&] {
+      auto [moisture, habitat, disturbance, vegetation, cover] =
+        read_vegetation (
+          geometry, recipe, trails.use, standing_water, lakes, drainage);
+      return terrain::plan_roads (
+        geometry.domain (),
+        get<terrain::surface_elevation> (geometry),
+        standing_water,
+        drainage,
+        { .forest_cover = get<map::forest_cover> (cover),
+          .mire = get<map::sphagnum_abundance> (vegetation),
+          .wetness = get<terrain::soil_wetness> (moisture) },
+        terrain::visible_river_minimum_area (),
+        trails.plan.home_base,
+        terrain::surface_elevation_point (recipe.water_datum ()),
+        recipe.seed ().value ^ 0x5d1c0a7bU);
+    }();
+    const auto built =
+      map::form_terrain_roads (geometry, roads, standing_water, drainage);
     std::cerr << "moppe: roads: " << roads.places.size () << " places, "
               << roads.roads.size () << " ways, "
               << built.cut.numerical_value_in (u::m * u::m * u::m)
@@ -275,16 +297,13 @@ namespace moppe::game {
         std::cerr << ", a loop round the world";
     std::cerr << std::endl;
     map::rebuild_geometry (geometry);
-    hydrology = analyze_hydrology (geometry, recipe);
     terrain::TrailUseMap use = trails.use;
     auto& tread = spatial::get<map::trail_influence> (use);
     for (std::size_t cell = 0; cell < tread.size (); ++cell)
       tread[cell] =
         std::max (tread[cell],
                   quantity_cast<map::trail_influence> (built.influence[cell]));
-    std::tie (water, readings) =
-      analyze_surface (geometry, recipe, hydrology, use);
-    return roads;
+    return { std::move (roads), std::move (use) };
   }
 
   void disturb_surface (const map::SurfaceGeometry& geometry,
@@ -315,6 +334,55 @@ namespace moppe::game {
     overwrite (readings, disturbance);
   }
 
+  void GeneratedWorld::enter_play () {
+    if (!m_build)
+      return;
+    const auto& d = m_surface.domain ();
+    [&]<typename Domain, typename... Field> (
+      std::type_identity<spatial::Bundle<Domain, Field...>>) {
+      // Each task owns its packed tile directory and byte stream.
+      const auto pack = [&]<typename Q> () {
+        auto& grid = m_cover[PlayFields::spec_index<Q::quantity_spec>];
+        if constexpr (Q::quantity_spec == map::snow_support)
+          grid.assign (d, spatial::get<map::snow_support> (m_surface));
+        else
+          grid.assign (d, spatial::get<Q::quantity_spec> (m_build->readings));
+      };
+      const std::array<std::function<void ()>, sizeof...(Field)> tasks { [&] {
+        pack.template operator()<Field> ();
+      }... };
+      parallel_for (tasks.size (), 1, [&] (size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i)
+          tasks[i]();
+      });
+    }(std::type_identity<PlayFields> {});
+    if (environment ("MOPPE_MEMORY_REPORT")) {
+      size_t bytes = 0;
+      for (const auto& grid : m_cover)
+        bytes += grid.storage_bytes ();
+      std::cerr << "moppe: runtime ground cover " << bytes << " bytes\n";
+    }
+    m_runtime_water.emplace (
+      m_build->water, spatial::get<terrain::surface_elevation> (m_surface));
+    const auto bodies = lake_census ().water_bodies ();
+    m_runtime_bodies.assign (bodies.begin (), bodies.end ());
+    m_runtime_rivers =
+      std::move (std::get<terrain::RiverNetwork> (m_build->hydrology));
+    m_build.reset ();
+    const auto release = [] (auto& column) {
+      std::remove_reference_t<decltype (column)> ().swap (column);
+    };
+    release (spatial::get<terrain::sediment_thickness> (m_surface));
+    release (spatial::get<terrain::terrain_normal> (m_surface));
+    release (spatial::get<map::eroded_surface_material> (m_surface));
+    release (spatial::get<map::deposited_surface_material> (m_surface));
+    release (spatial::get<map::snow_support> (m_surface));
+    release (m_trails.earthwork_delta);
+    release (spatial::get<map::trail_influence> (m_trails.use));
+    release (spatial::get<map::home_base_influence> (m_trails.use));
+    release (m_forest.sites);
+  }
+
   GeneratedWorld::GeneratedWorld (WorldParams params,
                                   terrain::WorldRecipe recipe,
                                   map::SurfaceGeometry surface,
@@ -326,26 +394,19 @@ namespace moppe::game {
                                   ForestPlan forest)
       : m_params (bind_world_params (params, recipe)),
         m_recipe (std::move (recipe)), m_surface (std::move (surface)),
-        m_hydrology (std::move (hydrology)),
-        m_water_surface (std::move (water)), m_trails (std::move (trails)),
-        m_readings (std::move (readings)), m_roads (std::move (roads)),
+        m_build (BuildFields {
+          std::move (hydrology), std::move (water), std::move (readings) }),
+        m_trails (std::move (trails)), m_roads (std::move (roads)),
         m_road_surface (m_roads,
                         plan_extent (m_surface.domain ().period_x (),
                                      m_surface.domain ().period_z ())),
         m_forest (std::move (forest)) {
-    const float period_x =
-      m_surface.domain ().period_x ().numerical_value_in (u::m);
-    const float period_z =
-      m_surface.domain ().period_z ().numerical_value_in (u::m);
-    const auto wrap = [] (float v, float period) {
-      return v - period * std::floor (v / period);
-    };
+    const auto period = plan_extent (m_surface.domain ().period_x (),
+                                     m_surface.domain ().period_z ());
     m_road_surface.place_guardrails (m_roads, [&] (plan_position_t at) {
-      const Vec2& p = plan_value (at);
-      return spatial::sample<terrain::surface_elevation> (
-        m_surface,
-        position (
-          Vec3 (wrap (p.x (), period_x), 0.0f, wrap (p.z (), period_z))));
+      const position_t ground =
+        at_height (terrain::wrap (at, period), 0.f * u::m);
+      return spatial::sample<terrain::surface_elevation> (m_surface, ground);
     });
     // Where the longest stands, to aim a camera at.
     std::size_t posts = 0;
@@ -359,12 +420,11 @@ namespace moppe::game {
               << " runs, " << posts << " posts";
     if (longest) {
       const terrain::Guardrail::Post& end = longest->posts.front ();
-      const Vec2& at = plan_value (end.at);
+      const Vec2 at = plan_value (terrain::wrap (end.at, period));
       const Vec2& out = plan_value (end.out);
-      std::cerr << "; the longest begins at " << wrap (at.x (), period_x) << ' '
-                << terrain::surface_elevation_value (end.rail) << ' '
-                << wrap (at.z (), period_z) << " facing out " << out.x () << ' '
-                << out.z ();
+      std::cerr << "; the longest begins at " << at.x () << ' '
+                << terrain::surface_elevation_value (end.rail) << ' ' << at.z ()
+                << " facing out " << out.x () << ' ' << out.z ();
     }
     std::cerr << '\n';
   }

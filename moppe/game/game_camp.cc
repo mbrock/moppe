@@ -12,7 +12,7 @@ namespace moppe {
       return {
         .world = &world (),
         .surface = &surface (),
-        .water = &generated_world ().water_surface (),
+        .water = generated_world ().water_view (),
         .trunks = &m_trunk_field,
         .mushrooms = &m_mushrooms,
         .places = &m_places.layout,

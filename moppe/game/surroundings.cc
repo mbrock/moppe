@@ -520,10 +520,10 @@ namespace moppe::game {
   velocity_t current_at (const Surroundings& around, const position_t& at) {
     if (!around.water)
       return velocity (Vec3 ());
-    velocity_t current =
-      velocity (spatial::sample<terrain::water_velocity> (
-                  *around.water, at_height (plan (at), 0.0f * u::m))
-                  .numerical_value_in (u::m / u::s));
+    velocity_t current = velocity (
+      around.water
+        .sample<terrain::water_velocity> (at_height (plan (at), 0.0f * u::m))
+        .numerical_value_in (u::m / u::s));
     velocity_value (current)[1] = 0.0f;
     return current;
   }
@@ -552,7 +552,7 @@ namespace moppe::game {
       if (length2 (bow) < 1e-6f || dot (ahead, normalized (bow)) < -0.17f)
         return std::nullopt;
     }
-    const terrain::WaterSheets& sheets = *around.water;
+    const auto sheets = around.water;
     const meters_t sea = around.world->water_level;
     for (meters_t reach = longest_cast; reach >= shortest_cast;
          reach -= 0.5f * u::m) {
@@ -560,7 +560,7 @@ namespace moppe::game {
                                        ahead * meters_value (reach));
       const meters_t ground = ground_at (around, at);
       const meters_t level =
-        still_water_at (*around.world, *around.surface, &sheets, at);
+        still_water_at (*around.world, *around.surface, sheets, at);
       if (level - ground < fishing_depth)
         continue;
       position_value (at)[1] = meters_value (level);
@@ -568,7 +568,7 @@ namespace moppe::game {
       const position_t where = at_height (plan (at), 0.0f * u::m);
       const meters_t sheet =
         terrain::surface_elevation_value (
-          spatial::sample<terrain::surface_elevation> (sheets, where)) *
+          sheets.sample<terrain::surface_elevation> (where)) *
         u::m;
       if (sheet > ground && sheet > sea + 0.05f * u::m)
         found.waters = length (velocity_value (current_at (around, at))) > 0.15f

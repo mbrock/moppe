@@ -43,13 +43,12 @@ namespace moppe::game {
     if (!walk || (!swim && std::string_view (walk) != "fish") ||
         s.session.logic ().m_doing != Doing::on_foot ())
       return;
-    const terrain::WaterSheets& sheets = s.ground.generated.water_surface ();
+    const auto sheets = s.ground.generated.water_view ();
     const auto depth_at = [&] (const position_t& at) {
-      return (still_water_at (s.ground.world, s.ground.surface (), &sheets, at)
-                .numerical_value_in (u::m) -
-              terrain::surface_elevation_value (
-                s.ground.elevation (plan (at)))) *
-             u::m;
+      const terrain::SurfaceElevation water = terrain::surface_elevation_point (
+        still_water_at (s.ground.world, s.ground.surface (), sheets, at));
+      const terrain::SurfaceElevation ground = s.ground.elevation (plan (at));
+      return meters_t (water - ground);
     };
     constexpr meters_t step = 4.0f * u::m;
     const position_t near = swim ? s.session.boat ().position () : s.spawn;
@@ -90,7 +89,7 @@ namespace moppe::game {
             stand = at_height (
               plan (stand),
               water_surface_at (
-                s.ground.world, s.ground.surface (), &sheets, stand, 0.0) -
+                s.ground.world, s.ground.surface (), sheets, stand, 0.0) -
                 1.45f * u::m);
           }
           s.session.walker ().spawn (stand, out);

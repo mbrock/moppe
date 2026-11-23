@@ -95,7 +95,7 @@ namespace moppe::game {
   // inflow of every lake, to the reach where it first shows. Empty when
   // no river reaches the sea.
   std::vector<const terrain::RiverReach*>
-  greatest_river_course (const terrain::LakeCensus& census,
+  greatest_river_course (std::span<const terrain::WaterBody> bodies,
                          const terrain::RiverNetwork& rivers);
 
   // A tree beside the river flight's way: where it stands, and how tall.

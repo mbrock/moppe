@@ -39,6 +39,11 @@ namespace moppe::game {
       return m_trunks;
     }
 
+    // Collision ownership moves to TrunkField once places are built.
+    void release_trunks () {
+      std::vector<mov::Trunk> ().swap (m_trunks);
+    }
+
     // How thickly fallen leaves cover the ground at a place, from zero to
     // one: the turned leaf area of the broadleaves standing around it.
     proportion_t litter_at (const plan_position_t& at) const;

@@ -93,6 +93,14 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::request_screenshot (const std::string& path) {
+      if (moppe::environment ("MOPPE_MEMORY_REPORT"))
+        std::fprintf (
+          stderr,
+          "moppe: forest cull lanes: trees=%u camera=%zu near=%zu far=%zu\n",
+          m_forest.count,
+          m_forest.lanes[0],
+          m_forest.lanes[1],
+          m_forest.lanes[2]);
       m_screenshot = path;
     }
 

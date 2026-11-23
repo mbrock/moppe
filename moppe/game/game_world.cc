@@ -13,6 +13,10 @@
 #include <moppe/profile.hh>
 #include <moppe/terrain/readings.hh>
 
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+#endif
+
 namespace moppe {
   namespace game {
     namespace {
@@ -25,7 +29,7 @@ namespace moppe {
 
     GroundCover MoppeGame::ground_cover (const position_t& at) const {
       const auto read = [&] (auto quantity) {
-        return spatial::sample<quantity> (generated_world ().readings (), at);
+        return generated_world ().reading<quantity> (at);
       };
       constexpr auto part = proportion[one];
       const proportion_t tread =
@@ -39,14 +43,15 @@ namespace moppe {
         world_ground ().elevation (plan (at)).delta_from_zero ());
       const proportion_t rise = quantity_cast<proportion> (
         (height - world ().water_level) / m_land_relief);
-      const auto normal =
-        spatial::sample<terrain::terrain_normal> (surface (), at)
-          .numerical_value_in (one);
-      const auto support = spatial::sample<map::snow_support> (surface (), at);
+      const map::SurfaceNormal normal = map::ground_normal_at (surface (), at);
+      const map::SnowSupport support =
+        generated_world ().reading<map::snow_support> (at);
       // The same broad snow line and north-facing advantage as snow-reach
       // in the ground shader; the shader breaks up its margin with noise.
       ground.snow =
-        band (0.63f * part, 0.79f * part, rise - 0.05f * normal[2] * part) *
+        band (0.63f * part,
+              0.79f * part,
+              rise - 0.05f * normal.numerical_value_in (one)[2] * part) *
         band (0.55f * part, 0.78f * part, support).numerical_value_in (one) *
         (1.0f - tread.numerical_value_in (one));
       if (world_ground ().water_depth (plan (at)) > terrain::ElevationChange {})
@@ -58,27 +63,27 @@ namespace moppe {
                      (whole - 0.7f * ground.leaves))
                       .numerical_value_in (one) *
                     part;
-      const auto blend = [] (DisplayColor a, DisplayColor b, float t) {
-        return DisplayColor (a.red + (b.red - a.red) * t,
-                             a.green + (b.green - a.green) * t,
-                             a.blue + (b.blue - a.blue) * t);
-      };
-      ground.dust_color = blend (DisplayColor (0.56f, 0.53f, 0.43f),
-                                 DisplayColor (0.60f, 0.52f, 0.40f),
-                                 loose.numerical_value_in (one));
-      ground.clod_color = blend (DisplayColor (0.27f, 0.32f, 0.16f),
-                                 DisplayColor (0.42f, 0.34f, 0.24f),
-                                 loose.numerical_value_in (one));
+      ground.dust_color =
+        mix_display (DisplayColor (0.56f, 0.53f, 0.43f),
+                     DisplayColor (0.60f, 0.52f, 0.40f),
+                     loose.numerical_value_in (one) * blend_weight[one]);
+      ground.clod_color =
+        mix_display (DisplayColor (0.27f, 0.32f, 0.16f),
+                     DisplayColor (0.42f, 0.34f, 0.24f),
+                     loose.numerical_value_in (one) * blend_weight[one]);
       // Under fallen leaves the wheel digs up dark forest soil.
-      ground.clod_color = blend (ground.clod_color,
-                                 DisplayColor (0.34f, 0.26f, 0.17f),
-                                 ground.leaves.numerical_value_in (one));
-      ground.dust_color = blend (ground.dust_color,
-                                 DisplayColor (0.86f, 0.91f, 0.99f),
-                                 ground.snow.numerical_value_in (one));
-      ground.clod_color = blend (ground.clod_color,
-                                 DisplayColor (0.76f, 0.84f, 0.95f),
-                                 ground.snow.numerical_value_in (one));
+      ground.clod_color = mix_display (ground.clod_color,
+                                       DisplayColor (0.34f, 0.26f, 0.17f),
+                                       ground.leaves.numerical_value_in (one) *
+                                         blend_weight[one]);
+      ground.dust_color =
+        mix_display (ground.dust_color,
+                     DisplayColor (0.86f, 0.91f, 0.99f),
+                     ground.snow.numerical_value_in (one) * blend_weight[one]);
+      ground.clod_color =
+        mix_display (ground.clod_color,
+                     DisplayColor (0.76f, 0.84f, 0.95f),
+                     ground.snow.numerical_value_in (one) * blend_weight[one]);
       return ground;
     }
 
@@ -340,7 +345,16 @@ namespace moppe {
     }
 
     void MoppeGame::settle_obstacles (bool with_places) {
-      std::vector<mov::Trunk> obstacles = m_forest.trunks ();
+      const auto stops = with_places ? bus_stop_colliders (m_places.bus)
+                                     : std::vector<mov::Trunk> {};
+      std::vector<mov::Trunk> obstacles;
+      obstacles.reserve (
+        m_forest.tree_count () + m_boulders.colliders ().size () +
+        (with_places ? m_places.landscape.colliders ().size () + stops.size ()
+                     : 0));
+      obstacles.insert (obstacles.end (),
+                        m_forest.trunks ().begin (),
+                        m_forest.trunks ().end ());
       obstacles.insert (obstacles.end (),
                         m_boulders.colliders ().begin (),
                         m_boulders.colliders ().end ());
@@ -348,7 +362,6 @@ namespace moppe {
         obstacles.insert (obstacles.end (),
                           m_places.landscape.colliders ().begin (),
                           m_places.landscape.colliders ().end ());
-        const std::vector<mov::Trunk> stops = bus_stop_colliders (m_places.bus);
         obstacles.insert (obstacles.end (), stops.begin (), stops.end ());
       }
       const spatial_extent_t& period = generated_world ().forest ().period;
@@ -387,6 +400,7 @@ namespace moppe {
       m_places.build (m_renderer, world_ground ());
       if (m_renderer && !m_places.landscape.colliders ().empty ())
         settle_obstacles (true);
+      m_forest.release_trunks ();
       m_places.let_out_animals (
         world_ground (), session (), m_home_base_position, m_spawn_position);
       m_parking.park_jeep (parking_lot ());
@@ -454,9 +468,13 @@ namespace moppe {
       upload_world_terrain (r);
       // The chart in the HUD's corner wants the map from the first
       // frame of play.
-      const char* hud = moppe::environment ("MOPPE_HUD");
-      if (!hud || std::string_view (hud) != "none")
-        m_heads_up.paint_map (r, generated_world ());
+      m_heads_up.paint_map (r, generated_world ());
+      m_generated_world->enter_play ();
+#ifdef __APPLE__
+      // The allocator can cache several GiB of empty generation buffers.
+      // Request reclamation at the transition from loading to play.
+      malloc_zone_pressure_relief (nullptr, 0);
+#endif
       m_ready = true;
       // Play's first frame is a cut from the loading screen's sky: its
       // history must not smear in.

@@ -149,6 +149,7 @@ namespace moppe::nhal {
       const render::ForestSetup& setup,
       std::span<const render::ForestInstance> instances) {
       for (Buffer* b : { &m_forest.records,
+                         &m_forest.classified,
                          &m_forest.candidates,
                          &m_forest.arguments,
                          &m_forest.shadow_candidates[0],
@@ -158,16 +159,20 @@ namespace moppe::nhal {
         if (*b)
           m_device->destroy (*b), *b = {};
       m_forest.count = std::uint32_t (instances.size ());
-      if (instances.empty ())
-        return;
+      m_forest.capacity = {};
+      m_forest.scratch_capacity = 0;
       const Vec3 forest_period = extent_value (setup.period);
       const std::vector<float> closure =
         spread_stand (setup, instances, forest_period);
+      const auto order = m_forest.grid.build (instances, forest_period);
+      if (instances.empty ())
+        return;
       // Four rows a tree. The stand closure that decides where a crown
       // starts is read from the splatted canopy over 24 metres.
       std::vector<std::array<float, 4>> rows;
       rows.reserve (instances.size () * 4);
-      for (const render::ForestInstance& tree : instances) {
+      for (auto original : order) {
+        const auto& tree = instances[original];
         const Vec3 root = position_value (tree.root);
         const Vec3 up = tree.ground_normal.numerical_value_in (mp_units::one);
         const float cover =
@@ -179,38 +184,26 @@ namespace moppe::nhal {
           { up[0], up[1], up[2], tree.crown_radius.numerical_value_in (u::m) });
         rows.push_back ({ cover,
                           tree.moisture.numerical_value_in (mp_units::one),
-                          closure.empty () ? cover : closure[rows.size () / 4],
+                          closure.empty () ? cover : closure[original],
                           tree.autumn.numerical_value_in (mp_units::one) });
         rows.push_back ({ bits (tree.seed),
                           bits (std::uint32_t (tree.species)),
                           bits (std::uint32_t (tree.age)),
-                          0 });
+                          bits (original) });
       }
       m_forest.records = m_device->create_buffer (
         { .size = rows.size () * 16, .label = "forest records" },
         std::as_bytes (std::span (rows)));
-      // Every class can hold every tree, so the cull never overflows.
-      m_forest.candidates = m_device->create_buffer (
-        { .size = std::uint64_t (forest_classes) * m_forest.count * 8,
-          .usage = buffer_storage_write,
-          .label = "forest candidates" });
       m_forest.arguments = m_device->create_buffer (
         { .size = forest_classes * sizeof (DrawIndexedIndirectArgs),
           .usage = buffer_storage_write | buffer_indirect,
           .label = "forest draws" });
       for (std::size_t cascade = 0; cascade < 2; ++cascade) {
-        m_forest.shadow_candidates[cascade] = m_device->create_buffer (
-          { .size = std::uint64_t (forest_species) * m_forest.count * 8,
-            .usage = buffer_storage_write,
-            .label = "shadow tree candidates" });
         m_forest.shadow_arguments[cascade] = m_device->create_buffer (
-          { .size = forest_species * sizeof (DrawIndexedIndirectArgs),
+          { .size = forest_classes * sizeof (DrawIndexedIndirectArgs),
             .usage = buffer_storage_write | buffer_indirect,
             .label = "shadow tree draws" });
       }
-      const Vec3 period = extent_value (setup.period);
-      m_forest.period[0] = period[0];
-      m_forest.period[1] = period[2];
 
       if (!m_forest.indices) {
         std::vector<std::uint16_t> indices;
@@ -234,7 +227,7 @@ namespace moppe::nhal {
         if (*t)
           m_device->destroy (*t), *t = {};
       m_forest.stand_inverse_period = { 0, 0 };
-      if (period[0] <= 0.0f || period[2] <= 0.0f)
+      if (instances.empty () || period[0] <= 0.0f || period[2] <= 0.0f)
         return {};
       const std::uint32_t size = std::uint32_t (std::clamp (
         std::ceil (std::max (period[0], period[2]) / 3.0f), 256.0f, 1024.0f));
@@ -349,19 +342,17 @@ namespace moppe::nhal {
                                    std::size_t cascade) {
       if (!m_forest.count)
         return;
-      auto row = [&] (int r) {
-        return std::sqrt (view.element (r) * view.element (r) +
-                          view.element (4 + r) * view.element (4 + r) +
-                          view.element (8 + r) * view.element (8 + r));
-      };
       shaders::forest_cull::Forest forest {};
       forest.view = matrix (view);
       forest.eye = lanes (eye);
-      forest.world = { m_forest.period[0],
-                       m_forest.period[1],
+      forest.world = { m_forest.grid.period ()[0],
+                       m_forest.grid.period ()[1],
                        float (m_forest.count),
                        float (m_forest.count) };
-      forest.cull = { row (0), row (1), row (3), height };
+      forest.cull = { ForestGrid::row_length (view, 0),
+                      ForestGrid::row_length (view, 1),
+                      ForestGrid::row_length (view, 3),
+                      height };
       forest.mode = { shadow ? 1.0f + float (cascade) : 0.0f, 0, 0, 0 };
       Transient& block =
         shadow ? m_forest.shadow_block[cascade] : m_forest.block;
@@ -386,18 +377,58 @@ namespace moppe::nhal {
       m_device->copy_to_buffer (
         arguments,
         0,
-        m_device->upload (std::span<const DrawIndexedIndirectArgs> (
-          reset.data (), shadow ? forest_species : forest_classes)));
-      m_device->begin_compute_pass (shadow ? "shadow tree culling"
-                                           : "forest culling");
-      m_device->set_pipeline (m_forest.cull);
-      m_device->set_buffer (1, block);
-      m_device->set_buffer (2, m_forest.records);
-      m_device->set_buffer (
-        3, shadow ? m_forest.shadow_candidates[cascade] : m_forest.candidates);
-      m_device->set_buffer (4, arguments);
-      m_device->dispatch ((m_forest.count + 63) / 64);
-      m_device->end_compute_pass ();
+        m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)));
+
+      const auto blocks = m_forest.grid.visible_blocks (
+        view,
+        eye,
+        height,
+        shadow,
+        moppe::environment ("MOPPE_FOREST_ALL_TILES"));
+      const std::size_t v = shadow ? cascade + 1 : 0;
+      m_forest.lanes[v] = 64 * blocks.size ();
+      // One output per active lane suffices even when all trees survive
+      // in one class. Grow in pages to avoid churn as the view moves.
+      const std::size_t capacity = std::max<std::size_t> (
+        4096, ((m_forest.lanes[v] + 4095) / 4096) * 4096);
+      auto reserve = [&] (Buffer& buffer,
+                          std::size_t& allocated,
+                          std::size_t header,
+                          const char* label) {
+        if (capacity <= allocated)
+          return;
+        if (buffer)
+          m_device->destroy (buffer);
+        allocated = capacity;
+        buffer = m_device->create_buffer ({ .size = header + capacity * 8,
+                                            .usage = buffer_storage_write,
+                                            .label = label });
+      };
+      Buffer& candidates =
+        shadow ? m_forest.shadow_candidates[cascade] : m_forest.candidates;
+      reserve (
+        candidates, m_forest.capacity[v], 4 * forest_classes, "visible trees");
+      if (blocks.empty ())
+        return;
+      reserve (m_forest.classified,
+               m_forest.scratch_capacity,
+               0,
+               "tree classification");
+      const Transient ranges = m_device->upload (
+        std::span<const std::array<std::uint32_t, 2>> (blocks));
+      for (int pass = 0; pass != 3; ++pass) {
+        m_device->begin_compute_pass ("forest classification and compaction");
+        m_device->set_pipeline (m_forest.cull);
+        forest.mode[1] = float (pass);
+        m_device->set_uniforms (1, forest);
+        m_device->set_buffer (2, m_forest.records);
+        m_device->set_buffer (3, candidates);
+        m_device->set_buffer (4, arguments);
+        m_device->set_buffer (5, ranges);
+        m_device->set_buffer (6, m_forest.classified);
+        m_device->dispatch (pass == 1 ? 1 : std::uint32_t (blocks.size ()));
+        m_device->end_compute_pass ();
+      }
     }
 
     void NhalRenderer::draw_forest () {
@@ -412,7 +443,7 @@ namespace moppe::nhal {
       m_device->set_texture (8, m_sun_shadow.map);
       for (std::uint32_t c = 0; c < forest_classes; ++c) {
         shaders::forest::Draw draw {};
-        draw.class_ = { float (c * m_forest.count), 0, 0, 0 };
+        draw.class_ = { float (c), 0, 0, 0 };
         m_device->set_uniforms (2, draw);
         m_device->draw_indexed_indirect (m_forest.indices,
                                          IndexType::uint16,

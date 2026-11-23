@@ -30,9 +30,9 @@ namespace moppe {
 
       // Tangent frame from the interpolated ground normal, so the
       // disc lies flat on slopes
-      const direction_t n = unit_direction (
-        spatial::sample<terrain::terrain_normal> (surface, under)
-          .numerical_value_in (mp_units::one));
+      const direction_t n =
+        unit_direction (map::ground_normal_at (surface, under)
+                          .numerical_value_in (mp_units::one));
       const direction_t t1 = [&] {
         const Vec3 across = cross (direction_value (n), Vec3 (1, 0, 0));
         return unit_direction (normalized (

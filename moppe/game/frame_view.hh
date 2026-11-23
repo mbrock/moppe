@@ -7,6 +7,7 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/gfx/mat4.hh>
+#include <moppe/terrain/water_view.hh>
 #include <moppe/terrain/watercourse.hh>
 
 #include <array>
@@ -390,7 +391,7 @@ namespace moppe::game {
     // graphics settings' height.
     std::optional<SkyReading> sky;
     // The local water field; absent, only sea above local ground is wet.
-    const terrain::WaterSheets* water = nullptr;
+    terrain::WaterView water = nullptr;
   };
 
   // Shared pure art-direction readings.  The application can update its

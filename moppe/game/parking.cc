@@ -231,8 +231,7 @@ namespace moppe::game {
     // periodic world.
     const Vec2 period = plan_value (lot.ground.period ());
     const auto course = greatest_river_course (
-      std::get<terrain::LakeCensus> (lot.ground.generated.hydrology ()),
-      std::get<terrain::RiverNetwork> (lot.ground.generated.hydrology ()));
+      lot.ground.generated.water_bodies (), lot.ground.generated.rivers ());
     std::vector<plan_position_t> line;
     for (auto reach = course.rbegin (); reach != course.rend (); ++reach)
       for (const terrain::RiverAlignmentPoint& point :
@@ -364,7 +363,7 @@ namespace moppe::game {
   }
 
   bool Parking::moor_boat (const ParkingLot& lot, bool sea_only, bool outward) {
-    const terrain::WaterSheets& sheets = lot.ground.generated.water_surface ();
+    const auto sheets = lot.ground.generated.water_view ();
     const terrain::SurfaceElevation sea =
       terrain::surface_elevation_point (lot.ground.world.water_level);
     const auto level_at = [&] (const position_t& at) {
@@ -382,8 +381,8 @@ namespace moppe::game {
       if (sea_only)
         return false;
       const Vec3 current =
-        spatial::sample<terrain::water_velocity> (sheets, where)
-          .numerical_value_in (u::m / u::s);
+        sheets.sample<terrain::water_velocity> (where).numerical_value_in (
+          u::m / u::s);
       return length (plan (current)) * u::m / u::s < 0.1f * u::m / u::s;
     };
     // Open water ahead: deep enough to drive in over a good stretch.

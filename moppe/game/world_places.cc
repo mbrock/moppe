@@ -171,9 +171,8 @@ namespace moppe::game {
         [ground] (plan_position_t p) {
           const float x = plan_value (p).x (), z = plan_value (p).z ();
           const auto read = [&] (auto quantity) {
-            return spatial::sample<quantity> (
-                     ground.generated.readings (),
-                     moppe::position (Vec3 (x, 0.0f, z)))
+            return ground.generated
+              .reading<quantity> (moppe::position (Vec3 (x, 0.0f, z)))
               .numerical_value_in (one);
           };
           return Pasture {

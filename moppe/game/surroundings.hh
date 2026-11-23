@@ -18,6 +18,7 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/mov/trunk_field.hh>
+#include <moppe/terrain/water_view.hh>
 
 #include <cstdint>
 #include <optional>
@@ -32,7 +33,7 @@ namespace moppe::game {
   struct Surroundings {
     const WorldParams* world = nullptr;
     const map::SurfaceGeometry* surface = nullptr;
-    const terrain::WaterSheets* water = nullptr;
+    terrain::WaterView water = nullptr;
     const mov::TrunkField* trunks = nullptr;
     // Following the basket (MushroomPatch::follow) before the step.
     const MushroomPatch* mushrooms = nullptr;

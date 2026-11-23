@@ -1,4 +1,5 @@
 #include <moppe/map/surface.hh>
+#include <moppe/nhal/renderer/field_texture.hh>
 
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/render/texture_pixels.hh>
@@ -721,4 +722,44 @@ MOPPE_TEST (
   MOPPE_CHECK (low_fell < 0.05f);
   MOPPE_CHECK (high_fell > 0.4f);
   MOPPE_CHECK (high_spruce < 0.05f);
+}
+
+MOPPE_TEST (coarse_field_texels_cover_the_full_odd_sized_source) {
+  using namespace moppe;
+  using render::PixelFormat;
+  for (const auto format : { PixelFormat::rgba8unorm, PixelFormat::rgba16f }) {
+    // The 5x3 sheet wraps back to its left and top edges. Reduction to
+    // 2x2 divides the middle source row and column exactly in half.
+    const render::TexturePixels pixels (
+      5, 3, format, nullptr, [] (const void*, PixelFormat fmt, std::byte* dst) {
+        const auto lane = render::channel_bytes (fmt);
+        for (size_t z = 0; z < 3; ++z)
+          for (size_t x = 0; x < 5; ++x) {
+            auto* at = dst + (z * 5 + x) * 4 * lane;
+            render::detail::write_channel (at, fmt, x == 2 ? 1.f : 0.f);
+            render::detail::write_channel (at + lane, fmt, z == 0 ? 1.f : 0.f);
+            render::detail::write_channel (
+              at + 2 * lane, fmt, x == 4 ? 1.f : 0.f);
+            render::detail::write_channel (at + 3 * lane, fmt, 1.f);
+          }
+      });
+    const auto result = nhal::detail::field_pixels (pixels, 2, 2);
+    for (size_t z = 0; z < 2; ++z)
+      for (size_t x = 0; x < 2; ++x) {
+        const std::array expected {
+          .2f, z == 0 ? 2.f / 3.f : 0.f, x == 1 ? .4f : 0.f, 1.f
+        };
+        for (size_t c = 0; c < 4; ++c) {
+          size_t index = (z * 2 + x) * 4 + c;
+          if (format == PixelFormat::rgba8unorm)
+            MOPPE_CHECK (std::to_integer<unsigned> (result[index]) ==
+                         std::lround (255.f * expected[c]));
+          else {
+            uint16_t bits;
+            std::memcpy (&bits, result.data () + 2 * index, sizeof bits);
+            MOPPE_CHECK_NEAR (render::half_to_float (bits), expected[c], .001f);
+          }
+        }
+      }
+  }
 }

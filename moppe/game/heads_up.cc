@@ -879,7 +879,7 @@ namespace moppe::game {
                           int width_pts,
                           int height_pts) {
     if (!map.painted ())
-      paint_map (r, w.world);
+      return;
     dl.clear ();
     text.clear ();
     const platform::Insets safe_insets = platform::safe_insets ();

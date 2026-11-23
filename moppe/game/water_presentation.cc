@@ -35,7 +35,7 @@ namespace moppe::game {
       const std::size_t patch = render::terrain_patch_cells;
       if (ground.size () != width * height || width % patch || height % patch)
         return {};
-      const auto levels = spatial::get<terrain::surface_elevation> (water);
+      const auto& levels = spatial::get<terrain::surface_elevation> (water);
       const std::size_t across = width / patch, down = height / patch;
       std::vector<std::uint8_t> wet (across * down);
       for (std::size_t z = 0; z < height; ++z)

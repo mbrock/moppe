@@ -500,11 +500,11 @@ namespace moppe {
                                      const FrameView& frame) {
       if (!frame.visibility.ocean)
         return;
-      const terrain::WaterSheets& sheets = generated_world ().water_surface ();
+      const auto sheets = generated_world ().water_view ();
       const seconds_t time = frame.lighting.time;
       const auto level = [&] (const position_t& at) {
         return water_surface_at (
-          world (), surface (), &sheets, at, seconds_value (time));
+          world (), surface (), sheets, at, seconds_value (time));
       };
       const CompanionSnapshot* theirs =
         m_company.companion ? &*m_company.companion : nullptr;

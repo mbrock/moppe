@@ -113,6 +113,10 @@ namespace moppe::map {
                                           StandRecovery,
                                           BurnRecency>;
 
+  // During play only elevations stay resident. Reconstruct the same
+  // six incident unit triangle normals that geometry rebuild averages.
+  SurfaceNormal ground_normal_at (const SurfaceGeometry&, const position_t&);
+
   // ---- Geometry ----
 
   // Normals and the broad snow support plane follow from elevation; rebuild

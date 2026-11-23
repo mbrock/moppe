@@ -49,18 +49,17 @@ namespace {
     fill_test_terrain (surface);
     map::rebuild_geometry (surface);
 
-    game::Hydrology hydrology =
-      game::analyze_hydrology (surface, recipe, progress);
     terrain::TrailNetwork trails {
       .domain = surface.domain (),
       .use = terrain::TrailUseMap (surface.domain ()),
     };
     trails.earthwork_delta.resize (surface.domain ().size (),
                                    0.0f * terrain::surface_elevation[u::m]);
+    auto [roads, use] = game::form_world_roads (surface, recipe, trails);
+    game::Hydrology hydrology =
+      game::analyze_hydrology (surface, recipe, progress);
     auto [water, readings] =
-      game::analyze_surface (surface, recipe, hydrology, trails.use);
-    terrain::RoadNetwork roads = game::lay_world_roads (
-      surface, recipe, hydrology, trails, water, readings);
+      game::analyze_surface (surface, recipe, hydrology, use);
     game::ForestPlan forest = game::plan_global_forest (
       surface, readings, water, recipe.seed ().value ^ 0xa34c91e5U);
     return std::make_unique<game::GeneratedWorld> (params,
@@ -277,4 +276,96 @@ MOPPE_TEST (world_cache_names_are_stable_and_recipe_specific) {
 
   named.mode = game::WorldCacheMode::Disabled;
   MOPPE_CHECK (game::world_cache_name (first, named).empty ());
+}
+
+MOPPE_TEST (runtime_ground_matches_dense_queries_across_the_world_seam) {
+  using namespace moppe::terrain;
+  const auto extent = spatial_extent_in_metres (Vec3 (640, 650, 640));
+  auto world = build_test_world (test_world_recipe (extent, 17, Seed { 8 }),
+                                 game::WorldParams {});
+  const std::array sites { position (Vec3 (31.1f, 0, 91.f)),
+                           position (Vec3 (-4.5f, 0, 638.f)),
+                           position (Vec3 (1287.8f, 0, -3.f)) };
+  std::vector<map::SurfaceNormal> normals;
+  std::vector<map::TrailInfluence> trail;
+  std::vector<map::ForestCover> pasture;
+  for (const auto& at : sites) {
+    normals.push_back (spatial::sample<terrain_normal> (world->surface (), at));
+    trail.push_back (world->reading<map::trail_influence> (at));
+    pasture.push_back (world->reading<map::forest_cover> (at));
+  }
+  const auto* heights =
+    spatial::get<surface_elevation> (world->surface ()).data ();
+  const auto water_bodies = world->lake_census ().domain ().size ();
+  world->enter_play ();
+  world->enter_play ();
+  MOPPE_CHECK (spatial::get<surface_elevation> (world->surface ()).data () ==
+               heights);
+  MOPPE_CHECK (spatial::get<terrain_normal> (world->surface ()).empty ());
+  MOPPE_CHECK (world->water_bodies ().size () == water_bodies);
+  for (size_t i = 0; i < sites.size (); ++i) {
+    const auto normal = map::ground_normal_at (world->surface (), sites[i]);
+    MOPPE_CHECK (length ((normal - normals[i]).numerical_value_in (one)) <
+                 0.0001f);
+    MOPPE_CHECK (
+      std::abs ((world->reading<map::trail_influence> (sites[i]) - trail[i])
+                  .numerical_value_in (one)) <= 0.5f / 255.f + 1e-6f);
+    MOPPE_CHECK (
+      std::abs ((world->reading<map::forest_cover> (sites[i]) - pasture[i])
+                  .numerical_value_in (one)) <= 0.5f / 255.f + 1e-6f);
+  }
+}
+
+MOPPE_TEST (runtime_water_preserves_banks_waves_and_vertical_current) {
+  using namespace moppe::terrain;
+  const TerrainDomain domain (13, 7);
+  std::vector<SurfaceElevation> bed (domain.size (),
+                                     surface_elevation_point (20.f * u::m));
+  WaterSheets sheets (domain);
+  auto& levels = spatial::get<surface_elevation> (sheets);
+  levels = bed;
+  for (size_t i : { 0u, 63u, 64u, 90u }) {
+    levels[i] = surface_elevation_point ((i % 2 ? 19.f : 24.f) * u::m);
+    spatial::get<wave_amplitude> (sheets)[i] = 0.7f * wave_amplitude[one];
+    spatial::get<water_velocity> (sheets)[i] =
+      Vec3 (0.4f, -1.2f, 3.f) * water_velocity[u::m / u::s];
+  }
+  const RuntimeWater compact (sheets, bed);
+  for (int z = -1; z <= 7; ++z)
+    for (int x = -1; x <= 13; ++x) {
+      const auto at = position (Vec3 (x + 0.375f, 0, z + 0.75f));
+      MOPPE_CHECK (compact.sample<surface_elevation> (at) ==
+                   spatial::sample<surface_elevation> (sheets, at));
+      MOPPE_CHECK (compact.sample<wave_amplitude> (at) ==
+                   spatial::sample<wave_amplitude> (sheets, at));
+      const auto difference = compact.sample<water_velocity> (at) -
+                              spatial::sample<water_velocity> (sheets, at);
+      MOPPE_CHECK (length2 (difference.numerical_value_in (u::m / u::s)) == 0);
+    }
+}
+
+MOPPE_TEST (packed_cover_reconstructs_all_bit_widths_and_edge_tiles) {
+  const terrain::TerrainDomain d (75, 11);
+  std::vector<map::SurfaceMoisture> moisture (d.size ());
+  for (size_t z = 0; z < d.height (); ++z)
+    for (size_t x = 0; x < d.width (); ++x) {
+      const unsigned bits = (x / 8) % 9;
+      const unsigned mask = (1u << bits) - 1;
+      const unsigned offset = (255 - mask) / 2;
+      const unsigned value =
+        offset + ((x % 8 == 7 ? mask : 23 * x + 31 * z) & mask);
+      moisture[z * d.width () + x] = value / 255.f * map::surface_moisture[one];
+    }
+  game::CoverGrid grid;
+  grid.assign (d, moisture);
+  for (size_t z = 0; z < d.height (); ++z)
+    for (size_t x = 0; x < d.width (); ++x)
+      MOPPE_CHECK (
+        grid.at ({ x, z }) ==
+        std::lround (255.f *
+                     moisture[z * d.width () + x].numerical_value_in (one)));
+  std::ranges::fill (moisture, .4f * map::surface_moisture[one]);
+  grid.assign (d, moisture);
+  MOPPE_CHECK (grid.storage_bytes () < d.size () / 4);
+  MOPPE_CHECK (grid.at ({ 74, 10 }) == 102);
 }

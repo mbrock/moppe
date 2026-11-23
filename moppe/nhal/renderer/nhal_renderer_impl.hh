@@ -14,6 +14,7 @@
 #ifndef MOPPE_NHAL_RENDERER_IMPL_HH
 #define MOPPE_NHAL_RENDERER_IMPL_HH
 
+#include <moppe/nhal/renderer/forest_grid.hh>
 #include <moppe/nhal/renderer/nhal_renderer.hh>
 
 #include <moppe/environment.hh>
@@ -229,11 +230,15 @@ namespace moppe::nhal {
     // candidates and indirect draws for the camera and for each of the
     // sun's cascades, the classes' topology, and the stand's rasters.
     struct ForestState {
+      ForestGrid grid;
+      Buffer classified;
+      std::size_t scratch_capacity = 0;
+      std::array<std::size_t, 3> capacity {}, lanes {};
+
       Pipeline draw, cull, shadow, far_shadow, leaves;
       Buffer far_indices;
       Buffer records, candidates, arguments, indices;
       std::uint32_t count = 0;
-      float period[2] {};
       std::uint32_t class_first[forest_classes] {};
       std::uint32_t class_count[forest_classes] {};
       Transient block;

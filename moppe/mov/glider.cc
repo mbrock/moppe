@@ -156,8 +156,7 @@ namespace moppe::mov {
 
   rate_of_climb_t Glider::ridge_lift (meters_t agl) const {
     const Vec3 n = normalized (
-      spatial::sample<terrain::terrain_normal> (m_surface, m_position)
-        .numerical_value_in (one));
+      map::ground_normal_at (m_surface, m_position).numerical_value_in (one));
 
     // -n.xz is the uphill gradient direction.  Wind into that gradient
     // rises; the useful band fades above the terrain instead of becoming an

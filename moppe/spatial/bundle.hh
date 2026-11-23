@@ -260,25 +260,20 @@ namespace moppe::spatial {
   // mp-units category chooses the algebra: quantities form an ordinary
   // weighted sum, while quantity points are reconstructed affinely from one
   // anchor and weighted point differences.
-  template <mp_units::QuantitySpec auto QS,
-            typename Domain,
-            typename... Quantities,
-            typename Position>
-    requires InterpolationDomain<Domain, Position> &&
-             BundleContains<QS, Bundle<Domain, Quantities...>>
-  auto sample (const Bundle<Domain, Quantities...>& bundle,
-               const Position& position) {
-    using B = Bundle<Domain, Quantities...>;
-    using Value = typename B::template value_type<B::template spec_index<QS>>;
-
+  template <typename Domain, typename Position, typename Read>
+    requires InterpolationDomain<Domain, Position>
+  auto
+  sample_field (const Domain& domain, const Position& position, Read read) {
+    using Value = std::remove_cvref_t<
+      std::invoke_result_t<Read, typename Domain::index_type>>;
     if constexpr (mp_units::QuantityPoint<Value>) {
       std::optional<Value> anchor;
       using Difference =
         decltype (std::declval<Value> () - std::declval<Value> ());
       Difference offset {};
-      bundle.domain ().visit_interpolation_stencil (
+      domain.visit_interpolation_stencil (
         position, [&] (auto index, float weight) {
-          const Value& value = get<QS> (bundle[index]);
+          const Value& value = read (index);
           if (!anchor)
             anchor = value;
           offset += weight * (value - *anchor);
@@ -289,16 +284,30 @@ namespace moppe::spatial {
     } else {
       Value result {};
       bool sampled = false;
-      bundle.domain ().visit_interpolation_stencil (
-        position, [&] (auto index, float weight) {
-          result += weight * get<QS> (bundle[index]);
-          sampled = true;
-        });
+      domain.visit_interpolation_stencil (position,
+                                          [&] (auto index, float weight) {
+                                            result += weight * read (index);
+                                            sampled = true;
+                                          });
       if (!sampled)
         throw std::logic_error ("Interpolation stencil is empty");
       return result;
     }
   }
+  template <mp_units::QuantitySpec auto QS,
+            typename Domain,
+            typename... Quantities,
+            typename Position>
+    requires InterpolationDomain<Domain, Position> &&
+             BundleContains<QS, Bundle<Domain, Quantities...>>
+  auto sample (const Bundle<Domain, Quantities...>& bundle,
+               const Position& position) {
+    return sample_field (
+      bundle.domain (), position, [&] (auto index) -> const auto& {
+        return get<QS> (bundle[index]);
+      });
+  }
+
 }
 
 namespace std {

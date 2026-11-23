@@ -1,13 +1,14 @@
 #ifndef MOPPE_GAME_GENERATED_WORLD_HH
 #define MOPPE_GAME_GENERATED_WORLD_HH
 
+#include <moppe/game/cover_grid.hh>
 #include <moppe/game/forest_plan.hh>
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/roads.hh>
 #include <moppe/terrain/trail.hh>
-#include <moppe/terrain/watercourse.hh>
+#include <moppe/terrain/water_view.hh>
 #include <moppe/terrain/world_recipe.hh>
 
 #include <functional>
@@ -48,26 +49,12 @@ namespace moppe::game {
                    const Hydrology& hydrology,
                    const terrain::TrailUseMap& use);
 
-  // The roads, footpaths, and places of a world (terrain/roads.hh), planned
-  // over its finished ground: they go round the forest and the mires the
-  // readings find, and begin at the trail's home base.
-  terrain::RoadNetwork plan_world_roads (const map::SurfaceGeometry& geometry,
-                                         const terrain::WorldRecipe& recipe,
-                                         const Hydrology& hydrology,
-                                         const terrain::TrailNetwork& trails,
-                                         const map::SurfaceReadings& readings);
-
-  // Plans the roads and builds them into the ground, then reads the water
-  // and the surface again over the built ground, the roads' treads joining
-  // the trail's in the readings (so the forest stands back from them and
-  // the ground is packed dirt on them). Everything a world is assembled
-  // from passes through it.
-  terrain::RoadNetwork lay_world_roads (map::SurfaceGeometry& geometry,
-                                        const terrain::WorldRecipe& recipe,
-                                        Hydrology& hydrology,
-                                        const terrain::TrailNetwork& trails,
-                                        terrain::WaterSheets& water,
-                                        map::SurfaceReadings& readings);
+  // Form the road bed and return its combined road and trail influence.
+  // Run the full hydrology and surface analysis on the resulting ground.
+  std::pair<terrain::RoadNetwork, terrain::TrailUseMap>
+  form_world_roads (map::SurfaceGeometry& geometry,
+                    const terrain::WorldRecipe& recipe,
+                    const terrain::TrailNetwork& trails);
 
   // What has happened to the ground since (game/disturbance.hh): the fires,
   // the pastures of the places the roads join, and the roads' verges,
@@ -110,32 +97,61 @@ namespace moppe::game {
       return m_surface;
     }
 
-    const Hydrology& hydrology () const noexcept {
-      return m_hydrology;
+    const Hydrology& hydrology () const {
+      return m_build.value ().hydrology;
     }
 
-    const terrain::FloodField& standing_water () const noexcept {
-      return std::get<terrain::FloodField> (m_hydrology);
+    const terrain::FloodField& standing_water () const {
+      return std::get<terrain::FloodField> (hydrology ());
     }
 
-    const terrain::LakeCensus& lake_census () const noexcept {
-      return std::get<terrain::LakeCensus> (m_hydrology);
+    const terrain::LakeCensus& lake_census () const {
+      return std::get<terrain::LakeCensus> (hydrology ());
     }
 
-    const terrain::DrainageGraph& drainage () const noexcept {
-      return std::get<terrain::DrainageGraph> (m_hydrology);
+    std::span<const terrain::WaterBody> water_bodies () const {
+      return m_build ? lake_census ().water_bodies ()
+                     : std::span<const terrain::WaterBody> (m_runtime_bodies);
+    }
+
+    const terrain::DrainageGraph& drainage () const {
+      return std::get<terrain::DrainageGraph> (hydrology ());
     }
 
     const terrain::RiverNetwork& rivers () const noexcept {
-      return std::get<terrain::RiverNetwork> (m_hydrology);
+      return m_build ? std::get<terrain::RiverNetwork> (m_build->hydrology)
+                     : m_runtime_rivers;
     }
 
-    const map::SurfaceReadings& readings () const noexcept {
-      return m_readings;
+    const map::SurfaceReadings& readings () const {
+      return m_build.value ().readings;
     }
 
-    const terrain::WaterSheets& water_surface () const noexcept {
-      return m_water_surface;
+    const terrain::WaterSheets& water_surface () const {
+      return m_build.value ().water;
+    }
+
+    terrain::WaterView water_view () const {
+      return m_build ? terrain::WaterView (&m_build->water)
+                     : terrain::WaterView (m_runtime_water.value ());
+    }
+
+    // Release the analysis after painting the map, uploading textures and
+    // placing inhabitants. Sessions retain the elevation buffer in place.
+    void enter_play ();
+
+    template <auto Field>
+    auto reading (const position_t& at) const {
+      if (m_build) {
+        if constexpr (Field == map::snow_support)
+          return spatial::sample<Field> (m_surface, at);
+        else
+          return spatial::sample<Field> (m_build->readings, at);
+      }
+      return spatial::sample_field (m_surface.domain (), at, [&] (auto site) {
+        const auto value = m_cover[PlayFields::spec_index<Field>].at (site);
+        return (value / 255.f) * Field[one];
+      });
     }
 
     const terrain::TrailNetwork& trails () const noexcept {
@@ -159,10 +175,30 @@ namespace moppe::game {
     WorldParams m_params;
     terrain::WorldRecipe m_recipe;
     map::SurfaceGeometry m_surface;
-    Hydrology m_hydrology;
-    terrain::WaterSheets m_water_surface;
+    struct BuildFields {
+      Hydrology hydrology;
+      terrain::WaterSheets water;
+      map::SurfaceReadings readings;
+    };
+    std::optional<BuildFields> m_build;
+    terrain::RiverNetwork m_runtime_rivers;
+    std::vector<terrain::WaterBody> m_runtime_bodies;
+    std::optional<terrain::RuntimeWater> m_runtime_water;
+    // The first four lanes feed wheel and snow physics. The other six
+    // supply animals as they choose new pasture during play.
+    using PlayFields = spatial::Bundle<terrain::TerrainDomain,
+                                       map::TrailInfluence,
+                                       map::ErosionExposure,
+                                       map::SurfaceMoisture,
+                                       map::SnowSupport,
+                                       map::GrazingPressure,
+                                       map::ForestCover,
+                                       map::DwarfBirchAbundance,
+                                       map::MountainBirchAbundance,
+                                       map::LichenAbundance,
+                                       map::SphagnumAbundance>;
+    std::array<CoverGrid, PlayFields::column_count> m_cover;
     terrain::TrailNetwork m_trails;
-    map::SurfaceReadings m_readings;
     terrain::RoadNetwork m_roads;
     terrain::RoadSurface m_road_surface;
     ForestPlan m_forest;

@@ -746,16 +746,17 @@ namespace moppe::game {
   }
 
   std::vector<const terrain::RiverReach*>
-  greatest_river_course (const terrain::LakeCensus& census,
+  greatest_river_course (std::span<const terrain::WaterBody> bodies,
                          const terrain::RiverNetwork& rivers) {
     using terrain::RiverReach;
+    const terrain::WaterBodyDomain domain (bodies.size ());
     // The greatest river to reach the sea, and from its mouth upward the
     // larger branch at every confluence and the larger inflow of every
     // lake, to the reach where it first shows.
     const auto reaches_sea = [&] (const RiverReach& reach) {
       return reach.downstream_ocean ||
-             (census.domain ().contains (reach.downstream_body) &&
-              census.water_body (reach.downstream_body).classification ==
+             (domain.contains (reach.downstream_body) &&
+              bodies[domain.offset (reach.downstream_body)].classification ==
                 terrain::WaterBodyClass::Sea);
     };
     std::vector<const RiverReach*> course;
@@ -779,7 +780,7 @@ namespace moppe::game {
         const bool joins = reach.downstream_reach == lowest.id;
         const bool feeds = reach.downstream_reach == RiverReach::no_id &&
                            !reaches_sea (reach) &&
-                           census.domain ().contains (lowest.upstream_body) &&
+                           domain.contains (lowest.upstream_body) &&
                            reach.downstream_body == lowest.upstream_body;
         if ((joins || feeds) &&
             (!above || reach.downstream_area > above->downstream_area))
@@ -805,7 +806,7 @@ namespace moppe::game {
     CinematicFlightPlan plan;
 
     const std::vector<const RiverReach*> course =
-      greatest_river_course (census, rivers);
+      greatest_river_course (census.water_bodies (), rivers);
     if (course.empty ())
       return plan;
 

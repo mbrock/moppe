@@ -625,7 +625,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
                                         seconds_t,
                                         const mov::TrunkField*,
                                         const game::GroundCover&,
-                                        const terrain::WaterSheets*,
+                                        terrain::WaterView,
                                         std::span<const game::MachineBody>,
                                         const game::Surroundings*);
   static_assert (

@@ -2,6 +2,7 @@
 // the sea's waves, the opaque scene copied out for it to read, the water
 // sheet over the terrain's wet chunks, and the waterfalls' curtains.
 
+#include <moppe/nhal/renderer/field_texture.hh>
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
 
 namespace moppe::nhal {
@@ -65,15 +66,8 @@ namespace moppe::nhal {
       m_water.flow = {};
       if (flow.empty () || flow.format () != render::PixelFormat::rgba16f)
         return;
-      m_water.flow = m_device->create_texture ({ std::uint32_t (flow.width ()),
-                                                 std::uint32_t (flow.height ()),
-                                                 Format::rgba16_float,
-                                                 usage_sampled,
-                                                 1,
-                                                 "water flow" });
-      std::vector<std::byte> bytes (flow.byte_size ());
-      flow.write_into (bytes.data ());
-      m_device->write_texture (m_water.flow, bytes);
+      m_water.flow =
+        field_texture (*m_device, flow, Format::rgba16_float, "water flow");
     }
 
     void NhalRenderer::set_shore_surf (const render::TexturePixels& surf) {

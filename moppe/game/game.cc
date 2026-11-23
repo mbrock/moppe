@@ -155,7 +155,7 @@ namespace moppe {
                               dt,
                               &m_trunk_field,
                               ground_cover (session ().subject_position ()),
-                              &generated_world ().water_surface (),
+                              generated_world ().water_view (),
                               strangers,
                               &around);
       if (advance.say_ouchies)
@@ -168,7 +168,7 @@ namespace moppe {
       const meters_t water =
         water_surface_at (world (),
                           surface (),
-                          &generated_world ().water_surface (),
+                          generated_world ().water_view (),
                           eye,
                           seconds_into_play (logic ().m_total_time));
       if (water > terrain::surface_elevation_value (
@@ -351,7 +351,7 @@ namespace moppe {
         .capture_field_of_view =
           !cinematic ? m_capture_camera.lens () : std::nullopt,
         .sky = m_sky.sky (),
-        .water = &generated_world ().water_surface (),
+        .water = generated_world ().water_view (),
       };
       if (m_way_back.active () && !cinematic) {
         camera.field_of_view = gameplay_field_of_view (input);

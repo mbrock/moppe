@@ -1153,7 +1153,7 @@ namespace moppe::game {
     // downstream. What it borrows must outlive it.
     mov::BoatWater floating_water (const WorldParams& world,
                                    const map::SurfaceGeometry& surface,
-                                   const terrain::WaterSheets* water,
+                                   terrain::WaterView water,
                                    double time) {
       const meters_t sea = world.water_level;
       return { [&world, &surface, water, time] (position_t at) {
@@ -1162,22 +1162,18 @@ namespace moppe::game {
                [&surface, water, time, sea] (position_t at) {
                  if (!water)
                    return velocity (Vec3 ());
-                 const Vec3 here = position_value (at);
-                 const Vec3 under (here[0], 0.0f, here[2]);
-                 const terrain::SeaWaves waves = water_waves_at (
-                   surface, water, moppe::position (under), time);
-                 const position_t where = moppe::position (under);
+                 const position_t where = at_height (plan (at), 0.f * u::m);
+                 const terrain::SeaWaves waves =
+                   water_waves_at (surface, water, where, time);
                  const meters_t sheet =
                    terrain::surface_elevation_value (
-                     spatial::sample<terrain::surface_elevation> (*water,
-                                                                  where)) *
+                     water.sample<terrain::surface_elevation> (where)) *
                    u::m;
                  if (sheet <= ground_at (surface, where) ||
                      sheet <= sea + 0.05f * u::m)
                    return waves.velocity;
-                 Vec3 current =
-                   spatial::sample<terrain::water_velocity> (*water, where)
-                     .numerical_value_in (u::m / u::s);
+                 Vec3 current = water.sample<terrain::water_velocity> (where)
+                                  .numerical_value_in (u::m / u::s);
                  return waves.velocity +
                         velocity (Vec3 (current[0], 0.0f, current[2]));
                } };
@@ -1189,7 +1185,7 @@ namespace moppe::game {
     void advance_boat (const WorldParams& world,
                        const map::SurfaceGeometry& surface,
                        GameSession& session,
-                       const terrain::WaterSheets* water,
+                       terrain::WaterView water,
                        seconds_t elapsed) {
       GameLogicState& logic = session.logic ();
       mov::Boat& boat = session.boat ();
@@ -1331,7 +1327,7 @@ namespace moppe::game {
     void advance_jet_ski (const WorldParams& world,
                           const map::SurfaceGeometry& surface,
                           GameSession& session,
-                          const terrain::WaterSheets* water,
+                          terrain::WaterView water,
                           seconds_t elapsed) {
       GameLogicState& logic = session.logic ();
       mov::JetSki& ski = session.jet_ski ();
@@ -1484,7 +1480,7 @@ namespace moppe::game {
                         seconds_t dt,
                         const mov::TrunkField* trunks,
                         const GroundCover& ground,
-                        const terrain::WaterSheets* water,
+                        terrain::WaterView water,
                         std::span<const MachineBody> strangers,
                         const Surroundings* around) {
     if (around) {
