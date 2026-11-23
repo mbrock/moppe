@@ -91,10 +91,8 @@ namespace moppe::game {
     const terrain::WorldRecipe& recipe = world.recipe ();
     if (!reel->matches (static_cast<int> (recipe.seed ().value),
                         recipe.resolution (),
-                        terrain::profile_id (recipe.generation_profile ())) ||
-        extent_value (recipe.extent ())[0] !=
-          (reel->km ? reel->km->numerical_value_in (u::km) * 1000.0f
-                    : extent_value (WorldParams ().map_size)[0])) {
+                        terrain::profile_id (recipe.generation_profile ()),
+                        world.surface ().domain ().period_x ())) {
       std::cerr << "moppe: opening: " << path
                 << " was composed for another world\n";
       return std::nullopt;

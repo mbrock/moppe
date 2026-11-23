@@ -29,9 +29,9 @@ MOPPE_TEST (opening_reel_parses_shots_captions_and_arrival) {
            "arrival hold 5 push 4 rise 1\n",
            error);
   MOPPE_CHECK (reel.has_value ());
-  MOPPE_CHECK (reel->matches (123, 2048, "play"));
-  MOPPE_CHECK (!reel->matches (124, 2048, "play"));
-  MOPPE_CHECK (!reel->matches (123, 1024, "play"));
+  MOPPE_CHECK (reel->matches (123, 2048, "play", 10.f * u::km));
+  MOPPE_CHECK (!reel->matches (124, 2048, "play", 10.f * u::km));
+  MOPPE_CHECK (!reel->matches (123, 1024, "play", 10.f * u::km));
   MOPPE_CHECK (reel->km && *reel->km == 10.0f * u::km);
   MOPPE_CHECK (reel->shots.size () == 2);
   const OpeningShot& lake = reel->shots[0];
@@ -132,7 +132,7 @@ MOPPE_TEST (opening_player_cuts_fades_and_lands_in_the_arrival) {
                1e-4f);
 }
 
-// The shot list shipped in data/ parses and names the default world.
+// The shot list shipped in data/ parses and names the five-kilometre world.
 MOPPE_TEST (shipped_opening_reel_parses) {
   std::ifstream input (MOPPE_TEST_SOURCE_DIR "/data/opening.txt");
   MOPPE_CHECK (input.good ());
@@ -140,7 +140,8 @@ MOPPE_TEST (shipped_opening_reel_parses) {
   const std::optional<OpeningReel> reel = parse_opening_reel (input, error);
   if (!reel)
     throw std::runtime_error (error);
-  MOPPE_CHECK (reel->matches (123, 2048, "play"));
+  MOPPE_CHECK (reel->matches (123, 2048, "play", 5.f * u::km));
+  MOPPE_CHECK (!reel->matches (123, 2048, "play", 10.f * u::km));
   MOPPE_CHECK (reel->shots.size () >= 3);
   MOPPE_CHECK (reel->arrival.has_value ());
 }

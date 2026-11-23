@@ -93,14 +93,15 @@ namespace moppe::game {
     std::optional<int> seed;
     std::optional<int> resolution;
     std::string profile;
-    // How many kilometres across; unset, the default world's five.
+    // How many kilometres across; older shot lists omit the original five.
     std::optional<kilometres_t> km;
     std::vector<OpeningShot> shots;
     std::optional<OpeningArrival> arrival;
 
     bool matches (int world_seed,
                   int world_resolution,
-                  std::string_view world_profile) const;
+                  std::string_view world_profile,
+                  meters_t world_width) const;
   };
 
   // Parses a shot list; on failure returns nothing and says why, with the

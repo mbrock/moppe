@@ -105,9 +105,10 @@ fractional D-infinity flow. Near-tie decisions, floating-point evaluation,
 channel width and the positions of individual tributaries may vary.
 
 The Metal tests compare two seeded landscapes with the CPU at the same extent,
-resolution and geological age. They check the elevation distribution, exposed
-land fraction, largest coastal catchment and number of substantial river
-mouths using the CPU hydrology analyzer. Independent budgets compare final
+resolution and geological age. They compare elevation quantiles and local
+relief at the median and 90th percentile in roughly 625 m windows. They also
+check exposed land fraction, largest coastal catchment and the number of river
+mouths with substantial catchments using the CPU hydrology analyzer. Independent budgets compare final
 surface volume plus exported sediment with the initial surface and uplift.
 The contributing areas at outlets must sum to the entire periodic domain,
 including in the all-land regression. The full-size comparison and hillshades

@@ -1,4 +1,4 @@
-# The opening of moppe: a few held views of the default world, the title
+# The opening of moppe: a few held views of the original 5 km world, the title
 # and a credit fading over them, ending in the player's own eyes beside the
 # parked bike.  Grammar and units are in moppe/game/opening.hh.
 #
@@ -10,7 +10,7 @@
 # The shots belong to one world.  Another seed or resolution plays a
 # single generated still of the trailhead instead.
 
-world seed 123 resolution 2048 profile play
+world seed 123 resolution 2048 profile play km 5
 
 # Low in the flowering grass east of the lake, a line of birches gone gold
 # under a wide sky: the name rises into the sky.

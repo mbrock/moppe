@@ -253,10 +253,12 @@ namespace moppe::game {
 
   bool OpeningReel::matches (int world_seed,
                              int world_resolution,
-                             std::string_view world_profile) const {
+                             std::string_view world_profile,
+                             meters_t world_width) const {
     return (!seed || *seed == world_seed) &&
            (!resolution || *resolution == world_resolution) &&
-           (profile.empty () || profile == world_profile);
+           (profile.empty () || profile == world_profile) &&
+           world_width == km.value_or (5.f * u::km);
   }
 
   std::optional<OpeningReel> parse_opening_reel (std::istream& input,

@@ -8,7 +8,50 @@ finished worlds distributed by the baker, and the fallback on other devices.
 
 ## Measurements on the 16 GiB M2 Pro
 
-In a native 1280×720 game with an empty cache, the 4096² multigrid run spent
+The following runs used the same 10 km periodic source, seed 123, 4096²
+samples and 40 steps. Times are wall seconds. RSS and physical footprint
+are process peaks from macOS `/usr/bin/time -l`, in GiB.
+
+| Backend | Evolution (s) | Whole benchmark (s) | Peak RSS | Peak footprint |
+|---|---:|---:|---:|---:|
+| CPU reference, original lake solver | 2147.89 | 2148.83 | 4.82 | 5.45 |
+| Metal, 4096² throughout | 7.08 | 7.73 | 1.69 | 2.69 |
+| Metal, 512² → 1024² → 2048² → 4096² | 1.90 | 2.64 | 2.01 | 3.01 |
+
+| Measure at 4096² | CPU | Metal | Metal multigrid |
+|---|---:|---:|---:|
+| Elevation p10 / median (m) | 104.7 / 163.1 | 121.4 / 160.5 | 113.3 / 160.4 |
+| Elevation p90 / p99 (m) | 184.5 / 223.3 | 183.8 / 223.8 | 202.9 / 275.5 |
+| Dry land (%) | 97.72 | 97.72 | 97.88 |
+| Median relief in 625 m squares (m) | 58.98 | 58.73 | 88.71 |
+| Mean slope (degrees) | 12.48 | 10.91 | 18.47 |
+| Largest outlet basin (km²) | 57.03 | 57.09 | 56.86 |
+| Coastal mouths draining ≥0.1 km² | 13 | 15 | 10 |
+
+Both Metal runs accounted for the entire drainage area at the outlets.
+Material balance errors were 5,062 and 4,186 m³ respectively, below
+0.00004% of the approximately 13.56 billion m³ of uplift in each run.
+
+**Full-resolution Metal is the macOS default.** It closely follows the
+CPU's typical local relief and upper elevation distribution. Multigrid
+saves another 5.19 seconds, but increases median local relief by 50% and
+makes sharp small ridges conspicuous. It remains available with
+`MOPPE_OROGENY=metal-multigrid`. These quality measurements cover one
+seed. The same lighting, scale and 1.25 km detail area are shown below.
+
+![10 km hillshades with matched detail windows for CPU, Metal and multigrid](orogeny-10km.png)
+
+In the native game with an empty cache, the full-resolution Metal default
+took **8.06 s for orogeny and 90.57 s to play**. Peak process RSS was
+4.01 GiB and peak physical footprint was 8.84 GiB, including the renderer.
+It built 18 places, 23 roads, a 13.46 km bus circuit with 16 stops and three
+buses. All 9,348 road profile samples met the grade limit. Computing the
+road-planning inputs before forming the roads avoids painting watercourses
+and material sheets twice. The game still builds ecology, roads and places,
+writes the complete cache and activates the renderer after erosion.
+[Play-time memory measurements](world-memory.md) cover repeated launches.
+
+In an earlier 1280×720 run with an empty cache, 4096² multigrid spent
 2.38 s in orogeny and reached play in 80.4 s. Roads, surface analysis,
 vegetation, cache writes and renderer activation account for the rest.
 Peak process RSS was 4.29 GiB and peak physical footprint was 9.04 GiB.
@@ -17,7 +60,10 @@ measurement. Seed 123 had 18 places, 25 ways, a 13.0 km paved circuit,
 18 stops, and three buses. All 9,770 road profile points met the grade limit.
 The 2048² fast path over the same extent reached play in 31.7 s with 1.04 s
 of orogeny, a 4.31 GiB peak physical footprint and 4.88 m spacing.
-Select it with `--terrain-resolution 2048`.
+Reproduce the 2048² measurement with `MOPPE_OROGENY=metal-multigrid` and
+`--terrain-resolution 2048`. A repeat load of its finished cache reached
+play in 7.15 s, with 0.77 GiB allocated by Metal and a 2.51 GiB peak
+process physical footprint.
 
 ## The Metal solver
 
@@ -120,5 +166,7 @@ coastal landing. A feasible circuit and its travel time determine service.
 Finished-world cache version 41 covers the inland bus route and the finished
 baker's river-bed stage. Land version 8 already includes the physical extent
 in the recipe key. CPU land produced at the former extent retains its own
-identity. A full CPU fingerprint at 257 samples and 5 km remains in CI.
+identity. The authored opening, trailer and vista recordings specify their
+original 5 km CPU world and 2048² sampling. The 10 km world generates its own
+opening. A full CPU fingerprint at 257 samples and 5 km remains in CI.
 The device-independent numerical contract is in [Determinism](determinism.md).

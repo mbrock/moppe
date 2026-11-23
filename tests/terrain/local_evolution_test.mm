@@ -20,6 +20,7 @@ namespace {
     float dry_fraction;
     float largest_catchment;
     size_t large_mouths;
+    std::array<meters_t, 2> local_relief;
   };
 
   Landscape measure (const map::SurfaceGeometry& surface,
@@ -27,18 +28,36 @@ namespace {
     const auto flood = analyze_standing_water (surface, sea);
     const auto drainage = analyze_wet_drainage (flood, census_lakes (flood));
     auto heights = spatial::get<surface_elevation> (surface);
+    // Eight sites span about 625 m on the 129-sample, 10 km fixture.
+    // Measure complete windows so a narrow remainder cannot bias relief.
+    const auto& domain = surface.domain ();
+    std::vector<meters_t> relief;
+    for (size_t z = 0; z + 8 <= domain.height (); z += 8)
+      for (size_t x = 0; x + 8 <= domain.width (); x += 8) {
+        auto low = heights[z * domain.width () + x], high = low;
+        for (size_t j = z; j < z + 8; ++j)
+          for (size_t i = x; i < x + 8; ++i) {
+            auto elevation = heights[j * domain.width () + i];
+            low = std::min (low, elevation);
+            high = std::max (high, elevation);
+          }
+        relief.push_back ((high - low).numerical_value_in (u::m) * u::m);
+      }
+    std::ranges::sort (relief);
     std::ranges::sort (heights);
     auto percentile = [&] (float fraction) {
       return surface_elevation_value (
         heights[size_t ((heights.size () - 1) * fraction)]);
     };
-    Landscape result { { percentile (.1f), percentile (.5f), percentile (.9f) },
-                       float (heights.end () -
-                              std::upper_bound (
-                                heights.begin (), heights.end (), sea)) /
-                         heights.size (),
-                       0,
-                       0 };
+    Landscape result {
+      { percentile (.1f), percentile (.5f), percentile (.9f) },
+      float (heights.end () -
+             std::upper_bound (heights.begin (), heights.end (), sea)) /
+        heights.size (),
+      0,
+      0,
+      { relief[relief.size () / 2], relief[9 * relief.size () / 10] }
+    };
     for (size_t i = 0; i < heights.size (); ++i) {
       auto j = drainage.receiver[i].value;
       if (flood.ocean[i] || !flood.ocean[j])
@@ -70,6 +89,9 @@ MOPPE_TEST (metal_flow_preserves_relief_watersheds_and_material_balance) {
     auto a = measure (cpu, p.sea_level), b = measure (metal, p.sea_level);
     for (size_t i = 0; i < a.elevation.size (); ++i)
       MOPPE_CHECK (std::abs (a.elevation[i] - b.elevation[i]) < 8.f);
+    for (size_t i = 0; i < a.local_relief.size (); ++i)
+      MOPPE_CHECK (abs (a.local_relief[i] - b.local_relief[i]) <
+                   3.f * u::m + .2f * a.local_relief[i]);
     MOPPE_CHECK (std::abs (a.dry_fraction - b.dry_fraction) < .05f);
     MOPPE_CHECK (b.large_mouths > 0 && a.large_mouths > 0);
     MOPPE_CHECK (b.large_mouths >= a.large_mouths / 2 &&

@@ -5,14 +5,14 @@
 
 The game records every clip itself (tools/record), so the film is the
 same on any machine: a morning title over the birches, a few views of the
-default world, then walking, riding, gliding, two in the jeep, mushrooms,
+original 5 km world, then walking, riding, gliding, two in the jeep, mushrooms,
 supper, and a night in the hammock, ending on the title's birches under
 the stars.  The clips are kept in DIR (build/trailer) and only missing
 ones are recorded, so a change to the cut alone takes a few minutes;
 --fresh records them all again.  --url sets the address on the end card
 ("" for none) and --draft encodes quickly.
 
-The shot lists below are of the default world (seed 123, 2048 samples),
+The shot lists below are of the original 5 km world (seed 123, 2048 samples),
 like data/opening.txt.  To change the film, edit CLIPS (what is recorded) and
 FILM (what is cut from it, and the captions).
 """
@@ -30,7 +30,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONT = os.path.join(ROOT, "fonts", "Geomini-Regular.ttf")
 WIDTH, HEIGHT, FPS = 1080, 1920, 60
 
-WORLD = "world seed 123 resolution 2048 profile play\n"
+WORLD = "world seed 123 resolution 2048 profile play km 5\n"
+WORLD_ARGS = ["--world-size", "5", "--terrain-resolution", "2048", "--seed", "123"]
 BIRCHES = ("shot birches eye 4667.97 156.42 3750.00 heading 45.8"
            " pitch -2.1 fov 62 hold 5 push 4 rise 0.3 sway 0.6\n")
 REELS = {
@@ -114,9 +115,9 @@ def game_path ():
 
 def start_passenger (log):
   """A second game on this machine that takes the jeep's other seat."""
-  environment = dict (os.environ, MOPPE_RIDE_ALONG="1",
+  environment = dict (os.environ, MOPPE_RIDE_ALONG="1", MOPPE_OROGENY="cpu",
                       MOPPE_OPENING="none", MOPPE_MULTIPLAYER="1")
-  command = [game_path (), "--graphics-quality", "low"]
+  command = [game_path (), "--graphics-quality", "low", *WORLD_ARGS]
   if sys.platform == "linux" and shutil.which ("gamescope"):
     command = ["gamescope", "-W", "640", "-H", "360", "-w", "640", "-h",
                "360", "--backend", "headless", "--", *command,
@@ -134,7 +135,7 @@ def start_passenger (log):
 def record (work, name):
   scene, seconds, options, switches = CLIPS[name]
   output = os.path.join (work, f"{name}.mp4")
-  environment = dict (os.environ, **switches)
+  environment = dict (os.environ, MOPPE_OROGENY="cpu", **switches)
   if scene == "opening":
     reel = os.path.join (work, f"{name}.txt")
     with open (reel, "w") as file:
@@ -145,7 +146,7 @@ def record (work, name):
     try:
       subprocess.run ([os.path.join (ROOT, "tools", "record"), output,
                        scene, "--seconds", str (seconds), "--fps",
-                       str (FPS), "--size", f"{WIDTH}x{HEIGHT}", *options],
+                       str (FPS), "--size", f"{WIDTH}x{HEIGHT}", *options, "--", *WORLD_ARGS],
                       env=environment, stdout=log,
                       stderr=subprocess.STDOUT, check=True)
     finally:

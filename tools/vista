@@ -6,7 +6,7 @@ of country, from the coast up to the high fells and into the night.
 
 Like tools/trailer, the game records every clip itself (tools/record), so
 the film is the same on any machine.  Most of it is held drone views of the
-default world (seed 123, 2048 samples, play), composed as shot lists like
+original 5 km world (seed 123, 2048 samples, play), composed as shot lists like
 data/opening.txt and recorded in one reel per hour of the day with the sun
 held still (MOPPE_DAY=0); the rest are the autopilots and scripted walks.
 Over them runs a quiet HUD drawn as SVG (rsvg-convert, in the bundled
@@ -32,7 +32,9 @@ FONTS = os.path.join(ROOT, "fonts")
 WIDTH, HEIGHT, FPS = 1080, 1920, 60
 SEA = 50.0
 
-WORLD = "world seed 123 resolution 2048 profile play\n"
+WORLD = "world seed 123 resolution 2048 profile play km 5\n"
+
+WORLD_ARGS = ["--world-size", "5", "--terrain-resolution", "2048", "--seed", "123"]
 
 
 def shot (name, eye, heading, pitch, fov, hold, moves=""):
@@ -210,7 +212,7 @@ def game_path ():
 def record (work, name):
   scene, seconds, options, switches = CLIPS[name]
   output = os.path.join (work, f"{name}.mp4")
-  environment = dict (os.environ, MOPPE_HUD="none", **switches)
+  environment = dict (os.environ, MOPPE_HUD="none", MOPPE_OROGENY="cpu", **switches)
   if name in REELS:
     reel = os.path.join (work, f"{name}.txt")
     with open (reel, "w") as file:
@@ -225,7 +227,7 @@ def record (work, name):
   with open (os.path.join (work, f"{name}.log"), "w") as log:
     subprocess.run ([os.path.join (ROOT, "tools", "record"), output,
                      scene, "--seconds", str (seconds), "--fps", str (FPS),
-                     "--size", size, *options],
+                     "--size", size, *options, "--", *WORLD_ARGS],
                     env=environment, stdout=log, stderr=subprocess.STDOUT,
                     check=True)
   print (f"vista: recorded {name}", file=sys.stderr)

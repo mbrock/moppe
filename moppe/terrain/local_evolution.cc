@@ -36,7 +36,7 @@ namespace moppe::terrain {
       throw std::invalid_argument ("unknown MOPPE_OROGENY backend");
     }
 #ifdef MOPPE_METAL_EVOLUTION
-    return EvolutionBackend::MetalMultigrid;
+    return EvolutionBackend::Metal;
 #else
     return EvolutionBackend::Cpu;
 #endif

@@ -26,9 +26,10 @@ ROOT = os.path.dirname(FILM)
 FOOTAGE = os.path.join(FILM, "footage")
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
 
-# Held shots of the default world for the opening's player (the grammar
+# Held shots of the original 5 km world for the opening's player (the grammar
 # is in moppe/game/opening.hh), from tools/trailer's reels.
-WORLD = "world seed 123 resolution 2048 profile play\n"
+WORLD = "world seed 123 resolution 2048 profile play km 5\n"
+WORLD_ARGS = ["--world-size", "5", "--terrain-resolution", "2048", "--seed", "123"]
 BIRCHES = ("shot birches eye 4667.97 156.42 3750.00 heading 45.8"
            " pitch -2.1 fov 62 hold 8 push 4 rise 0.3 sway 0.6\n")
 COAST = ("shot coast eye 654.09 57.50 1243.59 heading -93.2 pitch -1.9"
@@ -82,7 +83,7 @@ def cut(name):
 def record(name):
     scene, hour, seconds, options, switches, reel = CLIPS[name]
     output = os.path.join(FOOTAGE, f"{name}.mp4")
-    environment = dict(os.environ, MOPPE_HUD="none", **switches)
+    environment = dict(os.environ, MOPPE_HUD="none", MOPPE_OROGENY="cpu", **switches)
     if reel:
         path = os.path.join(FOOTAGE, f"{name}.txt")
         with open(path, "w") as file:
@@ -92,7 +93,7 @@ def record(name):
         subprocess.run([os.path.join(ROOT, "tools", "record"), output, scene,
                         "--seconds", str(seconds), "--fps", str(FPS),
                         "--size", f"{WIDTH}x{HEIGHT}", "--clock", str(hour),
-                        *options],
+                        *options, "--", *WORLD_ARGS],
                        env=environment, stdout=log, stderr=subprocess.STDOUT,
                        check=True)
     print(f"film: recorded {name}", file=sys.stderr)

@@ -2,9 +2,9 @@
   "comment": "Typed-quantity ratchet for tools/units-report --check. Regenerate with tools/units-report --update.",
   "areas": {
     "Checkpoints & caches": {
-      "share": 99.0,
+      "share": 99.1,
       "files": 5,
-      "typed": 104,
+      "typed": 105,
       "raw_float": 1,
       "raw_vector": 0,
       "escapes": 17
@@ -43,11 +43,11 @@
     },
     "Game logic": {
       "share": 82.5,
-      "files": 47,
-      "typed": 1833,
+      "files": 48,
+      "typed": 1830,
       "raw_float": 221,
-      "raw_vector": 169,
-      "escapes": 976
+      "raw_vector": 167,
+      "escapes": 971
     },
     "HUD & map": {
       "share": 81.4,
@@ -74,12 +74,12 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 73.8,
+      "share": 73.9,
       "files": 62,
       "typed": 1123,
-      "raw_float": 265,
+      "raw_float": 263,
       "raw_vector": 134,
-      "escapes": 621
+      "escapes": 617
     },
     "Rivers, water & sediment": {
       "share": 98.2,
@@ -92,33 +92,33 @@
     "Roads & trails": {
       "share": 82.2,
       "files": 10,
-      "typed": 1026,
+      "typed": 1027,
       "raw_float": 164,
       "raw_vector": 58,
       "escapes": 120
     },
     "Terrain & world generation": {
-      "share": 84.7,
-      "files": 41,
-      "typed": 1036,
-      "raw_float": 139,
-      "raw_vector": 48,
-      "escapes": 206
+      "share": 85.2,
+      "files": 42,
+      "typed": 1050,
+      "raw_float": 135,
+      "raw_vector": 47,
+      "escapes": 208
     },
     "Tests": {
-      "share": 38.9,
+      "share": 39.3,
       "files": 85,
-      "typed": 632,
-      "raw_float": 798,
-      "raw_vector": 196,
-      "escapes": 1382
+      "typed": 647,
+      "raw_float": 802,
+      "raw_vector": 199,
+      "escapes": 1396
     },
     "Vehicles & on-foot body": {
-      "share": 77.4,
+      "share": 77.6,
       "files": 47,
-      "typed": 2191,
-      "raw_float": 217,
-      "raw_vector": 424,
+      "typed": 2193,
+      "raw_float": 209,
+      "raw_vector": 423,
       "escapes": 646
     }
   }
