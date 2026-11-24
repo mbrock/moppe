@@ -54,6 +54,9 @@
 #   camp      hang the hammock, light a fire, lie down at dusk and watch
 #             the night go by                          (MOPPE_WALK=camp)
 #   opening   the opening titles
+#   flight    a drone flyover sweeping across the world's planned landmarks
+#             (trail, river valley, waterfall or lake, saddle, peak, arrival)
+#                                                  (MOPPE_OPENING=flight)
 #   river     a drone's flight down the greatest watercourse, from the top
 #             of its catchment to the sea: seven minutes, or fitted into
 #             --seconds; with MOPPE_FLYOVER_SECONDS=440 set, --start and
@@ -193,6 +196,15 @@ case $scene in
     stage MOPPE_WALK=camp MOPPE_WALK_CAMERA=chase MOPPE_CLOCK=17.3
     : "${seconds:=75}" ;;
   opening) : "${seconds:=34}" ;;
+  flight)
+    # Automated scenic drone flyover over trail, river valley, waterfall,
+    # lake, saddle, peak sanctuary, summit, and arrival. Paced to the
+    # requested length (default 120 s) and stopped cleanly on landing.
+    : "${seconds:=120}"
+    stage MOPPE_OPENING=flight MOPPE_HUD=none \
+      MOPPE_FLYOVER_SECONDS=$((${seconds%.*} + ${start%.*}))
+    # Give a generous recording ceiling so the flight stops itself on landing.
+    seconds=$((${seconds%.*} * 2 + 40)) ;;
   river)
     # The flight is paced to end as the video does, which without a length
     # asked for is some seven minutes, a pace to watch the water at. With
@@ -242,7 +254,7 @@ if [[ -z $window && $(uname) == Linux && -n $gpu ]] &&
 then
   # gamescope and the X server it starts say a good deal; the game's own
   # lines are the ones that matter.
-  said='^moppe: \(video\|camp\|walk\|the day\|multiplayer\|boat\|jet ski\|fish\|swim\)\|[Ee]rror\|what()'
+  said='^moppe: \(video\|camp\|walk\|the day\|multiplayer\|boat\|jet ski\|fish\|swim\)\|cinematic flight\|river flight\|[Ee]rror\|what()'
   gamescope -W "$width" -H "$height" -w "$width" -h "$height" \
     --backend headless -- "$game" --fullscreen "$@" 2>&1 |
     grep --line-buffered "$said" >&2 || true
@@ -260,7 +272,19 @@ if [[ ! -s $output ]]; then
 fi
 
 if [[ -n $sheet ]]; then
-  frames=$(awk "BEGIN { print int ($seconds * $fps) }")
+  ffprobe="${ffmpeg%ffmpeg}ffprobe"
+  if [[ $ffprobe != */* ]]; then
+    ffprobe=$(command -v "$ffprobe" 2>/dev/null || true)
+  fi
+  frames=
+  if [[ -n $ffprobe && -x $ffprobe ]]; then
+    frames=$("$ffprobe" -v error -select_streams v:0 \
+      -count_packets -show_entries stream=nb_read_packets \
+      -of csv=p=0 "$output" 2>/dev/null | tr -dc '0-9')
+  fi
+  if [[ -z $frames || $frames -le 0 ]]; then
+    frames=$(awk "BEGIN { print int ($seconds * $fps) }")
+  fi
   every=$((frames / 12 > 0 ? frames / 12 : 1))
   "$ffmpeg" -hide_banner -loglevel error -y -i "$output" \
     -vf "select='not(mod(n\,$every))',scale=480:-2,tile=4x3" \

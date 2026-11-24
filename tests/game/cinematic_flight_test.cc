@@ -326,3 +326,53 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
   MOPPE_CHECK (peak_speed > 150.0f);
   MOPPE_CHECK (!flight.active ());
 }
+
+MOPPE_TEST (cinematic_flight_clears_forest_canopy_and_visits_sanctuary) {
+  FlightFixture fixture;
+  std::vector<game::RiverFlightTree> trees;
+  for (int z = 0; z < FlightFixture::side; ++z)
+    for (int x = 0; x < FlightFixture::side; ++x)
+      trees.push_back ({ .at = plan_position (
+                           static_cast<float> (x) *
+                             meters_value (fixture.grid.spacing_x ()) * u::m,
+                           static_cast<float> (z) *
+                             meters_value (fixture.grid.spacing_z ()) * u::m),
+                         .height = 42.0f * u::m });
+  const std::vector<position_t> sanctuaries = { position (
+    Vec3 (400.0f, 190.0f, 1200.0f)) };
+  const game::CinematicFlightPlan plan =
+    game::plan_cinematic_flight (fixture.surface,
+                                 fixture.flood,
+                                 fixture.census,
+                                 fixture.drainage,
+                                 fixture.rivers,
+                                 position (Vec3 (200, 80, 200)),
+                                 nullptr,
+                                 trees,
+                                 35.0f * u::s,
+                                 sanctuaries);
+  MOPPE_CHECK (!plan.empty ());
+  MOPPE_CHECK (std::any_of (
+    plan.landmarks.begin (), plan.landmarks.end (), [] (const auto& lm) {
+      return lm.kind == game::CinematicLandmarkKind::Sanctuary;
+    }));
+  MOPPE_CHECK (game::cinematic_landmark_name (
+                 game::CinematicLandmarkKind::Sanctuary) == "sanctuary");
+
+  game::CinematicFlight flight;
+  flight.start (plan, fixture.surface);
+  int frames = 0;
+  for (; frames < 6000 && flight.active (); ++frames) {
+    flight.tick (seconds (1.0f / 60.0f), fixture.surface);
+    const position_t p = flight.position ();
+    const terrain::SurfaceElevation ground =
+      spatial::sample<terrain::surface_elevation> (
+        fixture.surface, at_height (moppe::plan (p), 0.0f * u::m));
+    // Must stay comfortably above the 42 m forest crowns everywhere.
+    MOPPE_CHECK (position_value (p)[1] * u::m >=
+                 terrain::surface_elevation_value (ground) * u::m +
+                   42.0f * u::m);
+  }
+  MOPPE_CHECK (!flight.active ());
+  MOPPE_CHECK (frames > 60);
+}

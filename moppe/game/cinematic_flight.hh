@@ -22,6 +22,7 @@ namespace moppe::game {
     Waterfall,
     Lake,
     Saddle,
+    Sanctuary,
     Peak,
     Arrival
   };
@@ -50,21 +51,23 @@ namespace moppe::game {
     // The route keeps this far over the ground beneath it, climbing before
     // a rise over about ANTICIPATION metres, and the aircraft itself never
     // comes lower than FLOOR.
-    meters_t clearance = 22.0f * u::m;
-    meters_t floor = 18.0f * u::m;
-    meters_t anticipation = 95.0f * u::m;
+    meters_t clearance = 28.0f * u::m;
+    meters_t floor = 22.0f * u::m;
+    meters_t anticipation = 140.0f * u::m;
     // The slowest a tight bend brings it down to.
     speed_t slowest_turn = 42.0f * u::m / u::s;
     // The stretch of route ahead its gimbal aims along, as the least and
     // most to that stretch's near and far ends.
-    meters_t look_near_least = 35.0f * u::m;
-    meters_t look_near_most = 90.0f * u::m;
-    meters_t look_far_least = 220.0f * u::m;
-    meters_t look_far_most = 430.0f * u::m;
+    meters_t look_near_least = 40.0f * u::m;
+    meters_t look_near_most = 110.0f * u::m;
+    meters_t look_far_least = 240.0f * u::m;
+    meters_t look_far_most = 460.0f * u::m;
     // How much of its aim is the waypoints' subject and not the route.
-    proportion_t subject_weight = 0.52f * one;
+    proportion_t subject_weight = 0.50f * one;
     // The steepest it banks into a turn.
-    radians_t bank = 0.30f * u::rad;
+    radians_t bank = 0.17f * u::rad;
+    // Arc-length smoothing scale for the subject look target along the ribbon.
+    meters_t subject_smoothing = 110.0f * u::m;
   };
 
   struct CinematicFlightPlan {
@@ -77,10 +80,19 @@ namespace moppe::game {
     }
   };
 
+  // A tree beside a flight's way: where it stands, and how tall.
+  struct RiverFlightTree {
+    plan_position_t at;
+    meters_t height;
+  };
+
   // The planner reads both the continuous height field and the discrete
   // hydrology graph. Its output is deliberately plain data: documentary
   // playback, an editor camera, or a player-steerable aircraft can all use the
   // same landscape interpretation without inheriting the opening cinematic.
+  // TREES lifts the flight ribbon cleanly over forest crowns; DURATION paces
+  // the tour when positive; SANCTUARIES adds a peak-sanctuary sweep when one
+  // stands distinct from the main summit.
   CinematicFlightPlan
   plan_cinematic_flight (const map::SurfaceGeometry& surface,
                          const terrain::FloodField& flood,
@@ -88,7 +100,10 @@ namespace moppe::game {
                          const terrain::DrainageGraph& drainage,
                          const terrain::RiverNetwork& rivers,
                          const position_t& arrival,
-                         const terrain::TrailNetwork* trail = nullptr);
+                         const terrain::TrailNetwork* trail = nullptr,
+                         std::span<const RiverFlightTree> trees = {},
+                         seconds_t duration = 0.0f * u::s,
+                         std::span<const position_t> sanctuaries = {});
 
   // The world's greatest river to reach the sea: its mouth's reach first,
   // then upward the larger branch at every confluence and the larger
@@ -97,12 +112,6 @@ namespace moppe::game {
   std::vector<const terrain::RiverReach*>
   greatest_river_course (std::span<const terrain::WaterBody> bodies,
                          const terrain::RiverNetwork& rivers);
-
-  // A tree beside the river flight's way: where it stands, and how tall.
-  struct RiverFlightTree {
-    plan_position_t at;
-    meters_t height;
-  };
 
   // A flight down the world's greatest watercourse: from the top of its
   // catchment down the dry valley to where the stream first shows, along
@@ -180,11 +189,10 @@ namespace moppe::game {
   private:
     struct ArcSample {
       meters_t distance;
-      std::size_t segment;
-      // How far along its segment's curve, by the curve's parameter.
-      blend_weight_t t;
-      meters_t terrain_lift;
-      speed_t speed_limit;
+      position_t position;
+      position_t subject;
+      speed_t cruise_speed;
+      degrees_t field_of_view;
     };
 
     struct RouteState {
@@ -204,6 +212,7 @@ namespace moppe::game {
     position_t m_position {};
     velocity_t m_velocity {};
     direction_t m_look_direction = unit_direction (Vec3 (0, 0, 1));
+    angular_velocity_t m_look_rate {};
     displacement_t m_manual_offset {};
     velocity_t m_manual_velocity {};
     meters_t m_route_distance = 0.0f * u::m;
@@ -211,6 +220,7 @@ namespace moppe::game {
     metres_per_second_squared_t m_longitudinal_acceleration =
       0.0f * u::m / u::s2;
     radians_t m_bank = 0.0f * u::rad;
+    radians_per_second_t m_bank_rate = 0.0f * u::rad / u::s;
     degrees_t m_field_of_view = 58.0f * u::deg;
     seconds_t m_elapsed = 0.0f * u::s;
     seconds_t m_final_hold = 0.0f * u::s;

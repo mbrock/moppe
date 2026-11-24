@@ -276,7 +276,11 @@ build, test, and change the code; read this when working on a feature.
   to an H.264 MP4 -- `tools/record /tmp/camp.mp4 camp` is the camp at dusk
   through to morning. Scenes are `play` (the default: on foot at the
   trailhead, no opening), `ride`, `forest`, `glide`, `walk`, `forage`,
-  `camp`, `haul`, `bump`, `eggs`, `barn`, `opening`, and `river` (a drone's flight down the greatest
+  `camp`, `haul`, `bump`, `eggs`, `barn`, `opening`, `flight` (a
+  canopy-cleared drone tour through the trailhead, peak sanctuary, saddle,
+  lake, summit, waterfall, river valley, and arrival, paced to `--seconds`
+  or 120 s by default and ending when the drone lands), and `river` (a
+  drone's flight down the greatest
   watercourse, from the top of its catchment to the sea: seven minutes,
   or fitted into `--seconds`; with `MOPPE_FLYOVER_SECONDS=440` set,
   `--start` and `--seconds` cut a stretch out of the whole); `--seconds`, `--start`, `--speed N` (a
@@ -292,8 +296,8 @@ build, test, and change the code; read this when working on a feature.
   frames go down a pipe to ffmpeg, so the video is even however fast the
   machine is. On an M5 it records some forty frames a second at 1080p
   (frames leave the HDR drawable through a lookup table, and the time
-  `--start` lets pass goes by at twenty steps a drawn frame); the river
-  flight's video ends when the drone lands. A window cannot be larger
+  `--start` lets pass goes by at twenty steps a drawn frame); the `flight`
+  and `river` videos end when the drone lands. A window cannot be larger
   than the screen, so on a 2x laptop `MOPPE_VIDEO_HEIGHT=1080` with
   `--size 1232x693` gives 1080p, and `MOPPE_VIDEO_HEIGHT=1920` with
   `--size 486x864` a vertical 1080x1920. On Linux it runs with no window
@@ -337,7 +341,10 @@ build, test, and change the code; read this when working on a feature.
   rebuilding with `MOPPE_OPENING=path/to/list.txt` (or
   `MOPPE_ASSETS=<repo>`). Another world plays one generated still of the
   trailhead (`MOPPE_OPENING=generated` forces it); `MOPPE_OPENING=flight`
-  flies the old drone route through the planned landmarks,
+  flies the canopy-cleared scenic drone tour (`plan_cinematic_flight` in
+  `game/cinematic_flight.*`, paced with `MOPPE_FLYOVER_SECONDS` when set)
+  through the world's planned landmarks (trail, river valley, waterfall,
+  lake, saddle, peak sanctuary, summit, arrival),
   `MOPPE_OPENING=river` flies down the greatest river from its divide to
   the sea (`plan_river_flight` in `game/cinematic_flight.*`, low over
   open water and clear of the crowns where trees stand by it), and

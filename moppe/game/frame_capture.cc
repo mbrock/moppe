@@ -117,12 +117,12 @@ namespace moppe::game {
       return;
     if (index == first)
       m_video.begin (plan.path, plan.fps, plan.height);
-    // A video of the river flight is over when the flight is: the
-    // drone comes down a little sooner than its planned seconds, and
-    // what follows is only the walker standing at the trailhead.
+    // A video of a drone flight (`flight` or `river`) is over when the flight
+    // lands: what follows is only the walker standing at the trailhead.
     static const bool flight_only = [] {
       const char* opening = moppe::environment ("MOPPE_OPENING");
-      return opening && std::string_view (opening) == "river";
+      return opening && (std::string_view (opening) == "river" ||
+                         std::string_view (opening) == "flight");
     }();
     if (flight_only && opening_active)
       m_video_saw_flight = true;

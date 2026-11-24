@@ -28,34 +28,47 @@ namespace moppe::game {
     if (choice && std::string_view (choice) == "none")
       return;
     const bool flight = choice && std::string_view (choice) == "flight";
-    if (choice && std::string_view (choice) == "river") {
-      const char* seconds = moppe::environment ("MOPPE_FLYOVER_SECONDS");
+    const auto flight_trees = [&] () {
       std::vector<RiverFlightTree> trees;
       trees.reserve (world.forest ().sites.size ());
       for (const ForestSite& site : world.forest ().sites)
         trees.push_back (
           { .at = moppe::plan (site.position), .height = tree_height (site) });
-      m_flight_plan = plan_river_flight (
-        world.surface (),
-        trees,
-        world.water_surface (),
-        world.lake_census (),
-        world.drainage (),
-        world.rivers (),
-        (seconds ? std::strtof (seconds, nullptr) : 0.0f) * u::s);
+      return trees;
+    };
+    const char* seconds_env = moppe::environment ("MOPPE_FLYOVER_SECONDS");
+    const seconds_t requested_seconds =
+      (seconds_env ? std::strtof (seconds_env, nullptr) : 0.0f) * u::s;
+    if (choice && std::string_view (choice) == "river") {
+      const std::vector<RiverFlightTree> trees = flight_trees ();
+      m_flight_plan = plan_river_flight (world.surface (),
+                                         trees,
+                                         world.water_surface (),
+                                         world.lake_census (),
+                                         world.drainage (),
+                                         world.rivers (),
+                                         requested_seconds);
       return;
     }
     if (!flight) {
       plan_reel (choice, world, ground, sky, session, home_base, spawn);
       return;
     }
+    const std::vector<RiverFlightTree> trees = flight_trees ();
+    std::vector<position_t> sanctuaries;
+    for (const terrain::RoadPlace& place : world.roads ().places)
+      if (place.kind == terrain::RoadPlace::Kind::Sanctuary)
+        sanctuaries.push_back (terrain::at_elevation (place.at, place.height));
     m_flight_plan = plan_cinematic_flight (world.surface (),
                                            world.standing_water (),
                                            world.lake_census (),
                                            world.drainage (),
                                            world.rivers (),
                                            spawn,
-                                           &world.trails ());
+                                           &world.trails (),
+                                           trees,
+                                           requested_seconds,
+                                           sanctuaries);
     if (m_flight_plan.empty ())
       return;
     std::cerr << "cinematic flight: " << m_flight_plan.waypoints.size ()
