@@ -715,6 +715,12 @@ namespace moppe::nhal {
       bool m_first_vertex_counts;
 
       TerrainState m_terrain;
+      std::array<Pipeline, 6> m_material_probes {};
+      Pipeline m_bake_material;
+      std::array<Texture, 3> m_material_tiles {};
+      std::array<float, 4> m_material_window {};
+      unsigned m_material_mode = 0;
+      void bake_material_probe ();
       ForestState m_forest;
       BoulderState m_boulders;
       GrassState m_grass;

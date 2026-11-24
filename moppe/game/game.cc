@@ -63,6 +63,14 @@ namespace moppe {
         m_simulation_clock.reset ();
         return;
       }
+      static unsigned ticks = 0;
+      if (environment ("MOPPE_MATERIAL_PROBE")) {
+        if (++ticks <= 80) {
+          keep_company (seconds (1.0f / 60.0f));
+          tick_simulation (seconds (1.0f / 60.0f));
+        }
+        return;
+      }
       keep_company (interval);
 
       // A video advances exactly one 60 Hz frame of world time per rendered

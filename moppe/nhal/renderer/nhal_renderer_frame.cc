@@ -127,6 +127,7 @@ namespace moppe::nhal {
       frame.lamp_color = linear (params.lamp_color);
       m_frame_values = frame;
       upload_frame ();
+      bake_material_probe ();
       cull_trees (view_proj, camera, float (m_scene_height), false);
       cull_grass (view_proj, params);
       cull_rocks (view_proj, camera, float (m_scene_height), false);
@@ -314,6 +315,20 @@ namespace moppe::nhal {
       }();
       if (!wanted)
         return;
+      if (m_bake_material) {
+        const auto index = m_frame - 1;
+        double scene = 0, total = 0;
+        for (const auto& pass : m_device->pass_timings ()) {
+          if (pass.label == "material bake")
+            std::cerr << "TILE " << pass.milliseconds << std::endl;
+          if (pass.label == "scene")
+            scene += pass.milliseconds;
+          total += pass.milliseconds;
+        }
+        if (scene && index >= 384 && index % 32 >= 12 && index % 32 < 28)
+          std::cerr << "MATERIAL " << index / 384 << ' ' << m_material_mode
+                    << ' ' << scene << ' ' << total << std::endl;
+      }
       for (const PassTiming& pass : m_device->pass_timings ())
         m_timing_sums[pass.label] += pass.milliseconds;
       if (++m_timing_frames < 120)

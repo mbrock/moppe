@@ -1,0 +1,16 @@
+#!/bin/bash
+# Usage: run SHADER_DIRECTORY SCENE FRAMES OUTPUT.png [MODE]
+# Scenes are "play" (trailhead) or a MOPPE_DEMO value.
+set -eu
+export MOPPE_MATERIAL_PROBE=$1
+if [[ $2 == play ]]; then unset MOPPE_DEMO; else export MOPPE_DEMO=$2; fi
+export MOPPE_SCREENSHOT_FRAMES=$3
+if [[ $# -ge 5 ]]; then
+  export MOPPE_MATERIAL_MODE=$5
+else
+  unset MOPPE_MATERIAL_MODE
+fi
+export MOPPE_TEMPORAL_RESOLVE=shader MOPPE_NHAL_TIMINGS=1
+export MOPPE_CLOCK=12 MOPPE_OPENING=none
+exec ./build/moppe.app/Contents/MacOS/moppe --inactive --windowed \
+  --window-size 960x540 --render-scale 0.5 --screenshot "$4"
