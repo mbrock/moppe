@@ -170,3 +170,86 @@ original M5 counts of 8,152 instructions, 126 temporary registers and
 304 bytes of spill per thread. Fixed-frame captures at the trailhead,
 shoreline, mountain-bike snowline and snowmobile tracks also showed
 close visual agreement with the original renderer.
+
+## Evaluating the ground material in world space
+
+The fixed-camera [Metal experiment](https://github.com/mbrock/moppe/tree/4a0712c4/tools/terrain-material-probe)
+reuses the current Lisp material at two points. One version stores the
+ground colour through the worn-trail blend (`trodden`), then applies
+snow, fine mottling, relief and lighting live. The other stores all of
+`GroundSurface` (albedo, roughness, relief and the two powder values).
+Road surfacing, track deformation and view-dependent lighting still run.
+The experiment changes only terrain fragments. It draws the original
+geometry, near road ribbons, shadow passes and vegetation in every mode.
+
+The M5 replay gives the following static compiler counts with two atlas
+scales. Each pipeline shaded different chunks in that capture, so its
+sampled cost is unsuitable for comparing the pipelines. The live timings
+below draw the entire terrain with a single pipeline per measured block.
+
+| Terrain fragment | Instructions | Texture reads | Temporary registers | Spilled bytes/thread |
+| --- | ---: | ---: | ---: | ---: |
+| Original | 8,152 | 24 | 126 | 304 |
+| Cached base colour | 6,470 | 22 | 126 | 80 |
+| Cached ground surface | 5,952 | 16 | 104 | 0 |
+| Road lookup forced to miss | 4,592 | 24 | 126 | 208 |
+
+On yawl's M5 each scene used 960×540 internal pixels, noon light and the
+shader temporal resolve. The game advanced 80 fixed steps, then held the
+camera still. Each run measured five complete cycles of 32-frame blocks,
+with order reversed and rotated, a second copy of the original as a
+control, and repeated reports of the same GPU timestamp discarded.
+The following pairs are scene pass / summed GPU pass time in ms for the
+two-scale atlas. Bake time is outside the measured blocks.
+
+| Camera | Original | Cached base colour | Cached ground surface | Road lookup forced to miss | Repeat original |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Trailhead | 5.30 / 8.98 | 4.69 / 8.33 | 4.49 / 7.99 | 4.61 / 8.22 | 5.29 / 8.93 |
+| Caddy at the shore | 4.86 / 8.95 | 3.90 / 7.94 | 3.68 / 7.74 | 4.52 / 8.66 | 4.86 / 9.01 |
+| Snowmobile | 3.44 / 6.50 | 2.88 / 5.95 | 2.71 / 5.82 | 3.53 / 6.70 | 3.50 / 6.60 |
+
+The base-colour saving appeared in every complete cycle at all three
+cameras. Road removal gave a comparable gain at the trailhead and a
+visible change to the road. It had little effect on the snowfield.
+These experiments overlap in the work they remove, so their savings
+cannot be added.
+
+The producer evaluates the ground in a top-down pass at a texel's
+footprint. Each atlas is 1024×2048. In the first layout one half spans
+128 m and the other the entire periodic world. The second layout packs
+four 512² tiles spanning 8, 64, 512 and 2,000 m into the local half.
+Both layouts use 8 MiB for the base-colour texture. The experiment
+also writes two RGBA16F textures to evaluate the full-surface option,
+for 40 MiB combined. The one-time bake of all three outputs took
+3.57–3.80 ms in the two-scale runs.
+
+| Output pixels differing from the original by more than 8 levels in any 8-bit channel | Two-scale base colour | Five-scale base colour | Five-scale full surface |
+| --- | ---: | ---: | ---: |
+| Trailhead | 0.294% | 0.159% | 0.581% |
+| Caddy at the shore | 9.046% | 3.751% | 5.169% |
+| Snowmobile | 0.161% | 0.021% | 0.659% |
+
+These are whole presented frames, including water, vegetation and HUD.
+The repeated original shoreline capture differed by more than eight
+levels at fewer than 0.001% of pixels. In the shoreline foreground the
+two-scale colour lookup blurs individual stones and the edge of the
+sand. Reallocating the same texture area to the five scales recovers
+much of that detail.
+
+The five-scale base-colour run also reduced scene time, by 0.55 ms at
+the trailhead, 1.15 ms at the shore and 0.65 ms on the snowfield. Summed
+GPU pass time fell by 0.45, 1.25 and 0.71 ms respectively. Each difference
+uses its own run's original. For the snowfield comparison only the first
+four complete cycles are included because a build overlapped the end
+of that run.
+
+This is evidence for giving the terrain a world-space material
+evaluation with an explicit footprint. The existing ground recipe mixes
+metre-scale plant distribution with centimetre-scale stones and uses
+screen derivatives for many transitions. A cache has to evaluate those
+at the footprint of its texels and preserve the detail visible from the
+camera. The prototype also inherits distance-dependent road normals
+and approximates road elevation with heightfield elevation during the
+bake. It demonstrates reuse on a fixed view. Moving windows, refresh
+cost under travel, transitions between levels and edits to the ground
+remain to be measured before choosing a production layout.
