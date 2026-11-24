@@ -155,7 +155,11 @@ namespace moppe {
                                        frame.camera.frame_forward,
                                        frame.lighting.sun_direction,
                                        frame.lighting.sky_pole);
-      const auto draw_world_sky = [&] {
+      // At this extreme altitude, drawing the far-plane dome after terrain
+      // exposes depth precision at the horizon. Paint it first in the lab;
+      // terrain then covers it deterministically. Gameplay retains the
+      // cheaper depth-culled order after all opaque geometry.
+      if (visibility.sky_before_terrain) {
         render::SkyParams sky;
         sky.time = frame.lighting.time;
         sky.sun_height = frame.lighting.sun_height;
@@ -163,100 +167,16 @@ namespace moppe {
         sky.sun_dir = frame.lighting.sun_direction;
         sky.fog_color = frame.lighting.fog_color;
         r.draw_sky (sky);
-      };
+      }
 
-      // At this extreme altitude, drawing the far-plane dome after terrain
-      // exposes depth precision at the horizon. Paint it first in the lab;
-      // terrain then covers it deterministically. Gameplay retains the
-      // cheaper depth-culled order below.
-      if (visibility.sky_before_terrain)
-        draw_world_sky ();
-
-      // Terrain first, chunk-culled to the haze horizon.
+      // Keep all opaque world geometry together before sky and blended
+      // sward so hardware HSR and early-Z reject occluded terrain, sky,
+      // and sward fragments behind boulders, forest crowns, and actors.
       m_terrain.render (r,
                         frame.camera.position,
                         frame.camera.projection * frame.camera.view,
                         frame.terrain_distance);
       m_bridges.draw (r, frame.camera.position);
-
-      // Sky AFTER the terrain: depth testing kills the expensive
-      // cloud shader wherever terrain covers it.
-      if (visibility.sky_after_terrain)
-        draw_world_sky ();
-
-      // The floor grows itself from the same canopy and moisture fields the
-      // trees were planted from, so it arrives already agreeing with them.
-      // Gameplay movers part the generated field locally; cinematics keep
-      // their authored floor undisturbed even though actors may exist.
-      if (visibility.undergrowth) {
-        meters_t interaction_radius = 0.0f * u::m;
-        if (frame.scene == FrameSceneMode::Gameplay) {
-          switch (frame.actors.active_mode.way) {
-          case Doing::Way::foot:
-            interaction_radius = 0.55f * u::m;
-            break;
-          case Doing::Way::glider:
-          case Doing::Way::passenger:
-          case Doing::Way::bus:
-            break;
-          case Doing::Way::driving:
-            interaction_radius = machine_kind (frame.actors.active_mode.machine)
-                                   .undergrowth_parting;
-            break;
-          }
-        }
-        render::UndergrowthParams undergrowth {
-          .time = frame.lighting.time,
-          .cloud_cover = quantity_cast<proportion> (frame.lighting.cloudiness),
-          .reach = 64.0f * u::m,
-          .interaction_position = frame.hud.subject_position,
-          .interaction_radius = interaction_radius
-        };
-        // No grass under the floor of the farmhouse and the barn
-        // nearest the camera, which can be walked into: out to the
-        // plinth's edge, and over the barn's ramp; and round the barn
-        // its yard is trodden short.
-        const Vec3& eye = camera;
-        meters_t nearest[2] = { 150.0f * u::m, 150.0f * u::m };
-        for (const Farm& farm : m_places.layout.farms)
-          for (const Building& b : farm.buildings) {
-            if (farm.ruined || b.kind == Building::Kind::mill)
-              continue;
-            Vec3 at = position_value (b.at);
-            at[0] += terrain::whole_periods (
-              eye[0] - at[0], plan_value (m_places.layout.period).x ());
-            at[2] += terrain::whole_periods (
-              eye[2] - at[2], plan_value (m_places.layout.period).z ());
-            const meters_t d =
-              std::hypot (at[0] - eye[0], at[2] - eye[2]) * u::m;
-            const bool barn = b.kind == Building::Kind::barn;
-            if (d >= nearest[barn])
-              continue;
-            nearest[barn] = d;
-            Vec3 f = direction_value (b.forward);
-            f[1] = 0.0f;
-            f = normalized (f);
-            // Along the floor's length: its forward, turned a right angle.
-            const direction_t along = unit_direction (Vec3 (f[2], 0.0f, -f[0]));
-            if (barn) {
-              undergrowth.yard_centre = position (at + f * 0.95f);
-              undergrowth.yard_along = along;
-              undergrowth.yard_half_x = 6.15f * u::m;
-              undergrowth.yard_half_z = 5.1f * u::m;
-              undergrowth.yard_margin = (farm.kept ? 9.0f : 0.0f) * u::m;
-            } else {
-              undergrowth.bare_centre = position (at);
-              undergrowth.bare_along = along;
-              undergrowth.bare_half_x = 3.75f * u::m;
-              undergrowth.bare_half_z = 2.75f * u::m;
-            }
-          }
-        r.draw_undergrowth (undergrowth);
-      }
-
-      // Opaque individuals depth-test normally. The distant stand quotient
-      // follows the ground medium so its non-depth-writing canopy roof
-      // cannot be painted over by the sward's own far density layer.
       m_boulders.draw (r);
       m_mushrooms.follow (logic ().m_basket);
       m_mushrooms.draw (r, position (camera));
@@ -420,6 +340,90 @@ namespace moppe {
                       world_ground ());
 
       r.draw_list (m_world_dl, 0x0001);
+    }
+
+    void MoppeGame::draw_sky_and_undergrowth (render::Renderer& r,
+                                              const FrameView& frame) {
+      const FrameVisibility& visibility = frame.visibility;
+      // Sky after all opaque world and actor geometry so depth testing and
+      // TBDR HSR skip clouds behind terrain, trees, boulders, and buildings.
+      if (visibility.sky_after_terrain) {
+        render::SkyParams sky;
+        sky.time = frame.lighting.time;
+        sky.sun_height = frame.lighting.sun_height;
+        sky.cloudiness = quantity_cast<proportion> (frame.lighting.cloudiness);
+        sky.sun_dir = frame.lighting.sun_direction;
+        sky.fog_color = frame.lighting.fog_color;
+        r.draw_sky (sky);
+      }
+
+      // Undergrowth (blended sward canopy + grass blades) after all opaque
+      // blockers so sward neither flushes TBDR HSR for trees/actors nor
+      // shades pixels behind them.
+      if (!visibility.undergrowth)
+        return;
+      meters_t interaction_radius = 0.0f * u::m;
+      if (frame.scene == FrameSceneMode::Gameplay) {
+        switch (frame.actors.active_mode.way) {
+        case Doing::Way::foot:
+          interaction_radius = 0.55f * u::m;
+          break;
+        case Doing::Way::glider:
+        case Doing::Way::passenger:
+        case Doing::Way::bus:
+          break;
+        case Doing::Way::driving:
+          interaction_radius =
+            machine_kind (frame.actors.active_mode.machine).undergrowth_parting;
+          break;
+        }
+      }
+      render::UndergrowthParams undergrowth {
+        .time = frame.lighting.time,
+        .cloud_cover = quantity_cast<proportion> (frame.lighting.cloudiness),
+        .reach = 64.0f * u::m,
+        .interaction_position = frame.hud.subject_position,
+        .interaction_radius = interaction_radius
+      };
+      // No grass under the floor of the farmhouse and the barn
+      // nearest the camera, which can be walked into: out to the
+      // plinth's edge, and over the barn's ramp; and round the barn
+      // its yard is trodden short.
+      const Vec3& eye = position_value (frame.camera.position);
+      meters_t nearest[2] = { 150.0f * u::m, 150.0f * u::m };
+      for (const Farm& farm : m_places.layout.farms)
+        for (const Building& b : farm.buildings) {
+          if (farm.ruined || b.kind == Building::Kind::mill)
+            continue;
+          Vec3 at = position_value (b.at);
+          at[0] += terrain::whole_periods (
+            eye[0] - at[0], plan_value (m_places.layout.period).x ());
+          at[2] += terrain::whole_periods (
+            eye[2] - at[2], plan_value (m_places.layout.period).z ());
+          const meters_t d = std::hypot (at[0] - eye[0], at[2] - eye[2]) * u::m;
+          const bool barn = b.kind == Building::Kind::barn;
+          if (d >= nearest[barn])
+            continue;
+          nearest[barn] = d;
+          Vec3 f = direction_value (b.forward);
+          f[1] = 0.0f;
+          f = normalized (f);
+          // Along the floor's length: its forward, turned a right angle.
+          const direction_t along = unit_direction (Vec3 (f[2], 0.0f, -f[0]));
+          if (barn) {
+            undergrowth.yard_centre = position (at + f * 0.95f);
+            undergrowth.yard_along = along;
+            undergrowth.yard_half_x = 6.15f * u::m;
+            undergrowth.yard_half_z = 5.1f * u::m;
+            undergrowth.yard_margin = (farm.kept ? 9.0f : 0.0f) * u::m;
+          } else {
+            undergrowth.bare_centre = position (at);
+            undergrowth.bare_along = along;
+            undergrowth.bare_half_x = 3.75f * u::m;
+            undergrowth.bare_half_z = 2.75f * u::m;
+          }
+        }
+      r.draw_undergrowth (undergrowth);
     }
 
     namespace {

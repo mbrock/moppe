@@ -64,6 +64,7 @@ namespace moppe {
 
       draw_world_layers (r, frame);
       draw_actor_layers (r, frame);
+      draw_sky_and_undergrowth (r, frame);
       apply_scene_occlusion (r, frame);
 
       draw_water_surfaces (r, frame);

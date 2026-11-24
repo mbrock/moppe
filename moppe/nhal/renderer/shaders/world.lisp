@@ -5061,98 +5061,101 @@
   (let* ((leaf (swizzle medium :x))
          (clump (swizzle medium :y))
          (forest (swizzle medium :z))
-         (lift (swizzle medium :w))
-         (eye (swizzle camera-position :xyz))
-         (to-fragment (- world-position eye))
-         (distance (sqrt (dot to-fragment to-fragment)))
-         (view (/ to-fragment (max distance 0.0001)))
-         (l (swizzle sun-direction :xyz))
-         (axis (normalize sway-axis))
-         (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
-                           (swizzle world-position :y) (swizzle relief :x)
-                           (swizzle relief :y)))
-         (taps (sun-lit shadow-map shadow-compare world-position 1.86 0.5))
-         (cast (mix 1.0 taps (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)))
-         (visibility (* cast (mix 1.0 0.68 forest)))
-         (sun-light (swizzle sun-diffuse :xyz))
-         (scatter (* sun-light (vec3 0.92 1.05 0.78)
-                     (mix 0.12 0.20 (clamp (swizzle l :y) 0.0 1.0))
-                     (clamp forest 0.0 1.0) (clamp (- 1.0 cast) 0.0 1.0)))
-         ;; Nothing grows on a road's tread or its bared batters: the
-         ;; canopy's vertices are metres apart, wider than the tread, so
-         ;; each fragment asks for itself, as the blades' cull does.
-         (road-found (road-nearest road-segments road-index field-xz
-                                   (< distance 400.0)))
-         (faces (road-faces road-segments road-index field-xz
-                            (swizzle ground-position :y) road-found))
-         (verge (road-verge road-segments road-index field-xz road-found))
-         (open (* (yard-cover field-xz bare bare-size yard yard-size)
-                  (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
-                  (- 1.0 (swizzle verge :x))))
-         ;; Beer-Lambert coverage of the upper leaves this rung owns.
-         (fraction (* (clamp density-fraction 0.0 1.0) open))
-         (extinction (sward-extinction leaf clump))
-         (depth (* extinction fraction (sward-path axis view clump)))
-         (coverage-limit (- 1.0 (exp (* -1.0 depth))))
-         (sun-mean (mix 0.92 1.0 (mean-transmission
-                                  (* extinction (sward-path axis l clump)))))
-         (radiance (sward-radiance tint axis l view sun-light
-                                   (swizzle sun-specular :xyz)
-                                   (+ (* (swizzle ambient :xyz)
-                                         (mix 1.0 0.82 forest))
-                                      scatter)
-                                   cast visibility sun-mean
-                                   (smoothstep 0.6 0.95 (swizzle sun-direction :w))
-                                   (lamp-light lamp lamp-color world-position
-                                               (vec3 0.0 1.0 0.0))))
-         ;; March from the envelope toward the ground plane, no further
-         ;; than the medium's lateral correlation length.
-         (n (normalize ground-normal))
-         (column (max (dot (- world-position ground-position) n) 0.02))
-         (path (min (/ column (max (* -1.0 (dot view n)) 0.025))
-                    (mix 2.2 3.1 (clamp clump 0.0 1.0))))
-         (total (* depth (mix 0.82 1.18 (value-noise (+ (* field-xz 0.57)
-                                                         (vec2 19.7 3.1))))))
-         (s0 (sward-sample world-position view (* path 0.125) ground-position
-                           n column axis lift clump))
-         (s1 (sward-sample world-position view (* path 0.375) ground-position
-                           n column axis lift clump))
-         (s2 (sward-sample world-position view (* path 0.625) ground-position
-                           n column axis lift clump))
-         (s3 (sward-sample world-position view (* path 0.875) ground-position
-                           n column axis lift clump))
-         (sum (+ (swizzle s0 :x) (swizzle s1 :x) (swizzle s2 :x)
-                 (swizzle s3 :x)))
-         (c0 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s0 :x)) sum)))))
-         (c1 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s1 :x)) sum)))))
-         (c2 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s2 :x)) sum)))))
-         (c3 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s3 :x)) sum)))))
-         (r1 (- 1.0 c0))
-         (r2 (* r1 (- 1.0 c1)))
-         (r3 (* r2 (- 1.0 c2)))
-         (accumulated (+ (* (sward-source radiance s0 axis l) c0)
-                         (* (sward-source radiance s1 axis l) (* r1 c1))
-                         (* (sward-source radiance s2 axis l) (* r2 c2))
-                         (* (sward-source radiance s3 axis l) (* r3 c3))))
-         (coverage (- 1.0 (* r3 (- 1.0 c3))))
-         ;; The ground texture's own grain, near and far, as detail.
-         (uv (* field-xz (swizzle habitat :z)))
-         (detail (mix (swizzle (sample grass-texture linear-repeat uv) :rgb)
-                      (swizzle (sample grass-texture linear-repeat
-                                       (+ (* uv 0.19) (vec2 0.13 0.71)))
-                               :rgb)
-                      (smoothstep 40.0 350.0 distance)))
-         (texture-gain (clamp (/ (dot detail (vec3 0.299 0.587 0.114)) 0.0902)
-                              0.62 1.55))
-         (shaded (* (/ accumulated (max coverage 0.001)) texture-gain
-                    (sward-grain field-xz distance))))
-    (when (or (< lift 0.006) (< fraction 0.001) (< leaf 0.001)
-              (< coverage-limit 0.002))
+         (lift (swizzle medium :w)))
+    ;; Reject empty, bare, or blade-owned pixels before road search,
+    ;; shadow taps, canopy marching, and detail noise.
+    (when (or (< lift 0.006) (< leaf 0.001) (< density-fraction 0.001))
       (discard))
-    (set-output color (vec4 (hazed shaded world-position eye fog-color
-                                   (swizzle sky-sun :xyz) relief)
-                            coverage))
-    (set-output motion (- (clip-uv then) (clip-uv here)))))
+    (let* ((eye (swizzle camera-position :xyz))
+           (to-fragment (- world-position eye))
+           (distance (sqrt (dot to-fragment to-fragment)))
+           (view (/ to-fragment (max distance 0.0001)))
+           (axis (normalize sway-axis))
+           ;; Nothing grows on a road's tread or its bared batters: the
+           ;; canopy's vertices are metres apart, wider than the tread, so
+           ;; each fragment asks for itself, as the blades' cull does.
+           (road-found (road-nearest road-segments road-index field-xz
+                                     (< distance 400.0)))
+           (faces (road-faces road-segments road-index field-xz
+                              (swizzle ground-position :y) road-found))
+           (verge (road-verge road-segments road-index field-xz road-found))
+           (open (* (yard-cover field-xz bare bare-size yard yard-size)
+                    (- 1.0 (max (swizzle faces :x) (swizzle faces :y)))
+                    (- 1.0 (swizzle verge :x))))
+           ;; Beer-Lambert coverage of the upper leaves this rung owns.
+           (fraction (* (clamp density-fraction 0.0 1.0) open))
+           (extinction (sward-extinction leaf clump))
+           (depth (* extinction fraction (sward-path axis view clump)))
+           (coverage-limit (- 1.0 (exp (* -1.0 depth)))))
+      (when (or (< fraction 0.001) (< coverage-limit 0.002))
+        (discard))
+      (let* ((l (swizzle sun-direction :xyz))
+             (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
+                               (swizzle world-position :y) (swizzle relief :x)
+                               (swizzle relief :y)))
+             (taps (sun-lit shadow-map shadow-compare world-position 1.86 0.5))
+             (cast (mix 1.0 taps (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0)))
+             (visibility (* cast (mix 1.0 0.68 forest)))
+             (sun-light (swizzle sun-diffuse :xyz))
+             (scatter (* sun-light (vec3 0.92 1.05 0.78)
+                         (mix 0.12 0.20 (clamp (swizzle l :y) 0.0 1.0))
+                         (clamp forest 0.0 1.0) (clamp (- 1.0 cast) 0.0 1.0)))
+             (sun-mean (mix 0.92 1.0 (mean-transmission
+                                      (* extinction (sward-path axis l clump)))))
+             (radiance (sward-radiance tint axis l view sun-light
+                                       (swizzle sun-specular :xyz)
+                                       (+ (* (swizzle ambient :xyz)
+                                             (mix 1.0 0.82 forest))
+                                          scatter)
+                                       cast visibility sun-mean
+                                       (smoothstep 0.6 0.95 (swizzle sun-direction :w))
+                                       (lamp-light lamp lamp-color world-position
+                                                   (vec3 0.0 1.0 0.0))))
+             ;; March from the envelope toward the ground plane, no further
+             ;; than the medium's lateral correlation length.
+             (n (normalize ground-normal))
+             (column (max (dot (- world-position ground-position) n) 0.02))
+             (path (min (/ column (max (* -1.0 (dot view n)) 0.025))
+                        (mix 2.2 3.1 (clamp clump 0.0 1.0))))
+             (total (* depth (mix 0.82 1.18 (value-noise (+ (* field-xz 0.57)
+                                                             (vec2 19.7 3.1))))))
+             (s0 (sward-sample world-position view (* path 0.125) ground-position
+                               n column axis lift clump))
+             (s1 (sward-sample world-position view (* path 0.375) ground-position
+                               n column axis lift clump))
+             (s2 (sward-sample world-position view (* path 0.625) ground-position
+                               n column axis lift clump))
+             (s3 (sward-sample world-position view (* path 0.875) ground-position
+                               n column axis lift clump))
+             (sum (+ (swizzle s0 :x) (swizzle s1 :x) (swizzle s2 :x)
+                     (swizzle s3 :x)))
+             (c0 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s0 :x)) sum)))))
+             (c1 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s1 :x)) sum)))))
+             (c2 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s2 :x)) sum)))))
+             (c3 (- 1.0 (exp (* -1.0 (/ (* total (swizzle s3 :x)) sum)))))
+             (r1 (- 1.0 c0))
+             (r2 (* r1 (- 1.0 c1)))
+             (r3 (* r2 (- 1.0 c2)))
+             (accumulated (+ (* (sward-source radiance s0 axis l) c0)
+                             (* (sward-source radiance s1 axis l) (* r1 c1))
+                             (* (sward-source radiance s2 axis l) (* r2 c2))
+                             (* (sward-source radiance s3 axis l) (* r3 c3))))
+             (coverage (- 1.0 (* r3 (- 1.0 c3))))
+             ;; The ground texture's own grain, near and far, as detail.
+             (uv (* field-xz (swizzle habitat :z)))
+             (detail (mix (swizzle (sample grass-texture linear-repeat uv) :rgb)
+                          (swizzle (sample grass-texture linear-repeat
+                                           (+ (* uv 0.19) (vec2 0.13 0.71)))
+                                   :rgb)
+                          (smoothstep 40.0 350.0 distance)))
+             (texture-gain (clamp (/ (dot detail (vec3 0.299 0.587 0.114)) 0.0902)
+                                  0.62 1.55))
+             (shaded (* (/ accumulated (max coverage 0.001)) texture-gain
+                        (sward-grain field-xz distance))))
+        (set-output color (vec4 (hazed shaded world-position eye fog-color
+                                       (swizzle sky-sun :xyz) relief)
+                                coverage))
+        (set-output motion (- (clip-uv then) (clip-uv here)))))))
 
 (define-shader-program sward
   :vertex sward-vertex

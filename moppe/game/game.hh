@@ -214,6 +214,9 @@ namespace moppe {
 
       void draw_actor_layers (render::Renderer& r, const FrameView& frame);
 
+      void draw_sky_and_undergrowth (render::Renderer& r,
+                                     const FrameView& frame);
+
       void apply_scene_occlusion (render::Renderer& r, const FrameView& frame);
 
       void draw_water_surfaces (render::Renderer& r, const FrameView& frame);
