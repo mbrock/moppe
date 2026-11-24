@@ -65,16 +65,13 @@ namespace moppe::nhal::detail {
                                 const render::TexturePixels& pixels,
                                 Format format,
                                 const char* label,
-                                unsigned limit = 2048,
-                                std::vector<std::byte>* uploaded = nullptr) {
+                                unsigned limit = 2048) {
     const auto width = std::min (unsigned (pixels.width ()), limit);
     const auto height = std::min (unsigned (pixels.height ()), limit);
     auto source = field_pixels (pixels, width, height);
     auto texture = device.create_texture (
       { width, height, format, usage_sampled, 1, label });
     device.write_texture (texture, source);
-    if (uploaded)
-      *uploaded = std::move (source);
     return texture;
   }
 }

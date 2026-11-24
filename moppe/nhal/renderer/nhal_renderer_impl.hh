@@ -223,11 +223,7 @@ namespace moppe::nhal {
     // and the chunks the game last placed, and the roads' segments, which
     // the ground reads and the road ribbon lays again near the camera.
     struct TerrainState {
-      Pipeline draw, snow_free, ribbon;
-      bool force_full = false;
-      std::vector<std::uint8_t> shelter;
-      // Maximum possible tread elevation in each road lookup bucket.
-      std::vector<terrain::SurfaceElevation> road_tops;
+      Pipeline draw, ribbon;
       render::TerrainParams params {};
       bool have = false;
       Texture heights, normals, detail;
@@ -484,8 +480,6 @@ namespace moppe::nhal {
 
       // The terrain's chunks as draw_terrain last placed them, under the
       // bound pipeline; the water's pass takes only the wet ones.
-      void bound_shelter (std::span<const std::byte>, int width, int height);
-      bool snow_free (const ChunkDraw& chunk) const;
       void draw_chunks ();
 
       void draw_forest () override;

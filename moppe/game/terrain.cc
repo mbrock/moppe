@@ -365,14 +365,12 @@ namespace moppe {
                              int z0,
                              int cells,
                              int lod,
-                             terrain::SurfaceElevation highest,
                              meters_t offset_x,
                              meters_t offset_z) {
         render::ChunkDraw draw;
         draw.x0 = (uint16_t)x0;
         draw.z0 = (uint16_t)z0;
         draw.cells = (uint16_t)cells;
-        draw.highest = highest;
         draw.lod = (render::TerrainLod)lod;
         draw.morph_start = lod < LOD_COUNT - 1
                              ? meters_value (LOD_MORPH_START[lod] * m_lod_scale)
@@ -449,7 +447,7 @@ namespace moppe {
             const int lod =
               lod_for (nearest_to (x0, z0, x0 + chunk_x, z0 + chunk_z));
             if (lod != (int)render::TerrainLod::Subdivided) {
-              emit (c.x0, c.z0, CHUNK, lod, c.ymax, offset_x, offset_z);
+              emit (c.x0, c.z0, CHUNK, lod, offset_x, offset_z);
               continue;
             }
 
@@ -475,7 +473,6 @@ namespace moppe {
                   c.z0 + pz * PATCH,
                   PATCH,
                   lod_for (nearest_to (px0, pz0, px0 + patch_x, pz0 + patch_z)),
-                  c.patch_ymax[k],
                   offset_x,
                   offset_z);
               }

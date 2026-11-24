@@ -134,3 +134,39 @@ character batch went from 149,112 vertices to 49,704. The far shadow was
 cached in this frame. The live timings above include its refresh frames.
 The remaining largest sampled shader was `terrain_fragment`, at 29% of
 shader cost with 126 temporary registers and 304 bytes of spill per thread.
+
+## Snow-free terrain experiment
+
+Commit `9ab09982` builds two fragment programs from the same ground
+material. Its default selects the snow-free program where the height,
+shelter and road bounds exclude snow. On that commit,
+`MOPPE_TERRAIN_FULL=1` selects the full program everywhere. Both use
+the same vertex calculation. The production renderer keeps the snow
+material in a separate Lisp file and uses the full fragment program.
+
+On yawl's M5, the trailhead replay reported 8,143 instructions and 24
+texture reads for the full fragment, versus 6,380 instructions and 19
+texture reads for the snow-free fragment. Both used 126 temporary
+registers. Spilled bytes per thread rose from 304 to 320.
+
+| View | Visible terrain pixels using the snow-free program | Scene pass, full | Scene pass, automatic | GPU total, full | GPU total, automatic |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Trailhead | 1.0% | 6.081 ms | 6.080 ms | 10.065 ms | 10.123 ms |
+| Caddy at the shore | 97.9% | 5.813 ms | 5.745 ms | 10.418 ms | 10.467 ms |
+| Snowmobile | 0.0% | 3.927 ms | 3.851 ms | 7.294 ms | 7.146 ms |
+
+Coverage came from a diagnostic render that tagged the two terrain
+programs in the motion attachment and counted the surviving pixels.
+The timings used an untagged 960×540 scene with shader temporal resolve
+and a fixed noon clock. The test froze simulation after 80 ticks and
+alternated automatic, full, full, automatic in 32-frame blocks inside
+one process. Each number averages frames 13 through 28 of each block
+over ten complete cycles after warmup. Even on the snowfield the means
+varied. The split gave a small shoreline scene-pass saving and no
+consistent total GPU-time saving.
+
+After extracting the snow material, the production fragment matched its
+original M5 counts of 8,152 instructions, 126 temporary registers and
+304 bytes of spill per thread. Fixed-frame captures at the trailhead,
+shoreline, mountain-bike snowline and snowmobile tracks also showed
+close visual agreement with the original renderer.

@@ -6,17 +6,14 @@
 ;;; Prevailing maritime westerlies pack extra drift onto cool NNE-E leeward
 ;;; slopes and into wind-sheltered concave basins (cirque bowls and glacial
 ;;; snow valleys).
-(define-shader-function snow-reach (climate rise support lee shelter wander)
-  (* (smoothstep (swizzle climate :x) 0.79
-                 (+ rise (* (swizzle climate :y) lee)
-                    (* (swizzle climate :z) shelter)
-                    (* (swizzle climate :w) wander)))
+(define-shader-function snow-reach (rise support lee shelter wander)
+  (* (smoothstep 0.63 0.79 (+ rise (* 0.06 lee) (* 0.13 shelter) wander))
      (smoothstep 0.55 0.78 support)))
 
-(define-shader-function settled-powder (climate rise normal sheet)
+(define-shader-function settled-powder (rise normal sheet)
   (let* ((lee (+ (* -0.80 (swizzle normal :z))
                  (* 0.60 (swizzle normal :x)))))
-    (* (snow-reach climate rise (swizzle sheet :y) lee 0.0 0.0)
+    (* (snow-reach rise (swizzle sheet :y) lee 0.0 0.0)
        (smoothstep 0.48 0.53 (swizzle sheet :x))
        (- 1.0 (smoothstep 0.74 0.87 (swizzle sheet :z)))
        (smoothstep 0.55 0.83 (swizzle normal :y)))))
@@ -45,17 +42,11 @@
        (* (- (* (swizzle (sample-level snow-pack linear-repeat uv 0.0) :x)
                  2.007874) 1.007874) (swizzle snow-window :w) fade))))
 
-;;; Unmasked snow coverage. The draw's upper elevation can exclude it
-;;; even with full support, shelter and the most favourable noise.
-(define-shader-function snow-coverage (climate normal rise support shelter
-                                       drift edge)
+;;; Coverage before cliffs, water and trails cut into the snowfield.
+(define-shader-function snow-coverage (normal rise support shelter drift edge)
   (let* ((lee (+ (* -0.80 (swizzle normal :z)) (* 0.60 (swizzle normal :x))))
-         (reach (snow-reach climate rise support lee shelter (- drift 0.5))))
-    ;; Detail breaks the edge of an existing snowfield. A draw below
-    ;; the climatic reach can omit this entire layer.
-    (if (> reach 0.0)
-        (smoothstep 0.29 0.68 (+ reach (* 0.52 edge)))
-        0.0)))
+         (reach (snow-reach rise support lee shelter (* 0.10 (- drift 0.5)))))
+    (smoothstep 0.29 0.68 (+ reach (* 0.52 edge)))))
 
 (define-shader-function snow-tone (world patch fleck)
   (let* ((phase (+ (* 1.35 (swizzle world :x)) (* 0.48 (swizzle world :z))

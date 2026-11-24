@@ -35,8 +35,7 @@
       (sky-moon :vec4)             ; toward the moon; w: its light, 0..1
       (sky-pole :vec4)             ; the celestial pole
       (lamp :vec4)                 ; a fire's place; w: its reach, metres
-      (lamp-color :vec4)           ; its colour at full strength
-      (snow-climate :vec4))))      ; onset, lee, shelter, patch variation
+      (lamp-color :vec4))))        ; its colour at full strength
 
 ;;; -- shared ---------------------------------------------------------------
 
@@ -475,8 +474,7 @@
 
 (load (merge-pathnames "terrain-snow.lisp" *load-truename*))
 
-(defmacro define-terrain-vertex (name)
-  `(define-shader ,name
+(define-shader terrain-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index))
      :outputs ((clip-position :vec4 :built-in :position)
@@ -572,7 +570,7 @@
          (mantle (only-where (> rise 0.50) 0.0
                    (let* ((floor (sample-level ground linear-repeat
                                                (/ (+ grid (vec2 0.5 0.5)) extent) 0.0)))
-                     (* (settled-powder snow-climate rise normal floor)
+                     (* (settled-powder rise normal floor)
                         (swizzle (drift-profile ground-xz) :x)))))
          (press (powder-height ground-xz))
          (position (vec3 (swizzle ground-xz :x)
@@ -585,10 +583,7 @@
     (set-output surface-normal normal)
     (set-output field-uv (/ grid extent))
     (set-output here current)
-    (set-output then (* previous-view-proj point)))))
-
-(define-terrain-vertex terrain-vertex)
-(define-terrain-vertex snow-free-vertex)
+    (set-output then (* previous-view-proj point))))
 
 ;;; -- the stand ------------------------------------------------------------
 ;;;
@@ -830,9 +825,6 @@
   (mix (mix (vec3 0.88 0.95 1.07) (vec3 0.97 0.98 0.99) overcast)
        (vec3 1.0 1.0 1.0) visibility))
 
-(define-shader-function ground-edge (patch fleck grain)
-  (+ (* 0.45 (- patch 0.5)) (* 0.35 (- fleck 0.5)) (* 0.20 (- grain 0.5))))
-
 ;;; LAND is moisture, erosion, deposition, forest cover; FLOOR is the
 ;;; signed shore lane, snow support, trail, home base; STAND the canopy's
 ;;; closure and the fallen leaves; PLANTS and MORE the field layer's shares
@@ -843,7 +835,7 @@
 ;;; ABOVE-SEA is in metres.
 (define-shader-function ground-surface (world normal land floor rise
                                         above-sea stand plants more scars
-                                        bedrock micro meso macro region cover)
+                                        bedrock micro meso macro region)
   (let* ((up (swizzle normal :y))
          (moisture (swizzle land :x))
          (grain (swizzle micro :x))
@@ -852,7 +844,8 @@
          (drift (swizzle region :x))
          ;; What moves a boundary: every scale at once, so an edge is
          ;; ragged from across a valley and from a step away.
-         (edge (ground-edge patch fleck grain))
+         (edge (+ (* 0.45 (- patch 0.5)) (* 0.35 (- fleck 0.5))
+                  (* 0.20 (- grain 0.5))))
          (mottle (* (+ 0.88 (* 0.24 fleck))
                     (mix 0.86 1.08 (smoothstep 0.30 0.70 grain))
                     (+ 0.93 (* 0.14 patch))))
@@ -1168,7 +1161,8 @@
          (frozen-shore (smoothstep 0.56 0.68 rise))
          (snow-sunk (mix sunk (smoothstep 0.35 1.10 (* -1.0 shore))
                          frozen-shore))
-         (snow (* cover
+         (snow (* (snow-coverage normal rise (swizzle floor :y)
+                                 (swizzle land :z) drift edge)
                   (- 1.0 cliff)
                   (- 1.0 snow-sunk)
                   (- 1.0 (band (swizzle floor :z) 0.80))))
@@ -2086,7 +2080,7 @@
 
 ;;; The ground's colour and light at a fragment: the terrain's own, and the
 ;;; road ribbon's, which lies on it and must match it.
-(define-shader-abstraction shade-ground (snow)
+(define-shader-abstraction shade-ground ()
   `(let* ((extent (swizzle size :xy))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
@@ -2171,16 +2165,10 @@
                              metres footprint))
          (region (read-detail detail linear-repeat field-uv *detail-region*
                               metres footprint))
-         (cover ,(if snow
-                     '(snow-coverage snow-climate normal rise
-                        (swizzle floor-fields :y) (swizzle land :z)
-                        (swizzle region :x) (ground-edge (swizzle macro :x)
-                          (swizzle meso :x) (swizzle micro :x)))
-                     0.0))
          (surface (ground-surface world normal land floor-fields rise
                                   above-sea stand plants-here more-here
                                   scars-here bedrock-here micro meso macro
-                                  region cover))
+                                  region))
          ;; An edge as sharp as a pixel's width on the ground allows.
          (road-edge (max (* 0.75 footprint) 0.04))
          ;; A paved lane's own surface, over its tread.
@@ -2251,9 +2239,8 @@
          ;; Rain darkens what soaks it up, and still water more.
          (tread-share (road-hold road-built 0.0 road-across road-shape))
          (xz (swizzle world :xz))
-         (press ,(if snow '(powder-height xz) 0.0))
-         (powder ,(if snow '(* (- 1.0 road-flat) (ground-surface-powder surface))
-                          '(vec2 0.0 0.0)))
+         (press (powder-height xz))
+         (powder (* (- 1.0 road-flat) (ground-surface-powder surface)))
          (packed (* (swizzle powder :x) (smoothstep 0.0 0.13 (- 0.0 press))))
          (albedo (* (srgb path-ground)
                     (mix (vec3 1.0 1.0 1.0) (vec3 0.55 0.74 0.94) packed)
@@ -2284,9 +2271,8 @@
                         asphalt-slope paved-tread)
                    (- 1.0 puddle)))
          (snow-share (swizzle powder :x))
-         (near-slope ,(if snow
-                          '(snow-detail-slope xz footprint snow-share powder packed)
-                          '(vec2 0.0 0.0)))
+         (near-slope
+           (snow-detail-slope xz footprint snow-share powder packed))
          (tilt (vec3 (+ (swizzle slope :x) (swizzle near-slope :x)) 0.0
                      (+ (swizzle slope :y) (swizzle near-slope :y))))
          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
@@ -2299,9 +2285,7 @@
                           (+ 1.0 (clamp (/ (- (dot shaded sun) (dot normal sun))
                                            (+ facing 0.35))
                                         -0.75 0.90))))
-         (sastrugi-lit ,(if snow
-                      '(snow-self-shadow xz footprint snow-share sun packed)
-                      1.0))
+         (sastrugi-lit (snow-self-shadow xz footprint snow-share sun packed))
          ;; The sun's shadow: a slope-scaled bias against acne on raking
          ;; ground, faded out into the haze.
          (taps (sun-lit shadow-map shadow-compare world
@@ -2318,10 +2302,8 @@
          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
          (fill (shade-fill direct overcast))
          (to-eye (/ (- eye world) (max distance 0.0001)))
-         (flash ,(if snow
-                     '(snow-flash xz footprint snow-share packed direct
-                                  overcast shaded sun to-eye)
-                     0.0))
+         (flash (snow-flash xz footprint snow-share packed direct
+                            overcast shaded sun to-eye))
          ;; The ground's roughness: its own, a road's tread where it holds
          ;; the ground (asphalt smoother than gravel, and polished in the
          ;; wheel paths), smoother where skis/tracks compact snow, and wet.
@@ -2342,10 +2324,8 @@
          (mirror-rise (- (* 2.0 (max (dot shaded to-eye) 0.0)
                             (swizzle shaded :y))
                          (swizzle to-eye :y)))
-         (response ,(if snow
-                        '(snow-light snow-share packed press shaded sun to-eye
-                                     lambert-base direct overcast)
-                        '(vec4 1.0 1.0 1.0 (* 0.95 lambert-base direct))))
+         (response (snow-light snow-share packed press shaded sun to-eye
+                               lambert-base direct overcast))
          (diffuse-light (+ (* (hemisphere-lobes (swizzle ambient :xyz) shaded
                                                 overcast)
                               fill (swizzle response :xyz))
@@ -2375,8 +2355,7 @@
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
-(defmacro define-ground-fragment (name snow)
-  `(define-shader ,name
+(define-shader terrain-fragment
     (:stage :fragment
      :inputs ((world :vec3 :location 0)
               (surface-normal :vec3 :location 1)
@@ -2405,14 +2384,7 @@
                  (road-index :storage-buffer :binding 4 :element :uint)
                  (linear-repeat :sampler :binding 1)
                  (shadow-compare :sampler :binding 3)))
-    (shade-ground ,snow)))
-
-(define-ground-fragment terrain-fragment t)
-(define-ground-fragment snow-free-fragment nil)
-
-(define-shader-program snow-free
-  :vertex snow-free-vertex
-  :fragment snow-free-fragment)
+  (shade-ground))
 
 (define-shader-program terrain
   :vertex terrain-vertex
@@ -2572,7 +2544,7 @@
   (let* ((above lift))
     (when (< above 0.004)
       (discard))
-    (shade-ground t)))
+    (shade-ground)))
 
 (define-shader-program road-ribbon
   :vertex road-ribbon-vertex
@@ -3862,7 +3834,7 @@
 ;;; How much sward one patch carries, as moppe_grass_medium: closed canopy
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
-(define-shader-function read-grass-medium (climate xz land floor up rise density
+(define-shader-function read-grass-medium (xz land floor up rise density
                                            stand heath plants more scars
                                            bedrock)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
@@ -3877,7 +3849,7 @@
          (cleared (* (- 1.0 (smoothstep 0.80 0.86 (swizzle floor :z)))
                      (- 1.0 (clamp (* (swizzle floor :w) 1.6) 0.0 1.0))))
          (variation (+ 0.88 (* 0.24 (smoothstep 0.18 0.72 clump))))
-         (snow (snow-reach climate rise (swizzle floor :y) 0.0 (swizzle land :z) 0.0))
+         (snow (snow-reach rise (swizzle floor :y) 0.0 (swizzle land :z) 0.0))
          (alpine (- 1.0 (smoothstep 0.50 0.67 rise)))
          ;; Nothing roots under water, or on the strand beside it.
          (ashore (smoothstep 1.0 2.4 (+ (shore-metres (swizzle floor :x))
@@ -4102,7 +4074,7 @@
              (near-road (road-nearest road-segments road-index centre
                                       (< horizontal 300.0)))
              (verge (road-verge road-segments road-index centre near-road))
-             (medium (read-grass-medium snow-climate
+             (medium (read-grass-medium
                       centre (sample-level landscape linear-repeat uv 0.0)
                       ;; The coarse trail lane does not clear a verge.
                       (* (sample-level ground linear-repeat uv 0.0)
@@ -4245,7 +4217,7 @@
                           (swizzle (sample-level normals linear-repeat uv 0.0)
                                    :xy))))
          (height (sample-ground heights root-xz lattice))
-         (medium (read-grass-medium snow-climate
+         (medium (read-grass-medium
                   root-xz (sample-level landscape linear-repeat uv 0.0)
                   (sample-level ground linear-repeat uv 0.0)
                   (swizzle ground-normal :y)
@@ -4748,7 +4720,7 @@
                   (unpack-normal
                    (swizzle (sample-level normals linear-repeat uv 0.0) :xy))))
          (height (sample-ground heights xz lattice))
-         (grass-here (read-grass-medium snow-climate
+         (grass-here (read-grass-medium
                       xz (sample-level landscape linear-repeat uv 0.0)
                       (sample-level ground linear-repeat uv 0.0)
                       (swizzle normal :y)
@@ -5234,7 +5206,7 @@
          (altitude (/ (- (swizzle rock :y) (swizzle relief :x))
                       (max (swizzle relief :y) 1.0)))
          (snow (only-where (> altitude 0.50) 0.0
-                 (settled-powder snow-climate altitude (swizzle ground :xyz)
+                 (settled-powder altitude (swizzle ground :xyz)
                    (sample-level floor-sheet linear-repeat
                                  (/ (swizzle rock :xz) (swizzle world :xy)) 0.0))))
          (radial (normalize (- stone (boulder-shape-centre b))))

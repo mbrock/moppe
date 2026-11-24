@@ -2,7 +2,6 @@
 #include <moppe/game/world_ground.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/terrain/readings.hh>
-#include <moppe/terrain/snow_climate.hh>
 
 #include <cmath>
 
@@ -67,12 +66,8 @@ namespace moppe::game {
             0.88f * part,
             quantity_cast<proportion> (
               generated.reading<map::trail_influence> (where)));
-    return band (terrain::snow_climate::onset,
-                 0.79f * part,
-                 rise +
-                   terrain::snow_climate::lee.numerical_value_in (one) * lee +
-                   terrain::snow_climate::shelter.numerical_value_in (one) *
-                     shelter) *
+    return band (
+             0.63f * part, 0.79f * part, rise + 0.06f * lee + 0.13f * shelter) *
            band (0.55f * part, 0.78f * part, support).numerical_value_in (one) *
            (1.0f - tread.numerical_value_in (one));
   }
