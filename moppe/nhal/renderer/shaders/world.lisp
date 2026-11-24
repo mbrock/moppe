@@ -1142,18 +1142,41 @@
                    (smoothstep 2.0 7.0 (- (* 2.0 edge) shore))))
          (shoreline (mix gravel bed (band strand 0.5)))
 
-         ;; Rock on faces too steep for soil, bedded along the contours.
+         ;; Rock on faces too steep for soil: fractured, weathered gneiss on
+         ;; basement slopes, and warm, subtly bedded pale limestone on
+         ;; escarpments (never loud uniform stripes).
          (cliff (- 1.0 (band (+ up (* 0.20 edge)) 0.72)))
-         (bedding (+ (sin (+ (* (swizzle world :y) 0.9) (* 2.0 patch)
-                             (* 4.0 drift)))
-                     (* 0.6 (sin (+ (* (swizzle world :y) 2.3)
-                                    (* 5.0 drift))))))
-         (rock (* (mix (vec3 0.34 0.34 0.35) (vec3 0.54 0.52 0.48)
-                       (smoothstep -0.8 0.8 bedding))
-                  (+ 0.86 (* 0.28 patch))))
-         ;; Limestone is paler and warmer than the basement's gneiss.
-         (cliff-rock (mix rock (* rock (vec3 1.42 1.38 1.28))
-                          (swizzle more :w)))
+         (gneiss-tone (+ (* 0.55 patch) (* 0.30 drift) (* 0.15 grain)))
+         (foliation (sin (+ (* (swizzle world :y) 0.22)
+                            (* (swizzle world :x) 0.09)
+                            (* 5.0 patch) (* 4.0 drift))))
+         (gneiss-cliff
+          (mix (* (mix (vec3 0.35 0.35 0.36) (vec3 0.49 0.47 0.44)
+                       (smoothstep 0.20 0.85 gneiss-tone))
+                  (+ 0.92 (* 0.08 foliation) (* 0.10 (- grain 0.5))))
+               (vec3 0.22 0.21 0.20)
+               (* 0.55 opened-joint)))
+         (bed-phase (+ (* (swizzle world :y) 0.34) (* 4.5 drift)
+                       (* 2.5 patch)))
+         (bed-fine (+ (* (swizzle world :y) 0.95) (* 6.0 patch)
+                      (* 3.5 drift)))
+         (bed-tone (+ (* 0.65 (sin bed-phase)) (* 0.35 (sin bed-fine))))
+         (bed-seam (- 1.0 (smoothstep 0.02 0.11
+                                      (abs (- (fract (+ (* (swizzle world :y)
+                                                           0.18)
+                                                        (* 0.65 drift)
+                                                        (* 0.30 patch)))
+                                              0.5)))))
+         (limestone-base
+          (* (mix (vec3 0.54 0.52 0.47) (vec3 0.67 0.64 0.57)
+                  (smoothstep -1.0 1.0
+                              (+ (* 0.45 bed-tone) (* 0.8 (- patch 0.5))
+                                 (* 0.4 (- drift 0.5)))))
+             (+ 0.93 (* 0.14 (- grain 0.5)))
+             (- 1.0 (* 0.14 bed-seam))))
+         (limestone-cliff (mix limestone-base (vec3 0.34 0.32 0.29)
+                               (* 0.45 opened-joint)))
+         (cliff-rock (mix gneiss-cliff limestone-cliff (swizzle more :w)))
          (rocky (mix shoreline cliff-rock cliff))
 
          (trodden (mix rocky
