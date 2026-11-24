@@ -69,13 +69,9 @@
 (define-shader-function distance-fog (distance scale)
   (clamp (- 1.0 (exp (* -1.0 (expt (* distance scale) 1.5)))) 0.0 1.0))
 
-;;; BODY's value where TEST holds and ZERO elsewhere, evaluated only where
-;;; it holds: the language's IF selects between two values it has already
-;;; computed, while a loop run once or never truly branches.  A shader
-;;; function, which takes no abstractions, spells the loop out.
+;;; Keep expensive expressions inside the chosen arm on every backend.
 (define-shader-abstraction only-where (test zero body)
-  `(counted-fold (once (if ,test (uint 1) (uint 0)) unused ,zero)
-     ,body))
+  `(if ,test ,body ,zero))
 
 ;;; High ground rises above the valley haze.
 (define-shader-function relief-haze (fog altitude sea-level land-relief)
@@ -550,17 +546,6 @@
          (parent (swizzle morph :z))
          (cell (* (floor (/ grid parent)) parent))
          (f (clamp (/ (- grid cell) parent) (vec2 0.0 0.0) (vec2 1.0 1.0)))
-         (h00 (height-at heights cell extent))
-         (h10 (height-at heights (+ cell (vec2 parent 0.0)) extent))
-         (h01 (height-at heights (+ cell (vec2 0.0 parent)) extent))
-         (h11 (height-at heights (+ cell (vec2 parent parent)) extent))
-         (n00 (normal-at normals linear-repeat cell extent))
-         (n10 (normal-at normals linear-repeat (+ cell (vec2 parent 0.0))
-                         extent))
-         (n01 (normal-at normals linear-repeat (+ cell (vec2 0.0 parent))
-                         extent))
-         (n11 (normal-at normals linear-repeat (+ cell (vec2 parent parent))
-                         extent))
          (ground-xz (+ (* grid (vec2 (swizzle scale :x) (swizzle scale :z)))
                        (swizzle offset :xz)))
          ;; In the near field, finer than the height field's samples, the
@@ -596,8 +581,28 @@
          (blend (* morphing
                    (smoothstep (swizzle morph :x) (swizzle morph :y)
                                (sqrt (dot from-camera from-camera)))))
-         (height (mix own-height (on-lattice h00 h10 h01 h11 f) blend))
-         (normal (mix own-normal (on-lattice n00 n10 n01 n11 f) blend))
+         ;; Parent samples only contribute inside the geomorph band.
+         (h-parent (if (> blend 0.0)
+                       (on-lattice
+                         (height-at heights cell extent)
+                         (height-at heights (+ cell (vec2 parent 0.0)) extent)
+                         (height-at heights (+ cell (vec2 0.0 parent)) extent)
+                         (height-at heights (+ cell (vec2 parent parent)) extent)
+                         f)
+                       own-height))
+         (n-parent (if (> blend 0.0)
+                       (on-lattice
+                         (normal-at normals linear-repeat cell extent)
+                         (normal-at normals linear-repeat
+                                    (+ cell (vec2 parent 0.0)) extent)
+                         (normal-at normals linear-repeat
+                                    (+ cell (vec2 0.0 parent)) extent)
+                         (normal-at normals linear-repeat
+                                    (+ cell (vec2 parent parent)) extent)
+                         f)
+                       own-normal))
+         (height (mix own-height h-parent blend))
+         (normal (mix own-normal n-parent blend))
          (elevation (* height (swizzle scale :y)))
          (rise (/ (- elevation (swizzle relief :x)) (max 1.0 (swizzle relief :y))))
          (mantle (only-where (> rise 0.50) 0.0
@@ -1985,7 +1990,7 @@
       (normal-x :vec4)             ; the model's normal matrix, by columns;
                                    ; w 1 where last frame's vertices are
                                    ; bound beside these
-      (normal-y :vec4)
+      (normal-y :vec4)             ; w 1 for meshes with wind or streamed lists
       (normal-z :vec4))))
 
 (define-shader uber-vertex
@@ -2028,9 +2033,11 @@
          (flutter (byte-of flags (uint 24.0)))
          (time (swizzle camera-position :w))
          (placed (swizzle (* model local) :xyz))
-         (position (in-wind placed bend flutter time))
-         (before (in-wind (swizzle (* previous-model local-before) :xyz) bend
-                          flutter (swizzle relief :z)))
+         (windy (> (swizzle normal-y :w) 0.5))
+         (position (if windy (in-wind placed bend flutter time) placed))
+         (previous (swizzle (* previous-model local-before) :xyz))
+         (before (if windy (in-wind previous bend flutter (swizzle relief :z))
+                     previous))
          (current (* view-proj (vec4 position 1.0))))
     (set-output clip-position (clip current (swizzle temporal :zw)))
     (set-output world position)
@@ -2273,10 +2280,13 @@
          (road-edge (max (* 0.75 footprint) 0.04))
          ;; A paved lane's own surface, over its tread.
          (asphalt-here
-           (only-where (> (* (road-point-paved road) road-built) 0.0)
+           ;; IF accepts scalar and vector results. This fold also carries
+           ;; the asphalt structure across its conditional.
+           (counted-fold (once (if (> (* (road-point-paved road) road-built) 0.0)
+                                   (uint 1) (uint 0)) unused
              (make-asphalt :slope (vec2 0.0 0.0)
                            :look (vec4 0.0 0.0 0.0 0.0)
-                           :rough 0.9 :grit 0.0)
+                           :rough 0.9 :grit 0.0))
              (asphalt (road-point-along road) road-across
                        (swizzle road-shape :x) footprint)))
          (paved-tread (* (road-point-paved road) road-built
@@ -2370,20 +2380,24 @@
          ;; The full-resolution slopes of wind-carved sastrugi drifts, snow
          ;; flutes, and pressed ski/belt trenches (with crisp raised berms).
          (snow-share (swizzle powder :x))
-         (sastrugi (only-where (> snow-share 0.01) (vec2 0.0 0.0)
-                     (* (sastrugi-slope xz footprint) snow-share
-                        (- 1.0 (* 0.72 packed)))))
-         (near-slope (+ (* snow-share (swizzle (drift-profile xz) :yz))
-                        sastrugi
-                        (* (vec2 1.0 0.36) (swizzle powder :y)
-                           (- 1.0 (smoothstep 0.15 1.0 footprint))
-                           (- 1.0 packed))
-                        (* snow-share 14.5
-                           (- 1.0 (smoothstep 0.14 0.50 footprint))
-                           (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
-                                    (powder-height (- xz (vec2 0.04 0.0))))
-                                 (- (powder-height (+ xz (vec2 0.0 0.04)))
-                                    (powder-height (- xz (vec2 0.0 0.04))))))))
+         (near-slope
+           (if (> snow-share 0.0)
+               (let* ((sastrugi
+                        (only-where (> snow-share 0.01) (vec2 0.0 0.0)
+                          (* (sastrugi-slope xz footprint) snow-share
+                             (- 1.0 (* 0.72 packed))))))
+                 (+ (* snow-share (swizzle (drift-profile xz) :yz))
+                    sastrugi
+                    (* (vec2 1.0 0.36) (swizzle powder :y)
+                       (- 1.0 (smoothstep 0.15 1.0 footprint))
+                       (- 1.0 packed))
+                    (* snow-share 14.5
+                       (- 1.0 (smoothstep 0.14 0.50 footprint))
+                       (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
+                                (powder-height (- xz (vec2 0.04 0.0))))
+                             (- (powder-height (+ xz (vec2 0.0 0.04)))
+                                (powder-height (- xz (vec2 0.0 0.04))))))))
+               (vec2 0.0 0.0)))
          (tilt (vec3 (+ (swizzle slope :x) (swizzle near-slope :x)) 0.0
                      (+ (swizzle slope :y) (swizzle near-slope :y))))
          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
@@ -3787,6 +3801,16 @@
   (defparameter *caster*
     '((light-view :mat4)           ; world to the sun's clip
       (focus :vec4))))             ; the map's centre; w: seconds
+
+(define-shader shadow-clear-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index))
+     :outputs ((clip-position :vec4 :built-in :position)))
+  (set-output clip-position
+              (vec4 (fullscreen-corner (float vertex-index)) 1.0 1.0)))
+
+(define-shader-program shadow-clear
+  :vertex shadow-clear-vertex)
 
 (define-shader terrain-shadow-vertex
     (:stage :vertex
@@ -5688,7 +5712,8 @@
 
 (define-shader water-vertex
     (:stage :vertex
-     :inputs ((vertex-index :uint :built-in :vertex-index))
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
      :outputs ((clip-position :vec4 :built-in :position)
                (world :vec3 :location 0)
                (depth :float :location 1)
@@ -5701,11 +5726,13 @@
                  (terrain :uniform-block :binding 1 :members #.*terrain*)
                  (chunk :uniform-block :binding 2 :members #.*chunk*)
                  (sea :uniform-block :binding 3 :members #.*sea*)
+                 (patches :storage-buffer :binding 4 :element :vec4)
                  (heights :texture-2d :binding 0)
                  (water-levels :texture-2d :binding 11)))
   (let* ((row-length (uint (swizzle placement :w)))
          (stride (swizzle placement :z))
-         (grid (+ (swizzle placement :xy)
+         (patch (buffer-element patches instance-index))
+         (grid (+ (swizzle patch :xy)
                   (* (vec2 (float (mod vertex-index row-length))
                            (float (/ vertex-index row-length)))
                      stride)))
@@ -5714,7 +5741,7 @@
          (sheet (sheet-between water-levels grid extent))
          (water (swizzle sheet :x))
          (xz (+ (* grid (vec2 (swizzle scale :x) (swizzle scale :z)))
-                (swizzle offset :xz)))
+                (swizzle patch :zw)))
          (still (vec3 (swizzle xz :x) (* water (swizzle scale :y))
                       (swizzle xz :y)))
          (deep (* (- water ground) (swizzle scale :y)))

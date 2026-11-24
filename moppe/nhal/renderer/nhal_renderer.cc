@@ -8,6 +8,7 @@
 
 #include <bit>
 #include <cmath>
+#include <string_view>
 
 namespace moppe::nhal {
   namespace detail {
@@ -185,11 +186,47 @@ namespace moppe::nhal {
       auto mesh = std::make_shared<NhalMesh> ();
       mesh->device = m_device.get ();
       const auto& vertices = recorded.vertices ();
-      if (!vertices.empty ())
-        mesh->vertices = m_device->create_buffer (
-          { .size = vertices.size () * sizeof (render::Vertex),
-            .label = "mesh" },
-          std::as_bytes (std::span (vertices)));
+      if (vertices.empty ())
+        return mesh;
+
+      // Index the complete shader input, including split normals, paint,
+      // UVs and wear. Views point into the immutable recording during bake.
+      std::unordered_map<std::string_view, std::uint32_t> ids;
+      std::vector<render::Vertex> unique;
+      std::vector<std::uint32_t> corners;
+      corners.reserve (vertices.size ());
+      Vec3 low (vertices[0].px, vertices[0].py, vertices[0].pz);
+      Vec3 high = low;
+      for (const auto& v : vertices) {
+        const std::string_view bytes (reinterpret_cast<const char*> (&v),
+                                      sizeof v);
+        auto [it, fresh] = ids.try_emplace (bytes, unique.size ());
+        corners.push_back (it->second);
+        if (fresh) {
+          unique.push_back (v);
+          mesh->wind |= v.wind != 0 || v.flutter != 0;
+          const Vec3 p (v.px, v.py, v.pz);
+          for (int i = 0; i < 3; ++i) {
+            low[i] = std::min<float> (low[i], p[i]);
+            high[i] = std::max<float> (high[i], p[i]);
+          }
+        }
+      }
+      mesh->bounds.centre = position ((low + high) * 0.5f);
+      mesh->bounds.half_extent = displacement ((high - low) * 0.5f);
+      const auto upload = [this] (const auto& data, const char* label) {
+        const auto bytes = std::as_bytes (std::span (data));
+        return m_device->create_buffer (
+          { .size = bytes.size (), .label = label }, bytes);
+      };
+      mesh->vertices = upload (unique, "mesh");
+      if (unique.size () <= 65535) {
+        std::vector<std::uint16_t> narrow (corners.begin (), corners.end ());
+        mesh->indices = upload (narrow, "mesh indices");
+        mesh->index_type = IndexType::uint16;
+      } else {
+        mesh->indices = upload (corners, "mesh indices");
+      }
       mesh->runs = recorded.runs ();
       return mesh;
     }

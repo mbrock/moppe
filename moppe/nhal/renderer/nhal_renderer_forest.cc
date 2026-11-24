@@ -148,6 +148,7 @@ namespace moppe::nhal {
     void NhalRenderer::set_forest (
       const render::ForestSetup& setup,
       std::span<const render::ForestInstance> instances) {
+      m_sun_shadow.cached_far.reset ();
       for (Buffer* b : { &m_forest.records,
                          &m_forest.classified,
                          &m_forest.candidates,

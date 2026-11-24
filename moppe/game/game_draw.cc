@@ -257,7 +257,6 @@ namespace moppe {
                                 .seat = m_company.companion->bus_seat,
                                 .outfit = m_company.their_outfit () });
       m_places.bus_view.draw (r,
-                              m_world_dl,
                               m_places.bus,
                               bus_time (logic ()),
                               frame.camera.position,

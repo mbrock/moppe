@@ -131,6 +131,14 @@ namespace moppe::game {
                    const FleetRiders& riders,
                    bool theirs) {
     for_each_machine (fleet, [&] (Machine m, const auto& pose) {
+      // Include the rotor, riders and the blob projected up to 30 m below.
+      // A detached trailer can be visible independently of the tractor.
+      constexpr meters_t reach = 40.0f * u::m;
+      bool seen = scene.r.in_scene (pose.position, reach);
+      if constexpr (requires { pose.trailer_position; })
+        seen |= scene.r.in_scene (pose.trailer_position, reach);
+      if (!seen && !(m == Machine::boat && scene.rod))
+        return;
       const std::size_t i = static_cast<std::size_t> (m);
       if (scene.blob) {
         const meters_t radius = machine_kind (m).shadow_radius;

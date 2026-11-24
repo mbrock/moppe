@@ -46,14 +46,13 @@ namespace moppe::game {
                   plan_extent_t period);
 
     // The stops near the camera, and the buses where they are at `now`
-    // (bus_model.hh), each with its driver, and its riders in `dl`.
+    // (bus_model.hh), with their visible occupants.
     void draw (render::Renderer& renderer,
-               render::DrawList& dl,
                const BusLine& line,
                play_time_t now,
                const position_t& camera,
                std::uint64_t motion_base,
-               std::span<const BusRider> riders) const;
+               std::span<const BusRider> riders);
     // The same, lent to the sun's shadow.
     void cast_shadows (render::Renderer& renderer,
                        const BusLine& line,
@@ -65,6 +64,7 @@ namespace moppe::game {
 
     std::vector<render::MeshPtr> m_stops;
     CarMeshes m_bus;
+    render::DrawList m_occupants;
     std::array<render::MeshPtr, 2> m_doors;
     plan_extent_t m_period {};
   };

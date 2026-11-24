@@ -168,12 +168,23 @@ namespace moppe::nhal {
       }
     };
 
+    struct MeshBounds {
+      position_t centre {};
+      displacement_t half_extent {};
+      bool visible (const Mat4& clip_from_local) const;
+    };
+
     struct NhalMesh final : render::Mesh,
                             std::enable_shared_from_this<NhalMesh> {
       Device* device = nullptr;
-      Buffer vertices;
+      Buffer vertices, indices;
+      IndexType index_type = IndexType::uint32;
+      MeshBounds bounds;
+      bool wind = false;
       std::vector<DrawList::Run> runs;
       ~NhalMesh () override {
+        if (indices)
+          device->destroy (indices);
         if (vertices)
           device->destroy (vertices);
       }
@@ -294,6 +305,12 @@ namespace moppe::nhal {
       Texture levels, flow, still, shore_surf;
       std::array<float, 2> shore_size {};
       std::vector<std::uint8_t> wet_patches;
+      struct Batch {
+        int lod;
+        std::size_t first;
+      };
+      std::vector<Batch> batches;
+      std::vector<std::array<float, 4>> patches;
       Texture beneath, beneath_depth;
     };
 
@@ -304,7 +321,10 @@ namespace moppe::nhal {
         const NhalMesh* mesh;
         Mat4 model;
       };
-      Pipeline terrain, mesh;
+      Pipeline terrain, mesh, clear;
+      std::optional<render::ShadowCascade> cached_far;
+      direction_t cached_sun {};
+      std::uint32_t far_frame = 0;
       Texture map;
       std::vector<Caster> casters;
       bool casting = false;
@@ -436,7 +456,8 @@ namespace moppe::nhal {
 
       // The lent meshes' opaque runs: what is blended or glows lets the
       // sun through.
-      void draw_mesh_casters (const Transient& caster_block);
+      void draw_mesh_casters (const Transient& caster_block,
+                              const Mat4& light);
 
       void draw_terrain (const ChunkDraw* chunks, int count) override;
 
@@ -455,11 +476,11 @@ namespace moppe::nhal {
 
       // Whether a chunk holds any water; every chunk may until the game has
       // said which patches are dry.
-      bool wet (const ChunkDraw& c) const;
+      void collect_water_patches ();
 
       // The terrain's chunks as draw_terrain last placed them, under the
       // bound pipeline; the water's pass takes only the wet ones.
-      void draw_chunks (bool only_wet = false);
+      void draw_chunks ();
 
       void draw_forest () override;
 
@@ -498,6 +519,7 @@ namespace moppe::nhal {
 
       void draw_world_labels (const render::TextList& text) override;
 
+      bool in_scene (position_t centre, meters_t radius) const override;
       float scene_focal_pixels () const override;
 
       void draw_model_glass () override;

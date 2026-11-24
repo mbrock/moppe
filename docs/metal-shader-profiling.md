@@ -114,3 +114,23 @@ overlapping `profile run` reported successful collection and an empty
 shader table. Xcode replay and export on that same frame yielded 67 shader
 rows. The table and positive-cost check distinguish usable samples from a
 successful command exit. The reason for the collection difference is open.
+
+## M5 trailhead and Caddy measurements
+
+On November 25, 2026, yawl ran the same two scenes before and after mesh
+indexing, visibility culling, wet-patch batching, shader changes and far
+shadow reuse. The baseline was `a1b7de21`. Each run used a 960×540 scene,
+shader temporal resolve, a noon clock and no opening sequence. The Caddy
+view used `MOPPE_DEMO=caddy`. The table gives mean NHAL GPU pass times
+across the last 600 of 720 frames in the final paired runs.
+
+| Scene | GPU total before | GPU total after | Sun shadow before | Sun shadow after |
+| --- | ---: | ---: | ---: | ---: |
+| Trailhead | 13.72 ms | 8.79 ms | 3.39 ms | 1.06 ms |
+| Caddy | 12.30 ms | 8.75 ms | 2.80 ms | 0.85 ms |
+
+In the trailhead replay, water went from 483 draws to 42, and the skinned
+character batch went from 149,112 vertices to 49,704. The far shadow was
+cached in this frame. The live timings above include its refresh frames.
+The remaining largest sampled shader was `terrain_fragment`, at 29% of
+shader cost with 126 temporary registers and 304 bytes of spill per thread.

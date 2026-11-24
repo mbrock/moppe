@@ -116,6 +116,30 @@ namespace moppe::nhal {
       return 0.5f * float (m_scene_height) * std::abs (m_params.proj.at (1, 1));
     }
 
+    // Test the support point of the local box against each clip plane.
+    // A one-percent guard band covers the scene's subpixel jitter.
+    bool MeshBounds::visible (const Mat4& m) const {
+      for (int axis = 0; axis < 3; ++axis) {
+        for (float sign : { -1.0f, 1.0f }) {
+          float reach = 1.01f * m.at (3, 3) + sign * m.at (3, axis);
+          for (int i = 0; i < 3; ++i) {
+            const float n = 1.01f * m.at (i, 3) + sign * m.at (i, axis);
+            reach += n * position_value (centre)[i] +
+                     std::abs (n) * displacement_value (half_extent)[i];
+          }
+          if (reach < 0)
+            return false;
+        }
+      }
+      return true;
+    }
+
+    bool NhalRenderer::in_scene (position_t centre, meters_t radius) const {
+      const float r = meters_value (radius);
+      return MeshBounds { centre, displacement (Vec3 (r, r, r)) }
+        .visible (m_previous_view_proj);
+    }
+
     void NhalRenderer::draw_mesh (const render::Mesh& mesh,
                                   const Mat4& model,
                                   std::uint64_t motion_id) {
@@ -126,6 +150,8 @@ namespace moppe::nhal {
         m_sun_shadow.casters.push_back ({ &m, model });
         return;
       }
+      if (!m.wind && !m.bounds.visible (m_previous_view_proj * model))
+        return;
       open_scene ();
       Mat4 previous = model;
       if (motion_id) {
@@ -213,6 +239,7 @@ namespace moppe::nhal {
       draw.normal_y = { cof (1, 0), cof (1, 1), cof (1, 2), 0 };
       draw.normal_z = { cof (2, 0), cof (2, 1), cof (2, 2), 0 };
       draw.normal_x[3] = streamed_before ? 1.0f : 0.0f;
+      draw.normal_y[3] = !mesh || mesh->wind ? 1.0f : 0.0f;
       const Transient block = m_device->allocate (sizeof draw);
       std::memcpy (block.data, &draw, sizeof draw);
 
@@ -246,8 +273,8 @@ namespace moppe::nhal {
           std::uint64_t (run.first - first) * sizeof (render::Vertex);
         m_device->set_buffer (0, m_frame_block);
         if (mesh) {
-          m_device->set_buffer (1, mesh->vertices, offset);
-          m_device->set_buffer (3, mesh->vertices, offset);
+          m_device->set_buffer (1, mesh->vertices);
+          m_device->set_buffer (3, mesh->vertices);
         } else {
           m_device->set_buffer (1, advanced (streamed, offset));
           m_device->set_buffer (
@@ -257,7 +284,11 @@ namespace moppe::nhal {
         m_device->set_buffer (2, block);
         m_device->set_texture (0, texture_or_white (run.texture));
         m_device->set_texture (8, m_sun_shadow.map);
-        m_device->draw (run.count, 1, first);
+        if (mesh)
+          m_device->draw_indexed (
+            mesh->indices, mesh->index_type, run.count, 1, run.first);
+        else
+          m_device->draw (run.count, 1, first);
       }
     }
 

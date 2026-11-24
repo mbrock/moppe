@@ -287,12 +287,11 @@ namespace moppe::game {
   }
 
   void BusView::draw (render::Renderer& renderer,
-                      render::DrawList& dl,
                       const BusLine& line,
                       play_time_t now,
                       const position_t& camera,
                       std::uint64_t motion_base,
-                      std::span<const BusRider> riders) const {
+                      std::span<const BusRider> riders) {
     using namespace bus_render_parts;
     std::uint64_t id = motion_base;
     for (std::size_t i = 0; i < m_stops.size () && i < line.stops ().size ();
@@ -314,31 +313,43 @@ namespace moppe::game {
       const BusPose& pose = buses[k];
       id += 16;
       const position_t at = near_copy (pose.position, camera);
-      if (length2 (displacement_value (at - camera)) > 2500.0f * 2500.0f)
+      if (length2 (displacement_value (at - camera)) > 2500.0f * 2500.0f ||
+          !renderer.in_scene (at, 12.0f * u::m))
         continue;
       const CarPose car { .position = at,
                           .forward = pose.forward,
                           .up = pose.up,
                           .steer = pose.steer,
                           .wheel_spin = pose.wheel_spin };
+      // A seated torso spans about one metre. Once it covers fewer than
+      // three scene pixels behind the glass, omit the skinned occupants.
+      const float focal = renderer.scene_focal_pixels ();
+      const meters_t rider_reach = (focal / 3.0f) * u::m;
+      const bool show_riders = focal <= 0.0f ||
+        dot (at - camera, at - camera) <= rider_reach * rider_reach;
       // Its riders, by seat.
       std::array<std::optional<Outfit>, 2> seated;
       for (const BusRider& rider : riders)
         if (rider.bus == k && rider.seen)
           seated[std::min<std::size_t> (rider.seat, 1)] = rider.outfit;
+      m_occupants.clear ();
       render_car (
         renderer,
-        dl,
+        m_occupants,
         car,
-        { .driver = true,
-          .passenger = seated[0].has_value (),
+        { .driver = show_riders,
+          .passenger = show_riders && seated[0].has_value (),
           .driver_outfit = Outfit::green_jacket,
           .passenger_outfit = seated[0].value_or (Outfit::blue_jacket) },
         id,
         bus_car (),
         m_bus);
-      if (seated[1])
-        seat_car_passenger (dl, car, bus_car (1), *seated[1]);
+      if (show_riders && seated[1])
+        seat_car_passenger (m_occupants, car, bus_car (1), *seated[1]);
+      // Each bus owns its occupants' motion history as buses enter or
+      // leave view. The walker's vertices keep their own correspondence.
+      if (!m_occupants.empty ())
+        renderer.draw_list (m_occupants, id);
       // Its doors, folding out about their hinges at a stop.
       const Mat4 frame = model_mesh::body_frame (at, pose.forward, pose.up);
       // The doors' swing when they stand fully open.

@@ -91,7 +91,8 @@ the same GPU time (the scene pass on an M2 Pro at 1600x900: 2.90 ms against
 Water is designed afresh rather than ported from the old renderer.
 `draw_ocean` first copies the opaque scene's colour and depth out
 (`scene-copy`, closing and resuming the scene pass around it), then draws
-the terrain's chunks again with the `water` program, each vertex lifted to
+wet 32-cell patches at the terrain's LOD, instanced in traversal order.
+The `water` program lifts each vertex to
 the water sheet (RG32F on the terrain grid: the surface and the swell's
 amplitude) and dry vertices sunk below the ground so the depth test drops
 them. The current (`set_water_flow`, RGBA16F metres a second along x, z,
@@ -108,9 +109,8 @@ so the waterline fades out. Cascades shade the sheet's own slope; the
 nickpoints' vertical curtains (`game/waterfall_surface.cc`) are drawn by
 the `waterfall` program, streaks laid out by fall time so they lengthen as
 gravity speeds them. The shader's `only-where` runs costly parts (river or
-lake ripples, foam noise, cascade slope) only where they show: the
-language's `if` selects between computed values, while a loop run once or
-never truly branches.
+lake ripples, foam noise, cascade slope) only where they show, using
+the shader language's conditional.
 
 Filtered ripples keep their unresolved slope variance, which broadens the
 sun's normalized highlight rather than making distant water optically
@@ -152,7 +152,10 @@ pixels across, and the stand closure is approximated by the habitat's canopy
 cover.
 
 The sun's shadow is two 2048-texel cascades side by side in one 4096x2048
-depth atlas, rendered each frame by `render_local_shadow`. The near
+depth atlas. The near half is refreshed each frame. The far half and its
+light matrix are reused for up to three frames, with an early refresh on
+a large focus or sunlight change. On reuse frames a depth-only triangle
+clears the near viewport before its casters draw. The near
 cascade covers the 160 metres around the rider: terrain chunks at native
 detail, then the trees, culled for the sun by the same compute program into
 two classes (each species at its coarsest tier, with a smaller, porous

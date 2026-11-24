@@ -140,12 +140,36 @@ namespace moppe::nhal {
       open_scene ();
     }
 
+    void NhalRenderer::collect_water_patches () {
+      constexpr int patch = render::terrain_patch_cells;
+      const int across = m_terrain.params.width / patch;
+      const int down = m_terrain.params.height / patch;
+      const bool masked = across > 0 && down > 0 &&
+        m_water.wet_patches.size () == std::size_t (across) * down;
+      m_water.patches.clear ();
+      m_water.batches.clear ();
+      for (const ChunkDraw& c : m_terrain.chunks) {
+        const int lod = std::clamp (int (c.lod), 0, lod_count - 1);
+        for (int z = c.z0; z < c.z0 + c.cells; z += patch)
+          for (int x = c.x0; x < c.x0 + c.cells; x += patch) {
+            if (masked && !m_water.wet_patches[
+                  std::size_t (z / patch % down) * across + x / patch % across])
+              continue;
+            // Keep the terrain list's order across translucent draws.
+            if (m_water.batches.empty () || m_water.batches.back ().lod != lod)
+              m_water.batches.push_back ({lod, m_water.patches.size ()});
+            m_water.patches.push_back (
+              {float (x), float (z), c.offset_x, c.offset_z});
+          }
+      }
+    }
+
     void NhalRenderer::draw_ocean (const render::OceanParams& params) {
       if (!m_terrain.have || !m_water.levels || m_scene_closed)
         return;
       // A view of dry land needs neither the copy nor the pass's break.
-      if (std::ranges::none_of (
-            m_terrain.chunks, [this] (const ChunkDraw& c) { return wet (c); }))
+      collect_water_patches ();
+      if (m_water.patches.empty ())
         return;
       copy_beneath_water ();
       m_device->set_pipeline (m_water.draw);
@@ -160,7 +184,22 @@ namespace moppe::nhal {
       m_device->set_texture (14, m_water.beneath_depth);
       m_device->set_texture (
         15, m_water.shore_surf ? m_water.shore_surf : m_water.still);
-      draw_chunks (true);
+      const auto patches = std::span<const std::array<float, 4>> (
+        m_water.patches);
+      for (std::size_t i = 0; i < m_water.batches.size (); ++i) {
+        const auto [lod, first] = m_water.batches[i];
+        const auto end = i + 1 < m_water.batches.size ()
+          ? m_water.batches[i + 1].first : patches.size ();
+        shaders::water::Chunk chunk {};
+        chunk.placement = {0, 0, lod_step[lod], float (patch_verts (lod))};
+        m_device->set_uniforms (2, chunk);
+        m_device->set_buffer (
+          4, m_device->upload (patches.subspan (first, end - first)));
+        m_device->draw_indexed (m_terrain.patch_indices[lod],
+                                IndexType::uint32,
+                                m_terrain.patch_index_count[lod],
+                                std::uint32_t (end - first));
+      }
     }
 
     void NhalRenderer::draw_waterfalls (const render::Mesh& mesh,

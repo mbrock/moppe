@@ -14,6 +14,14 @@ namespace moppe::nhal {
       mesh_caster.cull = Cull::none;
       mesh_caster.label = "mesh shadow";
       m_sun_shadow.mesh = m_device->create_render_pipeline (mesh_caster);
+      RenderPipelineDesc clear = caster;
+      clear.program = &shaders::shadow_clear::program;
+      clear.vertex = m_shaders.shadow_clear[0];
+      clear.depth_compare = CompareOp::always;
+      clear.depth_bias = clear.slope_scaled_depth_bias = 0.0f;
+      clear.cull = Cull::none;
+      clear.label = "clear near shadow";
+      m_sun_shadow.clear = m_device->create_render_pipeline (clear);
       // The sun's two cascades side by side: near on the left, far on
       // the right.
       m_sun_shadow.map =
@@ -43,7 +51,20 @@ namespace moppe::nhal {
       using Shadow = render::LocalShadowParams;
       const bool trees = m_forest.count;
       const bool rocks = m_boulders.count;
-      constexpr std::size_t cascades = 2;
+      const auto& far = params.cascades[Shadow::far];
+      auto& cached = m_sun_shadow.cached_far;
+      // The far map contains only terrain and static tree proxies. Small
+      // movements keep sampling the map with the matrix that drew it.
+      constexpr meters_t focus_limit = 32.0f * u::m;
+      const bool refresh =
+        !cached || m_frame_reset ||
+        m_frame - m_sun_shadow.far_frame >= 4 ||
+        cached->radius != far.radius ||
+        dot (far.focus - cached->focus, far.focus - cached->focus) >
+          focus_limit * focus_limit ||
+        length2 (direction_value (m_params.sun_dir) -
+                 direction_value (m_sun_shadow.cached_sun)) > 1e-6f;
+      const std::size_t cascades = refresh ? 2 : 1;
       for (std::size_t c = 0; c < cascades; ++c) {
         const render::ShadowCascade& cascade = params.cascades[c];
         if (trees)
@@ -60,16 +81,27 @@ namespace moppe::nhal {
 
       RenderPassDesc pass;
       pass.label = "sun shadow";
-      pass.depth = { m_sun_shadow.map, Load::clear, Store::store, 1.0f };
+      pass.depth = { m_sun_shadow.map, refresh ? Load::clear : Load::load,
+                     Store::store, 1.0f };
       m_device->begin_render_pass (pass);
       for (std::size_t c = 0; c < cascades; ++c) {
         m_device->set_viewport (
           float (c * shadow_size), 0, float (shadow_size), float (shadow_size));
+        if (!refresh) {
+          m_device->set_pipeline (m_sun_shadow.clear);
+          m_device->draw (3);
+        }
         draw_shadow_cascade (
           params.cascades[c], c, trees, rocks && c == Shadow::near);
       }
       m_device->end_render_pass ();
       m_sun_shadow.casters.clear ();
+
+      if (refresh) {
+        cached = far;
+        m_sun_shadow.cached_sun = m_params.sun_dir;
+        m_sun_shadow.far_frame = m_frame;
+      }
 
       // Normalised light depth per metre, for biases given in metres:
       // a cascade's box runs from a quarter to eight times its reach.
@@ -78,11 +110,11 @@ namespace moppe::nhal {
       };
       m_frame_values.sun_view = matrix (near.light_view_proj);
       m_frame_values.sun_view_far =
-        matrix (params.cascades[Shadow::far].light_view_proj);
+        matrix (cached->light_view_proj);
       m_frame_values.shadow = { m_terrain.params.shadow_strength,
                                 1.0f / shadow_size,
                                 per_metre (near),
-                                per_metre (params.cascades[Shadow::far]) };
+                                per_metre (*cached) };
       upload_frame ();
     }
 
@@ -164,7 +196,7 @@ namespace moppe::nhal {
       }
       if (index == render::LocalShadowParams::near &&
           !m_sun_shadow.casters.empty ())
-        draw_mesh_casters (caster_block);
+        draw_mesh_casters (caster_block, light);
       if (rocks) {
         m_device->set_pipeline (m_boulders.shadow);
         m_device->set_buffer (0, caster_block);
@@ -179,9 +211,12 @@ namespace moppe::nhal {
       }
     }
 
-    void NhalRenderer::draw_mesh_casters (const Transient& caster_block) {
+    void NhalRenderer::draw_mesh_casters (const Transient& caster_block,
+                                          const Mat4& light) {
       m_device->set_pipeline (m_sun_shadow.mesh);
       for (const SunShadowState::Caster& c : m_sun_shadow.casters) {
+        if (!c.mesh->bounds.visible (light * c.model))
+          continue;
         shaders::mesh_shadow::Draw draw {};
         draw.model = matrix (c.model);
         draw.previous_model = draw.model;
@@ -190,13 +225,11 @@ namespace moppe::nhal {
         for (const DrawList::Run& run : c.mesh->runs) {
           if (!run.count || run.state.blend || run.state.additive)
             continue;
-          const std::uint32_t first = m_first_vertex_counts ? run.first : 0;
-          const std::uint64_t offset =
-            std::uint64_t (run.first - first) * sizeof (render::Vertex);
           m_device->set_buffer (0, caster_block);
-          m_device->set_buffer (1, c.mesh->vertices, offset);
+          m_device->set_buffer (1, c.mesh->vertices);
           m_device->set_buffer (2, block);
-          m_device->draw (run.count, 1, first);
+          m_device->draw_indexed (
+            c.mesh->indices, c.mesh->index_type, run.count, 1, run.first);
         }
       }
     }

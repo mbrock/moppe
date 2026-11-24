@@ -37,6 +37,7 @@ namespace moppe::nhal {
       const render::TerrainParams& params,
       std::span<const terrain::SurfaceElevation> heights,
       std::span<const terrain::TerrainNormal> normals) {
+      m_sun_shadow.cached_far.reset ();
       m_terrain.params = params;
       m_terrain.snow_window = {};
       const std::uint32_t w = params.width, h = params.height;
@@ -299,24 +300,8 @@ namespace moppe::nhal {
       }
     }
 
-    bool NhalRenderer::wet (const ChunkDraw& c) const {
-      const int patch = render::terrain_patch_cells;
-      const int across = m_terrain.params.width / patch;
-      const int down = m_terrain.params.height / patch;
-      if (across <= 0 || down <= 0 ||
-          m_water.wet_patches.size () != std::size_t (across) * down)
-        return true;
-      for (int z = c.z0 / patch; z < (c.z0 + c.cells) / patch; ++z)
-        for (int x = c.x0 / patch; x < (c.x0 + c.cells) / patch; ++x)
-          if (m_water.wet_patches[std::size_t (z % down) * across + x % across])
-            return true;
-      return false;
-    }
-
-    void NhalRenderer::draw_chunks (bool only_wet) {
+    void NhalRenderer::draw_chunks () {
       for (const ChunkDraw& c : m_terrain.chunks) {
-        if (only_wet && !wet (c))
-          continue;
         const int lod = std::clamp (int (c.lod), 0, lod_count - 1);
         const bool patch = c.cells == render::terrain_patch_cells;
         shaders::terrain::Chunk chunk {};
