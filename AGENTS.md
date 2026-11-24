@@ -17,6 +17,8 @@
   (or `open build/moppe.app`) on macOS, `./build/moppe` on Linux. Both are
   the same SDL3 host (`moppe/platform/sdl/`) drawing through the NHAL
   renderer, on Metal 4 or Vulkan; on Linux, run cmake inside `nix develop`.
+- Metal shader costs on the M5: [capture, Xcode replay/export, and CLI
+  analysis](docs/metal-shader-profiling.md) with `tools/metal-profile`.
 - Renderer smoke test: `./build/moppe-testbed` (configure with
   `-DMOPPE_BUILD_DEVELOPER_TOOLS=ON`)
 - What the game does and how to stage each feature for a capture or a

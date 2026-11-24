@@ -680,11 +680,8 @@ configuration. The per-feature switches (`--graphics-enable` and
 `--graphics-disable`, with their hot-switching bookkeeping and `G` for the
 terrain topology overlay) were removed with the benchmark that used them; the
 Boolean toggles that remain are plain fields of `GraphicsSettings`.
-To create a trace for Xcode's Metal debugger, run
-with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
-captured after the world is ready by default, or set
-`MOPPE_METAL_CAPTURE_FRAMES` to another count. Both capture and the timing
-summary deliberately exclude the loading screen.
+For GPU frame captures and sampled shader costs on the current NHAL renderer,
+see [Profiling Moppe shaders on the M5](metal-shader-profiling.md).
 
 The light matrices are computed with our own Mat4 (ortho + lookAt), replacing
 the "do matrix math on the GL projection stack" trick in shadow.cc. Bias
