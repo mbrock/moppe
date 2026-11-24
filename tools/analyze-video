@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""Analyze a Moppe gameplay recording with the Gemini Interactions API.
+
+Uses Gemini 4 agentic video understanding by default so the model dynamically
+explores the timeline and zooms into high-action moments at variable frame rate
+and resolution. Supports static clipping/FPS slicing as well.
+
+Requires GEMINI_API_KEY or GOOGLE_API_KEY in the environment.
+
+Examples:
+  tools/analyze-video build/clip.mp4 --preset trails
+  tools/analyze-video build/clip.mp4 "Check water reflections for flickering."
+  tools/analyze-video build/clip.mp4 --static --start 10s --end 25s --fps 4
+"""
+
+import argparse
+import json
+import mimetypes
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
+BASE_URL = "https://generativelanguage.googleapis.com"
+
+PRESETS = {
+    "trails": (
+        "You are inspecting a 3D game rendering capture. Carefully scrutinize "
+        "the trails, tracks, or water wakes left behind the vehicle across the "
+        "entire video. Look for ANY graphical glitches, flickering, jumping or "
+        "teleporting trails, sudden cutoffs, tile boundary seams, sharp "
+        "polygonal zigzags or bowtie triangles on turns, clipping/sinking "
+        "under waves or snow, dark/bright banding, z-fighting, temporal "
+        "ghosting, or blocky water-foam artifacts. Give exact MM:SS timestamps "
+        "for every glitch you observe and describe precisely what happens "
+        "frame-to-frame. If trails look clean with no glitches, state that "
+        "explicitly."
+    ),
+    "visuals": (
+        "You are inspecting a 3D game rendering capture for visual quality and "
+        "rendering bugs. Report any artifacts (flickering, popping, z-fighting, "
+        "shadow acne, color banding, broken reflections, floating objects, HUD "
+        "glitches, or seam discontinuities) with exact MM:SS timestamps, then "
+        "briefly critique overall lighting, sky, terrain, and readability."
+    ),
+    "physics": (
+        "You are inspecting a 3D game capture for vehicle and terrain physics "
+        "issues. Report any clipping into ground/boulders/water, sudden "
+        "teleports, unnatural bounces, sinking, or stuck states with exact "
+        "MM:SS timestamps."
+    ),
+    "general": (
+        "Watch this gameplay video carefully and report any visual, rendering, "
+        "animation, or physics glitches with exact MM:SS timestamps."
+    ),
+}
+
+
+def api_key() -> str:
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        sys.exit(
+            "analyze-video: set GEMINI_API_KEY or GOOGLE_API_KEY in the "
+            "environment"
+        )
+    return key
+
+
+def api_request(url, key, data=None, headers=None, method=None):
+    hdrs = {"x-goog-api-key": key}
+    if headers:
+        hdrs.update(headers)
+    req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            return resp.status, dict(resp.headers), resp.read()
+    except urllib.error.HTTPError as err:
+        body = err.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {err.code} for {url}: {body[:1200]}")
+
+
+def upload_video(path: str, key: str):
+    if not os.path.isfile(path):
+        sys.exit(f"analyze-video: file not found: {path}")
+    size = os.path.getsize(path)
+    name = os.path.basename(path)
+    mime = mimetypes.guess_type(path)[0] or "video/mp4"
+    meta = json.dumps({"file": {"display_name": name}}).encode("utf-8")
+    _, resp_headers, _ = api_request(
+        f"{BASE_URL}/upload/v1beta/files",
+        key,
+        data=meta,
+        headers={
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": str(size),
+            "X-Goog-Upload-Header-Content-Type": mime,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    upload_url = next(
+        (v.strip() for k, v in resp_headers.items() if k.lower() == "x-goog-upload-url"),
+        None,
+    )
+    if not upload_url:
+        raise RuntimeError("Files API did not return an x-goog-upload-url header")
+
+    with open(path, "rb") as fh:
+        payload = fh.read()
+    _, _, body = api_request(
+        upload_url,
+        key,
+        data=payload,
+        headers={
+            "Content-Length": str(size),
+            "X-Goog-Upload-Offset": "0",
+            "X-Goog-Upload-Command": "upload, finalize",
+        },
+        method="POST",
+    )
+    info = json.loads(body.decode("utf-8"))
+    file_obj = info.get("file", info)
+    file_name = file_obj["name"]
+    file_uri = file_obj["uri"]
+    print(
+        f"analyze-video: uploaded {name} ({size / (1024 * 1024):.1f} MB) -> {file_name}",
+        file=sys.stderr,
+    )
+
+    while True:
+        _, _, st_body = api_request(f"{BASE_URL}/v1beta/{file_name}", key)
+        st = json.loads(st_body.decode("utf-8"))
+        state = st.get("state")
+        if state == "ACTIVE":
+            return file_uri, file_name, mime
+        if state == "FAILED":
+            raise RuntimeError(f"Files API processing failed: {st}")
+        time.sleep(2)
+
+
+def delete_file(file_name: str, key: str):
+    try:
+        api_request(f"{BASE_URL}/v1beta/{file_name}", key, method="DELETE")
+    except Exception as err:
+        print(f"analyze-video: warning: failed to delete {file_name}: {err}", file=sys.stderr)
+
+
+def run_interaction(args, key: str, file_uri: str, mime: str):
+    video_part = {
+        "type": "video",
+        "uri": file_uri,
+        "mime_type": mime,
+        "resolution": args.resolution,
+    }
+    if args.static:
+        proc = {"type": "static"}
+        if args.fps is not None:
+            proc["fps"] = args.fps
+        if args.start:
+            proc["start_offset"] = args.start
+        if args.end:
+            proc["end_offset"] = args.end
+        if args.layers:
+            proc["content_layers"] = [x.strip() for x in args.layers.split(",") if x.strip()]
+        video_part["processing"] = proc
+    else:
+        video_part["processing"] = "agentic"
+
+    prompt = args.prompt if args.prompt else PRESETS[args.preset]
+    body = {
+        "model": args.model,
+        "input": [video_part, {"type": "text", "text": prompt}],
+        "background": True,
+    }
+    _, _, resp_bytes = api_request(
+        f"{BASE_URL}/v1beta/interactions",
+        key,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    res = json.loads(resp_bytes.decode("utf-8"))
+    iid = res["id"]
+    print(
+        f"analyze-video: interaction {iid} (model={args.model}, "
+        f"mode={'static' if args.static else 'agentic'}, resolution={args.resolution})",
+        file=sys.stderr,
+    )
+
+    while res.get("status") in ("queued", "in_progress"):
+        time.sleep(3)
+        _, _, poll_bytes = api_request(f"{BASE_URL}/v1beta/interactions/{iid}", key)
+        res = json.loads(poll_bytes.decode("utf-8"))
+
+    if res.get("status") != "completed":
+        raise RuntimeError(f"Interaction ended with status={res.get('status')}: {res}")
+    return res
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Analyze a gameplay video using the Gemini Interactions API."
+    )
+    parser.add_argument("video", help="Path to a local MP4/video file")
+    parser.add_argument(
+        "prompt",
+        nargs="?",
+        default=None,
+        help="Custom analysis prompt (overrides --preset)",
+    )
+    parser.add_argument(
+        "--preset",
+        choices=sorted(PRESETS.keys()),
+        default="visuals",
+        help="Built-in review prompt preset (default: visuals)",
+    )
+    parser.add_argument(
+        "--model",
+        default="gemini-4-hydrogen",
+        help="Gemini model (default: gemini-4-hydrogen)",
+    )
+    parser.add_argument(
+        "--resolution",
+        choices=("low", "medium", "high"),
+        default="high",
+        help="Per-frame media resolution (default: high)",
+    )
+    parser.add_argument(
+        "--static",
+        action="store_true",
+        help="Use static processing instead of agentic video understanding",
+    )
+    parser.add_argument("--fps", type=float, default=None, help="Static mode FPS")
+    parser.add_argument("--start", default=None, help="Static mode start offset (e.g. 10s)")
+    parser.add_argument("--end", default=None, help="Static mode end offset (e.g. 30s)")
+    parser.add_argument(
+        "--layers",
+        default=None,
+        help="Static mode content_layers comma list (frames,audio,transcript)",
+    )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="Print agentic processing_call count and token usage to stderr",
+    )
+    parser.add_argument(
+        "--keep-file",
+        action="store_true",
+        help="Do not delete the uploaded video from Gemini Files API after analysis",
+    )
+    args = parser.parse_args()
+
+    key = api_key()
+    file_uri, file_name, mime = upload_video(args.video, key)
+    try:
+        res = run_interaction(args, key, file_uri, mime)
+    finally:
+        if not args.keep_file:
+            delete_file(file_name, key)
+
+    steps = res.get("steps", [])
+    if args.trace:
+        calls = sum(1 for s in steps if s.get("type") == "processing_call")
+        usage = res.get("usage", {})
+        print(
+            f"analyze-video: {calls} agentic processing calls, "
+            f"usage={json.dumps(usage)}",
+            file=sys.stderr,
+        )
+
+    for step in steps:
+        if step.get("type") == "model_output":
+            for part in step.get("content", []):
+                if isinstance(part, dict) and part.get("type") == "text":
+                    print(part.get("text", ""))
+
+
+if __name__ == "__main__":
+    main()
