@@ -162,8 +162,8 @@ namespace moppe::terrain {
     square_meters_t navigable_area = 2000000.0f * u::m * u::m;
     meters_t clearance = 1.2f * u::m;
     meters_t navigable_clearance = 2.8f * u::m;
-    meters_t bridge_reach = 30.0f * u::m;
-    meters_t longest_bridge = 90.0f * u::m;
+    meters_t bridge_reach = 55.0f * u::m;
+    meters_t longest_bridge = 165.0f * u::m;
     // The deck's half width, inside the tread's: the kerbs stand at it.
     meters_t deck_half_width = 2.9f * u::m;
     // How deep the deck and its stringers stand under the tread: the

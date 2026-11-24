@@ -347,6 +347,7 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/fractional_drainage.cc
   moppe/terrain/river.cc
   moppe/terrain/channel.cc
+  moppe/terrain/glacial.cc
   moppe/terrain/flood.cc
   moppe/terrain/waterline.cc
   moppe/terrain/sediment_transport.cc
@@ -879,6 +880,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/fractional_drainage_test.cc
     tests/terrain/river_test.cc
     tests/terrain/channel_test.cc
+    tests/terrain/glacial_test.cc
     tests/terrain/flood_test.cc
     tests/terrain/waterline_test.cc
     tests/terrain/sediment_transport_test.cc

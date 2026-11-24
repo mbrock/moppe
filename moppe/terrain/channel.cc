@@ -111,8 +111,17 @@ namespace moppe::terrain {
         course[last = next] = 1;
       }
     }
-    for (const Waterfall& waterfall : rivers.waterfalls)
+    for (const Waterfall& waterfall : rivers.waterfalls) {
+      // High-discharge trunk rivers grade minor ledges into runnable rapids
+      // (forsar) rather than leaving boat-sinking vertical steps mid-channel;
+      // hanging-valley tributaries and major escarpment drops stay pinned.
+      const meters_t drop (ground[waterfall.lip_cell] -
+                           ground[waterfall.foot_cell]);
+      if (waterfall.contributing_area >= 8000000.0f * u::m * u::m &&
+          drop < 6.0f * u::m)
+        continue;
       fixed[waterfall.lip_cell] = fixed[waterfall.foot_cell] = 1;
+    }
 
     // Sources first: water gathers downstream, so a cell's catchment is
     // greater than any that drains to it.
@@ -356,11 +365,20 @@ namespace moppe::terrain {
             continue;
           const meters_t bed_width = bed_width_for (point.contributing_area);
           meters_t depth = bed_depth_for (point.contributing_area);
-          // Below a lake the bed starts at the sill; a spring's begins as
+          // Below a lake the bed starts shallow at a small tarn's sill, while
+          // a wide navigable river cuts a deep outlet throat out of its lake
+          // so boats never ground on a zero-depth weir; a spring's begins as
           // nothing.
-          if (below_sill[cell] != nowhere)
-            depth = meters_t (
-              depth * band (0.0f * u::m, 2.5f * bed_width, below_sill[cell]));
+          if (below_sill[cell] != nowhere) {
+            const proportion_t navigable_sill =
+              0.75f * band (2000000.0f * u::m * u::m,
+                            8000000.0f * u::m * u::m,
+                            point.contributing_area);
+            depth = meters_t (depth * std::max (navigable_sill,
+                                                band (0.0f * u::m,
+                                                      2.5f * bed_width,
+                                                      below_sill[cell])));
+          }
           if (springs)
             depth = meters_t (
               depth * band (0.0f * u::m, 3.0f * bed_width, point.distance));
@@ -548,7 +566,7 @@ namespace moppe::terrain {
               const meters_t along =
                 ((world_x - start_x) * run_x + (world_z - start_z) * run_z) /
                 run;
-              if (along < -cell_reach || along > run + cell_reach)
+              if (bed == 0 && springs && along < -cell_reach)
                 continue;
               const proportion_t t = std::clamp (
                 proportion_t (along / run), 0.0f * proportion[one], whole);
@@ -620,8 +638,23 @@ namespace moppe::terrain {
     std::vector<SurfaceElevation> floor (count, nowhere_level);
     for (std::size_t cell = 0; cell < count; ++cell) {
       const Foot& foot = feet[cell];
-      if (foot.distance == nowhere || kept[cell])
+      if (foot.distance == nowhere)
         continue;
+      if (kept[cell]) {
+        // Where a river enters or leaves standing water (a lake or the sea),
+        // carve its submerged thalweg through shallow nearshore shelves so
+        // water depth never drops to a boat-grounding sill at the shoreline,
+        // without ever raising the lake or seabed.
+        if (foot.distance <= foot.half_width) {
+          const proportion_t across = foot.distance / foot.half_width;
+          const proportion_t section = whole - proportion_t (across * across);
+          const SurfaceElevation bed =
+            foot.bed - meters_t (foot.depth * section);
+          if (bed < ground[cell] && ground[cell] <= foot.bed + 2.0f * u::m)
+            formed[cell] = bed;
+        }
+        continue;
+      }
       // Ground far above the section is the valley's wall, and far below
       // it another place, a drop or a gully beside the stream: neither is
       // the river's to move.
@@ -913,6 +946,146 @@ namespace moppe::terrain {
               sea_level - meters_t (mouth_depth * section * taper);
             formed[cell] = std::min (formed[cell], target);
           }
+      }
+    }
+
+    // Submerged lake throats: where a navigable river enters or leaves a
+    // permanent lake (such as a glacial ribbon lake), carve its drowned
+    // thalweg across any shallow nearshore shelf strictly below the lake
+    // surface so boats glide cleanly between river and lake without grounding
+    // on a shoreline bar or outlet weir.
+    {
+      MOPPE_PROFILE_ZONE ("channels.lake_throats");
+      constexpr square_meters_t navigable_throat_area =
+        2000000.0f * u::m * u::m;
+      const meters_t period_x = static_cast<float> (width) * spacing_x;
+      const meters_t period_z = static_cast<float> (height) * spacing_z;
+      const auto carve_throat_disk = [&] (meters_t cx,
+                                          meters_t cz,
+                                          meters_t half_w,
+                                          meters_t target_depth,
+                                          WaterBodyId body,
+                                          SurfaceElevation water_level) {
+        const int min_x = static_cast<int> (
+          std::floor (((cx - half_w) / spacing_x).numerical_value_in (one)));
+        const int max_x = static_cast<int> (
+          std::ceil (((cx + half_w) / spacing_x).numerical_value_in (one)));
+        const int min_z = static_cast<int> (
+          std::floor (((cz - half_w) / spacing_z).numerical_value_in (one)));
+        const int max_z = static_cast<int> (
+          std::ceil (((cz + half_w) / spacing_z).numerical_value_in (one)));
+        for (int az = min_z; az <= max_z; ++az)
+          for (int ax = min_x; ax <= max_x; ++ax) {
+            const std::size_t cell =
+              static_cast<std::size_t> (wrap_index (az, height)) * width +
+              wrap_index (ax, width);
+            if (census.body_at (
+                  CellIndex { static_cast<std::uint32_t> (cell) }) != body)
+              continue;
+            const meters_t rx = static_cast<float> (ax) * spacing_x - cx;
+            const meters_t rz = static_cast<float> (az) * spacing_z - cz;
+            const meters_t r = hypot (plan_displacement (rx, rz));
+            if (r >= half_w)
+              continue;
+            const proportion_t across = r / half_w;
+            const proportion_t section = whole - proportion_t (across * across);
+            const SurfaceElevation target =
+              water_level - meters_t (target_depth * section);
+            formed[cell] = std::min (formed[cell], target);
+          }
+      };
+      for (const RiverReach& reach : rivers.reaches) {
+        if (reach.cells.empty ())
+          continue;
+        // Inlet throat into a downstream lake along the drainage thalweg.
+        if (reach.downstream_area >= navigable_throat_area &&
+            !reach.downstream_ocean && lake (reach.downstream_body)) {
+          const WaterBodyId body = reach.downstream_body;
+          std::uint32_t cur = reach.cells.back ();
+          for (int hops = 0;
+               hops < 6 && census.body_at (CellIndex { cur }) != body;
+               ++hops) {
+            const std::uint32_t next = drainage.receiver[cur];
+            if (next == cur)
+              break;
+            cur = next;
+          }
+          if (census.body_at (CellIndex { cur }) == body) {
+            const SurfaceElevation water_level = flood.water_levels ()[cur];
+            const meters_t mouth_w = bed_width_for (reach.downstream_area);
+            const meters_t mouth_d = bed_depth_for (reach.downstream_area);
+            const meters_t max_run =
+              std::clamp (4.5f * mouth_w, 50.0f * u::m, 180.0f * u::m);
+            meters_t walked = 0.0f * u::m;
+            for (int hop = 0; hop < 96 && walked <= max_run; ++hop) {
+              const meters_t cx = static_cast<float> (cur % width) * spacing_x;
+              const meters_t cz = static_cast<float> (cur / width) * spacing_z;
+              const proportion_t progress = std::clamp (
+                proportion_t (walked / max_run), 0.0f * proportion[one], whole);
+              const proportion_t taper =
+                whole - band (0.65f * proportion[one], whole, progress);
+              const meters_t half_w =
+                moppe::lerp (0.55f * mouth_w, 0.85f * mouth_w, progress);
+              carve_throat_disk (
+                cx, cz, half_w, meters_t (mouth_d * taper), body, water_level);
+              const std::uint32_t next = drainage.receiver[cur];
+              if (next == cur || census.body_at (CellIndex { next }) != body)
+                break;
+              walked += step (cur, next);
+              cur = next;
+            }
+          }
+        }
+        // Outlet approach throat back into an upstream lake.
+        if (reach.upstream_area >= navigable_throat_area &&
+            lake (reach.upstream_body) && reach.alignment.points.size () >= 2) {
+          const WaterBodyId body = reach.upstream_body;
+          const SurfaceElevation water_level =
+            surface_elevation_point (census.water_body (body).surface_level);
+          const meters_t out_w = bed_width_for (reach.upstream_area);
+          const meters_t out_d = 0.75f * bed_depth_for (reach.upstream_area);
+          const plan_position_t head = reach.alignment.points.front ().place;
+          std::size_t ahead_idx = 1;
+          while (
+            ahead_idx + 1 < reach.alignment.points.size () &&
+            hypot (plan_displacement (
+              minimum_image_delta (
+                x_of (reach.alignment.points[ahead_idx].place) - x_of (head),
+                period_x),
+              minimum_image_delta (
+                z_of (reach.alignment.points[ahead_idx].place) - z_of (head),
+                period_z))) < 16.0f * u::m)
+            ++ahead_idx;
+          const meters_t run_x = minimum_image_delta (
+            x_of (reach.alignment.points[ahead_idx].place) - x_of (head),
+            period_x);
+          const meters_t run_z = minimum_image_delta (
+            z_of (reach.alignment.points[ahead_idx].place) - z_of (head),
+            period_z);
+          const meters_t run = hypot (plan_displacement (run_x, run_z));
+          if (run > 1e-3f * u::m) {
+            const quantity<one, float> back_x = -run_x / run;
+            const quantity<one, float> back_z = -run_z / run;
+            const meters_t reach_back =
+              std::clamp (2.5f * out_w, 30.0f * u::m, 90.0f * u::m);
+            const meters_t stride = std::max (spacing_x, spacing_z);
+            for (meters_t dist = 0.0f * u::m; dist <= reach_back;
+                 dist += stride) {
+              const proportion_t progress =
+                std::clamp (proportion_t (dist / reach_back),
+                            0.0f * proportion[one],
+                            whole);
+              const proportion_t taper =
+                whole - band (0.5f * proportion[one], whole, progress);
+              carve_throat_disk (x_of (head) + dist * back_x,
+                                 z_of (head) + dist * back_z,
+                                 0.65f * out_w,
+                                 meters_t (out_d * taper),
+                                 body,
+                                 water_level);
+            }
+          }
+        }
       }
     }
 

@@ -233,6 +233,7 @@ namespace moppe::game {
     const auto course = greatest_river_course (
       lot.ground.generated.water_bodies (), lot.ground.generated.rivers ());
     std::vector<plan_position_t> line;
+    std::vector<bool> waterfall_point;
     for (auto reach = course.rbegin (); reach != course.rend (); ++reach)
       for (const terrain::RiverAlignmentPoint& point :
            (*reach)->alignment.points) {
@@ -244,16 +245,35 @@ namespace moppe::game {
             p[axis] -=
               period[axis] * std::round ((p[axis] - last[axis]) / period[axis]);
         }
-        if (line.empty () || length (at - line.back ()) > 4.0f * u::m)
+        const bool is_fall = point.waterfall >= 0.45f * proportion[one];
+        if (line.empty () || length (at - line.back ()) > 4.0f * u::m) {
           line.push_back (at);
+          waterfall_point.push_back (is_fall);
+        } else if (is_fall) {
+          waterfall_point.back () = true;
+        }
       }
     if (line.size () < 3)
       return false;
-    // So far up from the mouth, and on to where it runs deep.
-    const meters_t most = 1200.0f * u::m;
+    // Walk upstream from the sea mouth along the continuous navigable river
+    // stretch, stopping safely downstream of any far-headwater waterfall so a
+    // river boat run never launches straight over a cliff.
+    std::size_t safe_head = 0;
+    for (std::size_t i = line.size (); i-- > 0;)
+      if (waterfall_point[i]) {
+        meters_t buffer = 0.0f * u::m;
+        std::size_t clear = i + 1;
+        while (clear + 1 < line.size () && buffer < 120.0f * u::m) {
+          buffer += length (line[clear + 1] - line[clear]);
+          ++clear;
+        }
+        safe_head = std::min (clear, line.size () - 1);
+        break;
+      }
+    const meters_t most = 1800.0f * u::m;
     std::size_t start = line.size () - 1;
     meters_t up = 0.0f * u::m;
-    while (start > 0 &&
+    while (start > safe_head &&
            (up < most || lot.ground.water_depth (line[start]) < 0.6f * u::m)) {
       up += length (line[start] - line[start - 1]);
       --start;

@@ -400,9 +400,10 @@ namespace moppe::terrain {
           bed = std::min (bed, natural[k]);
         }
         // A road that keeps beside a river for longer than it takes to
-        // cross it runs along its bank, not over it.
+        // cross it (even obliquely across a wide glacial trunk) runs along
+        // its bank, not over it.
         if (along[j] - along[i] >
-            river_width (area) + 16.0f * u::m +
+            1.5f * river_width (area) + 24.0f * u::m +
               4.0f * std::max (ground.spacing_x, ground.spacing_z)) {
           i = j + 1;
           continue;

@@ -7,6 +7,7 @@
 #include <moppe/spatial/bundle_operations.hh>
 #include <moppe/spatial/bundle_storage.hh>
 #include <moppe/terrain/domain_storage.hh>
+#include <moppe/terrain/glacial.hh>
 #include <moppe/terrain/lithology.hh>
 #include <moppe/terrain/river.hh>
 
@@ -279,10 +280,68 @@ namespace moppe::map {
                        meters_t water_datum,
                        const terrain::ChannelFormation& parameters) {
     MOPPE_PROFILE_ZONE ("terrain.form_channels");
-    // The rivers as the finished world will find them, but for the beds
-    // this is about to give them.
-    const terrain::FloodField flood = terrain::analyze_standing_water (
-      surface, terrain::surface_elevation_point (water_datum));
+    // First analyze pre-glacial drainage and carve Scandinavian glacial
+    // U-troughs (grading the main stem smoothly from highlands to sea while
+    // leaving side tributaries perched as hanging-valley waterfalls), alpine
+    // cirques, and cold-based vidda shelves.
+    const terrain::SurfaceElevation sea_level =
+      terrain::surface_elevation_point (water_datum);
+    {
+      const terrain::FloodField pre_flood =
+        terrain::analyze_standing_water (surface, sea_level);
+      const terrain::LakeCensus pre_lakes = terrain::census_lakes (pre_flood);
+      const terrain::DrainageGraph pre_drainage =
+        terrain::analyze_wet_drainage (pre_flood, pre_lakes);
+      const terrain::RiverNetwork pre_rivers = terrain::extract_river_network (
+        pre_flood,
+        pre_lakes,
+        pre_drainage,
+        terrain::analyze_fractional_drainage (pre_flood, pre_lakes),
+        terrain::visible_river_minimum_area ());
+      const terrain::GlacialSculptingResult glacial =
+        terrain::sculpt_glacial_valleys (
+          surface, pre_flood, pre_lakes, pre_drainage, pre_rivers, sea_level);
+      if (glacial.troughs > 0 || glacial.cirques > 0) {
+        const terrain::TerrainDomain& domain = surface.domain ();
+        for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+          const std::size_t offset = domain.offset (site);
+          const meters_t change =
+            quantity_cast<isq::length> (glacial.change[offset]);
+          const terrain::SedimentThickness outwash = glacial.outwash[offset];
+          if (change == 0.0f * u::m &&
+              outwash == 0.0f * terrain::sediment_thickness[u::m])
+            continue;
+          const auto row = surface[site];
+          if (change != 0.0f * u::m) {
+            spatial::get<terrain::surface_elevation> (row) =
+              glacial.heights[offset];
+            auto& sediment = spatial::get<terrain::sediment_thickness> (row);
+            if (change < 0.0f * u::m) {
+              sediment = std::max (
+                sediment + quantity_cast<terrain::sediment_thickness> (change),
+                0.0f * terrain::sediment_thickness[u::m]);
+              spatial::get<eroded_surface_material> (row) +=
+                quantity_cast<eroded_surface_material> (-change);
+            }
+          }
+          if (outwash > 0.0f * terrain::sediment_thickness[u::m]) {
+            auto& sediment = spatial::get<terrain::sediment_thickness> (row);
+            if (sediment < outwash) {
+              const meters_t added =
+                quantity_cast<isq::length> (outwash - sediment);
+              sediment = outwash;
+              spatial::get<deposited_surface_material> (row) +=
+                quantity_cast<deposited_surface_material> (added);
+            }
+          }
+        }
+      }
+    }
+
+    // Re-analyze hydrology on the glaciated relief and carve the post-glacial
+    // navigable river beds, plunge pools, and submarine estuaries.
+    const terrain::FloodField flood =
+      terrain::analyze_standing_water (surface, sea_level);
     const terrain::LakeCensus lakes = terrain::census_lakes (flood);
     const terrain::DrainageGraph drainage =
       terrain::analyze_wet_drainage (flood, lakes);

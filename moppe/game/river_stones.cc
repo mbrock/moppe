@@ -624,6 +624,19 @@ namespace moppe::game {
       }
     }
 
+    // A wide, deep, gently graded river keeps a central navigable fairway
+    // swept of emergent lag boulders and erratics; cobbles and rocks line its
+    // margins and point bars instead of fouling boats in mid-channel.
+    bool in_navigable_fairway (const RiverSection& section, meters_t across) {
+      if (section.wet_width () < 14.0f * u::m ||
+          section.deepest < 0.70f * u::m ||
+          section.slope >= 0.035f * grade[one])
+        return false;
+      const meters_t fairway_half =
+        0.60f * std::min (section.bank[0], section.bank[1]);
+      return abs (across) < fairway_half;
+    }
+
     // The bed's own stones where they show: coarse in competent water, with
     // a tail of larger ones the flood leaves behind as lag.
     void lay_bed (StoneLayer& layer,
@@ -651,6 +664,8 @@ namespace moppe::game {
             lattice_hash (metre, static_cast<std::uint32_t> (j), 0xc0bu);
           const meters_t across =
             -(section.bank[1] + 1.0f * u::m) + span * hash_lane (stone, 0);
+          if (in_navigable_fairway (section, across))
+            continue;
           const meters_t along = river_step * (hash_lane (stone, 1) - 0.5f);
           meters_t radius =
             0.5f * section.competence *
@@ -855,6 +870,8 @@ namespace moppe::game {
         const meters_t span = section.wet_width () + 5.0f * u::m;
         const meters_t across =
           -(section.bank[1] + 2.5f * u::m) + span * hash_lane (rock, 2);
+        if (in_navigable_fairway (section, across))
+          continue;
         layer.loose (
           section.at (across, 0.0f * u::m), radius, rock, 0.15f * u::m);
       }

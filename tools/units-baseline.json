@@ -82,12 +82,12 @@
       "escapes": 617
     },
     "Rivers, water & sediment": {
-      "share": 98.3,
+      "share": 98.4,
       "files": 17,
-      "typed": 1119,
+      "typed": 1164,
       "raw_float": 14,
       "raw_vector": 5,
-      "escapes": 194
+      "escapes": 198
     },
     "Roads & trails": {
       "share": 82.3,
@@ -98,25 +98,25 @@
       "escapes": 120
     },
     "Terrain & world generation": {
-      "share": 86.5,
-      "files": 44,
-      "typed": 1176,
+      "share": 87.8,
+      "files": 46,
+      "typed": 1324,
       "raw_float": 137,
       "raw_vector": 47,
-      "escapes": 256
+      "escapes": 278
     },
     "Tests": {
-      "share": 40.6,
-      "files": 86,
-      "typed": 685,
-      "raw_float": 804,
+      "share": 41.2,
+      "files": 87,
+      "typed": 704,
+      "raw_float": 806,
       "raw_vector": 199,
-      "escapes": 1417
+      "escapes": 1423
     },
     "Vehicles & on-foot body": {
       "share": 77.6,
       "files": 47,
-      "typed": 2193,
+      "typed": 2194,
       "raw_float": 209,
       "raw_vector": 423,
       "escapes": 646
