@@ -177,11 +177,17 @@ namespace moppe::game {
         band (0.18f, 0.40f, steepness_above) *
         (whole - band (0.25f, 0.45f, steepness)) *
         (0.45f * proportion[one] + 0.55f * ground.deposition));
-      // Erratics: the ice left single stones lying on the high open ground.
+      // Erratics: the ice left single stones lying on the high open ground,
+      // while deep high-altitude snowfields bury knee-high stones beneath
+      // packed drift, leaving scattered outcrops along steeper fell margins.
+      const proportion_t deep_snow = quantity_cast<proportion> (
+        band (0.68f * proportion[one], 0.82f * proportion[one], altitude) *
+        (whole - band (0.12f, 0.24f, steepness)));
       const proportion_t erratic = quantity_cast<proportion> (
         0.45f *
         band (0.45f * proportion[one], 0.80f * proportion[one], altitude) *
-        (whole - ground.forest) * (whole - band (0.15f, 0.35f, steepness)));
+        (whole - ground.forest) * (whole - band (0.15f, 0.35f, steepness)) *
+        (whole - 0.84f * deep_snow));
       // Cobbles along a shore, more where it deposits.
       proportion_t stream = 0.0f * proportion[one];
       if (!ground.by_running_water)

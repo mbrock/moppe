@@ -28,7 +28,7 @@
     "Forest & flora": {
       "share": 88.4,
       "files": 11,
-      "typed": 516,
+      "typed": 517,
       "raw_float": 35,
       "raw_vector": 33,
       "escapes": 190
@@ -98,28 +98,28 @@
       "escapes": 120
     },
     "Terrain & world generation": {
-      "share": 87.8,
+      "share": 88.6,
       "files": 46,
-      "typed": 1324,
-      "raw_float": 137,
-      "raw_vector": 47,
-      "escapes": 278
+      "typed": 1460,
+      "raw_float": 139,
+      "raw_vector": 48,
+      "escapes": 330
     },
     "Tests": {
-      "share": 41.2,
+      "share": 41.5,
       "files": 87,
-      "typed": 704,
-      "raw_float": 806,
+      "typed": 713,
+      "raw_float": 808,
       "raw_vector": 199,
-      "escapes": 1423
+      "escapes": 1425
     },
     "Vehicles & on-foot body": {
-      "share": 77.6,
+      "share": 78.0,
       "files": 47,
-      "typed": 2194,
+      "typed": 2239,
       "raw_float": 209,
       "raw_vector": 423,
-      "escapes": 646
+      "escapes": 673
     }
   }
 }

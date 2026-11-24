@@ -184,11 +184,12 @@ namespace moppe::game {
     terrain::RiverNetwork m_runtime_rivers;
     std::vector<terrain::WaterBody> m_runtime_bodies;
     std::optional<terrain::RuntimeWater> m_runtime_water;
-    // The first four lanes feed wheel and snow physics. The other six
+    // The first five lanes feed wheel and snow physics. The other six
     // supply animals as they choose new pasture during play.
     using PlayFields = spatial::Bundle<terrain::TerrainDomain,
                                        map::TrailInfluence,
                                        map::ErosionExposure,
+                                       map::DepositionCover,
                                        map::SurfaceMoisture,
                                        map::SnowSupport,
                                        map::GrazingPressure,

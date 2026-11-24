@@ -121,7 +121,7 @@ namespace moppe {
       // The active world as what stands on it reads it, and what parking
       // reads and moves.
       WorldGround world_ground () const {
-        return { world (), generated_world (), m_trunk_field };
+        return { world (), generated_world (), m_trunk_field, m_land_relief };
       }
 
       ParkingLot parking_lot () {

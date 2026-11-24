@@ -1,5 +1,6 @@
 #include <moppe/game/walker.hh>
 #include <moppe/game/world_ground.hh>
+#include <moppe/gfx/signal.hh>
 #include <moppe/terrain/readings.hh>
 
 #include <cmath>
@@ -20,6 +21,34 @@ namespace moppe::game {
   WorldGround::still_water (const plan_position_t& at) const {
     return terrain::surface_elevation_point (still_water_at (
       world, surface (), generated.water_view (), at_height (at, 0.0f * u::m)));
+  }
+
+  proportion_t WorldGround::snow_cover (const plan_position_t& at) const {
+    if (water_depth (at) > terrain::ElevationChange {})
+      return {};
+    constexpr proportion_t part = 1.0f * proportion[one];
+    const position_t where = at_height (at, 0.0f * u::m);
+    const meters_t height =
+      quantity_cast<isq::length> (elevation (at).delta_from_zero ());
+    const meters_t relief = std::max (1.0f * u::m, land_relief);
+    const proportion_t rise =
+      quantity_cast<proportion> ((height - world.water_level) / relief);
+    const map::SurfaceNormal normal = map::ground_normal_at (surface (), where);
+    const Vec3& n = normal.numerical_value_ref_in (one);
+    const proportion_t lee = (-0.80f * n[2] + 0.60f * n[0]) * part;
+    const proportion_t shelter = quantity_cast<proportion> (
+      generated.reading<map::deposition_cover> (where));
+    const map::SnowSupport support =
+      generated.reading<map::snow_support> (where);
+    const proportion_t tread =
+      band (0.80f * part,
+            0.88f * part,
+            quantity_cast<proportion> (
+              generated.reading<map::trail_influence> (where)));
+    return band (
+             0.63f * part, 0.79f * part, rise + 0.06f * lee + 0.13f * shelter) *
+           band (0.55f * part, 0.78f * part, support).numerical_value_in (one) *
+           (1.0f - tread.numerical_value_in (one));
   }
 
   bool WorldGround::open (const plan_position_t& at,

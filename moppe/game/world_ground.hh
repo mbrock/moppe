@@ -17,6 +17,7 @@ namespace moppe::game {
     const WorldParams& world;
     const GeneratedWorld& generated;
     const mov::TrunkField& trunks;
+    meters_t land_relief = 1.0f * u::m;
 
     const map::SurfaceGeometry& surface () const noexcept {
       return generated.surface ();
@@ -42,6 +43,11 @@ namespace moppe::game {
     terrain::ElevationChange water_depth (const plan_position_t& at) const {
       return still_water (at) - elevation (at);
     }
+
+    // How deeply snow covers dry ground at `at` (0..1), matching the terrain
+    // shader's snow-reach: altitude, NNE-E leeward drift, concave basin
+    // shelter, broad slope support, and ridden-through trails.
+    proportion_t snow_cover (const plan_position_t& at) const;
 
     // Whether a machine `room` round could stand at `at`: on dry ground
     // well above any water, no steeper across that than `relief`, and with

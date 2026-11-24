@@ -39,23 +39,7 @@ namespace moppe {
       const proportion_t wet =
         band (0.45f * part, 0.80f * part, read (map::surface_moisture));
       GroundCover ground;
-      const meters_t height = quantity_cast<isq::length> (
-        world_ground ().elevation (plan (at)).delta_from_zero ());
-      const proportion_t rise = quantity_cast<proportion> (
-        (height - world ().water_level) / m_land_relief);
-      const map::SurfaceNormal normal = map::ground_normal_at (surface (), at);
-      const map::SnowSupport support =
-        generated_world ().reading<map::snow_support> (at);
-      // The same broad snow line and north-facing advantage as snow-reach
-      // in the ground shader; the shader breaks up its margin with noise.
-      ground.snow =
-        band (0.63f * part,
-              0.79f * part,
-              rise - 0.05f * normal.numerical_value_in (one)[2] * part) *
-        band (0.55f * part, 0.78f * part, support).numerical_value_in (one) *
-        (1.0f - tread.numerical_value_in (one));
-      if (world_ground ().water_depth (plan (at)) > terrain::ElevationChange {})
-        ground.snow = {};
+      ground.snow = world_ground ().snow_cover (plan (at));
       ground.leaves = m_forest.litter_at (plan (at));
       const proportion_t loose = std::max (tread, bare);
       const proportion_t whole = 1.0f * part;

@@ -123,3 +123,61 @@ MOPPE_TEST (alpine_cirques_carve_lee_bowls_without_lifting_peaks) {
   }
   MOPPE_CHECK (max_cut > 12.0f * u::m);
 }
+
+MOPPE_TEST (
+  kalfjall_snowfield_creates_broad_high_plateau_and_snow_basin_cover) {
+  // A broad alpine range rising to 290 m above a 50 m sea: glacial snowfield
+  // sculpting must form a wide, gently rolling high snow plateau (>240 m),
+  // lay snow-basin drift cover across it, and never raise the world's highest
+  // summit past its natural cap.
+  constexpr int size = 64;
+  constexpr int mid = size / 2;
+  constexpr meters_t spacing = 50.0f * u::m;
+  constexpr meters_t sea_m = 50.0f * u::m;
+  const SurfaceElevation sea = surface_elevation_point (sea_m);
+  const TerrainDomain grid (static_cast<std::size_t> (size),
+                            static_cast<std::size_t> (size),
+                            spacing,
+                            spacing);
+  std::vector<float> heights (static_cast<std::size_t> (size) * size);
+  for (int z = 0; z < size; ++z)
+    for (int x = 0; x < size; ++x) {
+      const meters_t dx = static_cast<float> (x - mid) * spacing;
+      const meters_t dz = static_cast<float> (z - mid) * spacing;
+      const meters_t r = hypot (plan_displacement (dx, dz));
+      const proportion_t massif =
+        1.0f * proportion[one] - band (0.0f * u::m, 1250.0f * u::m, r);
+      const float ridge = 22.0f * std::sin (static_cast<float> (x) * 0.45f) *
+                          std::cos (static_cast<float> (z) * 0.45f);
+      const meters_t h = sea_m - 6.0f * u::m +
+                         meters_t (245.0f * u::m * massif) +
+                         ridge * massif.numerical_value_in (one) * u::m;
+      heights[static_cast<std::size_t> (z) * size + x] = meters_value (h);
+    }
+
+  const ElevationMap terrain = make_elevation_map (grid, heights);
+  const FloodField flood = analyze_standing_water (terrain, sea);
+  const LakeCensus census = census_lakes (flood);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
+  const RiverNetwork rivers = extract_river_network (
+    flood, census, drainage, visible_river_minimum_area ());
+
+  GlacialSculpting params;
+  params.snowfield_radius_along = 520.0f * u::m;
+  params.snowfield_radius_across = 380.0f * u::m;
+  params.snow_valley_length = 720.0f * u::m;
+  params.snow_valley_half_width = 65.0f * u::m;
+  const GlacialSculptingResult glacial = sculpt_glacial_valleys (
+    terrain, flood, census, drainage, rivers, sea, params);
+
+  MOPPE_CHECK (glacial.snowfields == 1);
+  std::size_t high_covered = 0;
+  for (std::size_t i = 0; i < heights.size (); ++i) {
+    if (glacial.heights[i] >= sea + 185.0f * u::m &&
+        glacial.outwash[i] > 1.0f * sediment_thickness[u::m])
+      ++high_covered;
+  }
+  // Broad rideable snowfield + descending snow valley must cover a substantial
+  // area (> 100 cells = > 0.25 km² on this 3.2 km test grid).
+  MOPPE_CHECK (high_covered > 100);
+}

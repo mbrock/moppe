@@ -467,15 +467,20 @@
        (- 1.0 (smoothstep tread (+ tread (swizzle shape :w)) (abs across))))))
 
 ;;; How much snow the broad plane holds; patch noise only breaks its edge.
-(define-shader-function snow-reach (rise support northing wander)
-  (* (smoothstep 0.63 0.79 (+ rise (* 0.05 northing) wander))
+;;; Prevailing maritime westerlies pack extra drift onto cool NNE-E leeward
+;;; slopes and into wind-sheltered concave basins (cirque bowls and glacial
+;;; snow valleys).
+(define-shader-function snow-reach (rise support lee shelter wander)
+  (* (smoothstep 0.63 0.79 (+ rise (* 0.06 lee) (* 0.13 shelter) wander))
      (smoothstep 0.55 0.78 support)))
 
 (define-shader-function settled-powder (rise normal sheet)
-  (* (snow-reach rise (swizzle sheet :y) (- 0.0 (swizzle normal :z)) 0.0)
-     (smoothstep 0.48 0.53 (swizzle sheet :x))
-     (- 1.0 (smoothstep 0.74 0.87 (swizzle sheet :z)))
-     (smoothstep 0.55 0.83 (swizzle normal :y))))
+  (let* ((lee (+ (* -0.80 (swizzle normal :z))
+                 (* 0.60 (swizzle normal :x)))))
+    (* (snow-reach rise (swizzle sheet :y) lee 0.0 0.0)
+       (smoothstep 0.48 0.53 (swizzle sheet :x))
+       (- 1.0 (smoothstep 0.74 0.87 (swizzle sheet :z)))
+       (smoothstep 0.55 0.83 (swizzle normal :y)))))
 
 ;;; Low lenticular pillows stretched downwind. Height in metres and its
 ;;; two slopes: the same surface for the silhouette and the lighting.
@@ -582,7 +587,7 @@
          (normal (mix own-normal (on-lattice n00 n10 n01 n11 f) blend))
          (elevation (* height (swizzle scale :y)))
          (rise (/ (- elevation (swizzle relief :x)) (max 1.0 (swizzle relief :y))))
-         (mantle (only-where (> rise 0.56) 0.0
+         (mantle (only-where (> rise 0.50) 0.0
                    (let* ((floor (sample-level ground linear-repeat
                                                (/ (+ grid (vec2 0.5 0.5)) extent) 0.0)))
                      (* (settled-powder rise normal floor)
@@ -1188,11 +1193,13 @@
                        (band (+ (swizzle floor :z) (* 0.12 edge)) 0.87)))
 
          ;; Snow lies where the ground is level enough to hold it, deeper
-         ;; the higher it is, and a trail is ridden through it.
+         ;; the higher it is and in wind-sheltered leeward cirques and
+         ;; snow valleys; a trail is ridden through it.
+         (lee (+ (* -0.80 (swizzle normal :z)) (* 0.60 (swizzle normal :x))))
          (snow (* (smoothstep 0.29 0.68 (+ (snow-reach rise (swizzle floor :y)
-                                       (* -1.0 (swizzle normal :z))
-                                       (* 0.10 (- drift 0.5)))
-                           (* 0.52 edge)))
+                                                       lee (swizzle land :z)
+                                                       (* 0.10 (- drift 0.5)))
+                                           (* 0.52 edge)))
                   (- 1.0 cliff)
                   (- 1.0 sunk)
                   (- 1.0 (band (swizzle floor :z) 0.80))))
@@ -3878,7 +3885,7 @@
          (cleared (* (- 1.0 (smoothstep 0.80 0.86 (swizzle floor :z)))
                      (- 1.0 (clamp (* (swizzle floor :w) 1.6) 0.0 1.0))))
          (variation (+ 0.88 (* 0.24 (smoothstep 0.18 0.72 clump))))
-         (snow (snow-reach rise (swizzle floor :y) 0.0 0.0))
+         (snow (snow-reach rise (swizzle floor :y) 0.0 (swizzle land :z) 0.0))
          (alpine (- 1.0 (smoothstep 0.50 0.67 rise)))
          ;; Nothing roots under water, or on the strand beside it.
          (ashore (smoothstep 1.0 2.4 (+ (shore-metres (swizzle floor :x))
@@ -5231,7 +5238,7 @@
          (stone (boulder-world b p))
          (altitude (/ (- (swizzle rock :y) (swizzle relief :x))
                       (max (swizzle relief :y) 1.0)))
-         (snow (only-where (> altitude 0.56) 0.0
+         (snow (only-where (> altitude 0.50) 0.0
                  (settled-powder altitude (swizzle ground :xyz)
                    (sample-level floor-sheet linear-repeat
                                  (/ (swizzle rock :xz) (swizzle world :xy)) 0.0))))

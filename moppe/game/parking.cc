@@ -121,49 +121,144 @@ namespace moppe::game {
   }
 
   void Parking::park_snowmobile (const ParkingLot& lot) const {
-    // Face along a snowy shelf with room to ride, rather than straight
-    // down the fall line and out of the snow on the first bend.
+    // Park in the heart of the largest contiguous high snowfield (wide 2D
+    // snowpack, gentle cross-slope, obstacle-free) facing along its longest
+    // open powder run rather than on a narrow ridge tip or bare scree.
     const auto& domain = lot.ground.surface ().domain ();
-    meters_t best = -1e6f * u::m;
+    constexpr int samples = 128;
+    constexpr proportion_t min_spawn_snow = 0.65f * proportion[one];
+    constexpr proportion_t min_run_snow = 0.50f * proportion[one];
+    const auto heading_score = [&] (plan_position_t p,
+                                    meters_t h,
+                                    plan_direction_t way) -> scale_factor_t {
+      meters_t last = h;
+      scale_factor_t run = 0.0f * scale_factor[one];
+      for (int j = 1; j <= 10; ++j) {
+        const plan_position_t q = p + along (way, j * 24.0f * u::m);
+        if (lot.ground.water_depth (q) > terrain::ElevationChange {})
+          break;
+        const proportion_t snow = lot.ground.snow_cover (q);
+        if (snow < min_run_snow)
+          break;
+        const meters_t next (lot.ground.elevation (q).delta_from_zero ());
+        const meters_t step_drop = abs (next - last);
+        if (step_drop > 7.5f * u::m)
+          break;
+        if (j <= 4 && !lot.ground.open (q, 2.6f * u::m, 1.5f * u::m))
+          break;
+        // Favor wide snowy runs with smooth grades (slightly preferring
+        // gentle downhill launches across the plateau or into a snow valley).
+        const proportion_t smooth =
+          1.0f * proportion[one] -
+          std::clamp (proportion_t (step_drop / (7.5f * u::m)),
+                      0.0f * proportion[one],
+                      1.0f * proportion[one]);
+        const scale_factor_t downhill =
+          (next <= last ? 0.12f : 0.0f) * scale_factor[one];
+        run += scale_factor_t (
+          snow * (0.65f * scale_factor[one] +
+                  0.35f * smooth.numerical_value_in (one) * scale_factor[one] +
+                  downhill));
+        last = next;
+      }
+      return run;
+    };
+
+    bool found_snow = false;
+    scale_factor_t best_score = -1e9f * scale_factor[one];
+    proportion_t best_snow {};
     auto pick = plan (lot.spawn);
     auto heading = unit_direction (Vec3 (0, 0, 1));
-    for (int z = 0; z < 96; ++z)
-      for (int x = 0; x < 96; ++x) {
-        const auto p = plan_position (domain.period_x () * x / 96,
-                                      domain.period_z () * z / 96);
-        const auto h = meters_t (lot.ground.elevation (p).delta_from_zero ());
-        if (h <= best)
+    for (int z = 0; z < samples; ++z)
+      for (int x = 0; x < samples; ++x) {
+        const auto p = plan_position (domain.period_x () * x / samples,
+                                      domain.period_z () * z / samples);
+        const proportion_t snow_here = lot.ground.snow_cover (p);
+        if (snow_here < min_spawn_snow)
           continue;
-        for (int bearing = 0; bearing < 12; ++bearing) {
-          const auto a = bearing * PI / 6;
-          const auto way =
-            plan_unit_direction (Vec2 (std::cos (a), std::sin (a)));
-          meters_t floor = h, last = h, climb {};
-          for (int j = 1; j <= 8; ++j) {
-            const meters_t next (
-              lot.ground.elevation (p + along (way, j * 16.0f * u::m))
-                .delta_from_zero ());
-            floor = std::min (floor, next);
-            climb += abs (next - last);
-            last = next;
-            if (floor - climb <= best)
-              break;
-          }
-          if (floor - climb > best &&
-              lot.ground.open (p, 2.0f * u::m, 0.9f * u::m)) {
-            best = floor - climb;
-            pick = p;
-            heading = heading_along (along (way, 1.0f * u::m));
+        if (!lot.ground.open (p, 4.0f * u::m, 1.3f * u::m))
+          continue;
+        const auto h = meters_t (lot.ground.elevation (p).delta_from_zero ());
+        // Measure 2D contiguous riding area across three rings (45/100/180 m)
+        // so broad kalfjäll plateaus win over isolated summit spurs.
+        scale_factor_t area_score =
+          snow_here.numerical_value_in (one) * scale_factor[one];
+        for (const meters_t ring :
+             { 45.0f * u::m, 100.0f * u::m, 180.0f * u::m }) {
+          for (int k = 0; k < 8; ++k) {
+            const radians_t a = k * (PI / 4.0f) * u::rad;
+            const plan_position_t q =
+              p +
+              along (plan_unit_direction (Vec2 (std::cos (radians_value (a)),
+                                                std::sin (radians_value (a)))),
+                     ring);
+            if (lot.ground.water_depth (q) > terrain::ElevationChange {})
+              continue;
+            const proportion_t sq = lot.ground.snow_cover (q);
+            if (sq < min_run_snow)
+              continue;
+            const meters_t hq (lot.ground.elevation (q).delta_from_zero ());
+            if (abs (hq - h) > 0.28f * ring)
+              continue;
+            area_score += sq.numerical_value_in (one) * scale_factor[one];
           }
         }
+        // Quick upper-bound prune before casting 16 launch rays.
+        if (area_score + 18.0f * scale_factor[one] <= best_score)
+          continue;
+        scale_factor_t best_ray = -1.0f * scale_factor[one];
+        direction_t ray_heading = heading;
+        for (int bearing = 0; bearing < 16; ++bearing) {
+          const radians_t a = bearing * (PI / 8.0f) * u::rad;
+          const auto way = plan_unit_direction (
+            Vec2 (std::cos (radians_value (a)), std::sin (radians_value (a))));
+          const scale_factor_t ray = heading_score (p, h, way);
+          if (ray > best_ray) {
+            best_ray = ray;
+            ray_heading = heading_along (along (way, 1.0f * u::m));
+          }
+        }
+        const scale_factor_t total = area_score + 1.5f * best_ray;
+        if (total > best_score) {
+          best_score = total;
+          best_snow = snow_here;
+          pick = p;
+          heading = ray_heading;
+          found_snow = true;
+        }
       }
+
+    // Fallback for low/synthetic worlds without a snow line: highest gentle
+    // shelf with open room ahead.
+    if (!found_snow) {
+      meters_t best = -1e6f * u::m;
+      for (int z = 0; z < 64; ++z)
+        for (int x = 0; x < 64; ++x) {
+          const auto p = plan_position (domain.period_x () * x / 64,
+                                        domain.period_z () * z / 64);
+          const auto h = meters_t (lot.ground.elevation (p).delta_from_zero ());
+          if (h > best && lot.ground.open (p, 2.5f * u::m, 1.0f * u::m)) {
+            best = h;
+            pick = p;
+            best_snow = lot.ground.snow_cover (p);
+          }
+        }
+    }
+
     const auto at = moved (
       near_spawn (lot.ground,
                   lot.spawn,
                   terrain::at_elevation (pick, lot.ground.elevation (pick))),
       m_aside);
     lot.session.fleet ().snowmobile.place (at, heading);
-    report_parked (lot, "snowmobile", at, "on the fell");
+    std::cerr << "moppe: snowmobile parked "
+              << std::lround (meters_value (from_spawn (lot.spawn, at)))
+              << " m from the spawn, on the "
+              << (found_snow ? "snowfield" : "fell") << " ("
+              << std::lround (best_snow.numerical_value_in (one) * 100.0f)
+              << "% snow), at " << std::lround (position_value (at)[0]) << ", "
+              << std::lround (position_value (at)[1]) << ", "
+              << std::lround (position_value (at)[2]) << std::endl;
   }
 
   void Parking::park_jet_ski (const ParkingLot& lot, bool outward) {

@@ -473,8 +473,507 @@ namespace moppe::terrain {
     }
 
     // -------------------------------------------------------------------------
-    // 2. Alpine glacial cirques (nisscher) bitten into the lee (NNE-ESE) flanks
-    //    of high mountain massifs, sharpening sinusoidal domes into arêtes.
+    // 2. High kalfjäll snowfield massif & descending glacier snow valley:
+    //    over the world's broadest alpine massif, shape an organically lobed,
+    //    gently rolling ice-cap plateau solidly above the snow line, feeding
+    //    a sweeping, banked snow-filled glacier valley down toward tree line.
+    // -------------------------------------------------------------------------
+    std::vector<std::uint8_t> snowfield_mask (count, 0);
+    const std::vector<std::uint8_t> trough_mask = carved_mask;
+    if (parameters.sculpt_snowfield) {
+      MOPPE_PROFILE_ZONE ("glacial.snowfield");
+      SurfaceElevation highest = sea_level;
+      for (std::size_t cell = 0; cell < count; ++cell)
+        if (!flood.ocean[cell] && formed[cell] > highest)
+          highest = formed[cell];
+      const meters_t land_relief (highest - sea_level);
+      const meters_t world_span = std::min (period_x, period_z);
+      if (land_relief >= 70.0f * u::m &&
+          world_span >= 1.8f * parameters.snowfield_radius_along) {
+        const int stride =
+          std::max (1,
+                    static_cast<int> (std::lround (
+                      (64.0f * u::m / cell_reach).numerical_value_in (one))));
+        const int probe_step =
+          std::max (1,
+                    static_cast<int> (std::lround (
+                      (std::min (120.0f * u::m,
+                                 0.22f * parameters.snowfield_radius_along) /
+                       cell_reach)
+                        .numerical_value_in (one))));
+        bool found_massif = false;
+        int best_x = 0;
+        int best_z = 0;
+        SurfaceElevation best_mean = sea_level + meters_t (0.42f * land_relief);
+        for (int z = 0; z < height; z += stride)
+          for (int x = 0; x < width; x += stride) {
+            const std::size_t center = static_cast<std::size_t> (z) * width + x;
+            if (flood.ocean[center] || trough_mask[center])
+              continue;
+            bool clear = true;
+            double sum = 0.0;
+            for (int dz = -2; dz <= 2 && clear; ++dz)
+              for (int dx = -2; dx <= 2 && clear; ++dx) {
+                const std::size_t near =
+                  static_cast<std::size_t> (
+                    wrap_index (z + dz * probe_step, height)) *
+                    width +
+                  wrap_index (x + dx * probe_step, width);
+                if (flood.ocean[near] || trough_mask[near]) {
+                  clear = false;
+                  break;
+                }
+                sum +=
+                  static_cast<double> (surface_elevation_value (formed[near]));
+              }
+            if (!clear)
+              continue;
+            const SurfaceElevation mean_y =
+              surface_elevation_point (static_cast<float> (sum / 25.0) * u::m);
+            if (mean_y > best_mean) {
+              best_mean = mean_y;
+              best_x = x;
+              best_z = z;
+              found_massif = true;
+            }
+          }
+
+        if (found_massif) {
+          const meters_t anchor_x = static_cast<float> (best_x) * spacing_x;
+          const meters_t anchor_z = static_cast<float> (best_z) * spacing_z;
+          const std::uint32_t massif_hash =
+            peak_hash (static_cast<std::uint32_t> (best_x),
+                       static_cast<std::uint32_t> (best_z));
+          const auto hash_phase = [&] (std::uint32_t shift) -> radians_t {
+            return static_cast<float> ((massif_hash >> shift) & 0xffu) *
+                   (6.2831853f / 256.0f) * u::rad;
+          };
+          // Align the snowfield's long axis with the massif's own ridge
+          // elongation (second-moment tensor of height above the floor).
+          quantity<one, double> sxx = 0.0 * one;
+          quantity<one, double> szz = 0.0 * one;
+          quantity<one, double> sxz = 0.0 * one;
+          const int tensor_step = std::max (1, probe_step);
+          for (int dz = -3; dz <= 3; ++dz)
+            for (int dx = -3; dx <= 3; ++dx) {
+              const std::size_t near =
+                static_cast<std::size_t> (
+                  wrap_index (best_z + dz * tensor_step, height)) *
+                  width +
+                wrap_index (best_x + dx * tensor_step, width);
+              const quantity<one, double> w =
+                std::max (0.0,
+                          static_cast<double> (
+                            meters_value (meters_t (formed[near] - best_mean)) +
+                            40.0f)) *
+                one;
+              const quantity<one, double> ox = static_cast<double> (dx) * one;
+              const quantity<one, double> oz = static_cast<double> (dz) * one;
+              sxx += w * ox * ox;
+              szz += w * oz * oz;
+              sxz += w * ox * oz;
+            }
+          const radians_t axis_angle =
+            0.5f *
+            cr::atan2 (
+              static_cast<float> (2.0 * sxz.numerical_value_in (one)),
+              static_cast<float> ((sxx - szz).numerical_value_in (one))) *
+            u::rad;
+          const quantity<one, float> axis_x =
+            cr::cos (radians_value (axis_angle)) * one;
+          const quantity<one, float> axis_z =
+            cr::sin (radians_value (axis_angle)) * one;
+          const radians_t phase_a = hash_phase (0);
+          const radians_t phase_b = hash_phase (8);
+          const radians_t phase_c = hash_phase (16);
+
+          const meters_t r_along = parameters.snowfield_radius_along;
+          const meters_t r_across = parameters.snowfield_radius_across;
+          const SurfaceElevation plateau_base =
+            sea_level +
+            meters_t (parameters.snowfield_relief_share * land_relief);
+          const SurfaceElevation plateau_floor =
+            sea_level +
+            meters_t (
+              std::max (
+                0.74f,
+                parameters.snowfield_relief_share.numerical_value_in (one) -
+                  0.07f) *
+              land_relief);
+          const SurfaceElevation plateau_cap =
+            sea_level +
+            meters_t (
+              std::min (
+                0.93f,
+                parameters.snowfield_relief_share.numerical_value_in (one) +
+                  0.08f) *
+              land_relief);
+          const meters_t crown_height =
+            std::min (18.0f * u::m, 0.065f * land_relief);
+          const meters_t swell_scale =
+            std::min (
+              1.0f, (land_relief / (220.0f * u::m)).numerical_value_in (one)) *
+            u::m;
+          constexpr scale_factor_t outer_ratio = 1.58f * scale_factor[one];
+          const meters_t bound_r = 1.30f *
+                                   outer_ratio.numerical_value_in (one) *
+                                   std::max (r_along, r_across);
+          const int min_x = static_cast<int> (std::floor (
+            ((anchor_x - bound_r) / spacing_x).numerical_value_in (one)));
+          const int max_x = static_cast<int> (std::ceil (
+            ((anchor_x + bound_r) / spacing_x).numerical_value_in (one)));
+          const int min_z = static_cast<int> (std::floor (
+            ((anchor_z - bound_r) / spacing_z).numerical_value_in (one)));
+          const int max_z = static_cast<int> (std::ceil (
+            ((anchor_z + bound_r) / spacing_z).numerical_value_in (one)));
+
+          const auto plateau_lobe = [&] (radians_t theta) -> scale_factor_t {
+            const float a = radians_value (theta);
+            return (1.0f +
+                    0.15f * cr::sin (2.0f * a + radians_value (phase_a)) +
+                    0.10f * cr::cos (3.0f * a + radians_value (phase_b)) +
+                    0.05f * cr::sin (5.0f * a + radians_value (phase_c))) *
+                   scale_factor[one];
+          };
+
+          for (int iz = min_z; iz <= max_z; ++iz)
+            for (int ix = min_x; ix <= max_x; ++ix) {
+              const std::size_t cell =
+                static_cast<std::size_t> (wrap_index (iz, height)) * width +
+                wrap_index (ix, width);
+              if (flood.ocean[cell] || trough_mask[cell])
+                continue;
+              const meters_t rx =
+                static_cast<float> (ix) * spacing_x - anchor_x;
+              const meters_t rz =
+                static_cast<float> (iz) * spacing_z - anchor_z;
+              const meters_t u_along = rx * axis_x + rz * axis_z;
+              const meters_t u_across = -rx * axis_z + rz * axis_x;
+              const radians_t theta =
+                cr::atan2 (meters_value (u_across), meters_value (u_along)) *
+                u::rad;
+              const scale_factor_t lobe = plateau_lobe (theta);
+              const quantity<one, float> nx =
+                u_along / meters_t (r_along * lobe);
+              const quantity<one, float> nz =
+                u_across / meters_t (r_across * lobe);
+              const scale_factor_t r_norm =
+                cr::hypot (nx.numerical_value_in (one),
+                           nz.numerical_value_in (one)) *
+                scale_factor[one];
+              if (r_norm >= outer_ratio)
+                continue;
+
+              const quantity<one, float> swell =
+                (7.2f * cr::sin (meters_value (rx) / 110.0f +
+                                 meters_value (rz) / 185.0f +
+                                 radians_value (phase_a)) +
+                 4.8f * cr::cos (-meters_value (rx) / 155.0f +
+                                 meters_value (rz) / 95.0f +
+                                 radians_value (phase_b)) +
+                 2.5f * cr::sin (meters_value (rx) / 58.0f -
+                                 meters_value (rz) / 72.0f +
+                                 radians_value (phase_c))) *
+                one;
+              const proportion_t crown_share =
+                std::max (0.0f,
+                          1.0f - r_norm.numerical_value_in (one) *
+                                   r_norm.numerical_value_in (one)) *
+                proportion[one];
+              const SurfaceElevation dome_y = std::clamp (
+                plateau_base + meters_t (crown_height * crown_share) +
+                  swell * swell_scale,
+                plateau_floor,
+                plateau_cap);
+
+              const proportion_t core_w =
+                whole_part -
+                band (0.68f * proportion[one],
+                      whole_part,
+                      std::clamp (r_norm.numerical_value_in (one), 0.0f, 1.0f) *
+                        proportion[one]);
+              const proportion_t skirt_w =
+                whole_part -
+                band (0.70f * scale_factor[one], outer_ratio, r_norm);
+              const SurfaceElevation existing = formed[cell];
+              SurfaceElevation target;
+              if (existing >= dome_y) {
+                // Keep towering alpine summit horns standing proudly around
+                // the snowfield rim while easing sharp interior crags into
+                // rideable rolling snow swells.
+                const SurfaceElevation softened =
+                  dome_y + 0.25f * (existing - dome_y);
+                target = moppe::lerp (existing, softened, core_w);
+              } else {
+                target = moppe::lerp (existing, dome_y, skirt_w);
+              }
+              formed[cell] = target;
+              if (core_w > 0.20f * proportion[one])
+                snowfield_mask[cell] = 1;
+              if (core_w > 0.05f * proportion[one]) {
+                const SedimentThickness cover =
+                  quantity_cast<sediment_thickness> (
+                    meters_t (parameters.snow_basin_cover * core_w));
+                outwash[cell] = std::max (outwash[cell], cover);
+              }
+            }
+
+          // Sculpt a sweeping descending glacier snow valley (glaciärtunga)
+          // off the leeward flank of the kalfjäll snowfield down toward the
+          // upper tree line, giving a continuous, banked alpine snow corridor.
+          const meters_t valley_len =
+            std::min (parameters.snow_valley_length, 0.35f * world_span);
+          if (valley_len >= 300.0f * u::m) {
+            bool found_exit = false;
+            radians_t best_exit = 0.0f * u::rad;
+            scale_factor_t best_score = -1e9f * scale_factor[one];
+            const SurfaceElevation target_exit_y =
+              sea_level +
+              meters_t (parameters.snow_valley_exit_relief_share * land_relief);
+            for (int k = 0; k < 16; ++k) {
+              const radians_t bearing =
+                (static_cast<float> (k) * 6.2831853f / 16.0f) * u::rad;
+              const quantity<one, float> bx =
+                cr::cos (radians_value (bearing)) * one;
+              const quantity<one, float> bz =
+                cr::sin (radians_value (bearing)) * one;
+              const meters_t start_r = 0.45f * r_across;
+              bool clear = true;
+              for (int step_i = 1; step_i <= 12 && clear; ++step_i) {
+                const meters_t dist =
+                  start_r + valley_len * (static_cast<float> (step_i) / 12.0f);
+                const meters_t px = anchor_x + dist * bx;
+                const meters_t pz = anchor_z + dist * bz;
+                const int cx = static_cast<int> (
+                  std::lround ((px / spacing_x).numerical_value_in (one)));
+                const int cz = static_cast<int> (
+                  std::lround ((pz / spacing_z).numerical_value_in (one)));
+                for (int dz = -2; dz <= 2 && clear; ++dz)
+                  for (int dx = -2; dx <= 2 && clear; ++dx) {
+                    const std::size_t near =
+                      static_cast<std::size_t> (
+                        wrap_index (cz + dz * probe_step, height)) *
+                        width +
+                      wrap_index (cx + dx * probe_step, width);
+                    if (flood.ocean[near] || trough_mask[near])
+                      clear = false;
+                  }
+              }
+              if (!clear)
+                continue;
+              const plan_position_t end_pt =
+                plan_position (anchor_x + (start_r + valley_len) * bx,
+                               anchor_z + (start_r + valley_len) * bz);
+              const SurfaceElevation end_y = ground_at (end_pt);
+              // Prefer cool leeward NNE-NW-E exits descending near the tree
+              // line without dropping off a sheer abyss.
+              const scale_factor_t lee_pref =
+                (-0.85f * bz.numerical_value_in (one) +
+                 0.55f * bx.numerical_value_in (one)) *
+                scale_factor[one];
+              const scale_factor_t height_fit =
+                (-abs (meters_t (end_y - target_exit_y)) /
+                 std::max (land_relief, 1.0f * u::m))
+                  .numerical_value_in (one) *
+                scale_factor[one];
+              const scale_factor_t score = 1.6f * height_fit + 0.45f * lee_pref;
+              if (score > best_score) {
+                best_score = score;
+                best_exit = bearing;
+                found_exit = true;
+              }
+            }
+
+            if (found_exit) {
+              const quantity<one, float> ex =
+                cr::cos (radians_value (best_exit)) * one;
+              const quantity<one, float> ez =
+                cr::sin (radians_value (best_exit)) * one;
+              const quantity<one, float> sx = -ez;
+              const quantity<one, float> sz = ex;
+              const meters_t start_r = 0.48f * r_across;
+              const quantity<one, float> curve_sign =
+                ((massif_hash & 1u) ? 1.0f : -1.0f) * one;
+              const meters_t curve_amp =
+                std::min (115.0f * u::m, 0.09f * valley_len);
+              constexpr std::size_t stations = 28;
+              struct ValleyStation {
+                plan_position_t at;
+                SurfaceElevation floor;
+                meters_t half_width;
+                proportion_t strength;
+              };
+              std::vector<ValleyStation> chute (stations);
+              const plan_position_t start_pt = plan_position (
+                anchor_x + start_r * ex, anchor_z + start_r * ez);
+              const plan_position_t end_pt =
+                plan_position (anchor_x + (start_r + valley_len) * ex,
+                               anchor_z + (start_r + valley_len) * ez);
+              const SurfaceElevation head_y =
+                std::max (plateau_floor, ground_at (start_pt));
+              const SurfaceElevation natural_end_y = ground_at (end_pt);
+              const SurfaceElevation foot_y =
+                std::clamp (std::min (natural_end_y, target_exit_y),
+                            sea_level + 0.48f * land_relief,
+                            head_y - 24.0f * u::m);
+              for (std::size_t i = 0; i < stations; ++i) {
+                const proportion_t u = static_cast<float> (i) /
+                                       static_cast<float> (stations - 1) *
+                                       proportion[one];
+                const meters_t dist = start_r + meters_t (valley_len * u);
+                const meters_t sway =
+                  curve_sign * curve_amp *
+                  cr::sin (3.14159265f * u.numerical_value_in (one));
+                chute[i].at = plan_position (anchor_x + dist * ex + sway * sx,
+                                             anchor_z + dist * ez + sway * sz);
+                // Smooth concave alpine descent: gentle lip leaving the
+                // plateau, swooping middle run, easing out at the lower mouth.
+                const proportion_t eased =
+                  proportion_t (u * u * (3.0f * whole_part - 2.0f * u));
+                chute[i].floor = moppe::lerp (head_y, foot_y, eased);
+                // Broad upper funnel narrowing into a dramatic banked glacier
+                // pass, then flaring slightly at the foot.
+                const scale_factor_t width_mod =
+                  (1.18f -
+                   0.24f * cr::sin (3.14159265f * u.numerical_value_in (one))) *
+                  scale_factor[one];
+                chute[i].half_width =
+                  meters_t (parameters.snow_valley_half_width * width_mod);
+                // Feather seamlessly at both ends into the plateau & fell.
+                const proportion_t head_in =
+                  band (0.0f * proportion[one], 0.14f * proportion[one], u);
+                const proportion_t foot_out =
+                  whole_part - band (0.82f * proportion[one], whole_part, u);
+                chute[i].strength = proportion_t (head_in * foot_out);
+              }
+
+              // Stamp the descending glacier snow valley using full capsule
+              // distance per segment (zero outer-bend seams).
+              constexpr slope_t chute_wall_slope = 0.42f * terrain_slope[one];
+              constexpr meters_t chute_wall_reach = 220.0f * u::m;
+              std::vector<SurfaceElevation> chute_target = formed;
+              std::vector<proportion_t> chute_weight (count,
+                                                      0.0f * proportion[one]);
+              std::vector<proportion_t> chute_floor_share (
+                count, 0.0f * proportion[one]);
+
+              for (std::size_t seg = 0; seg + 1 < chute.size (); ++seg) {
+                const ValleyStation& a = chute[seg];
+                const ValleyStation& b = chute[seg + 1];
+                const plan_displacement_t way = b.at - a.at;
+                const meters_t run = hypot (way);
+                if (run < 1e-3f * u::m)
+                  continue;
+                const meters_t ax_m = x_of (a.at);
+                const meters_t az_m = z_of (a.at);
+                const meters_t bx_m = x_of (b.at);
+                const meters_t bz_m = z_of (b.at);
+                const meters_t run_x = x_of (way);
+                const meters_t run_z = z_of (way);
+                const meters_t max_r =
+                  std::max (a.half_width, b.half_width) + chute_wall_reach;
+                const int smin_x = static_cast<int> (
+                  std::floor (((std::min (ax_m, bx_m) - max_r) / spacing_x)
+                                .numerical_value_in (one)));
+                const int smax_x = static_cast<int> (
+                  std::ceil (((std::max (ax_m, bx_m) + max_r) / spacing_x)
+                               .numerical_value_in (one)));
+                const int smin_z = static_cast<int> (
+                  std::floor (((std::min (az_m, bz_m) - max_r) / spacing_z)
+                                .numerical_value_in (one)));
+                const int smax_z = static_cast<int> (
+                  std::ceil (((std::max (az_m, bz_m) + max_r) / spacing_z)
+                               .numerical_value_in (one)));
+                for (int iz = smin_z; iz <= smax_z; ++iz)
+                  for (int ix = smin_x; ix <= smax_x; ++ix) {
+                    const std::size_t cell =
+                      static_cast<std::size_t> (wrap_index (iz, height)) *
+                        width +
+                      wrap_index (ix, width);
+                    if (flood.ocean[cell] || trough_mask[cell])
+                      continue;
+                    const meters_t wx = static_cast<float> (ix) * spacing_x;
+                    const meters_t wz = static_cast<float> (iz) * spacing_z;
+                    const meters_t along =
+                      ((wx - ax_m) * run_x + (wz - az_m) * run_z) / run;
+                    const proportion_t t =
+                      std::clamp (proportion_t (along / run),
+                                  0.0f * proportion[one],
+                                  whole_part);
+                    const meters_t side = hypot (
+                      plan_displacement (wx - moppe::lerp (ax_m, bx_m, t),
+                                         wz - moppe::lerp (az_m, bz_m, t)));
+                    const meters_t hw =
+                      moppe::lerp (a.half_width, b.half_width, t);
+                    if (side >= hw + chute_wall_reach)
+                      continue;
+                    const proportion_t strength =
+                      moppe::lerp (a.strength, b.strength, t);
+                    if (strength <= 1e-4f * proportion[one])
+                      continue;
+                    const SurfaceElevation base_y =
+                      moppe::lerp (a.floor, b.floor, t);
+                    const proportion_t w = proportion_t (
+                      strength *
+                      (whole_part - band (hw, hw + chute_wall_reach, side)));
+                    if (w <= chute_weight[cell])
+                      continue;
+                    SurfaceElevation profile_y;
+                    if (side <= hw) {
+                      const proportion_t frac = side / hw;
+                      // Gentle concave dish cradles the snow corridor like a
+                      // natural glacier chute.
+                      profile_y =
+                        base_y +
+                        meters_t (1.8f * u::m * proportion_t (frac * frac));
+                      chute_floor_share[cell] =
+                        std::max (chute_floor_share[cell],
+                                  proportion_t (strength *
+                                                (whole_part -
+                                                 band (0.65f * hw, hw, side))));
+                    } else {
+                      const meters_t out = side - hw;
+                      const proportion_t wall_u = out / chute_wall_reach;
+                      const meters_t rise =
+                        1.8f * u::m +
+                        meters_t (
+                          chute_wall_slope * out *
+                          (0.30f + 0.70f * wall_u.numerical_value_in (one)));
+                      const SurfaceElevation banked = base_y + rise;
+                      profile_y = std::min (formed[cell], banked);
+                    }
+                    chute_weight[cell] = w;
+                    chute_target[cell] = profile_y;
+                  }
+              }
+
+              for (std::size_t cell = 0; cell < count; ++cell) {
+                const proportion_t w = chute_weight[cell];
+                if (w <= 0.0f * proportion[one])
+                  continue;
+                formed[cell] =
+                  moppe::lerp (formed[cell], chute_target[cell], w);
+                if (chute_floor_share[cell] > 0.15f * proportion[one])
+                  snowfield_mask[cell] = 1;
+                if (chute_floor_share[cell] > 0.05f * proportion[one]) {
+                  const SedimentThickness cover =
+                    quantity_cast<sediment_thickness> (meters_t (
+                      parameters.snow_basin_cover * chute_floor_share[cell]));
+                  outwash[cell] = std::max (outwash[cell], cover);
+                }
+              }
+            }
+          }
+
+          ++result.snowfields;
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Alpine glacial cirques (nisscher) bitten into the lee (NNE-ESE) flanks
+    //    of high mountain massifs, sharpening sinusoidal domes into arêtes and
+    //    packing wind-sheltered snow drift on their concave floors.
     // -------------------------------------------------------------------------
     if (parameters.maximum_cirques > 0) {
       MOPPE_PROFILE_ZONE ("glacial.cirques");
@@ -493,7 +992,8 @@ namespace moppe::terrain {
       for (int z = 0; z < height; z += stride)
         for (int x = 0; x < width; x += stride) {
           const std::size_t cell = static_cast<std::size_t> (z) * width + x;
-          if (carved_mask[cell] || formed[cell] < min_peak)
+          if (carved_mask[cell] || snowfield_mask[cell] ||
+              formed[cell] < min_peak)
             continue;
           const SurfaceElevation here = formed[cell];
           bool local_max = true;
@@ -603,9 +1103,21 @@ namespace moppe::terrain {
             const std::size_t cell =
               static_cast<std::size_t> (wrap_index (iz, height)) * width +
               wrap_index (ix, width);
-            if (!flood.ocean[cell] && target < formed[cell]) {
+            if (!flood.ocean[cell] && !snowfield_mask[cell] &&
+                target < formed[cell]) {
               formed[cell] = target;
               carved_mask[cell] = 1;
+              // Wind-sheltered concave cirque floors accumulate firn & drift
+              // snowpack (snölegor), while the plucked headwalls stay bare.
+              const proportion_t bowl_share =
+                whole_part -
+                band (0.42f * proportion[one], 0.72f * proportion[one], u);
+              if (bowl_share > 0.05f * proportion[one]) {
+                const SedimentThickness cover =
+                  quantity_cast<sediment_thickness> (
+                    meters_t (parameters.snow_basin_cover * bowl_share));
+                outwash[cell] = std::max (outwash[cell], cover);
+              }
             }
           }
 
@@ -632,8 +1144,8 @@ namespace moppe::terrain {
         for (int z = 0; z < height; ++z)
           for (int x = 0; x < width; ++x) {
             const std::size_t cell = static_cast<std::size_t> (z) * width + x;
-            if (carved_mask[cell] || flood.ocean[cell] ||
-                formed[cell] < shelf_min)
+            if (carved_mask[cell] || snowfield_mask[cell] ||
+                flood.ocean[cell] || formed[cell] < shelf_min)
               continue;
             const std::size_t left =
               static_cast<std::size_t> (z) * width + wrap_index (x - 1, width);

@@ -9,10 +9,15 @@
 //      the highlands down to sea level. This simultaneously creates a
 //      navigable highland-to-sea main-stem river and leaves side tributaries
 //      perched on the flanking highland shelves as hanging-valley waterfalls.
-//   2. Alpine glacial cirques (nisscher): asymmetric armchair bowls bitten
+//   2. High kalfjäll snowfield massif & descending glacier snow valley: an
+//      organically lobed, gently rolling ice-cap plateau over the highest
+//      alpine massif feeding a sweeping banked snow corridor down toward the
+//      tree line.
+//   3. Alpine glacial cirques (nisscher): asymmetric armchair bowls bitten
 //      into the poleward/lee flanks of high mountain massifs, sharpening
-//      rounded ridges into arêtes and rocky headwalls.
-//   3. Cold-based highland shelf (vidda) preservation & polish: gentle
+//      rounded ridges into arêtes and rocky headwalls while packing wind-
+//      sheltered snow drift on their concave floors.
+//   4. Cold-based highland shelf (vidda) preservation & polish: gentle
 //      high-elevation plateaus outside troughs and cliffs stay elevated and
 //      wind-scoured, preserving the stepped Nordic upland feel.
 //
@@ -49,6 +54,18 @@ namespace moppe::terrain {
     meters_t fjord_inlet_length = 260.0f * u::m;
     // Alluvial glacial outwash blanket laid on the carved U-trough floor.
     meters_t valley_floor_outwash = 2.6f * u::m;
+    // High kalfjäll snowfield massif (rolling ice-cap plateau) and its
+    // descending glacier tongue (snow-filled valley reaching toward tree line).
+    bool sculpt_snowfield = true;
+    proportion_t snowfield_relief_share = 0.84f * proportion[one];
+    meters_t snowfield_radius_along = 920.0f * u::m;
+    meters_t snowfield_radius_across = 660.0f * u::m;
+    meters_t snow_valley_length = 1350.0f * u::m;
+    meters_t snow_valley_half_width = 82.0f * u::m;
+    proportion_t snow_valley_exit_relief_share = 0.57f * proportion[one];
+    // Firn/drift moraine blanket laid on snowfields, glacier tongues, and
+    // wind-sheltered cirque bowl floors.
+    meters_t snow_basin_cover = 2.4f * u::m;
     // Alpine cirque elevation threshold above sea level and max count.
     meters_t cirque_floor_above_sea = 148.0f * u::m;
     std::size_t maximum_cirques = 18;
@@ -66,6 +83,7 @@ namespace moppe::terrain {
     std::vector<SedimentThickness> outwash;
     cubic_meters_f64_t cut = 0.0 * u::m * u::m * u::m;
     std::size_t troughs = 0;
+    std::size_t snowfields = 0;
     std::size_t cirques = 0;
   };
 
