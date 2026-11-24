@@ -407,10 +407,18 @@ namespace moppe::terrain {
           i = j + 1;
           continue;
         }
-        // Clear of the spate, its banks a little beyond its bed's width
-        // and wherever the ground still lies below the deck.
+        // Clear of the spate (with boat headroom over navigable rivers), its
+        // banks a little beyond its bed's width and wherever the ground still
+        // lies below the deck.
+        const auto bridge_clearance = [&] (square_meters_t catchment) {
+          const proportion_t navigable = band (parameters.navigable_area,
+                                               3.0f * parameters.navigable_area,
+                                               catchment);
+          return moppe::lerp (
+            parameters.clearance, parameters.navigable_clearance, navigable);
+        };
         const SurfaceElevation deck =
-          bed + river_depth (area) + parameters.clearance;
+          bed + river_depth (area) + bridge_clearance (area);
         const meters_t bank = 0.5f * river_width (area) + 2.0f * u::m;
         // Over a floodplain lower than the deck, too wide for one span,
         // the bridge keeps to the river and its banks, and the road comes
@@ -477,8 +485,11 @@ namespace moppe::terrain {
         square_meters_t widest = 0.0f * u::m * u::m;
         for (std::size_t k = bridge.first; k <= bridge.last; ++k)
           widest = std::max (widest, drains[k]);
-        const SurfaceElevation deck =
-          lowest + river_depth (widest) + parameters.clearance;
+        const proportion_t navigable = band (
+          parameters.navigable_area, 3.0f * parameters.navigable_area, widest);
+        const meters_t headroom = moppe::lerp (
+          parameters.clearance, parameters.navigable_clearance, navigable);
+        const SurfaceElevation deck = lowest + river_depth (widest) + headroom;
         while (bridge.last > bridge.first + 1 &&
                natural[bridge.last - 1] >= deck - 0.3f * u::m)
           --bridge.last;

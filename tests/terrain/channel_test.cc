@@ -1,4 +1,5 @@
 #include <moppe/terrain/channel.hh>
+#include <moppe/terrain/river.hh>
 
 #include <tests/test.hh>
 
@@ -200,4 +201,117 @@ MOPPE_TEST (a_calm_river_lays_a_strand_where_a_steep_one_keeps_its_banks) {
     MOPPE_CHECK (steep_rise > 1.0f);
     MOPPE_CHECK (calm_rise < 0.6f * steep_rise);
   }
+}
+
+MOPPE_TEST (large_catchment_carves_deep_navigable_channel_and_estuary) {
+  // A broad lowland valley with 180 m cells draining ~16 km^2 into a shallow
+  // coastal ocean shelf (-0.2 m near shore, deepening seaward).
+  constexpr int cols = 25;
+  constexpr int rows = 30;
+  constexpr int mid = cols / 2;
+  constexpr int shore = 22;
+  const TerrainDomain grid (static_cast<std::size_t> (cols),
+                            static_cast<std::size_t> (rows),
+                            180.0f * u::m,
+                            180.0f * u::m);
+  std::vector<float> heights (static_cast<std::size_t> (cols) * rows);
+  const auto idx = [&] (int r, int c) {
+    return static_cast<std::size_t> (r) * cols + static_cast<std::size_t> (c);
+  };
+  for (int r = 0; r < rows; ++r)
+    for (int c = 0; c < cols; ++c) {
+      if (r >= shore) {
+        const meters_t drop = static_cast<float> (r - shore) * 1.2f * u::m;
+        heights[idx (r, c)] = meters_value (-0.2f * u::m - drop);
+      } else if (r == 0) {
+        heights[idx (r, c)] = 40.0f;
+      } else {
+        const meters_t fall = static_cast<float> (shore - r) * 0.20f * u::m;
+        const meters_t side =
+          static_cast<float> (std::abs (c - mid)) * 1.20f * u::m;
+        heights[idx (r, c)] = meters_value (0.25f * u::m + fall + side);
+      }
+    }
+  const ElevationMap terrain = make_elevation_map (grid, heights);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
+  const LakeCensus census = census_lakes (flood);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
+  const RiverNetwork rivers = extract_river_network (
+    flood, census, drainage, visible_river_minimum_area ());
+  const ChannelFormationResult result =
+    form_channels (terrain, flood, census, drainage, rivers);
+
+  // Near the lower trunk (~16 km^2 catchment), the bed carves well over 1.5 m
+  // below its natural valley floor for navigable draft.
+  const std::size_t lower = idx (shore - 2, mid);
+  const meters_t cut_depth (surface_elevation_point (heights[lower] * u::m) -
+                            result.heights[lower]);
+  MOPPE_CHECK (cut_depth > 1.5f * u::m);
+
+  // At the shallow coastal shelf directly off the river mouth, the submarine
+  // estuary cuts cleanly deeper than the -0.2 m shoal without lifting deep sea.
+  const std::size_t mouth_shoal = idx (shore, mid);
+  MOPPE_CHECK (flood.ocean[mouth_shoal]);
+  MOPPE_CHECK (result.heights[mouth_shoal] <
+               surface_elevation_point (-1.0f * u::m));
+  const std::size_t deep_sea = idx (rows - 1, mid);
+  MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[deep_sea]),
+                    heights[deep_sea],
+                    0.0f);
+}
+
+MOPPE_TEST (waterfall_scours_a_plunge_pool_without_undermining_the_lip) {
+  // A valley with a sheer 14 m escarpment drop that triggers a waterfall.
+  constexpr int cols = 21;
+  constexpr int rows = 30;
+  constexpr int mid = cols / 2;
+  constexpr int cliff_row = 14;
+  const TerrainDomain grid (static_cast<std::size_t> (cols),
+                            static_cast<std::size_t> (rows),
+                            10.0f * u::m,
+                            10.0f * u::m);
+  std::vector<float> heights (static_cast<std::size_t> (cols) * rows);
+  const auto idx = [&] (int r, int c) {
+    return static_cast<std::size_t> (r) * cols + static_cast<std::size_t> (c);
+  };
+  for (int r = 0; r < rows; ++r)
+    for (int c = 0; c < cols; ++c) {
+      if (r == rows - 1) {
+        heights[idx (r, c)] = -4.0f;
+      } else {
+        const meters_t shelf = r <= cliff_row ? 14.0f * u::m : 0.0f * u::m;
+        const meters_t fall = static_cast<float> (rows - 2 - r) * 0.08f * u::m;
+        const meters_t side =
+          static_cast<float> (std::abs (c - mid)) * 0.45f * u::m;
+        heights[idx (r, c)] = meters_value (2.0f * u::m + shelf + fall + side);
+      }
+    }
+  const ElevationMap terrain = make_elevation_map (grid, heights);
+  const FloodField flood =
+    analyze_standing_water (terrain, surface_elevation_point (0.0f * u::m));
+  const LakeCensus census = census_lakes (flood);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
+  const RiverNetwork rivers =
+    extract_river_network (flood, census, drainage, 4000.0f * u::m * u::m);
+  MOPPE_CHECK (!rivers.waterfalls.empty ());
+  const ChannelFormationResult result =
+    form_channels (terrain, flood, census, drainage, rivers);
+
+  const Waterfall& fall = rivers.waterfalls.front ();
+  // Lip stays intact while a plunge pool scours cleanly below the foot.
+  MOPPE_CHECK (result.heights[fall.lip_cell] >=
+               surface_elevation_point (heights[fall.lip_cell] * u::m) -
+                 0.5f * u::m);
+  meters_t deepest_scour = 0.0f * u::m;
+  const int foot_r = static_cast<int> (fall.foot_cell / cols);
+  const int foot_c = static_cast<int> (fall.foot_cell % cols);
+  for (int dr = 0; dr <= 2; ++dr)
+    for (int dc = -1; dc <= 1; ++dc) {
+      const std::size_t cell = idx (foot_r + dr, foot_c + dc);
+      const meters_t cut (surface_elevation_point (heights[cell] * u::m) -
+                          result.heights[cell]);
+      deepest_scour = std::max (deepest_scour, cut);
+    }
+  MOPPE_CHECK (deepest_scour > 0.8f * u::m);
 }

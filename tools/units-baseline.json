@@ -82,17 +82,17 @@
       "escapes": 617
     },
     "Rivers, water & sediment": {
-      "share": 98.2,
+      "share": 98.3,
       "files": 17,
-      "typed": 1050,
+      "typed": 1119,
       "raw_float": 14,
       "raw_vector": 5,
-      "escapes": 186
+      "escapes": 194
     },
     "Roads & trails": {
-      "share": 82.2,
+      "share": 82.3,
       "files": 10,
-      "typed": 1027,
+      "typed": 1033,
       "raw_float": 164,
       "raw_vector": 58,
       "escapes": 120
@@ -106,12 +106,12 @@
       "escapes": 256
     },
     "Tests": {
-      "share": 40.2,
+      "share": 40.6,
       "files": 86,
-      "typed": 674,
-      "raw_float": 802,
+      "typed": 685,
+      "raw_float": 804,
       "raw_vector": 199,
-      "escapes": 1413
+      "escapes": 1417
     },
     "Vehicles & on-foot body": {
       "share": 77.6,

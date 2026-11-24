@@ -123,6 +123,18 @@ namespace moppe::terrain {
     const auto catchment = [&] (std::uint32_t cell) {
       return drainage.contributing_area_at (cell);
     };
+    const auto bed_width_for = [&] (square_meters_t area) {
+      return std::max (parameters.least_width,
+                       meters_t (parameters.width_share * river_width (area)));
+    };
+    const auto bed_depth_for = [&] (square_meters_t area) {
+      const meters_t w = bed_width_for (area);
+      return std::min (
+        parameters.greatest_depth,
+        parameters.least_depth *
+          cr::pow ((w / parameters.least_width).numerical_value_in (one),
+                   parameters.depth_growth.numerical_value_in (one)));
+    };
     std::ranges::sort (downstream, [&] (std::uint32_t a, std::uint32_t b) {
       const square_meters_t area_a = catchment (a);
       const square_meters_t area_b = catchment (b);
@@ -169,43 +181,53 @@ namespace moppe::terrain {
                                               (filled[cell] - cut[cell]));
 
       // Ease it along the stream, each cell toward the mean of what lies
-      // above and below it, and let it fall all the way again.
-      // Elevations sum and scale as heights over the datum.
-      std::vector<ElevationChange> above (count, ElevationChange::zero ());
-      std::vector<std::uint16_t> feeders (count, 0);
+      // above (weighted by catchment so a steep hillside brook cannot lift a
+      // lowland trunk river at their confluence) and below it, and let it
+      // fall all the way again.
+      using catchment_weight_t = quantity<u::m * u::m, double>;
+      std::vector<cubic_meters_f64_t> above (count, 0.0 * u::m * u::m * u::m);
+      std::vector<catchment_weight_t> above_weight (count, 0.0 * u::m * u::m);
       std::vector<SurfaceElevation> eased (count);
       for (int pass = 0; pass < count_value (parameters.easing); ++pass) {
         for (const std::uint32_t cell : downstream) {
-          above[cell] = ElevationChange::zero ();
-          feeders[cell] = 0;
+          above[cell] = 0.0 * u::m * u::m * u::m;
+          above_weight[cell] = 0.0 * u::m * u::m;
         }
         for (const std::uint32_t cell : downstream)
           if (const std::uint32_t next = receives (cell); next != none) {
-            above[next] += graded[cell].delta_from_zero ();
-            ++feeders[next];
+            const catchment_weight_t w = std::max (
+              1.0 * u::m * u::m, value_cast<double> (catchment (cell)));
+            above[next] += cubic_meters_f64_t (
+              w * value_cast<double> (graded[cell].delta_from_zero ()));
+            above_weight[next] += w;
           }
         for (const std::uint32_t cell : downstream) {
           const std::uint32_t next = receives (cell);
           const ElevationChange here = graded[cell].delta_from_zero ();
+          const ElevationChange upstream_mean =
+            above_weight[cell] > 0.0 * u::m * u::m
+              ? ElevationChange (
+                  value_cast<float> (above[cell] / above_weight[cell]))
+              : here;
           eased[cell] =
             fixed[cell]
               ? graded[cell]
-              : SurfaceElevation (
-                  0.5f * here +
-                  0.25f * (feeders[cell]
-                             ? above[cell] / static_cast<float> (feeders[cell])
-                             : here) +
-                  0.25f *
-                    (next != none ? graded[next].delta_from_zero () : here));
+              : SurfaceElevation (0.5f * here + 0.25f * upstream_mean +
+                                  0.25f * (next != none
+                                             ? graded[next].delta_from_zero ()
+                                             : here));
         }
         for (const std::uint32_t cell : downstream)
           graded[cell] = eased[cell];
       }
       // A sill is cut only so deep; a hollow behind a higher one fills
-      // the rest of the way.
-      for (const std::uint32_t cell : downstream)
-        graded[cell] =
-          std::max (graded[cell], ground[cell] - parameters.deepest_cut);
+      // the rest of the way. Larger rivers cut proportionally deeper sills
+      // so the navigable trunk stays free of shallow stepped dams.
+      for (const std::uint32_t cell : downstream) {
+        const meters_t allowed_cut = std::max (
+          parameters.deepest_cut, 1.35f * bed_depth_for (catchment (cell)));
+        graded[cell] = std::max (graded[cell], ground[cell] - allowed_cut);
+      }
       for (auto cell = downstream.rbegin (); cell != downstream.rend ();
            ++cell) {
         const std::uint32_t next = receives (*cell);
@@ -285,7 +307,9 @@ namespace moppe::terrain {
                           tz);
     };
     std::vector<Foot> feet (count);
-    constexpr meters_t bank_reach = 6.0f * u::m;
+    const auto bank_reach_for = [] (meters_t depth) {
+      return std::max (6.0f * u::m, 3.0f * depth);
+    };
     const meters_t bar_reach = parameters.bar_reach;
     const scale_factor_t bar_widths = parameters.bar_widths;
     // How far a full bar runs out from a bed of this half width.
@@ -297,8 +321,6 @@ namespace moppe::terrain {
     constexpr meters_t bar_riser = 8.0f * u::m;
     constexpr meters_t section_step = 1.0f * u::m;
     const meters_t cell_reach = std::max (spacing_x, spacing_z);
-    const meters_t least_width = parameters.least_width;
-    const meters_t least_depth = parameters.least_depth;
     // How sharply a river turns: the angle it turns through per metre.
     using curvature_t = quantity<si::radian / si::metre, float>;
     {
@@ -332,14 +354,8 @@ namespace moppe::terrain {
           const std::uint32_t cell = course_near (at);
           if (cell == none)
             continue;
-          const meters_t bed_width =
-            std::max (least_width,
-                      meters_t (parameters.width_share *
-                                river_width (point.contributing_area)));
-          meters_t depth =
-            least_depth *
-            cr::pow ((bed_width / least_width).numerical_value_in (one),
-                     parameters.depth_growth.numerical_value_in (one));
+          const meters_t bed_width = bed_width_for (point.contributing_area);
+          meters_t depth = bed_depth_for (point.contributing_area);
           // Below a lake the bed starts at the sill; a spring's begins as
           // nothing.
           if (below_sill[cell] != nowhere)
@@ -508,8 +524,10 @@ namespace moppe::terrain {
           const meters_t end_z = z_of (end.at);
           const meters_t widest =
             std::max ({ start.left, start.right, end.left, end.right });
+          const meters_t local_bank_reach =
+            bank_reach_for (std::max (start.depth, end.depth));
           const meters_t radius =
-            widest + bank_reach + strand_reach (widest) + bar_riser;
+            widest + local_bank_reach + strand_reach (widest) + bar_riser;
           // The lattice's reach around the step, in cells.
           const int minimum_x = static_cast<int> (
             std::floor (((std::min (start_x, end_x) - radius) / spacing_x)
@@ -548,19 +566,41 @@ namespace moppe::terrain {
                 moppe::lerp (start.bar[on], end.bar[on], t);
               const proportion_t cut =
                 moppe::lerp (start.cut[on], end.cut[on], t);
+              const meters_t depth_here =
+                moppe::lerp (start.depth, end.depth, t);
               const meters_t reach =
-                bank_reach +
+                bank_reach_for (depth_here) +
                 meters_t (bar * (strand_reach (half_width) + bar_riser));
               Foot& foot =
                 feet[static_cast<std::size_t> (wrap_index (at_z, height)) *
                        width +
                      wrap_index (at_x, width)];
-              if (distance >= half_width + reach || distance >= foot.distance)
+              if (distance >= half_width + reach)
                 continue;
+              // Inside overlapping channel beds (confluences), the deeper
+              // trunk owns the bed so a shallow tributary never leaves a
+              // high sill across a navigable river; outside beds, the nearest
+              // section wins.
+              const bool in_candidate = distance <= half_width;
+              const bool in_current =
+                foot.distance != nowhere && foot.distance <= foot.half_width;
+              if (foot.distance != nowhere) {
+                if (in_candidate && in_current) {
+                  if (depth_here < foot.depth - 1e-3f * u::m ||
+                      (abs (depth_here - foot.depth) <= 1e-3f * u::m &&
+                       distance >= foot.distance))
+                    continue;
+                } else if (!in_candidate && in_current) {
+                  continue;
+                } else if (!in_candidate && !in_current &&
+                           distance >= foot.distance) {
+                  continue;
+                }
+              }
               foot = { .distance = distance,
                        .bed = moppe::lerp (start.level, end.level, t),
                        .half_width = half_width,
-                       .depth = moppe::lerp (start.depth, end.depth, t),
+                       .depth = depth_here,
                        .bar = bar,
                        .cut = cut,
                        .slope = moppe::lerp (
@@ -586,9 +626,12 @@ namespace moppe::terrain {
       // it another place, a drop or a gully beside the stream: neither is
       // the river's to move.
       const meters_t bank = parameters.bank_height (foot.depth);
+      const meters_t local_bank_reach = bank_reach_for (foot.depth);
+      const meters_t local_fill = std::max (deepest_fill, 1.2f * foot.depth);
       if (foot.distance <= foot.half_width) {
         // Under a bar the bed shoals from the deep water to the strand;
-        // under a cut bank it stays deep up to the bank's foot.
+        // under a cut bank it stays deep up to the bank's foot and scours
+        // an outer-bend helicoidal pool.
         const proportion_t across = foot.distance / foot.half_width;
         const proportion_t shoaling =
           proportion_t ((whole - across) * (whole - across));
@@ -599,8 +642,13 @@ namespace moppe::terrain {
             whole - proportion_t (across * across), shoaling, foot.bar),
           plunging,
           foot.cut);
-        const SurfaceElevation bed = foot.bed - meters_t (foot.depth * section);
-        if (ground[cell] >= bed - deepest_fill &&
+        const meters_t scoured_depth =
+          meters_t (foot.depth *
+                    (1.0f * scale_factor[one] +
+                     scale_factor_t (parameters.outer_bend_scour * foot.cut)));
+        const SurfaceElevation bed =
+          foot.bed - meters_t (scoured_depth * section);
+        if (ground[cell] >= bed - local_fill &&
             ground[cell] <= foot.bed + 2.0f * bank)
           formed[cell] = bed;
         continue;
@@ -610,12 +658,12 @@ namespace moppe::terrain {
       // pocket of water the river had passed by.
       const meters_t beyond = foot.distance - foot.half_width;
       if (ground[cell] < foot.bed) {
-        if (beyond < bank_reach && ground[cell] >= foot.bed - deepest_fill)
+        if (beyond < local_bank_reach && ground[cell] >= foot.bed - local_fill)
           formed[cell] = foot.bed;
         continue;
       }
       const SurfaceElevation ramp = foot.bed + meters_t (foot.slope * beyond);
-      if (beyond < bank_reach && ground[cell] <= ramp + bank)
+      if (beyond < local_bank_reach && ground[cell] <= ramp + bank)
         formed[cell] = std::min (ground[cell], ramp);
       // A calm river swinging across its floor has planed it down beside
       // itself: a strand as far as its bar reaches, rising beyond like any
@@ -674,6 +722,200 @@ namespace moppe::terrain {
           formed[cell] = std::max (formed[cell] + planed[cell], floor[cell]);
     }
 
+    // Waterfall plunge pools: falling water scours a smooth bowl just
+    // downstream of each waterfall's foot, scaled by drop height and river
+    // depth, while leaving the rock lip and escarpment above untouched.
+    if (parameters.plunge_pool_scale > 0.0f * scale_factor[one]) {
+      MOPPE_PROFILE_ZONE ("channels.plunge_pools");
+      const meters_t period_x = static_cast<float> (width) * spacing_x;
+      const meters_t period_z = static_cast<float> (height) * spacing_z;
+      for (const Waterfall& waterfall : rivers.waterfalls) {
+        const SurfaceElevation lip_y = ground[waterfall.lip_cell];
+        const SurfaceElevation foot_y = ground[waterfall.foot_cell];
+        const meters_t drop (lip_y - foot_y);
+        if (drop < 1.5f * u::m)
+          continue;
+        const meters_t river_d =
+          std::max (0.4f * u::m, bed_depth_for (waterfall.contributing_area));
+        const meters_t pool_depth = std::clamp (
+          meters_t (parameters.plunge_pool_scale * sqrt (drop * river_d)),
+          0.8f * u::m,
+          parameters.plunge_pool_max_depth);
+        const meters_t pool_radius =
+          std::clamp (0.65f * river_width (waterfall.contributing_area),
+                      5.0f * u::m,
+                      22.0f * u::m);
+        const meters_t lip_x =
+          static_cast<float> (waterfall.lip_cell % width) * spacing_x;
+        const meters_t lip_z =
+          static_cast<float> (waterfall.lip_cell / width) * spacing_z;
+        const meters_t foot_x =
+          static_cast<float> (waterfall.foot_cell % width) * spacing_x;
+        const meters_t foot_z =
+          static_cast<float> (waterfall.foot_cell / width) * spacing_z;
+        const meters_t dx_m = minimum_image_delta (foot_x - lip_x, period_x);
+        const meters_t dz_m = minimum_image_delta (foot_z - lip_z, period_z);
+        const meters_t fall_run = hypot (plan_displacement (dx_m, dz_m));
+        const quantity<one, float> dir_x =
+          fall_run > 1e-3f * u::m ? dx_m / fall_run : 0.0f * one;
+        const quantity<one, float> dir_z =
+          fall_run > 1e-3f * u::m ? dz_m / fall_run : 0.0f * one;
+        const meters_t center_x = foot_x + 0.35f * pool_radius * dir_x;
+        const meters_t center_z = foot_z + 0.35f * pool_radius * dir_z;
+        const SurfaceElevation rim =
+          std::min (formed[waterfall.foot_cell], foot_y);
+        const SurfaceElevation cliff_guard = lip_y - 0.5f * drop;
+        const int min_x = static_cast<int> (std::floor (
+          ((center_x - pool_radius) / spacing_x).numerical_value_in (one)));
+        const int max_x = static_cast<int> (std::ceil (
+          ((center_x + pool_radius) / spacing_x).numerical_value_in (one)));
+        const int min_z = static_cast<int> (std::floor (
+          ((center_z - pool_radius) / spacing_z).numerical_value_in (one)));
+        const int max_z = static_cast<int> (std::ceil (
+          ((center_z + pool_radius) / spacing_z).numerical_value_in (one)));
+        for (int az = min_z; az <= max_z; ++az)
+          for (int ax = min_x; ax <= max_x; ++ax) {
+            const std::size_t cell =
+              static_cast<std::size_t> (wrap_index (az, height)) * width +
+              wrap_index (ax, width);
+            if (flood.ocean[cell] || ground[cell] > cliff_guard)
+              continue;
+            const meters_t rx = static_cast<float> (ax) * spacing_x - center_x;
+            const meters_t rz = static_cast<float> (az) * spacing_z - center_z;
+            const meters_t r = hypot (plan_displacement (rx, rz));
+            if (r >= pool_radius)
+              continue;
+            const proportion_t u = r / pool_radius;
+            const proportion_t ring = whole - proportion_t (u * u);
+            const proportion_t bowl = proportion_t (ring * ring);
+            const SurfaceElevation target = rim - meters_t (pool_depth * bowl);
+            formed[cell] = std::min (formed[cell], target);
+          }
+      }
+    }
+
+    // Submarine sea inlets: where a river meets the ocean, extend its carved
+    // channel smoothly below sea level across any shallow coastal shoal so
+    // boats and jet skis can run straight from open sea into the trunk river.
+    {
+      MOPPE_PROFILE_ZONE ("channels.estuaries");
+      const meters_t period_x = static_cast<float> (width) * spacing_x;
+      const meters_t period_z = static_cast<float> (height) * spacing_z;
+      const auto reaches_sea = [&] (const RiverReach& reach) {
+        return reach.downstream_ocean ||
+               (census.domain ().contains (reach.downstream_body) &&
+                census.water_body (reach.downstream_body).classification ==
+                  WaterBodyClass::Sea);
+      };
+      for (const RiverReach& reach : rivers.reaches) {
+        if (!reaches_sea (reach) || reach.cells.empty ())
+          continue;
+        std::uint32_t last_land = reach.cells.back ();
+        std::uint32_t sea_cell = last_land;
+        for (int hops = 0; hops < 8 && !flood.ocean[sea_cell]; ++hops) {
+          const std::uint32_t next = drainage.receiver[sea_cell];
+          if (next == sea_cell)
+            break;
+          last_land = sea_cell;
+          sea_cell = next;
+        }
+        if (!flood.ocean[sea_cell])
+          continue;
+        const SurfaceElevation sea_level = flood.water_levels ()[sea_cell];
+        meters_t run_x = 0.0f * u::m;
+        meters_t run_z = 0.0f * u::m;
+        const auto& points = reach.alignment.points;
+        if (points.size () >= 2) {
+          const plan_position_t mouth = points.back ().place;
+          std::size_t back_idx = points.size () - 1;
+          while (
+            back_idx > 0 &&
+            hypot (plan_displacement (
+              minimum_image_delta (x_of (mouth) - x_of (points[back_idx].place),
+                                   period_x),
+              minimum_image_delta (z_of (mouth) - z_of (points[back_idx].place),
+                                   period_z))) < 20.0f * u::m)
+            --back_idx;
+          run_x = minimum_image_delta (
+            x_of (mouth) - x_of (points[back_idx].place), period_x);
+          run_z = minimum_image_delta (
+            z_of (mouth) - z_of (points[back_idx].place), period_z);
+        }
+        if (hypot (plan_displacement (run_x, run_z)) < 1e-3f * u::m &&
+            last_land != sea_cell) {
+          run_x = minimum_image_delta (
+            static_cast<float> (static_cast<int> (sea_cell % width) -
+                                static_cast<int> (last_land % width)) *
+              spacing_x,
+            period_x);
+          run_z = minimum_image_delta (
+            static_cast<float> (static_cast<int> (sea_cell / width) -
+                                static_cast<int> (last_land / width)) *
+              spacing_z,
+            period_z);
+        }
+        const meters_t run = hypot (plan_displacement (run_x, run_z));
+        if (run < 1e-3f * u::m)
+          continue;
+        const quantity<one, float> dir_x = run_x / run;
+        const quantity<one, float> dir_z = run_z / run;
+        const meters_t mouth_width = bed_width_for (reach.downstream_area);
+        const meters_t mouth_depth = bed_depth_for (reach.downstream_area);
+        const meters_t inlet_length =
+          std::clamp (2.5f * mouth_width, 20.0f * u::m, 95.0f * u::m);
+        // Anchor the submarine inlet right at the first coastal ocean cell so
+        // it cuts cleanly across the beach shoal at any lattice resolution.
+        const meters_t mouth_x =
+          static_cast<float> (sea_cell % width) * spacing_x;
+        const meters_t mouth_z =
+          static_cast<float> (sea_cell / width) * spacing_z;
+        const meters_t end_x = mouth_x + inlet_length * dir_x;
+        const meters_t end_z = mouth_z + inlet_length * dir_z;
+        const meters_t max_half_w = 0.85f * mouth_width;
+        const int min_x = static_cast<int> (
+          std::floor (((std::min (mouth_x, end_x) - max_half_w) / spacing_x)
+                        .numerical_value_in (one)));
+        const int max_x = static_cast<int> (
+          std::ceil (((std::max (mouth_x, end_x) + max_half_w) / spacing_x)
+                       .numerical_value_in (one)));
+        const int min_z = static_cast<int> (
+          std::floor (((std::min (mouth_z, end_z) - max_half_w) / spacing_z)
+                        .numerical_value_in (one)));
+        const int max_z = static_cast<int> (
+          std::ceil (((std::max (mouth_z, end_z) + max_half_w) / spacing_z)
+                       .numerical_value_in (one)));
+        for (int az = min_z; az <= max_z; ++az)
+          for (int ax = min_x; ax <= max_x; ++ax) {
+            const std::size_t cell =
+              static_cast<std::size_t> (wrap_index (az, height)) * width +
+              wrap_index (ax, width);
+            if (!flood.ocean[cell])
+              continue;
+            const meters_t rx = static_cast<float> (ax) * spacing_x - mouth_x;
+            const meters_t rz = static_cast<float> (az) * spacing_z - mouth_z;
+            const meters_t along_m = rx * dir_x + rz * dir_z;
+            if (along_m < -cell_reach || along_m > inlet_length)
+              continue;
+            const meters_t side_m = abs (rz * dir_x - rx * dir_z);
+            const proportion_t progress =
+              std::clamp (proportion_t (along_m / inlet_length),
+                          0.0f * proportion[one],
+                          whole);
+            const meters_t half_w =
+              moppe::lerp (0.55f * mouth_width, max_half_w, progress);
+            if (side_m >= half_w)
+              continue;
+            const proportion_t across = side_m / half_w;
+            const proportion_t section = whole - proportion_t (across * across);
+            const proportion_t taper =
+              whole - band (0.4f * proportion[one], whole, progress);
+            const SurfaceElevation target =
+              sea_level - meters_t (mouth_depth * section * taper);
+            formed[cell] = std::min (formed[cell], target);
+          }
+      }
+    }
+
     // The bed as the lattice draws it. Where the course steps diagonally
     // from one cell to the next, the two cells beside the step stand over
     // it like a dam, and a surface drawn bilinearly between the course's
@@ -684,7 +926,6 @@ namespace moppe::terrain {
     // neighbouring cell.
     {
       MOPPE_PROFILE_ZONE ("channels.lattice");
-      const meters_t deepest_corner = parameters.deepest_corner;
       for (const std::uint32_t cell : downstream) {
         const std::uint32_t next = receives (cell);
         if (next == none)
@@ -707,6 +948,8 @@ namespace moppe::terrain {
         const SurfaceElevation between =
           SurfaceElevation (0.5f * (formed[cell].delta_from_zero () +
                                     formed[next].delta_from_zero ()));
+        const meters_t deepest_corner = std::max (
+          parameters.deepest_corner, 2.0f * bed_depth_for (catchment (cell)));
         if (formed[lower] > between &&
             formed[lower] - between <= deepest_corner)
           formed[lower] = between;

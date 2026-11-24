@@ -36,12 +36,15 @@ namespace moppe::terrain {
   // last of the river lies below sea level.
   struct ChannelFormation {
     // The bed is this share of the regime width, and no narrower than a
-    // visible river.
-    proportion_t width_share = 0.75f * proportion[one];
+    // visible river. A single-thread Nordic river focuses its discharge into
+    // a deeper cohesive channel while laying bars beside its calm bends.
+    proportion_t width_share = 0.62f * proportion[one];
     meters_t least_width = 5.0f * mp_units::si::metre;
-    // Its depth at that least width, growing with the width to this power.
-    meters_t least_depth = 0.25f * mp_units::si::metre;
-    scaling_exponent_t depth_growth = 0.8f * scaling_exponent[one];
+    // Its depth at that least width, growing with the width to this power,
+    // up to a deep navigable trunk channel.
+    meters_t least_depth = 0.28f * mp_units::si::metre;
+    scaling_exponent_t depth_growth = 1.12f * scaling_exponent[one];
+    meters_t greatest_depth = 3.5f * mp_units::si::metre;
     // How far from leaving a hollow filled (0) to cutting its sill through
     // (1) the graded bed lies.
     blend_weight_t breach = 0.5f * blend_weight[one];
@@ -74,10 +77,15 @@ namespace moppe::terrain {
     // The most a full bar planes the ground beside it down: the river has
     // worked its floor this deep since it last stood higher.
     meters_t bar_lowering = 4.0f * mp_units::si::metre;
-    // The outside of a tight calm bend, cut back by the current.
-    slope_t cut_bank_slope = 0.8f * terrain_slope[one];
-    // A sill is cut no deeper than this; what that leaves of a hollow
-    // behind it fills.
+    // The outside of a tight calm bend, cut back by the current and scoured
+    // deeper by helicoidal flow.
+    slope_t cut_bank_slope = 1.05f * terrain_slope[one];
+    scale_factor_t outer_bend_scour = 0.30f * scale_factor[one];
+    // Scour below a waterfall: depth scales as scale * sqrt(drop * depth).
+    scale_factor_t plunge_pool_scale = 0.45f * scale_factor[one];
+    meters_t plunge_pool_max_depth = 4.2f * mp_units::si::metre;
+    // A sill is cut no deeper than this on brooks; larger rivers scale
+    // proportionally with their own channel depth.
     meters_t deepest_cut = 1.2f * mp_units::si::metre;
     // How far the ground may stand over a bed of a given depth and still
     // be its bank; higher is the valley's side, which the bed stops at.

@@ -155,10 +155,13 @@ namespace moppe::terrain {
     meters_t freeboard = 0.5f * u::m;
     // A road bridges any river draining more than this, where the rivers
     // are drawn (river.hh: five metres wide), its deck `clearance` above
-    // the river's spate and its abutments on the banks, at most
-    // `bridge_reach` either side of the river's line.
+    // the river's spate (rising to `navigable_clearance` over deeper
+    // navigable rivers so boats and jet skis pass cleanly underneath) and
+    // its abutments on the banks, at most `bridge_reach` either side.
     square_meters_t bridge_area = 175000.0f * u::m * u::m;
+    square_meters_t navigable_area = 2000000.0f * u::m * u::m;
     meters_t clearance = 1.2f * u::m;
+    meters_t navigable_clearance = 2.8f * u::m;
     meters_t bridge_reach = 30.0f * u::m;
     meters_t longest_bridge = 90.0f * u::m;
     // The deck's half width, inside the tread's: the kerbs stand at it.

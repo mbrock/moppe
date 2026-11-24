@@ -47,21 +47,22 @@ namespace moppe::terrain {
 
   struct WatercoursePaint {
     // The share of its spate (river.hh) a river carries the day the world
-    // is seen. Its bed and bars were shaped by the spate; most days it runs
-    // well inside them.
-    proportion_t flow = 0.4f * proportion[mp_units::one];
-    // Chezy's coefficient for a cobble bed: u = C sqrt(d S).
+    // is seen. Its bed and bars were shaped by the spate; on a bright Nordic
+    // day it runs full inside its sculpted banks while leaving inside gravel
+    // bars dry.
+    proportion_t flow = 0.62f * proportion[mp_units::one];
+    // Chezy's coefficient for a Nordic cobble bed: u = C sqrt(d S).
     root_metre_per_second_t roughness =
-      20.0f * pow<1, 2> (mp_units::si::metre) / mp_units::si::second;
+      16.5f * pow<1, 2> (mp_units::si::metre) / mp_units::si::second;
     // The Froude number steep water holds itself to; a stream on a mobile
     // bed steeper than about one in forty runs close to critical.
     froude_number_t critical_froude = 1.0f * froude_number[mp_units::one];
     // How many regime widths (river.hh) running water may spread to on a
     // floor too flat to hold it; beyond, the stage gives way instead.
     scale_factor_t spread = 1.5f * scale_factor[mp_units::one];
-    // A running surface may follow a steep bed but never bridge a drop by
-    // standing arbitrarily high above the ground below it.
-    meters_t depth_limit = 2.5f * mp_units::si::metre;
+    // A running surface may follow a steep bed or fill a deep navigable trunk
+    // and plunge pool without bridging an unrelated drop below it.
+    meters_t depth_limit = 4.8f * mp_units::si::metre;
     // The level probe reaches just onto the bank ramp; terrain clips the
     // resulting field back to the physical waterline.
     meters_t bank_margin = 3.0f * mp_units::si::metre;
