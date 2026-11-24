@@ -214,10 +214,14 @@ namespace moppe {
 
       void draw_actor_layers (render::Renderer& r, const FrameView& frame);
 
+      void apply_scene_occlusion (render::Renderer& r, const FrameView& frame);
+
       void draw_water_surfaces (render::Renderer& r, const FrameView& frame);
 
       // The boats' wakes lie on the water, so they are drawn over it.
       void draw_boat_wakes (render::Renderer& r, const FrameView& frame);
+
+      void draw_actor_glows (render::Renderer& r, const FrameView& frame);
 
       void draw_effect_layers (render::Renderer& r, const FrameView& frame);
 

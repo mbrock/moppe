@@ -64,10 +64,12 @@ namespace moppe {
 
       draw_world_layers (r, frame);
       draw_actor_layers (r, frame);
+      apply_scene_occlusion (r, frame);
 
       draw_water_surfaces (r, frame);
       r.draw_model_glass ();
       draw_boat_wakes (r, frame);
+      draw_actor_glows (r, frame);
       draw_effect_layers (r, frame);
 
       m_heads_up.draw (r, hud_world (), m_opening, frame);

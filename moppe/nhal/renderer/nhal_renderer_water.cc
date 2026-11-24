@@ -120,9 +120,12 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::copy_beneath_water () {
-      open_scene ();
-      m_device->end_render_pass ();
-      m_scene_open = false;
+      if (!m_scene_begun)
+        open_scene ();
+      if (m_scene_open) {
+        m_device->end_render_pass ();
+        m_scene_open = false;
+      }
       RenderPassDesc pass;
       pass.label = "scene beneath water";
       pass.color_count = 2;

@@ -262,6 +262,11 @@ namespace moppe {
                    std::fabs (light_forward[1]) > 0.98f ? Vec3 (0, 0, 1)
                                                         : Vec3 (0, 1, 0));
         light_right = normalized (light_right);
+        // A reciprocal-golden-ratio roll staggers texel coverage along
+        // straight silhouettes so adjacent rows cross an edge at different
+        // fractions of a texel.
+        light_right = normalized (
+          light_right + cross (light_right, light_forward) * 0.6180339887f);
         const Vec3 light_up = cross (light_right, light_forward);
 
         const meters_f64_t texel = 2.0 * meters_f64_t (radius) / shadow_texels;

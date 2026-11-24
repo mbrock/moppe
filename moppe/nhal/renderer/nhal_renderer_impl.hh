@@ -141,15 +141,21 @@ namespace moppe::nhal {
       return { lin (c.red), lin (c.green), lin (c.blue), w };
     }
 
-    inline float halton (std::uint32_t index, std::uint32_t base) {
-      float fraction = 1, result = 0;
-      while (index > 0) {
-        fraction /= float (base);
-        result += fraction * float (index % base);
-        index /= base;
-      }
-      return result;
-    }
+    // Eight-position zero-mean stratified N-Rooks jitter in scene pixels
+    // ({±1, ±3, ±5, ±7}/16 in both axes), ordered so consecutive frames
+    // alternate vertical sign and every four frames cover all quadrants.
+    // Halves the cycle relative to 16-phase Halton(2,3) to curb low-frequency
+    // pulsing on subpixel grazing edges.
+    inline constexpr std::array<std::array<float, 2>, 8> temporal_jitter { {
+      { 0.0625f, -0.1875f },
+      { -0.3125f, 0.3125f },
+      { -0.1875f, -0.3125f },
+      { 0.3125f, 0.0625f },
+      { -0.4375f, -0.0625f },
+      { 0.1875f, 0.4375f },
+      { 0.4375f, -0.4375f },
+      { -0.0625f, 0.1875f },
+    } };
 
     // -- resources the game holds -----------------------------------------
 

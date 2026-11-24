@@ -108,11 +108,11 @@
         "tracy": "tracy"
       },
       "locked": {
-        "lastModified": 1793194749,
-        "narHash": "sha256-IGCTHqfNbZAh2x3ck0a8AaP/jS+d8/La44pmm8Q9acA=",
+        "lastModified": 1795543730,
+        "narHash": "sha256-IwoaHoiD0JAcY/zn5n5fSWJl4Ek3qNbpvlEyV7njkQk=",
         "owner": "mbrock",
         "repo": "luv",
-        "rev": "62bc119ddf8c8afbe0d7e08a20660ebb927f8275",
+        "rev": "718ab9187258baf4e781d63d67d2b4b48d9445fe",
         "type": "github"
       },
       "original": {
@@ -126,16 +126,16 @@
       "locked": {
         "lastModified": 1787473849,
         "narHash": "sha256-q0oewh6VvdiOjBRKOMS1JAejIDtBSsqbs0K8Nruzno8=",
-        "ref": "master",
+        "owner": "mbrock",
+        "repo": "mcclim",
         "rev": "4df4240b108cb83a53d4ec90de982feec9fc8062",
-        "revCount": 8849,
-        "type": "git",
-        "url": "https://git.swa.sh/mcclim"
+        "type": "github"
       },
       "original": {
+        "owner": "mbrock",
         "ref": "master",
-        "type": "git",
-        "url": "https://git.swa.sh/mcclim"
+        "repo": "mcclim",
+        "type": "github"
       }
     },
     "nix-bundle": {

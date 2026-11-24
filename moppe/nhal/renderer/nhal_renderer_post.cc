@@ -69,9 +69,14 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::apply_gtao (const render::GtaoParams& params) {
-      if (m_resolved)
+      if (m_resolved || m_scene_closed)
         return;
-      close_scene ();
+      if (!m_scene_begun)
+        open_scene ();
+      if (m_scene_open) {
+        m_device->end_render_pass ();
+        m_scene_open = false;
+      }
       shaders::gtao::Post post = post_block (
         params.camera_pos, params.forward, params.right_span, params.up_span);
       post.occlusion = { params.radius.numerical_value_in (u::m),

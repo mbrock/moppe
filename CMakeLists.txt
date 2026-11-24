@@ -593,7 +593,7 @@ find_program(MOPPE_LUV_SHADERC luv-shaderc NO_CACHE)
 if(MOPPE_LUV_SHADERC)
   set(MOPPE_LUV_SHADERC_COMMAND ${MOPPE_LUV_SHADERC})
 else()
-  set(MOPPE_LUV_SHADERC "")
+  set(MOPPE_LUV_SHADERC "${CMAKE_CURRENT_SOURCE_DIR}/flake.lock")
   set(MOPPE_LUV_SHADERC_COMMAND
     nix run "${CMAKE_CURRENT_SOURCE_DIR}#luv-shaderc" --)
 endif()

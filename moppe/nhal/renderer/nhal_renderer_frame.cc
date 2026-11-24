@@ -85,7 +85,7 @@ namespace moppe::nhal {
         m_previous_view_proj = view_proj, m_previous_time = time, m_frame = 0;
       const float tan_x = 1.0f / params.proj.at (0, 0);
       const float tan_y = 1.0f / params.proj.at (1, 1);
-      const std::uint32_t phase = m_frame++ % 16 + 1;
+      const auto& jitter = temporal_jitter[m_frame++ % temporal_jitter.size ()];
 
       FrameBlock frame {};
       frame.view_proj = matrix (view_proj);
@@ -108,9 +108,8 @@ namespace moppe::nhal {
       frame.view_forward = lanes (direction_value (params.cam_forward));
       frame.temporal = { float (m_scene_width),
                          float (m_scene_height),
-                         (halton (phase, 2) - 0.5f) * 2 / float (m_scene_width),
-                         (halton (phase, 3) - 0.5f) * 2 /
-                           float (m_scene_height) };
+                         jitter[0] * 2.0f / float (m_scene_width),
+                         jitter[1] * 2.0f / float (m_scene_height) };
       frame.temporal_blend = {
         m_restart ? 1.0f : 0.1f, 0.0f, float (m_width), float (m_height)
       };
@@ -139,9 +138,10 @@ namespace moppe::nhal {
     void NhalRenderer::close_scene () {
       if (m_scene_closed)
         return;
-      open_scene ();
-      draw_model_glass ();
       const float rain = m_params.rain.numerical_value_in (one);
+      if (!m_scene_begun || !m_glass.empty () || rain > 0.0f)
+        open_scene ();
+      draw_model_glass ();
       if (rain > 0.0f) {
         // The rain, last in the scene so it falls in front of
         // everything it does not pass behind: 1 is a drizzle, and
@@ -155,8 +155,10 @@ namespace moppe::nhal {
         m_device->set_uniforms (1, weather);
         m_device->draw (6, drops);
       }
-      m_device->end_render_pass ();
-      m_scene_open = false;
+      if (m_scene_open) {
+        m_device->end_render_pass ();
+        m_scene_open = false;
+      }
       m_scene_closed = true;
     }
 

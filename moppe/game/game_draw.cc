@@ -265,8 +265,6 @@ namespace moppe {
 
     void MoppeGame::draw_actor_layers (render::Renderer& r,
                                        const FrameView& frame) {
-      const FrameVisibility& visibility = frame.visibility;
-
       // The world draw list, in the GL build's draw order.
       m_world_dl.clear ();
       const FrameActors& actors = frame.actors;
@@ -422,6 +420,53 @@ namespace moppe {
                       world_ground ());
 
       r.draw_list (m_world_dl, 0x0001);
+    }
+
+    namespace {
+      struct PostBasis {
+        direction_t forward;
+        Vec3 right_span;
+        Vec3 up_span;
+      };
+
+      PostBasis post_basis (const FrameCamera& camera) {
+        const Mat4& view = camera.view;
+        const Vec3 right (view.at (0, 0), view.at (1, 0), view.at (2, 0));
+        const Vec3 up (view.at (0, 1), view.at (1, 1), view.at (2, 1));
+        const Vec3 forward (-view.at (0, 2), -view.at (1, 2), -view.at (2, 2));
+        const float half_tangent = tan (camera.field_of_view * 0.5f);
+        return {
+          .forward = unit_direction (forward),
+          .right_span =
+            right * (half_tangent * camera.aspect.numerical_value_in (one)),
+          .up_span = up * half_tangent,
+        };
+      }
+    }
+
+    void MoppeGame::apply_scene_occlusion (render::Renderer& r,
+                                           const FrameView& frame) {
+      // Ambient occlusion runs on the opaque scene before translucent
+      // water, glass, wakes, glows, and rain blend over it, so background
+      // depth creases never darken translucent surfaces in front of them.
+      if (frame.visibility.underwater)
+        return;
+      const PostBasis basis = post_basis (frame.camera);
+      r.apply_gtao ({
+        .camera_pos = frame.camera.position,
+        .forward = basis.forward,
+        .right_span = basis.right_span,
+        .up_span = basis.up_span,
+      });
+    }
+
+    void MoppeGame::draw_actor_glows (render::Renderer& r,
+                                      const FrameView& frame) {
+      const FrameVisibility& visibility = frame.visibility;
+      if (frame.scene != FrameSceneMode::Gameplay)
+        return;
+      const FrameActors& actors = frame.actors;
+      const bool helmet = actors.helmet_camera;
 
       if (visibility.vehicle_effects && logic ().m_snow.revision ()) {
         m_world_dl.clear ();
@@ -430,8 +475,9 @@ namespace moppe {
           r.draw_list (m_world_dl);
       }
 
-      // Additive glow after the solid list, so it blends over everything
-      // already drawn: exhaust and jump-jet flames, then star halos.
+      // Additive glow after the solid list, water, and occlusion, so it
+      // blends un-darkened over everything already drawn: exhaust and
+      // jump-jet flames, fires, star halos, and scan overlays.
       if (visibility.vehicle_effects &&
           !(helmet && actors.active_mode == Doing::driving (Machine::bike)))
         render_vehicle_flames (r,
@@ -528,40 +574,22 @@ namespace moppe {
                                         const FrameView& frame) {
       const FrameVisibility& visibility = frame.visibility;
 
-      // Screen-space post lighting shares the shaken camera basis,
-      // extracted straight from the final view matrix with the frustum
-      // half-extents folded into the right/up spans. Occlusion first so
-      // the added beams are not darkened; sun shafts march the
-      // camera-local shadow map, so the beams carry the same tree and
-      // terrain shapes as the ground shadows. Underwater frames get
-      // their own grade instead. Both shade the jittered scene, so they
-      // come before its reconstruction.
-      if (!visibility.underwater) {
-        const FrameCamera& camera = frame.camera;
-        const Mat4& view = camera.view;
-        const Vec3 right (view.at (0, 0), view.at (1, 0), view.at (2, 0));
-        const Vec3 up (view.at (0, 1), view.at (1, 1), view.at (2, 1));
-        const Vec3 forward (-view.at (0, 2), -view.at (1, 2), -view.at (2, 2));
-        const float half_tangent = tan (camera.field_of_view * 0.5f);
-        const Vec3 right_span =
-          right * (half_tangent * camera.aspect.numerical_value_in (one));
-        const Vec3 up_span = up * half_tangent;
-        r.apply_gtao ({
-          .camera_pos = camera.position,
-          .forward = unit_direction (forward),
-          .right_span = right_span,
-          .up_span = up_span,
+      // Sun shafts march the camera-local shadow map, so the beams carry
+      // the same tree and terrain shapes as the ground shadows. Underwater
+      // frames get their own grade instead. Both shade the jittered scene,
+      // so they come before its reconstruction.
+      if (!visibility.underwater &&
+          direction_value (frame.lighting.sun_direction)[1] > 0.02f) {
+        const PostBasis basis = post_basis (frame.camera);
+        r.apply_light_shafts ({
+          .camera_pos = frame.camera.position,
+          .forward = basis.forward,
+          .right_span = basis.right_span,
+          .up_span = basis.up_span,
+          .sun_dir = frame.lighting.sun_direction,
+          .sun_color = frame.lighting.sun_diffuse,
+          .strength = 0.55f * one,
         });
-        if (direction_value (frame.lighting.sun_direction)[1] > 0.02f)
-          r.apply_light_shafts ({
-            .camera_pos = camera.position,
-            .forward = unit_direction (forward),
-            .right_span = right_span,
-            .up_span = up_span,
-            .sun_dir = frame.lighting.sun_direction,
-            .sun_color = frame.lighting.sun_diffuse,
-            .strength = 0.55f * one,
-          });
       }
 
       // Grade near the waterline as well as below it: the shader decides
