@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -210,6 +211,10 @@ namespace moppe {
       float morph_end;
       float offset_x = 0.0f;
       float offset_z = 0.0f;
+      // Inclusive height bound of the samples used by this draw's lattice.
+      // Callers without bounds get the full material.
+      terrain::SurfaceElevation highest = terrain::surface_elevation_point (
+        std::numeric_limits<float>::infinity () * u::m);
     };
 
     struct SkyParams {

@@ -91,18 +91,25 @@ MOPPE_TEST (the_shadow_lattice_turns_about_the_camera_not_the_origin) {
   MOPPE_CHECK_NEAR (moved, std::round (moved), 0.02f);
 }
 
-MOPPE_TEST (terrain_keeps_wet_sheets_in_the_culled_chunk_draws) {
-  // Setup reads the authored sward, even with a recording renderer. Keep
-  // this independent of CTest's working directory and restore the override.
-  struct RestoreAssets {
+namespace {
+  // Terrain::setup reads the sward even with a recording renderer.
+  struct TestAssets {
     std::optional<std::string> previous;
-    ~RestoreAssets () {
+
+    TestAssets () {
+      if (const char* path = environment ("MOPPE_ASSETS"))
+        previous = path;
+      set_environment ("MOPPE_ASSETS", MOPPE_TEST_SOURCE_DIR);
+    }
+
+    ~TestAssets () {
       set_environment ("MOPPE_ASSETS", previous ? previous->c_str () : nullptr);
     }
-  } assets;
-  if (const char* previous = environment ("MOPPE_ASSETS"))
-    assets.previous = previous;
-  set_environment ("MOPPE_ASSETS", MOPPE_TEST_SOURCE_DIR);
+  };
+}
+
+MOPPE_TEST (terrain_keeps_wet_sheets_in_the_culled_chunk_draws) {
+  const TestAssets assets;
 
   constexpr int cells = render::terrain_chunk_cells;
   map::SurfaceGeometry surface (
@@ -170,4 +177,40 @@ MOPPE_TEST (terrain_keeps_wet_sheets_in_the_culled_chunk_draws) {
   terrain.setup (renderer, surface, world, graphics, &lake);
   draw_from (edge_eye, edge_view);
   MOPPE_CHECK (has_patch (96, 64));
+}
+
+MOPPE_TEST (terrain_draws_include_the_shared_peak_at_a_world_seam) {
+  const TestAssets assets;
+  constexpr int cells = render::terrain_chunk_cells;
+  map::SurfaceGeometry surface (
+    terrain::TerrainDomain (cells, cells, 1.0f * u::m, 1.0f * u::m));
+  const auto low = terrain::surface_elevation_point (2.0f * u::m);
+  const auto peak = terrain::surface_elevation_point (60.0f * u::m);
+  auto& heights = spatial::get<terrain::surface_elevation> (surface);
+  std::ranges::fill (heights, low);
+  heights[0] = peak;
+  game::WorldParams world;
+  world.resolution = cells;
+  world.map_size = spatial_extent_in_metres (Vec3 (cells, 200, cells));
+  game::Terrain ground;
+  test::RecordingRenderer recorder;
+  ground.setup (recorder, surface, world, game::high_graphics_settings ());
+  const Vec3 eye (0, 100, 0);
+  const auto view = Mat4::look_at (eye, Vec3 (0, 0, 0), Vec3 (0, 0, 1));
+  const auto projection = Mat4::ortho (-60, 60, -60, 60, 0.5f, 400);
+  ground.render (recorder, position (eye), projection * view, 250.0f * u::m);
+  int touching = 0, flat = 0;
+  for (const auto& draw : recorder.terrain_chunks) {
+    if (draw.cells != render::terrain_patch_cells)
+      continue;
+    const bool corner = (draw.x0 == 0 || draw.x0 + draw.cells == cells) &&
+                        (draw.z0 == 0 || draw.z0 + draw.cells == cells);
+    MOPPE_CHECK (draw.highest == (corner ? peak : low));
+    if (corner)
+      ++touching;
+    else
+      ++flat;
+  }
+  MOPPE_CHECK (touching >= 4);
+  MOPPE_CHECK (flat > 0);
 }

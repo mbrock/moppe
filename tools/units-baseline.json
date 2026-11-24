@@ -76,7 +76,7 @@
     "Renderer & render glue": {
       "share": 74.5,
       "files": 62,
-      "typed": 1158,
+      "typed": 1159,
       "raw_float": 263,
       "raw_vector": 134,
       "escapes": 625
@@ -99,18 +99,18 @@
     },
     "Terrain & world generation": {
       "share": 89.6,
-      "files": 46,
-      "typed": 1619,
+      "files": 47,
+      "typed": 1626,
       "raw_float": 140,
       "raw_vector": 48,
-      "escapes": 398
+      "escapes": 401
     },
     "Tests": {
-      "share": 41.9,
+      "share": 42.0,
       "files": 87,
-      "typed": 728,
+      "typed": 731,
       "raw_float": 809,
-      "raw_vector": 199,
+      "raw_vector": 200,
       "escapes": 1426
     },
     "Vehicles & on-foot body": {

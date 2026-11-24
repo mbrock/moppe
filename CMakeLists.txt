@@ -751,6 +751,7 @@ function(moppe_lower_world_shaders language extension outputs)
       COMMAND ${MOPPE_LUV_SHADERC_COMMAND} --out ${MOPPE_NHAL_WORLD}
         --target ${language} ${MOPPE_NHAL_WORLD_SOURCE}
       DEPENDS ${MOPPE_NHAL_WORLD_SOURCE} ${MOPPE_LUV_SHADERC}
+        ${CMAKE_CURRENT_SOURCE_DIR}/moppe/nhal/renderer/shaders/terrain-snow.lisp
       COMMENT "Lowering the NHAL renderer's Lisp shaders to ${language}"
       VERBATIM)
     add_custom_target(moppe_nhal_world_${language} DEPENDS ${written})

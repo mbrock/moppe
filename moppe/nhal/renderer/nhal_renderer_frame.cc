@@ -3,6 +3,7 @@
 // tonemap and the HUD, and the end of the frame with its timings.
 
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
+#include <moppe/terrain/snow_climate.hh>
 
 namespace moppe::nhal {
   namespace detail {
@@ -105,6 +106,11 @@ namespace moppe::nhal {
                        m_previous_time,
                        std::clamp (
                          params.mist.numerical_value_in (one), 0.0f, 1.0f) };
+      using namespace terrain::snow_climate;
+      frame.snow_climate = { onset.numerical_value_in (one),
+                             lee.numerical_value_in (one),
+                             shelter.numerical_value_in (one),
+                             variation.numerical_value_in (one) };
       frame.view_right = lanes (direction_value (params.cam_right) * tan_x);
       frame.view_up = lanes (direction_value (params.cam_up) * tan_y);
       frame.view_forward = lanes (direction_value (params.cam_forward));

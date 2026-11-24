@@ -75,6 +75,17 @@ are three functions (`heath-reach`, `heath-plant`, `heath-colour`) that the
 ground and the grass medium both call, so blades turn with the ground under
 them.
 
+The snow material lives in `shaders/terrain-snow.lisp`. The terrain and
+road ribbon share its coverage, wind-carved relief, tracks and lighting.
+The renderer can also compile the ground fragment without snow. Both
+terrain programs draw the same vertices and retain the road and shore
+materials. A patch qualifies only if its highest ground and road tread,
+including possible displacement, fall below the lowest elevation that
+could carry snow. The bound uses the shared climate coefficients and the
+strongest shelter in the filtered landscape sheet. Whole chunks include
+all their patches. Set `MOPPE_TERRAIN_FULL=1` to compare the full program
+at the same camera position.
+
 Everything finer than the terrain's samples comes from one 512-texel tiling
 sheet made at start-up (`render/ground_detail.hh`): grain, that grain's
 slope, and a cellular mosaic of stones. A fragment reads it at four scales,

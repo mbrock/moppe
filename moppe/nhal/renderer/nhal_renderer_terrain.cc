@@ -4,6 +4,7 @@
 
 #include <moppe/nhal/renderer/field_texture.hh>
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
+#include <moppe/terrain/snow_climate.hh>
 #include <moppe/terrain/torus.hh>
 
 namespace moppe::nhal {
@@ -17,6 +18,15 @@ namespace moppe::nhal {
       terrain.fragment = m_shaders.terrain[1];
       terrain.topology = Topology::triangle_strip;
       m_terrain.draw = m_device->create_render_pipeline (terrain);
+
+      RenderPipelineDesc bare = terrain;
+      bare.program = &shaders::snow_free::program;
+      bare.vertex = m_shaders.snow_free[0];
+      bare.fragment = m_shaders.snow_free[1];
+      bare.label = "snow-free terrain";
+      m_terrain.snow_free = m_device->create_render_pipeline (bare);
+      m_terrain.force_full =
+        moppe::environment ("MOPPE_TERRAIN_FULL") != nullptr;
 
       RenderPipelineDesc ribbon = terrain;
       ribbon.program = &shaders::road_ribbon::program;
@@ -39,6 +49,7 @@ namespace moppe::nhal {
       std::span<const terrain::TerrainNormal> normals) {
       m_sun_shadow.cached_far.reset ();
       m_terrain.params = params;
+      m_terrain.shelter.clear ();
       m_terrain.snow_window = {};
       const std::uint32_t w = params.width, h = params.height;
       for (Texture* t : { &m_terrain.heights, &m_terrain.normals })
@@ -101,7 +112,8 @@ namespace moppe::nhal {
       auto sheet = [&] (Texture& texture,
                         const render::TexturePixels& pixels,
                         const char* label,
-                        unsigned limit = 2048) {
+                        unsigned limit = 2048,
+                        std::vector<std::byte>* uploaded = nullptr) {
         if (texture)
           m_device->destroy (texture);
         texture = {};
@@ -110,10 +122,21 @@ namespace moppe::nhal {
           return;
         // The ground sheet carries narrow treads and signed shore edges.
         // Preserve their native footprint for grass, snow and the ground.
-        texture =
-          field_texture (*m_device, pixels, Format::rgba8_unorm, label, limit);
+        texture = field_texture (
+          *m_device, pixels, Format::rgba8_unorm, label, limit, uploaded);
       };
-      sheet (m_terrain.landscape, landscape, "landscape materials");
+      std::vector<std::byte> uploaded;
+      constexpr int limit = 2048;
+      sheet (m_terrain.landscape,
+             landscape,
+             "landscape materials",
+             limit,
+             &uploaded);
+      m_terrain.shelter.clear ();
+      if (!uploaded.empty ())
+        bound_shelter (uploaded,
+                       std::min<int> (landscape.width (), limit),
+                       std::min<int> (landscape.height (), limit));
       sheet (m_terrain.ground,
              ground,
              "ground materials",
@@ -122,6 +145,41 @@ namespace moppe::nhal {
       sheet (m_terrain.more_plants, more_plants, "more plants");
       sheet (m_terrain.scars, scars, "scars");
       sheet (m_terrain.bedrock, bedrock, "bedrock");
+    }
+
+    // Bilinear filtering of the landscape's deposition lane supplies the
+    // snow's shelter. Include a border texel on all sides of each patch,
+    // wrapping at the world seam, in the actual downsampled GPU image.
+    void NhalRenderer::bound_shelter (std::span<const std::byte> rgba,
+                                      int width,
+                                      int height) {
+      const auto& t = m_terrain.params;
+      constexpr int patch = render::terrain_patch_cells;
+      if (t.width < patch || t.height < patch || t.width % patch ||
+          t.height % patch)
+        return;
+      const int nx = t.width / patch, nz = t.height / patch;
+      m_terrain.shelter.resize (nx * nz);
+      // The shader adds half a heightfield cell before sampling. Account
+      // for a material sheet with a different resolution from the heights.
+      const int border_x = int (std::ceil (0.5 + 0.5 * width / t.width));
+      const int border_z = int (std::ceil (0.5 + 0.5 * height / t.height));
+      for (int z = 0; z < nz; ++z)
+        for (int x = 0; x < nx; ++x) {
+          std::uint8_t peak = 0;
+          const int left = x * width / nx - 1;
+          const int right = (x + 1) * width / nx + border_x;
+          const int top = z * height / nz - 1;
+          const int bottom = (z + 1) * height / nz + border_z;
+          for (int j = top; j <= bottom; ++j)
+            for (int i = left; i <= right; ++i) {
+              const int k = terrain::wrap_index (j, height) * width +
+                            terrain::wrap_index (i, width);
+              peak = std::max (peak,
+                               std::to_integer<std::uint8_t> (rgba[k * 4 + 2]));
+            }
+          m_terrain.shelter[z * nx + x] = peak;
+        }
     }
 
     void NhalRenderer::set_snow_relief (plan_position_t origin,
@@ -167,6 +225,7 @@ namespace moppe::nhal {
       for (Buffer* b : { &m_terrain.road_rows, &m_terrain.road_index })
         if (*b)
           m_device->destroy (*b), *b = {};
+      m_terrain.road_tops.clear ();
       m_terrain.road_setup = setup;
       m_terrain.road_setup.segment_rows = {};
       m_terrain.road_setup.index = {};
@@ -175,6 +234,20 @@ namespace moppe::nhal {
       if (setup.segment_rows.empty () || setup.index.empty () ||
           setup.buckets_x <= 0 || setup.buckets_z <= 0)
         return;
+      const auto buckets = std::size_t (setup.buckets_x) * setup.buckets_z;
+      m_terrain.road_tops.resize (buckets);
+      for (std::size_t b = 0; b < buckets; ++b) {
+        const auto first = setup.index[2 * b], count = setup.index[2 * b + 1];
+        float top = -std::numeric_limits<float>::infinity ();
+        for (std::uint32_t i = 0; i < count; ++i) {
+          const auto segment = setup.index[first + i];
+          const auto& h =
+            setup.segment_rows[segment * RoadSetup::rows_per_segment + 1];
+          top = std::max ({ top, h[0], h[1] });
+        }
+        m_terrain.road_tops[b] = terrain::surface_elevation_point (
+          (top + std::max (0.0f, -setup.crown * setup.half_width)) * u::m);
+      }
       m_terrain.road_rows = m_device->create_buffer (
         { .size = setup.segment_rows.size_bytes (), .label = "road segments" },
         std::as_bytes (setup.segment_rows));
@@ -201,8 +274,6 @@ namespace moppe::nhal {
       if (!m_terrain.have || count <= 0)
         return;
       open_scene ();
-      m_device->set_pipeline (m_terrain.draw);
-      bind_ground ();
       m_terrain.chunks.assign (chunks, chunks + count);
       draw_chunks ();
       draw_road_ribbons ();
@@ -300,8 +371,65 @@ namespace moppe::nhal {
       }
     }
 
+    bool NhalRenderer::snow_free (const ChunkDraw& c) const {
+      // The parent lattice aligns at every patch edge. Interpolation on
+      // both lattices stays below the maximum of their inclusive samples.
+      // Allow for raised snow relief, drift pillows and roundoff.
+      const auto& t = m_terrain.params;
+      constexpr int patch = render::terrain_patch_cells;
+      std::uint8_t peak = 255;
+      if (!m_terrain.shelter.empty () && c.x0 + c.cells <= t.width &&
+          c.z0 + c.cells <= t.height && c.x0 % patch == 0 &&
+          c.z0 % patch == 0 && c.cells % patch == 0) {
+        peak = 0;
+        for (int z = c.z0 / patch; z < (c.z0 + c.cells) / patch; ++z)
+          for (int x = c.x0 / patch; x < (c.x0 + c.cells) / patch; ++x)
+            peak =
+              std::max (peak, m_terrain.shelter[z * (t.width / patch) + x]);
+      }
+      const auto rise =
+        terrain::snow_climate::lowest ((peak / 255.0f) * proportion[one]);
+      const auto ceiling = terrain::surface_elevation_point (
+        (t.sea_level +
+         rise.numerical_value_in (one) * std::max (t.land_relief, 1.0f) -
+         std::abs (m_terrain.snow_window[3]) * 1.01f - 0.25f) *
+        u::m);
+      if (!(c.highest < ceiling))
+        return false;
+      if (c.lod != render::TerrainLod::Subdivided ||
+          m_terrain.road_tops.empty ())
+        return true;
+      // Only subdivided vertices can be raised to a built road's height.
+      // Include both endpoints and a cell of guard on the periodic seams.
+      const auto& r = m_terrain.road_setup;
+      const auto bucket = [] (int cell, int buckets, int extent) {
+        return int (std::floor (double (cell) * buckets / extent));
+      };
+      for (int z = bucket (c.z0 - 1, r.buckets_z, t.height);
+           z <= bucket (c.z0 + c.cells + 1, r.buckets_z, t.height);
+           ++z)
+        for (int x = bucket (c.x0 - 1, r.buckets_x, t.width);
+             x <= bucket (c.x0 + c.cells + 1, r.buckets_x, t.width);
+             ++x) {
+          const int b = terrain::wrap_index (z, r.buckets_z) * r.buckets_x +
+                        terrain::wrap_index (x, r.buckets_x);
+          if (m_terrain.road_tops[b] >= ceiling)
+            return false;
+        }
+      return true;
+    }
+
     void NhalRenderer::draw_chunks () {
+      Pipeline previous;
       for (const ChunkDraw& c : m_terrain.chunks) {
+        const Pipeline chosen = !m_terrain.force_full && snow_free (c)
+                                  ? m_terrain.snow_free
+                                  : m_terrain.draw;
+        if (chosen != previous) {
+          m_device->set_pipeline (chosen);
+          bind_ground ();
+          previous = chosen;
+        }
         const int lod = std::clamp (int (c.lod), 0, lod_count - 1);
         const bool patch = c.cells == render::terrain_patch_cells;
         shaders::terrain::Chunk chunk {};

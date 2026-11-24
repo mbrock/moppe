@@ -35,7 +35,8 @@
       (sky-moon :vec4)             ; toward the moon; w: its light, 0..1
       (sky-pole :vec4)             ; the celestial pole
       (lamp :vec4)                 ; a fire's place; w: its reach, metres
-      (lamp-color :vec4))))        ; its colour at full strength
+      (lamp-color :vec4)           ; its colour at full strength
+      (snow-climate :vec4))))      ; onset, lee, shelter, patch variation
 
 ;;; -- shared ---------------------------------------------------------------
 
@@ -472,47 +473,10 @@
     (* found (- 1.0 footpath)
        (- 1.0 (smoothstep tread (+ tread (swizzle shape :w)) (abs across))))))
 
-;;; How much snow the broad plane holds; patch noise only breaks its edge.
-;;; Prevailing maritime westerlies pack extra drift onto cool NNE-E leeward
-;;; slopes and into wind-sheltered concave basins (cirque bowls and glacial
-;;; snow valleys).
-(define-shader-function snow-reach (rise support lee shelter wander)
-  (* (smoothstep 0.63 0.79 (+ rise (* 0.06 lee) (* 0.13 shelter) wander))
-     (smoothstep 0.55 0.78 support)))
+(load (merge-pathnames "terrain-snow.lisp" *load-truename*))
 
-(define-shader-function settled-powder (rise normal sheet)
-  (let* ((lee (+ (* -0.80 (swizzle normal :z))
-                 (* 0.60 (swizzle normal :x)))))
-    (* (snow-reach rise (swizzle sheet :y) lee 0.0 0.0)
-       (smoothstep 0.48 0.53 (swizzle sheet :x))
-       (- 1.0 (smoothstep 0.74 0.87 (swizzle sheet :z)))
-       (smoothstep 0.55 0.83 (swizzle normal :y)))))
-
-;;; Low lenticular pillows stretched downwind. Height in metres and its
-;;; two slopes: the same surface for the silhouette and the lighting.
-(define-shader-function drift-profile (xz)
-  (let* ((a (dot xz (vec2 0.86 0.32)))
-         (b (dot xz (vec2 -0.14 0.31)))
-         (c (dot xz (vec2 0.18 -0.09)))
-         (phase (+ a (* 1.65 (sin b))))
-         (crest (+ 0.50 (* 0.34 (sin phase)) (* 0.16 (sin c))))
-         (slope (+ (* 0.34 (cos phase)
-                      (+ (vec2 0.86 0.32) (* 1.65 (cos b) (vec2 -0.14 0.31))))
-                   (* 0.16 (cos c) (vec2 0.18 -0.09)))))
-    (vec3 (+ 0.035 (* 0.14 crest crest)) (* 0.28 crest slope))))
-
-(define-shader-abstraction powder-height (xz)
-  `(let* ((uv (* (- ,xz (swizzle snow-window :xy)) (swizzle snow-window :z)))
-          (edge (abs (- uv (vec2 0.5 0.5))))
-          (span (max (swizzle edge :x) (swizzle edge :y)))
-          ;; Feather smoothly to zero across the outer 8% of the window so
-          ;; tracks fade naturally instead of snapping off or spiking normals.
-          (fade (- 1.0 (smoothstep 0.415 0.492 span))))
-     (only-where (and (> (swizzle snow-window :z) 0.0) (> fade 0.0)) 0.0
-       (* (- (* (swizzle (sample-level snow-pack linear-repeat uv 0.0) :x)
-                 2.007874) 1.007874) (swizzle snow-window :w) fade))))
-
-(define-shader terrain-vertex
+(defmacro define-terrain-vertex (name)
+  `(define-shader ,name
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index))
      :outputs ((clip-position :vec4 :built-in :position)
@@ -608,7 +572,7 @@
          (mantle (only-where (> rise 0.50) 0.0
                    (let* ((floor (sample-level ground linear-repeat
                                                (/ (+ grid (vec2 0.5 0.5)) extent) 0.0)))
-                     (* (settled-powder rise normal floor)
+                     (* (settled-powder snow-climate rise normal floor)
                         (swizzle (drift-profile ground-xz) :x)))))
          (press (powder-height ground-xz))
          (position (vec3 (swizzle ground-xz :x)
@@ -621,7 +585,10 @@
     (set-output surface-normal normal)
     (set-output field-uv (/ grid extent))
     (set-output here current)
-    (set-output then (* previous-view-proj point))))
+    (set-output then (* previous-view-proj point)))))
+
+(define-terrain-vertex terrain-vertex)
+(define-terrain-vertex snow-free-vertex)
 
 ;;; -- the stand ------------------------------------------------------------
 ;;;
@@ -642,22 +609,6 @@
 
 (define-shader-function hash12 (p)
   (fract (* (sin (dot p (vec2 127.1 311.7))) 43758.5453)))
-
-;;; World-fixed micro-crystals of ice flash like pinpoint diamonds in direct
-;;; sun. Filter their radius in cell units and fade cleanly with pixel
-;;; footprint so distant snow never blooms into stretched white dots.
-(define-shader-function crystal-glint (space pixel normal halfway)
-  (let* ((cell (floor space))
-         (jitter (vec2 (hash12 cell) (hash12 (+ cell (vec2 23.0 41.0)))))
-         (offset (- (fract space) (+ (vec2 0.25 0.25) (* jitter 0.50))))
-         (width (min 0.14 (+ 0.045 (* 0.45 pixel))))
-         (facet-distance (+ (abs (swizzle offset :x)) (abs (swizzle offset :y))))
-         (spot (- 1.0 (smoothstep 0.0 width facet-distance)))
-         (tilt (- (* 2.0 jitter) (vec2 1.0 1.0)))
-         (facet (normalize (+ (* normal (max 0.08 (- 1.0 (dot tilt tilt))))
-                              (vec3 (swizzle tilt :x) 0.0 (swizzle tilt :y))))))
-    (* spot (/ 0.0064 (* width width)) (- 1.0 (smoothstep 0.14 0.42 pixel))
-       (smoothstep 0.94 0.997 (dot facet halfway)))))
 
 (define-shader-function value-noise (p)
   (let* ((i (floor p))
@@ -687,52 +638,6 @@
              (* k3 (swizzle u :x) (swizzle u :y)))
           (* (swizzle du :x) (+ k1 (* k3 (swizzle u :y))))
           (* (swizzle du :y) (+ k2 (* k3 (swizzle u :x)))))))
-
-;;; Wind-carved alpine snow height (sastrugi) for directional self-shadowing:
-;;; elongated wind-packed snow ridges and medium wind-scoured snow dunes.
-(define-shader-function sastrugi-height (xz)
-  (let* ((wx (vec2 0.86 0.51))
-         (wz (vec2 -0.51 0.86))
-         (u (dot xz wx))
-         (v (dot xz wz))
-         (n-broad (value-noise (vec2 (* u 0.085) (* v 0.27))))
-         (ridge-b (- 1.0 (abs (- (* 2.0 n-broad) 1.0))))
-         (n-mid (value-noise (vec2 (+ (* u 0.24) (* 1.1 n-broad))
-                                   (+ (* v 0.82) 7.3))))
-         (ridge-m (- 1.0 (abs (- (* 2.0 n-mid) 1.0)))))
-    (+ (* 0.54 (* ridge-b ridge-b))
-       (* 0.24 (* ridge-m ridge-m)))))
-
-;;; Wind-carved alpine snow relief (sastrugi): elongated wind-packed snow
-;;; ridges, medium snow-dune flutes, frost-crust ripples, and close granular
-;;; powder crunch, each faded smoothly with pixel footprint.
-(define-shader-function sastrugi-slope (xz footprint)
-  (let* ((wx (vec2 0.86 0.51))
-         (wz (vec2 -0.51 0.86))
-         (u (dot xz wx))
-         (v (dot xz wz))
-         ;; Broad wind-sculpted sastrugi pillows (~8-14 m long, 3 m across).
-         (g-broad (value-noise-gradient (vec2 (* u 0.085) (* v 0.27))))
-         (f-broad (- 1.0 (smoothstep 1.6 4.4 footprint)))
-         ;; Medium asymmetrical snow-drift flutes (~3 m long, 1 m across).
-         (g-mid (value-noise-gradient (vec2 (+ (* u 0.24) (* 1.1 (swizzle g-broad :x)))
-                                            (+ (* v 0.82) 7.3))))
-         (f-mid (- 1.0 (smoothstep 0.35 1.20 footprint)))
-         ;; Close frost-crust ripples (~0.35 m).
-         (g-fine (value-noise-gradient (vec2 (+ (* u 0.95) 13.7)
-                                             (+ (* v 2.90) 4.1))))
-         (f-fine (- 1.0 (smoothstep 0.08 0.28 footprint)))
-         ;; Foreground granular powder snow crunch (~6-14 cm).
-         (g-crunch (value-noise-gradient (* xz 8.5)))
-         (f-crunch (- 1.0 (smoothstep 0.025 0.10 footprint)))
-         (du (+ (* (swizzle g-broad :y) 0.085 0.56 f-broad)
-                (* (swizzle g-mid :y) 0.24 0.30 f-mid)
-                (* (swizzle g-fine :y) 0.95 0.068 f-fine)))
-         (dv (+ (* (swizzle g-broad :z) 0.27 0.56 f-broad)
-                (* (swizzle g-mid :z) 0.82 0.30 f-mid)
-                (* (swizzle g-fine :z) 2.90 0.068 f-fine))))
-    (+ (* wx du) (* wz dv)
-       (* (swizzle g-crunch :yz) 0.18 f-crunch))))
 
 ;;; A material boundary cut from a coarse field: a narrow blend, never
 ;;; narrower than a pixel of the field's own rate of change.
@@ -925,6 +830,9 @@
   (mix (mix (vec3 0.88 0.95 1.07) (vec3 0.97 0.98 0.99) overcast)
        (vec3 1.0 1.0 1.0) visibility))
 
+(define-shader-function ground-edge (patch fleck grain)
+  (+ (* 0.45 (- patch 0.5)) (* 0.35 (- fleck 0.5)) (* 0.20 (- grain 0.5))))
+
 ;;; LAND is moisture, erosion, deposition, forest cover; FLOOR is the
 ;;; signed shore lane, snow support, trail, home base; STAND the canopy's
 ;;; closure and the fallen leaves; PLANTS and MORE the field layer's shares
@@ -935,7 +843,7 @@
 ;;; ABOVE-SEA is in metres.
 (define-shader-function ground-surface (world normal land floor rise
                                         above-sea stand plants more scars
-                                        bedrock micro meso macro region)
+                                        bedrock micro meso macro region cover)
   (let* ((up (swizzle normal :y))
          (moisture (swizzle land :x))
          (grain (swizzle micro :x))
@@ -944,8 +852,7 @@
          (drift (swizzle region :x))
          ;; What moves a boundary: every scale at once, so an edge is
          ;; ragged from across a valley and from a step away.
-         (edge (+ (* 0.45 (- patch 0.5)) (* 0.35 (- fleck 0.5))
-                  (* 0.20 (- grain 0.5))))
+         (edge (ground-edge patch fleck grain))
          (mottle (* (+ 0.88 (* 0.24 fleck))
                     (mix 0.86 1.08 (smoothstep 0.30 0.70 grain))
                     (+ 0.93 (* 0.14 patch))))
@@ -1258,27 +1165,19 @@
          ;; Snow lies where the ground is level enough to hold it, deeper
          ;; the higher it is and in wind-sheltered leeward cirques and
          ;; snow valleys; a trail is ridden through it.
-         (lee (+ (* -0.80 (swizzle normal :z)) (* 0.60 (swizzle normal :x))))
          (frozen-shore (smoothstep 0.56 0.68 rise))
          (snow-sunk (mix sunk (smoothstep 0.35 1.10 (* -1.0 shore))
                          frozen-shore))
-         (snow (* (smoothstep 0.29 0.68 (+ (snow-reach rise (swizzle floor :y)
-                                                       lee (swizzle land :z)
-                                                       (* 0.10 (- drift 0.5)))
-                                           (* 0.52 edge)))
+         (snow (* cover
                   (- 1.0 cliff)
                   (- 1.0 snow-sunk)
                   (- 1.0 (band (swizzle floor :z) 0.80))))
          ;; Wind scours shallow flutes across the fell. Their spacing and
          ;; direction wander, so a distant snowfield doesn't read as stripes.
-         (drift-phase (+ (* 1.35 (swizzle world :x))
-                         (* 0.48 (swizzle world :z)) (* 6.0 patch)
-                         (* 0.8 fleck)))
-         (snow-tone (+ 0.48 (* 0.26 patch) (* 0.14 (sin drift-phase))
-                       (* 0.12 (- fleck 0.5))))
+         (wind-snow (snow-tone world patch fleck))
          (snowy (mix trodden
                      (mix (vec3 0.90 0.95 1.0) (vec3 0.995 0.998 1.0)
-                          (clamp snow-tone 0.0 1.0))
+                          (swizzle wind-snow :x))
                      snow))
 
          ;; The swash darkens whatever liquid water laps; frozen alpine tarns
@@ -1290,7 +1189,7 @@
          ;; Sand and snow lie smooth.
          (smooth (max snow (* (band strand 0.5) (- 1.0 cliff)))))
     (make-ground-surface
-     :powder (vec2 snow (* snow 0.045 (cos drift-phase)))
+     :powder (vec2 snow (* snow (swizzle wind-snow :y)))
      :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
                 (mix mottle 1.0 (max (* 0.65 smooth) (* 0.98 snow))))
      :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth)
@@ -2187,7 +2086,7 @@
 
 ;;; The ground's colour and light at a fragment: the terrain's own, and the
 ;;; road ribbon's, which lies on it and must match it.
-(define-shader-abstraction shade-ground ()
+(define-shader-abstraction shade-ground (snow)
   `(let* ((extent (swizzle size :xy))
          (eye (swizzle camera-position :xyz))
          (distance (sqrt (dot (- world eye) (- world eye))))
@@ -2272,10 +2171,16 @@
                              metres footprint))
          (region (read-detail detail linear-repeat field-uv *detail-region*
                               metres footprint))
+         (cover ,(if snow
+                     '(snow-coverage snow-climate normal rise
+                        (swizzle floor-fields :y) (swizzle land :z)
+                        (swizzle region :x) (ground-edge (swizzle macro :x)
+                          (swizzle meso :x) (swizzle micro :x)))
+                     0.0))
          (surface (ground-surface world normal land floor-fields rise
                                   above-sea stand plants-here more-here
                                   scars-here bedrock-here micro meso macro
-                                  region))
+                                  region cover))
          ;; An edge as sharp as a pixel's width on the ground allows.
          (road-edge (max (* 0.75 footprint) 0.04))
          ;; A paved lane's own surface, over its tread.
@@ -2346,8 +2251,9 @@
          ;; Rain darkens what soaks it up, and still water more.
          (tread-share (road-hold road-built 0.0 road-across road-shape))
          (xz (swizzle world :xz))
-         (press (powder-height xz))
-         (powder (* (- 1.0 road-flat) (ground-surface-powder surface)))
+         (press ,(if snow '(powder-height xz) 0.0))
+         (powder ,(if snow '(* (- 1.0 road-flat) (ground-surface-powder surface))
+                          '(vec2 0.0 0.0)))
          (packed (* (swizzle powder :x) (smoothstep 0.0 0.13 (- 0.0 press))))
          (albedo (* (srgb path-ground)
                     (mix (vec3 1.0 1.0 1.0) (vec3 0.55 0.74 0.94) packed)
@@ -2377,27 +2283,10 @@
                            (- 1.0 (* 0.6 road-flat)))
                         asphalt-slope paved-tread)
                    (- 1.0 puddle)))
-         ;; The full-resolution slopes of wind-carved sastrugi drifts, snow
-         ;; flutes, and pressed ski/belt trenches (with crisp raised berms).
          (snow-share (swizzle powder :x))
-         (near-slope
-           (if (> snow-share 0.0)
-               (let* ((sastrugi
-                        (only-where (> snow-share 0.01) (vec2 0.0 0.0)
-                          (* (sastrugi-slope xz footprint) snow-share
-                             (- 1.0 (* 0.72 packed))))))
-                 (+ (* snow-share (swizzle (drift-profile xz) :yz))
-                    sastrugi
-                    (* (vec2 1.0 0.36) (swizzle powder :y)
-                       (- 1.0 (smoothstep 0.15 1.0 footprint))
-                       (- 1.0 packed))
-                    (* snow-share 14.5
-                       (- 1.0 (smoothstep 0.14 0.50 footprint))
-                       (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
-                                (powder-height (- xz (vec2 0.04 0.0))))
-                             (- (powder-height (+ xz (vec2 0.0 0.04)))
-                                (powder-height (- xz (vec2 0.0 0.04))))))))
-               (vec2 0.0 0.0)))
+         (near-slope ,(if snow
+                          '(snow-detail-slope xz footprint snow-share powder packed)
+                          '(vec2 0.0 0.0)))
          (tilt (vec3 (+ (swizzle slope :x) (swizzle near-slope :x)) 0.0
                      (+ (swizzle slope :y) (swizzle near-slope :y))))
          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
@@ -2410,30 +2299,9 @@
                           (+ 1.0 (clamp (/ (- (dot shaded sun) (dot normal sun))
                                            (+ facing 0.35))
                                         -0.75 0.90))))
-         ;; Keep snow lighting crisp so wind-carved sastrugi crests blaze pure
-         ;; white while their lee faces drop cleanly into alpine sky-blue shade.
-         (snow-wrap (clamp (/ (+ (dot shaded sun) 0.14) 1.14) 0.0 1.0))
-         (lambert (mix lambert-base (max (* 0.85 lambert-base) (* 0.95 snow-wrap))
-                       (* 0.35 snow-share)))
-         ;; Two-tap directional sastrugi self-shadowing along the sun vector:
-         ;; upwind snow ridges cast crisp cool-blue mini-shadows across troughs.
-         (sastrugi-lit
-           (only-where (and (> snow-share 0.05) (< footprint 2.0)
-                            (> (swizzle sun :y) 0.04)) 1.0
-             (let* ((sun-xz (swizzle sun :xz))
-                    (sun-horiz (max (sqrt (dot sun-xz sun-xz)) 0.001))
-                    (sun-dir (/ sun-xz sun-horiz))
-                    (slope-tan (/ (swizzle sun :y) sun-horiz))
-                    (h0 (sastrugi-height xz))
-                    (h1 (sastrugi-height (+ xz (* sun-dir 0.55))))
-                    (h2 (sastrugi-height (+ xz (* sun-dir 1.40))))
-                    (occ1 (clamp (* (- (- h1 h0) (* 0.55 slope-tan 0.48)) 3.6)
-                                 0.0 1.0))
-                    (occ2 (clamp (* (- (- h2 h0) (* 1.40 slope-tan 0.48)) 2.8)
-                                 0.0 1.0))
-                    (occ (* (max occ1 occ2) (- 1.0 (* 0.72 packed))
-                            (- 1.0 (smoothstep 0.6 2.0 footprint)))))
-               (- 1.0 (* 0.72 occ snow-share)))))
+         (sastrugi-lit ,(if snow
+                      '(snow-self-shadow xz footprint snow-share sun packed)
+                      1.0))
          ;; The sun's shadow: a slope-scaled bias against acne on raking
          ;; ground, faded out into the haze.
          (taps (sun-lit shadow-map shadow-compare world
@@ -2450,17 +2318,10 @@
          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
          (fill (shade-fill direct overcast))
          (to-eye (/ (- eye world) (max distance 0.0001)))
-         (crystals (* snow-share (- 1.0 packed) direct
-                      (- 1.0 overcast)
-                      (smoothstep 0.0 0.3 (dot shaded sun))))
-         (flash (only-where (and (> crystals 0.01) (< footprint 0.07)) 0.0
-                  (let* ((halfway (normalize (+ sun to-eye))))
-                    (* crystals (+ 0.85 (* 1.6 (- 1.0 (smoothstep 0.1 0.7
-                                                         (dot shaded to-eye)))))
-                       (+ (crystal-glint (* xz 22.0) (* footprint 22.0)
-                                         shaded halfway)
-                          (* 0.80 (crystal-glint (* xz 46.0) (* footprint 46.0)
-                                                 shaded halfway)))))))
+         (flash ,(if snow
+                     '(snow-flash xz footprint snow-share packed direct
+                                  overcast shaded sun to-eye)
+                     0.0))
          ;; The ground's roughness: its own, a road's tread where it holds
          ;; the ground (asphalt smoother than gravel, and polished in the
          ;; wheel paths), smoother where skis/tracks compact snow, and wet.
@@ -2481,29 +2342,15 @@
          (mirror-rise (- (* 2.0 (max (dot shaded to-eye) 0.0)
                             (swizzle shaded :y))
                          (swizzle to-eye :y)))
-         ;; True HDR sunlit alpine snow: clean bright sunlit crests climb into
-         ;; HDR (> 1.4) so AgX renders pure dazzling snow white with soft solar
-         ;; bloom, while shadowed sastrugi hollows and ski ruts hold crisp cool
-         ;; Scandinavian sky-blue shadow density.
-         (snow-shadow (* snow-share (- 1.0 (* 0.85 lambert direct))
-                         (- 1.0 (* 0.75 overcast))))
-         (snow-sky-tint (mix (vec3 1.0 1.0 1.0) (vec3 0.74 0.95 1.22)
-                             snow-shadow))
-         (snow-bounce (+ 1.0 (* 0.22 snow-share)))
-         (snow-sun-gain (+ 0.95 (* 0.78 snow-share)))
-         (berm-lift (* snow-share (smoothstep 0.005 0.042 press) 0.34 direct))
-         (powder-sheen (* snow-share (- 1.0 packed) direct
-                          (expt (max (- 1.0 (max (dot shaded to-eye) 0.0)) 0.0)
-                                3.0)
-                          (+ 0.30 (* 0.70 (max (dot (- (vec3 0.0 0.0 0.0) to-eye)
-                                                    sun) 0.0)))
-                          0.34))
+         (response ,(if snow
+                        '(snow-light snow-share packed press shaded sun to-eye
+                                     lambert-base direct overcast)
+                        '(vec4 1.0 1.0 1.0 (* 0.95 lambert-base direct))))
          (diffuse-light (+ (* (hemisphere-lobes (swizzle ambient :xyz) shaded
                                                 overcast)
-                              fill snow-sky-tint snow-bounce)
+                              fill (swizzle response :xyz))
                            (* (swizzle sun-diffuse :xyz)
-                              (+ (* snow-sun-gain lambert direct)
-                                 powder-sheen berm-lift))
+                              (swizzle response :w))
                            (lamp-light lamp lamp-color world shaded)))
          (lit (swizzle (material-light albedo (vec4 0.0 rough-seen 0.0 0.0)
                                        shaded to-eye sun diffuse-light
@@ -2528,7 +2375,8 @@
                             1.0))
     (set-output motion (- (clip-uv then) (clip-uv here)))))
 
-(define-shader terrain-fragment
+(defmacro define-ground-fragment (name snow)
+  `(define-shader ,name
     (:stage :fragment
      :inputs ((world :vec3 :location 0)
               (surface-normal :vec3 :location 1)
@@ -2557,7 +2405,14 @@
                  (road-index :storage-buffer :binding 4 :element :uint)
                  (linear-repeat :sampler :binding 1)
                  (shadow-compare :sampler :binding 3)))
-  (shade-ground))
+    (shade-ground ,snow)))
+
+(define-ground-fragment terrain-fragment t)
+(define-ground-fragment snow-free-fragment nil)
+
+(define-shader-program snow-free
+  :vertex snow-free-vertex
+  :fragment snow-free-fragment)
 
 (define-shader-program terrain
   :vertex terrain-vertex
@@ -2717,7 +2572,7 @@
   (let* ((above lift))
     (when (< above 0.004)
       (discard))
-    (shade-ground)))
+    (shade-ground t)))
 
 (define-shader-program road-ribbon
   :vertex road-ribbon-vertex
@@ -4007,7 +3862,7 @@
 ;;; How much sward one patch carries, as moppe_grass_medium: closed canopy
 ;;; thins it, soil water sets how lush it is, a trail clears it, a slope
 ;;; past what roots hold sheds it, and the high fells give way to heath.
-(define-shader-function read-grass-medium (xz land floor up rise density
+(define-shader-function read-grass-medium (climate xz land floor up rise density
                                            stand heath plants more scars
                                            bedrock)
   (let* ((moisture (clamp (swizzle land :x) 0.0 1.0))
@@ -4022,7 +3877,7 @@
          (cleared (* (- 1.0 (smoothstep 0.80 0.86 (swizzle floor :z)))
                      (- 1.0 (clamp (* (swizzle floor :w) 1.6) 0.0 1.0))))
          (variation (+ 0.88 (* 0.24 (smoothstep 0.18 0.72 clump))))
-         (snow (snow-reach rise (swizzle floor :y) 0.0 (swizzle land :z) 0.0))
+         (snow (snow-reach climate rise (swizzle floor :y) 0.0 (swizzle land :z) 0.0))
          (alpine (- 1.0 (smoothstep 0.50 0.67 rise)))
          ;; Nothing roots under water, or on the strand beside it.
          (ashore (smoothstep 1.0 2.4 (+ (shore-metres (swizzle floor :x))
@@ -4247,7 +4102,7 @@
              (near-road (road-nearest road-segments road-index centre
                                       (< horizontal 300.0)))
              (verge (road-verge road-segments road-index centre near-road))
-             (medium (read-grass-medium
+             (medium (read-grass-medium snow-climate
                       centre (sample-level landscape linear-repeat uv 0.0)
                       ;; The coarse trail lane does not clear a verge.
                       (* (sample-level ground linear-repeat uv 0.0)
@@ -4390,7 +4245,7 @@
                           (swizzle (sample-level normals linear-repeat uv 0.0)
                                    :xy))))
          (height (sample-ground heights root-xz lattice))
-         (medium (read-grass-medium
+         (medium (read-grass-medium snow-climate
                   root-xz (sample-level landscape linear-repeat uv 0.0)
                   (sample-level ground linear-repeat uv 0.0)
                   (swizzle ground-normal :y)
@@ -4893,7 +4748,7 @@
                   (unpack-normal
                    (swizzle (sample-level normals linear-repeat uv 0.0) :xy))))
          (height (sample-ground heights xz lattice))
-         (grass-here (read-grass-medium
+         (grass-here (read-grass-medium snow-climate
                       xz (sample-level landscape linear-repeat uv 0.0)
                       (sample-level ground linear-repeat uv 0.0)
                       (swizzle normal :y)
@@ -5379,7 +5234,7 @@
          (altitude (/ (- (swizzle rock :y) (swizzle relief :x))
                       (max (swizzle relief :y) 1.0)))
          (snow (only-where (> altitude 0.50) 0.0
-                 (settled-powder altitude (swizzle ground :xyz)
+                 (settled-powder snow-climate altitude (swizzle ground :xyz)
                    (sample-level floor-sheet linear-repeat
                                  (/ (swizzle rock :xz) (swizzle world :xy)) 0.0))))
          (radial (normalize (- stone (boulder-shape-centre b))))
