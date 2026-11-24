@@ -4,6 +4,9 @@
 // upload arena per frame slot. Apple GPUs share memory with the CPU, so
 // buffers and sampled textures are shared storage and written in place.
 #import <Metal/Metal.h>
+#if !TARGET_OS_SIMULATOR
+#import <MetalFX/MetalFX.h>
+#endif
 #import <QuartzCore/CAMetalLayer.h>
 #import <QuartzCore/QuartzCore.h>
 
@@ -211,10 +214,22 @@ namespace moppe::nhal {
                                                               error:&error];
 
         m_backbuffer = m_textures.insert<Texture> (MetalTexture {});
+        init_temporal_scaler ();
       }
 
       ~MetalDevice () override {
         wait_idle ();
+#if !TARGET_OS_SIMULATOR
+        if (m_temporal_scaler) {
+          m_temporal_scaler.colorTexture = nil;
+          m_temporal_scaler.depthTexture = nil;
+          m_temporal_scaler.motionTexture = nil;
+          m_temporal_scaler.exposureTexture = nil;
+          m_temporal_scaler.outputTexture = nil;
+          m_temporal_scaler.fence = nil;
+          m_temporal_scaler = nil;
+        }
+#endif
       }
 
       DeviceInfo info () const override {
@@ -430,6 +445,9 @@ namespace moppe::nhal {
         };
 
         m_serial = next;
+        m_fx_fence_signaled = false;
+        m_fx_encoded_this_frame = false;
+        m_fx_wait_pending = false;
         const std::uint32_t slot = (m_serial - 1) % frames_in_flight;
         m_slot = slot;
         m_arena = { static_cast<std::byte*> (m_arena_buffers[slot].contents),
@@ -504,6 +522,11 @@ namespace moppe::nhal {
         m_encoder = [m_commands renderCommandEncoderWithDescriptor:pass];
         if (desc.label)
           m_encoder.label = @(desc.label);
+        if (m_fx_wait_pending) {
+          [m_encoder waitForFence:m_fx_fence
+              beforeEncoderStages:MTLStageVertex | MTLStageFragment];
+          m_fx_wait_pending = false;
+        }
         // Coarse ordering: whatever earlier passes wrote is visible here.
         [m_encoder barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
                                            MTLStageBlit | MTLStageDispatch
@@ -517,6 +540,11 @@ namespace moppe::nhal {
         m_compute = [m_commands computeCommandEncoder];
         if (label)
           m_compute.label = @(label);
+        if (m_fx_wait_pending) {
+          [m_compute waitForFence:m_fx_fence
+              beforeEncoderStages:MTLStageDispatch | MTLStageBlit];
+          m_fx_wait_pending = false;
+        }
         [m_compute barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
                                            MTLStageBlit | MTLStageDispatch
                               beforeStages:MTLStageDispatch | MTLStageBlit
@@ -534,6 +562,10 @@ namespace moppe::nhal {
                            std::uint64_t offset,
                            const Transient& source) override {
         id<MTL4ComputeCommandEncoder> copy = [m_commands computeCommandEncoder];
+        if (m_fx_wait_pending) {
+          [copy waitForFence:m_fx_fence beforeEncoderStages:MTLStageBlit];
+          m_fx_wait_pending = false;
+        }
         [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
                                       MTLStageBlit | MTLStageDispatch
                          beforeStages:MTLStageBlit
@@ -586,9 +618,115 @@ namespace moppe::nhal {
       }
 
       void end_render_pass () override {
+        if (m_fx_fence && !m_fx_encoded_this_frame) {
+          [m_encoder updateFence:m_fx_fence
+              afterEncoderStages:MTLStageFragment];
+          m_fx_fence_signaled = true;
+        }
         [m_encoder endEncoding];
         m_encoder = nil;
         timestamp ();
+      }
+
+      bool supports_temporal_scale () const override {
+        return m_supports_temporal_scale;
+      }
+
+      bool temporal_scale (const TemporalScaleDesc& desc) override {
+#if !TARGET_OS_SIMULATOR
+        if (!m_supports_temporal_scale || m_encoder || m_compute ||
+            !m_fx_fence_signaled || !desc.color || !desc.depth ||
+            !desc.motion || !desc.output)
+          return false;
+        const MetalTexture& color = m_textures[desc.color];
+        const MetalTexture& depth = m_textures[desc.depth];
+        const MetalTexture& motion = m_textures[desc.motion];
+        const MetalTexture& output = m_textures[desc.output];
+        const std::uint32_t in_w = color.desc.width;
+        const std::uint32_t in_h = color.desc.height;
+        const std::uint32_t out_w = output.desc.width;
+        const std::uint32_t out_h = output.desc.height;
+        if (!in_w || !in_h || out_w < in_w || out_h < in_h ||
+            depth.desc.width != in_w || depth.desc.height != in_h ||
+            motion.desc.width != in_w || motion.desc.height != in_h)
+          return false;
+        const float scale_x = float (out_w) / float (in_w);
+        const float scale_y = float (out_h) / float (in_h);
+        if (scale_x < m_fx_min_scale || scale_y < m_fx_min_scale ||
+            scale_x > m_fx_max_scale || scale_y > m_fx_max_scale)
+          return false;
+        if (@available (macOS 26.0, iOS 26.0, tvOS 27.1, *)) {
+          const TemporalScalerKey key { in_w,
+                                        in_h,
+                                        out_w,
+                                        out_h,
+                                        color.desc.format,
+                                        depth.desc.format,
+                                        motion.desc.format,
+                                        output.desc.format };
+          if (!m_temporal_scaler || m_temporal_key != key) {
+            if (m_temporal_scaler) {
+              m_retired_objects.retire (m_serial, m_temporal_scaler);
+              m_temporal_scaler = nil;
+            }
+            MTLFXTemporalScalerDescriptor* d =
+              [[MTLFXTemporalScalerDescriptor alloc] init];
+            d.colorTextureFormat = pixel_format (key.color_format);
+            d.depthTextureFormat = pixel_format (key.depth_format);
+            d.motionTextureFormat = pixel_format (key.motion_format);
+            d.outputTextureFormat = pixel_format (key.output_format);
+            d.inputWidth = key.in_w;
+            d.inputHeight = key.in_h;
+            d.outputWidth = key.out_w;
+            d.outputHeight = key.out_h;
+            d.autoExposureEnabled = NO;
+            d.requiresSynchronousInitialization =
+              m_had_temporal_scaler ? NO : YES;
+            m_temporal_scaler = [d newTemporalScalerWithDevice:m_device
+                                                      compiler:m_compiler];
+            if (!m_temporal_scaler)
+              return false;
+            m_temporal_scaler.fence = m_fx_fence;
+            m_temporal_key = key;
+            m_temporal_reset_required = true;
+            m_had_temporal_scaler = true;
+          }
+          if ((color.texture.usage & m_temporal_scaler.colorTextureUsage) !=
+                m_temporal_scaler.colorTextureUsage ||
+              (depth.texture.usage & m_temporal_scaler.depthTextureUsage) !=
+                m_temporal_scaler.depthTextureUsage ||
+              (motion.texture.usage & m_temporal_scaler.motionTextureUsage) !=
+                m_temporal_scaler.motionTextureUsage ||
+              (output.texture.usage & m_temporal_scaler.outputTextureUsage) !=
+                m_temporal_scaler.outputTextureUsage ||
+              output.texture.storageMode != MTLStorageModePrivate)
+            return false;
+          m_temporal_scaler.colorTexture = color.texture;
+          m_temporal_scaler.depthTexture = depth.texture;
+          m_temporal_scaler.motionTexture = motion.texture;
+          m_temporal_scaler.exposureTexture = m_neutral_exposure;
+          m_temporal_scaler.outputTexture = output.texture;
+          m_temporal_scaler.inputContentWidth = key.in_w;
+          m_temporal_scaler.inputContentHeight = key.in_h;
+          m_temporal_scaler.preExposure = 1.0f;
+          m_temporal_scaler.jitterOffsetX = desc.jitter_x;
+          m_temporal_scaler.jitterOffsetY = desc.jitter_y;
+          m_temporal_scaler.motionVectorScaleX = desc.motion_scale_x;
+          m_temporal_scaler.motionVectorScaleY = desc.motion_scale_y;
+          m_temporal_scaler.depthReversed = desc.depth_reversed ? YES : NO;
+          m_temporal_scaler.reset =
+            (desc.reset || m_temporal_reset_required) ? YES : NO;
+          m_temporal_reset_required = false;
+          timestamp_pass ("temporal MetalFX");
+          [m_temporal_scaler encodeToCommandBuffer:m_commands];
+          timestamp ();
+          m_fx_encoded_this_frame = true;
+          m_fx_wait_pending = true;
+          return true;
+        }
+#endif
+        (void)desc;
+        return false;
       }
 
       void set_pipeline (Pipeline handle) override {
@@ -827,6 +965,10 @@ namespace moppe::nhal {
                                 options:MTLResourceStorageModeShared];
         make_resident (pending.buffer);
         id<MTL4ComputeCommandEncoder> copy = [m_commands computeCommandEncoder];
+        if (m_fx_wait_pending) {
+          [copy waitForFence:m_fx_fence beforeEncoderStages:MTLStageBlit];
+          m_fx_wait_pending = false;
+        }
         [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
                          beforeStages:MTLStageBlit
                     visibilityOptions:MTL4VisibilityOptionDevice];
@@ -957,6 +1099,55 @@ namespace moppe::nhal {
         [m_compute setArgumentTable:m_compute_table];
       }
 
+      struct TemporalScalerKey {
+        std::uint32_t in_w = 0, in_h = 0, out_w = 0, out_h = 0;
+        Format color_format = Format::undefined;
+        Format depth_format = Format::undefined;
+        Format motion_format = Format::undefined;
+        Format output_format = Format::undefined;
+        bool operator== (const TemporalScalerKey&) const = default;
+      };
+
+      void init_temporal_scaler () {
+#if !TARGET_OS_SIMULATOR
+        if (@available (macOS 26.0, iOS 26.0, tvOS 27.1, *)) {
+          if ([MTLFXTemporalScalerDescriptor class] &&
+              [MTLFXTemporalScalerDescriptor supportsMetal4FX:m_device]) {
+            NSError* error = nil;
+            MTL4CompilerDescriptor* cd = [[MTL4CompilerDescriptor alloc] init];
+            m_compiler = [m_device newCompilerWithDescriptor:cd error:&error];
+            m_fx_fence = [m_device newFence];
+            if (m_fx_fence)
+              m_fx_fence.label = @"NHAL MetalFX fence";
+            MTLTextureDescriptor* ed = [MTLTextureDescriptor
+              texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
+                                           width:1
+                                          height:1
+                                       mipmapped:NO];
+            ed.storageMode = MTLStorageModeShared;
+            ed.usage = MTLTextureUsageShaderRead;
+            m_neutral_exposure = [m_device newTextureWithDescriptor:ed];
+            if (m_neutral_exposure) {
+              m_neutral_exposure.label = @"NHAL MetalFX neutral exposure";
+              const std::uint16_t one = 0x3c00u;
+              [m_neutral_exposure replaceRegion:MTLRegionMake2D (0, 0, 1, 1)
+                                    mipmapLevel:0
+                                      withBytes:&one
+                                    bytesPerRow:sizeof (one)];
+              make_resident (m_neutral_exposure);
+            }
+            m_fx_min_scale = [MTLFXTemporalScalerDescriptor
+              supportedInputContentMinScaleForDevice:m_device];
+            m_fx_max_scale = [MTLFXTemporalScalerDescriptor
+              supportedInputContentMaxScaleForDevice:m_device];
+            m_supports_temporal_scale = m_compiler != nil &&
+                                        m_fx_fence != nil &&
+                                        m_neutral_exposure != nil;
+          }
+        }
+#endif
+      }
+
       void use_arguments () {
         [m_encoder setArgumentTable:m_vertex_table
                            atStages:MTLRenderStageVertex];
@@ -1005,6 +1196,22 @@ namespace moppe::nhal {
       std::vector<PassTiming> m_pass_timings;
       double m_ticks_per_ms = 1e6;
       std::vector<PendingCapture> m_captures;
+      id<MTL4Compiler> m_compiler = nil;
+      id<MTLFence> m_fx_fence = nil;
+      id<MTLTexture> m_neutral_exposure = nil;
+#if !TARGET_OS_SIMULATOR
+      API_AVAILABLE (macos (26.0), ios (26.0), tvos (27.1))
+      id<MTL4FXTemporalScaler> m_temporal_scaler = nil;
+#endif
+      TemporalScalerKey m_temporal_key {};
+      float m_fx_min_scale = 1.0f;
+      float m_fx_max_scale = 1.0f;
+      bool m_supports_temporal_scale = false;
+      bool m_had_temporal_scaler = false;
+      bool m_temporal_reset_required = true;
+      bool m_fx_fence_signaled = false;
+      bool m_fx_encoded_this_frame = false;
+      bool m_fx_wait_pending = false;
     };
   }
 

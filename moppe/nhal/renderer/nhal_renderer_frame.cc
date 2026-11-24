@@ -86,6 +86,8 @@ namespace moppe::nhal {
       const float tan_x = 1.0f / params.proj.at (0, 0);
       const float tan_y = 1.0f / params.proj.at (1, 1);
       const auto& jitter = temporal_jitter[m_frame++ % temporal_jitter.size ()];
+      m_frame_jitter = jitter;
+      m_frame_reset = m_restart;
 
       FrameBlock frame {};
       frame.view_proj = matrix (view_proj);
@@ -162,41 +164,72 @@ namespace moppe::nhal {
       m_scene_closed = true;
     }
 
+    bool NhalRenderer::use_temporal_scaler () const {
+      if (!m_device->supports_temporal_scale ())
+        return false;
+      static const bool forced_shader = [] {
+        const char* v = moppe::environment ("MOPPE_TEMPORAL_RESOLVE");
+        return v && std::string_view (v) == "shader";
+      }();
+      return !forced_shader;
+    }
+
     void NhalRenderer::reconstruct_scene () {
       if (m_resolved)
         return;
       close_scene ();
-      // What every output pixel in a scene texel shares, gathered once
-      // for the texel: its neighbourhood's bounds and the motion to
-      // follow.
-      RenderPassDesc gather;
-      gather.label = "temporal neighbourhood";
-      gather.color_count = 2;
-      gather.colors[0] = { m_bounds[0], Load::discard, Store::store };
-      gather.colors[1] = { m_bounds[1], Load::discard, Store::store };
-      m_device->begin_render_pass (gather);
-      m_device->set_pipeline (m_neighbourhood);
-      m_device->set_buffer (0, m_frame_block);
-      m_device->set_texture (0, m_scene_color);
-      m_device->set_texture (1, m_scene_motion);
-      m_device->set_texture (2, m_scene_depth);
-      m_device->draw (3);
-      m_device->end_render_pass ();
       Texture& previous = m_history[m_frame % 2];
       Texture& next = m_history[(m_frame + 1) % 2];
-      RenderPassDesc pass;
-      pass.label = "temporal resolve";
-      pass.color_count = 1;
-      pass.colors[0] = { next, Load::discard, Store::store };
-      m_device->begin_render_pass (pass);
-      m_device->set_pipeline (m_resolve);
-      m_device->set_buffer (0, m_frame_block);
-      m_device->set_texture (0, m_scene_color);
-      m_device->set_texture (1, m_bounds[0]);
-      m_device->set_texture (2, m_bounds[1]);
-      m_device->set_texture (3, previous);
-      m_device->draw (3);
-      m_device->end_render_pass ();
+      bool scaled = false;
+      if (use_temporal_scaler ()) {
+        // world.lisp applies +temporal.z in clip X (+jitter_x in pixels)
+        // and +temporal.w in Metal clip Y (-jitter_y in +Y-down pixels),
+        // and writes normalized current-to-previous UV motion.
+        scaled = m_device->temporal_scale ({
+          .color = m_scene_color,
+          .depth = m_scene_depth,
+          .motion = m_scene_motion,
+          .output = next,
+          .jitter_x = m_frame_jitter[0],
+          .jitter_y = -m_frame_jitter[1],
+          .motion_scale_x = float (m_scene_width),
+          .motion_scale_y = float (m_scene_height),
+          .depth_reversed = true,
+          .reset = m_frame_reset || !m_last_frame_used_fx,
+        });
+      }
+      m_last_frame_used_fx = scaled;
+      if (!scaled) {
+        // What every output pixel in a scene texel shares, gathered once
+        // for the texel: its neighbourhood's bounds and the motion to
+        // follow.
+        RenderPassDesc gather;
+        gather.label = "temporal neighbourhood";
+        gather.color_count = 2;
+        gather.colors[0] = { m_bounds[0], Load::discard, Store::store };
+        gather.colors[1] = { m_bounds[1], Load::discard, Store::store };
+        m_device->begin_render_pass (gather);
+        m_device->set_pipeline (m_neighbourhood);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_texture (0, m_scene_color);
+        m_device->set_texture (1, m_scene_motion);
+        m_device->set_texture (2, m_scene_depth);
+        m_device->draw (3);
+        m_device->end_render_pass ();
+        RenderPassDesc pass;
+        pass.label = "temporal resolve";
+        pass.color_count = 1;
+        pass.colors[0] = { next, Load::discard, Store::store };
+        m_device->begin_render_pass (pass);
+        m_device->set_pipeline (m_resolve);
+        m_device->set_buffer (0, m_frame_block);
+        m_device->set_texture (0, m_scene_color);
+        m_device->set_texture (1, m_bounds[0]);
+        m_device->set_texture (2, m_bounds[1]);
+        m_device->set_texture (3, previous);
+        m_device->draw (3);
+        m_device->end_render_pass ();
+      }
       m_image = next;
       m_resolved = true;
 
@@ -375,11 +408,14 @@ namespace moppe::nhal {
       const render::Viewport view = viewport_pixels ();
       m_width = view.width;
       m_height = view.height;
+      const TextureUsage history_usage =
+        usage_render_target | usage_sampled |
+        (use_temporal_scaler () ? usage_storage : 0);
       for (Texture& t : m_history)
         t = m_device->create_texture ({ m_width,
                                         m_height,
                                         Format::rgba16_float,
-                                        usage_render_target | usage_sampled,
+                                        history_usage,
                                         1,
                                         "temporal history" });
       // Made when a frame first blurs.

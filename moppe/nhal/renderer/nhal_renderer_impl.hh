@@ -567,6 +567,7 @@ namespace moppe::nhal {
     private:
       // The pipelines, each feature's made in its own file.
       void make_pipelines ();
+      bool use_temporal_scaler () const;
       void make_terrain_pipelines ();
       void make_scene_pipelines ();
       void make_forest_pipelines ();
@@ -722,6 +723,9 @@ namespace moppe::nhal {
       Mat4 m_previous_view_proj;
       float m_previous_time = 0;
       std::uint32_t m_frame = 0;
+      std::array<float, 2> m_frame_jitter { 0.0f, 0.0f };
+      bool m_frame_reset = true;
+      bool m_last_frame_used_fx = false;
       bool m_restart = true;
       bool m_scene_open = false, m_scene_begun = false, m_scene_closed = false,
            m_resolved = false, m_presented = false;

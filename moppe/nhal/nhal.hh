@@ -277,6 +277,23 @@ namespace moppe::nhal {
     double milliseconds = 0;
   };
 
+  // Inputs to a hardware temporal upscaler (MetalFX on Metal 4).
+  // Jitter is in input pixels (+X right, +Y down); motion vectors are
+  // scaled by motion_scale_{x,y} to input pixels pointing from the current
+  // frame to the previous frame.
+  struct TemporalScaleDesc {
+    Texture color;
+    Texture depth;
+    Texture motion;
+    Texture output;
+    float jitter_x = 0.0f;
+    float jitter_y = 0.0f;
+    float motion_scale_x = 1.0f;
+    float motion_scale_y = 1.0f;
+    bool depth_reversed = true;
+    bool reset = false;
+  };
+
   class Device {
   public:
     virtual ~Device () = default;
@@ -368,6 +385,16 @@ namespace moppe::nhal {
                            std::uint32_t groups_z = 1) = 0;
     virtual void dispatch_indirect (Buffer arguments,
                                     std::uint64_t offset = 0) = 0;
+
+    // Hardware temporal upscaling (MetalFX on Metal 4); devices without
+    // one report false so the renderer falls back to its shader resolve.
+    virtual bool supports_temporal_scale () const {
+      return false;
+    }
+    virtual bool temporal_scale (const TemporalScaleDesc& desc) {
+      (void)desc;
+      return false;
+    }
 
     // Reads this frame's drawable back once the frame completes. `done`
     // runs on the rendering thread, in a later begin_frame or wait_idle.

@@ -987,7 +987,8 @@ if(APPLE AND MOPPE_IOS)
     moppe/platform/ios/main_ios.mm
     TARGET_DIRECTORY moppe-ios PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
   target_link_libraries(moppe-ios PRIVATE
-    "-framework Metal" "-framework QuartzCore" "-framework MetalKit")
+    "-framework Metal" "-weak_framework MetalFX" "-framework QuartzCore"
+    "-framework MetalKit")
   target_link_libraries(moppe-ios PRIVATE "-framework UIKit")
   set_target_properties(moppe-ios PROPERTIES
     OUTPUT_NAME "Moppe"
@@ -1037,7 +1038,8 @@ if(APPLE AND MOPPE_TVOS)
     moppe/platform/tvos/main_tvos.mm
     TARGET_DIRECTORY moppe-tvos PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
   target_link_libraries(moppe-tvos PRIVATE
-    "-framework Metal" "-framework QuartzCore" "-framework MetalKit")
+    "-framework Metal" "-weak_framework MetalFX" "-framework QuartzCore"
+    "-framework MetalKit")
   target_compile_definitions(moppe-tvos PRIVATE
     MOPPE_DEFAULT_APPLE_TV_GRAPHICS)
   if(MOPPE_TVOS_BAKED_WORLD)
@@ -1272,6 +1274,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux"
       target_link_libraries(${target} PRIVATE
         "-framework Foundation"
         "-framework Metal"
+        "-weak_framework MetalFX"
         "-framework QuartzCore")
     else()
       moppe_link_vulkan(${target})
@@ -1412,6 +1415,7 @@ if((APPLE AND NOT MOPPE_MOBILE_APPLE) OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(nhal-demo PRIVATE
       "-framework AppKit"
       "-framework Metal"
+      "-weak_framework MetalFX"
       "-framework QuartzCore"
       "-framework ImageIO"
       "-framework UniformTypeIdentifiers")
