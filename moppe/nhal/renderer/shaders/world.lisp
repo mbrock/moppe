@@ -507,11 +507,14 @@
 
 (define-shader-abstraction powder-height (xz)
   `(let* ((uv (* (- ,xz (swizzle snow-window :xy)) (swizzle snow-window :z)))
-          (edge (abs (- uv (vec2 0.5 0.5)))))
-     (only-where (and (> (swizzle snow-window :z) 0.0)
-                      (< (max (swizzle edge :x) (swizzle edge :y)) 0.496)) 0.0
+          (edge (abs (- uv (vec2 0.5 0.5))))
+          (span (max (swizzle edge :x) (swizzle edge :y)))
+          ;; Feather smoothly to zero across the outer 8% of the window so
+          ;; tracks fade naturally instead of snapping off or spiking normals.
+          (fade (- 1.0 (smoothstep 0.415 0.492 span))))
+     (only-where (and (> (swizzle snow-window :z) 0.0) (> fade 0.0)) 0.0
        (* (- (* (swizzle (sample-level snow-pack linear-repeat uv 0.0) :x)
-                 2.007874) 1.007874) (swizzle snow-window :w)))))
+                 2.007874) 1.007874) (swizzle snow-window :w) fade))))
 
 (define-shader terrain-vertex
     (:stage :vertex
@@ -2375,7 +2378,8 @@
                         (* (vec2 1.0 0.36) (swizzle powder :y)
                            (- 1.0 (smoothstep 0.15 1.0 footprint))
                            (- 1.0 packed))
-                        (* snow-share 18.0
+                        (* snow-share 14.5
+                           (- 1.0 (smoothstep 0.14 0.50 footprint))
                            (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
                                     (powder-height (- xz (vec2 0.04 0.0))))
                                  (- (powder-height (+ xz (vec2 0.0 0.04)))
@@ -5808,26 +5812,29 @@
 ;;; a low billow: Y its height, ZW its analytic gradient, filtered to flat
 ;;; before it becomes subpixel.  Coverage has its own mean-coverage fade.
 (define-shader-function foam-pattern (xz footprint)
-  (let* ((broad (wave-noise (* xz 1.3) (uint 21)))
-         (fine (wave-noise (* xz 3.4) (uint 22)))
+  (let* ((broad (wave-noise (* xz 1.5) (uint 21)))
+         (fine (wave-noise (* xz 3.8) (uint 22)))
+         (froth (wave-noise (* xz 7.8) (uint 23)))
          (resolved (- 1.0 (smoothstep 0.25 0.6 (* 1.3 footprint)))))
-    (vec4 (+ (* 0.6 (swizzle broad :x)) (* 0.4 (swizzle fine :x)))
+    (vec4 (+ (* 0.48 (swizzle broad :x))
+             (* 0.32 (swizzle fine :x))
+             (* 0.20 (swizzle froth :x)))
           (+ 0.5 (* resolved (- (swizzle broad :x) 0.5)))
           (* (swizzle broad :yz) (* 1.3 resolved)))))
 
 ;;; How much of a place foam covers, from how much the water there sheds
-;;; (SOURCE) and the foam's noise: thin lace along its middle contours
+;;; (SOURCE) and the foam's noise: organic aerated froth along middle contours
 ;;; first, then blotches over its higher half that join into white water
 ;;; still holed and streaked with dark.  AGE is this flow copy's phase, not
 ;;; stored history: its holes open as it ages, and it resets at zero weight.
 (define-shader-function foam-cover (source pattern age)
   (let* ((amount (* source (- 1.0 (* 0.3 age))))
          (lace (- 1.0 (abs (- (* 2.0 pattern) 1.0))))
-         (laced (smoothstep (- 1.0 (* 0.4 amount)) (- 1.08 (* 0.4 amount))
+         (laced (smoothstep (- 0.96 (* 0.42 amount)) (- 1.12 (* 0.40 amount))
                             lace))
-         (threshold (- 0.8 (* 0.4 amount)))
-         (blotched (* (smoothstep threshold (+ threshold 0.14) pattern)
-                      (smoothstep 0.35 0.6 amount))))
+         (threshold (- 0.80 (* 0.40 amount)))
+         (blotched (* (smoothstep threshold (+ threshold 0.16) pattern)
+                      (smoothstep 0.32 0.58 amount))))
     (* (max laced blotched) (mix 0.55 0.95 amount))))
 
 ;;; White water drawn out along the current, at a heading of ANGLE radians.
@@ -6235,8 +6242,12 @@
          ;; water laps a shore, on the sea as each crest comes in; the
          ;; sea's crests breaking as they run into the shallows; and the odd
          ;; whitecap out on the open sea.
-         (trail (max (* 0.75 (churn upstream-near))
-                     (* 0.45 (churn upstream-far))))
+         ;; Weight upstream rapid foam by running current so foam fades
+         ;; organically when a river enters a calm lake instead of snapping
+         ;; off along a sharp flow-grid cell boundary.
+         (trail (* running
+                   (max (* 0.75 (churn upstream-near))
+                        (* 0.45 (churn upstream-far)))))
          (fringe (* (- 1.0 (smoothstep 0.01 0.07 depth))
                     (smoothstep 0.25 0.7 speed) 0.3))
          (open-sea (* swell swell))

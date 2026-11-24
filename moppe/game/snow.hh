@@ -16,7 +16,7 @@ namespace moppe::game {
   // tracks are still there. At the budget, retire the least recently used.
   class SnowPack {
   public:
-    static constexpr int tile = 64, window = 8, pixels = window * tile;
+    static constexpr int tile = 64, window = 12, pixels = window * tile;
     static constexpr meters_t spacing = 0.08f * u::m;
     static constexpr meters_t depth = 0.16f * u::m;
     using Key = std::array<int, 2>;

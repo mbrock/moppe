@@ -37,7 +37,7 @@ namespace moppe::game {
       state.m_snow_heading = heading;
       return;
     }
-    if (distance < (foot ? 0.65f : 0.13f) * u::m)
+    if (distance < (foot ? 0.65f : 0.06f) * u::m)
       return;
     const auto offset =
       [] (position_t p, direction_t way, meters_t side, meters_t front) {
@@ -165,20 +165,21 @@ namespace moppe::game {
         const auto d = std::sqrt (length2 (off - axis * along));
         if (d >= reach)
           continue;
-        // A hollow with rolled lips. Track cleats bite deeper than the
-        // belt between them, in alternating chevrons across its width.
+        // A hollow with rolled lips. Track cleats bite slightly deeper than
+        // the belt between them at a wavelength the texel grid resolves
+        // cleanly without temporal aliasing.
         const auto rib =
           belt_phase < meters_t {}
             ? 1.0f
-            : 0.68f +
-                0.32f * std::cos (meters_value (belt_phase + along * spacing) *
-                                    31.4f +
-                                  d * 0.55f);
+            : 0.82f +
+                0.18f * std::cos (meters_value (belt_phase + along * spacing) *
+                                    18.8f +
+                                  d * 0.45f);
         const auto hollow =
-          rib * (1.0f - smoothstep (0.55f * width, width + 0.45f, d));
+          rib * (1.0f - smoothstep (0.50f * width, width + 0.55f, d));
         const auto lip =
-          0.68f *
-          (1.0f - smoothstep (0.0f, 1.15f, std::abs (d - width - 0.50f)));
+          0.56f *
+          (1.0f - smoothstep (0.0f, 1.35f, std::abs (d - width - 0.55f)));
         const int displacement = std::lround (
           (sink / depth).numerical_value_in (one) * 127 * (lip - hollow));
         if (!displacement)
@@ -192,7 +193,7 @@ namespace moppe::game {
           std::uint8_t (std::clamp (128 + displacement, 0, 255));
         if (displacement < 0)
           h = std::min (h, level);
-        else if (h >= 128)
+        else if (h >= 120)
           h = std::max (h, level);
       }
     while (m_tiles.size () > 512)

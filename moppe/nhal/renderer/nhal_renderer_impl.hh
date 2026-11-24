@@ -210,7 +210,12 @@ namespace moppe::nhal {
       render::TerrainParams params {};
       bool have = false;
       Texture heights, normals, detail;
-      Texture snow;
+      // Ring of snow-relief textures (frames_in_flight + 1) so CPU updates
+      // never overwrite shared memory while the GPU still samples an earlier
+      // frame's shifted snow window.
+      std::vector<Texture> snow;
+      std::uint32_t snow_slot = 0;
+      std::uint32_t snow_side = 0;
       std::array<float, 4> snow_window {};
       Texture landscape, ground, plants, more_plants, scars, bedrock;
       Buffer chunk_indices[lod_count], patch_indices[lod_count];

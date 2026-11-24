@@ -132,14 +132,30 @@ namespace moppe::nhal {
         m_terrain.snow_window = {};
         return;
       }
-      if (!m_terrain.snow)
-        m_terrain.snow = m_device->create_texture ({ std::uint32_t (side),
-                                                     std::uint32_t (side),
-                                                     Format::r8_unorm,
-                                                     usage_sampled,
-                                                     1,
-                                                     "packed snow" });
-      m_device->write_texture (m_terrain.snow, std::as_bytes (pixels));
+      const std::uint32_t slots =
+        std::max (1u, m_device->info ().frames_in_flight) + 1u;
+      if (m_terrain.snow.size () != slots ||
+          m_terrain.snow_side != std::uint32_t (side)) {
+        for (Texture t : m_terrain.snow)
+          if (t)
+            m_device->destroy (t);
+        m_terrain.snow.clear ();
+        m_terrain.snow.reserve (slots);
+        for (std::uint32_t i = 0; i < slots; ++i)
+          m_terrain.snow.push_back (
+            m_device->create_texture ({ std::uint32_t (side),
+                                        std::uint32_t (side),
+                                        Format::r8_unorm,
+                                        usage_sampled,
+                                        1,
+                                        "packed snow" }));
+        m_terrain.snow_side = std::uint32_t (side);
+        m_terrain.snow_slot = 0;
+      } else {
+        m_terrain.snow_slot = (m_terrain.snow_slot + 1u) % slots;
+      }
+      m_device->write_texture (m_terrain.snow[m_terrain.snow_slot],
+                               std::as_bytes (pixels));
       m_terrain.snow_window = { meters_value (x_of (origin)),
                                 meters_value (z_of (origin)),
                                 1.0f / meters_value (span),
@@ -195,7 +211,10 @@ namespace moppe::nhal {
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, terrain_block ());
       bind_ground_textures ();
-      m_device->set_texture (13, m_terrain.snow ? m_terrain.snow : m_clear);
+      m_device->set_texture (13,
+                             m_terrain.snow.empty ()
+                               ? m_clear
+                               : m_terrain.snow[m_terrain.snow_slot]);
       m_device->set_texture (14, m_water.levels ? m_water.levels : m_black);
       m_device->set_texture (
         15, m_water.shore_surf ? m_water.shore_surf : m_water.still);

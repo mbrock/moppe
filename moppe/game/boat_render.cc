@@ -188,33 +188,58 @@ namespace moppe::game {
     const direction_t ahead = unit_direction (normalized (level_ahead));
     position_t stern = boat.position - quantity_cast<isq::position_vector> (
                                          along (ahead, 1.2f * u::m));
-    // Only where the stern is down in water that floats it.
-    if (position_value (stern)[1] > meters_value (water_level + 0.15f * u::m) ||
-        depth < 0.15f * u::m) {
-      if (!m_marks.empty () && m_marks.back ().speed > 0.0f * u::m / u::s)
-        m_marks.push_back ({ m_marks.back ().stern,
-                             m_marks.back ().across,
-                             0.0f * u::m / u::s,
-                             time });
+    const meters_t stern_above =
+      (position_value (stern)[1] - meters_value (water_level)) * u::m;
+    const proportion_t immersed =
+      std::clamp (proportion_t ((0.18f * u::m - stern_above) / (0.18f * u::m)),
+                  0.0f * proportion[one],
+                  1.0f * proportion[one]);
+    const proportion_t deep =
+      std::clamp (proportion_t ((depth - 0.12f * u::m) / (0.55f * u::m)),
+                  0.0f * proportion[one],
+                  1.0f * proportion[one]);
+    const proportion_t water_fit = quantity_cast<proportion> (immersed * deep);
+    const proportion_t dry_cutoff = 0.002f * proportion[one];
+    if (water_fit <= dry_cutoff &&
+        (m_marks.empty () || m_marks.back ().foam <= dry_cutoff))
+      return;
+    position_value (stern)[1] = meters_value (water_level + 0.065f * u::m);
+    const plan_displacement_t delta =
+      !m_marks.empty () ? plan (stern) - plan (m_marks.back ().stern)
+                        : plan_displacement (Vec2 (0.0f, 0.0f));
+    const meters_t step = length (delta);
+    // Break the ribbon cleanly on teleports, world wraps, or big jumps so we
+    // never stretch a wake quad across land or air.
+    if (!m_marks.empty () && step > 6.0f * u::m) {
+      m_marks.clear ();
+    } else if (!m_marks.empty () && step < 0.35f * u::m &&
+               time - m_marks.back ().time < 0.14f * u::s) {
       return;
     }
-    position_value (stern)[1] = meters_value (water_level + 0.03f * u::m);
-    if (!m_marks.empty () &&
-        length2 (displacement_value (stern - m_marks.back ().stern)) <
-          0.6f * 0.6f &&
-        time - m_marks.back ().time < 0.5f * u::s)
-      return;
+    // Only emit Kelvin wakes when moving forward under way; backing off a
+    // shoal must not flip the arms across the hull into a diamond box.
+    const plan_direction_t plan_ahead =
+      plan_unit_direction (plan (direction_value (ahead)));
+    const meters_t forward_step =
+      std::max (0.0f * u::m, meters_t (dot (delta, plan_ahead)));
     const speed_t speed =
       !m_marks.empty () && time > m_marks.back ().time
-        ? speed_t (length (displacement_value (stern - m_marks.back ().stern)) *
-                   u::m / (time - m_marks.back ().time))
+        ? speed_t (forward_step / (time - m_marks.back ().time))
         : speed_t (0.0f * u::m / u::s);
-    // A hash of where it is for the foam, so that it does not shimmer.
-    const float hash = std::sin (position_value (stern)[0] * 12.9898f +
-                                 position_value (stern)[2] * 78.233f) *
-                       43758.5453f;
-    const proportion_t foam =
-      (0.25f + 0.75f * (hash - std::floor (hash))) * proportion[one];
+    // Gentle multi-frequency spatial modulation gives organic froth density
+    // along the wake without harsh per-segment banding.
+    const proportion_t wave_a =
+      (0.5f + 0.5f * std::sin (position_value (stern)[0] * 0.72f +
+                               position_value (stern)[2] * 0.58f)) *
+      proportion[one];
+    const proportion_t wave_b =
+      (0.5f + 0.5f * std::sin (position_value (stern)[0] * 1.65f -
+                               position_value (stern)[2] * 1.25f)) *
+      proportion[one];
+    const proportion_t foam = quantity_cast<proportion> (
+      water_fit * ((0.72f + 0.18f * wave_a.numerical_value_in (one) +
+                    0.10f * wave_b.numerical_value_in (one)) *
+                   proportion[one]));
     m_marks.push_back (
       { stern,
         unit_direction (
@@ -229,6 +254,7 @@ namespace moppe::game {
     seconds_t time,
     proportion_t light,
     const std::function<meters_t (const position_t&)>& level) const {
+    (void)light;
     if (m_marks.size () < 2)
       return;
     render::DrawState soft;
@@ -236,78 +262,164 @@ namespace moppe::game {
     soft.depth_write = false;
     soft.cull = false;
     dl.state (soft);
-    dl.lit (false);
+    // Lit upward so wake whitewater shares the sun + sky HDR radiance of the
+    // river's own foam instead of rendering as an unlit grey stripe.
+    dl.lit (true);
     dl.fogged (true);
-    const proportion_t shade =
-      0.25f * proportion[one] +
-      0.7f * std::clamp (light, 0.0f * proportion[one], 1.0f * proportion[one]);
-    const DisplayColor white (shade.numerical_value_in (one),
-                              shade.numerical_value_in (one),
-                              (shade * 1.02f).numerical_value_in (one));
+    dl.normal (Vec3 (0.0f, 1.0f, 0.0f));
+    const DisplayColor white (0.93f, 0.96f, 0.97f);
     const proportion_t none = 0.0f * proportion[one];
     // Below this a strip's foam is not drawn.
-    const proportion_t faint = 0.01f * proportion[one];
+    const proportion_t faint = 0.008f * proportion[one];
     dl.begin (render::Prim::Triangles);
-    // On the water as it stands now, which the waves lift and lower.
-    const auto on_water = [&] (position_t at) {
-      position_value (at)[1] = meters_value (level (at) + 0.03f * u::m);
+    // Lift enough to clear sloped river grid diagonals and subdivide long
+    // chords so wake ribbons drape smoothly over waves without clipping.
+    const auto on_water = [&] (position_t at, meters_t extra) {
+      position_value (at)[1] = meters_value (level (at) + extra);
       return at;
     };
-    // Each strip as quads between consecutive marks: `offset` places its
-    // middle across the wake and `width` its breadth, by the mark's age.
+    const auto aligned_across = [] (const plan_displacement_t& tangent,
+                                    const direction_t& reference) {
+      if (length (tangent) <= 0.01f * u::m)
+        return reference;
+      const plan_direction_t dir = direction_of (tangent);
+      const direction_t port = unit_direction (
+        Vec3 (plan_value (dir).z (), 0.0f, -plan_value (dir).x ()));
+      return dot (port, reference).numerical_value_in (one) < 0.0f
+               ? unit_direction (-direction_value (port))
+               : port;
+    };
+    const std::size_t n = m_marks.size ();
+    // Smooth horizontal port-side across vector from the actual wake path,
+    // aligned with the hull's port side so slowing or reversing never flips
+    // left and right arms across each other.
+    std::vector<direction_t> path_across (n);
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::size_t prev = i > 0 ? i - 1 : i;
+      const std::size_t next = i + 1 < n ? i + 1 : i;
+      path_across[i] =
+        aligned_across (plan (m_marks[next].stern) - plan (m_marks[prev].stern),
+                        m_marks[i].across);
+    }
+    // Each strip as finely subdivided quads with a soft 5-vertex bell-curve
+    // cross-section (avoiding hard gamma-compressed rail edges).
     const auto strip = [&] (auto offset, auto width, proportion_t strength) {
-      // Each mark's middle and edges, lifted once and shared by the quads
-      // either side of it.
-      const std::size_t n = m_marks.size ();
-      std::vector<proportion_t> faded (n);
+      std::vector<proportion_t> faded (n, none);
+      std::vector<position_t> centers (n);
+      std::vector<meters_t> half_widths (n, 0.0f * u::m);
       for (std::size_t i = 0; i < n; ++i) {
         const WakeMark& m = m_marks[i];
         const seconds_t age = time - m.time;
         const proportion_t under_way = std::clamp (
-          proportion_t ((m.speed - 1.0f * u::m / u::s) / (4.0f * u::m / u::s)),
+          proportion_t ((m.speed - 1.4f * u::m / u::s) / (4.0f * u::m / u::s)),
           none,
           1.0f * proportion[one]);
         const proportion_t fade =
           std::max (none, proportion_t (1.0f * proportion[one] - age / lasts));
+        const proportion_t settled_lin =
+          std::min (1.0f, seconds_value (age) * 1.8f) * proportion[one];
         const proportion_t settled =
-          std::min (1.0f, seconds_value (age) * 4.0f + 0.3f) * proportion[one];
-        faded[i] = quantity_cast<proportion> (strength * m.foam * under_way *
-                                              fade * fade * fade * settled);
+          quantity_cast<proportion> (settled_lin * settled_lin);
+        const proportion_t end_taper =
+          i == 0
+            ? none
+            : (i == 1
+                 ? 0.35f * proportion[one]
+                 : (i == 2 ? 0.75f * proportion[one] : 1.0f * proportion[one]));
+        faded[i] =
+          quantity_cast<proportion> (strength * m.foam * under_way * fade *
+                                     fade * fade * settled * end_taper);
+        centers[i] = m.stern + quantity_cast<isq::position_vector> (
+                                 along (path_across[i], offset (m, age)));
+        half_widths[i] = 0.5f * width (m, age);
       }
-      std::vector<std::array<position_t, 3>> lifted (n);
+      // Compute each arm's own local lateral direction from its offset
+      // centerline, keeping sign aligned with path_across so quads never twist.
+      std::vector<direction_t> arm_across (n);
       for (std::size_t i = 0; i < n; ++i) {
-        const bool seen = faded[i] > faint || (i > 0 && faded[i - 1] > faint) ||
-                          (i + 1 < n && faded[i + 1] > faint);
-        if (!seen)
-          continue;
-        const WakeMark& m = m_marks[i];
-        const seconds_t age = time - m.time;
-        const position_t c = m.stern + quantity_cast<isq::position_vector> (
-                                         along (m.across, offset (m, age)));
-        const auto w = quantity_cast<isq::position_vector> (
-          along (m.across, 0.5f * width (m, age)));
-        lifted[i] = { on_water (c), on_water (c - w), on_water (c + w) };
+        const std::size_t prev = i > 0 ? i - 1 : i;
+        const std::size_t next = i + 1 < n ? i + 1 : i;
+        arm_across[i] = aligned_across (
+          plan (centers[next]) - plan (centers[prev]), path_across[i]);
       }
-      for (std::size_t i = 0; i + 1 < m_marks.size (); ++i) {
+      struct CrossSlice {
+        std::array<position_t, 5> points;
+        std::array<proportion_t, 5> alphas;
+      };
+      for (std::size_t i = 0; i + 1 < n; ++i) {
         const proportion_t fa = faded[i], fb = faded[i + 1];
         if (fa <= faint && fb <= faint)
           continue;
-        const position_t& ca = lifted[i][0];
-        const position_t& cb = lifted[i + 1][0];
-        // Two halves, each from the strip's middle line, where the foam
-        // is thickest, out to an edge that has none.
-        for (const int edge : { 1, 2 }) {
-          dl.color (white, fa);
-          dl.vertex (ca);
-          dl.color (white, none);
-          dl.vertex (lifted[i][edge]);
-          dl.vertex (lifted[i + 1][edge]);
-          dl.color (white, fa);
-          dl.vertex (ca);
-          dl.color (white, none);
-          dl.vertex (lifted[i + 1][edge]);
-          dl.color (white, fb);
-          dl.vertex (cb);
+        const plan_displacement_t arm_step =
+          plan (centers[i + 1]) - plan (centers[i]);
+        const plan_displacement_t hull_step =
+          plan (m_marks[i + 1].stern) - plan (m_marks[i].stern);
+        const meters_t arm_len = length (arm_step);
+        if (arm_len < 0.04f * u::m || arm_len > 6.5f * u::m)
+          continue;
+        // Drop segments where the inner Kelvin arm folds backward across the
+        // center of curvature during a sharp turn.
+        const meters_t hull_len = length (hull_step);
+        if (hull_len > 0.01f * u::m &&
+            dot (arm_step, hull_step) <= 0.15f * arm_len * hull_len)
+          continue;
+        const int slices =
+          std::clamp (static_cast<int> (std::ceil (
+                        (arm_len / (0.45f * u::m)).numerical_value_in (one))),
+                      1,
+                      8);
+        const auto sample_slice = [&] (proportion_t t) -> CrossSlice {
+          const plan_position_t mid_plan =
+            plan (centers[i]) + (plan (centers[i + 1]) - plan (centers[i])) *
+                                  t.numerical_value_in (one);
+          const position_t mid = at_height (mid_plan, 0.0f * u::m);
+          const plan_displacement_t lat =
+            along (plan_unit_direction (plan (direction_value (arm_across[i]))),
+                   (1.0f - t.numerical_value_in (one)) * u::m) +
+            along (
+              plan_unit_direction (plan (direction_value (arm_across[i + 1]))),
+              t.numerical_value_in (one) * u::m);
+          const direction_t across =
+            length (lat) > 0.01f * u::m
+              ? unit_direction (lift (plan_value (direction_of (lat)), 0.0f))
+              : arm_across[i];
+          const meters_t hw =
+            moppe::lerp (half_widths[i], half_widths[i + 1], t);
+          const auto outer =
+            quantity_cast<isq::position_vector> (along (across, hw));
+          const auto flank =
+            quantity_cast<isq::position_vector> (along (across, 0.50f * hw));
+          const proportion_t peak = moppe::lerp (fa, fb, t);
+          const proportion_t shoulder =
+            quantity_cast<proportion> (peak * (0.22f * proportion[one]));
+          return { { on_water (mid - outer, 0.095f * u::m),
+                     on_water (mid - flank, 0.105f * u::m),
+                     on_water (mid, 0.115f * u::m),
+                     on_water (mid + flank, 0.105f * u::m),
+                     on_water (mid + outer, 0.095f * u::m) },
+                   { none, shoulder, peak, shoulder, none } };
+        };
+        CrossSlice prev_slice = sample_slice (none);
+        for (int s = 1; s <= slices; ++s) {
+          const proportion_t t =
+            (static_cast<float> (s) / static_cast<float> (slices)) *
+            proportion[one];
+          const CrossSlice next_slice = sample_slice (t);
+          for (std::size_t k = 0; k < 4; ++k) {
+            dl.color (white, prev_slice.alphas[k]);
+            dl.vertex (prev_slice.points[k]);
+            dl.color (white, prev_slice.alphas[k + 1]);
+            dl.vertex (prev_slice.points[k + 1]);
+            dl.color (white, next_slice.alphas[k + 1]);
+            dl.vertex (next_slice.points[k + 1]);
+            dl.color (white, prev_slice.alphas[k]);
+            dl.vertex (prev_slice.points[k]);
+            dl.color (white, next_slice.alphas[k + 1]);
+            dl.vertex (next_slice.points[k + 1]);
+            dl.color (white, next_slice.alphas[k]);
+            dl.vertex (next_slice.points[k]);
+          }
+          prev_slice = next_slice;
         }
       }
     };
@@ -318,15 +430,15 @@ namespace moppe::game {
           return side * (0.75f * u::m + 0.35f * m.speed * age);
         },
         [] (const WakeMark&, seconds_t age) {
-          return 0.2f * u::m + 0.15f * u::m / u::s * age;
+          return 0.36f * u::m + 0.24f * u::m / u::s * age;
         },
-        0.2f * proportion[one]);
+        0.18f * proportion[one]);
     // The churned water behind the propeller, widening and settling.
     strip ([] (const WakeMark&, seconds_t) { return 0.0f * u::m; },
            [] (const WakeMark&, seconds_t age) {
-             return 0.6f * u::m + 0.35f * u::m / u::s * age;
+             return 0.80f * u::m + 0.44f * u::m / u::s * age;
            },
-           0.26f * proportion[one]);
+           0.24f * proportion[one]);
     dl.end ();
     dl.lit (true);
     dl.state (render::DrawState ());
