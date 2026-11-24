@@ -44,9 +44,13 @@ namespace moppe::game {
       return still_water (at) - elevation (at);
     }
 
-    // How deeply snow covers dry ground at `at` (0..1), matching the terrain
-    // shader's snow-reach: altitude, NNE-E leeward drift, concave basin
-    // shelter, broad slope support, and ridden-through trails.
+    // True where still standing water lies at or above the alpine freeze line
+    // and forms solid rideable lake ice.
+    bool frozen_water (const plan_position_t& at) const;
+
+    // How deeply snow covers dry ground (or snow-patched alpine lake ice) at
+    // `at` (0..1), matching the terrain shader's snow-reach: altitude, NNE-E
+    // leeward drift, concave basin shelter, broad slope support, and trails.
     proportion_t snow_cover (const plan_position_t& at) const;
 
     // Whether a machine `room` round could stand at `at`: on dry ground

@@ -135,16 +135,21 @@ namespace moppe::game {
       scale_factor_t run = 0.0f * scale_factor[one];
       for (int j = 1; j <= 10; ++j) {
         const plan_position_t q = p + along (way, j * 24.0f * u::m);
-        if (lot.ground.water_depth (q) > terrain::ElevationChange {})
+        if (lot.ground.water_depth (q) > terrain::ElevationChange {} &&
+            !lot.ground.frozen_water (q))
           break;
         const proportion_t snow = lot.ground.snow_cover (q);
         if (snow < min_run_snow)
           break;
-        const meters_t next (lot.ground.elevation (q).delta_from_zero ());
+        const terrain::SurfaceElevation surface_q =
+          lot.ground.frozen_water (q) ? lot.ground.still_water (q)
+                                      : lot.ground.elevation (q);
+        const meters_t next (surface_q.delta_from_zero ());
         const meters_t step_drop = abs (next - last);
         if (step_drop > 7.5f * u::m)
           break;
-        if (j <= 4 && !lot.ground.open (q, 2.6f * u::m, 1.5f * u::m))
+        if (j <= 4 && !lot.ground.frozen_water (q) &&
+            !lot.ground.open (q, 2.6f * u::m, 1.5f * u::m))
           break;
         // Favor wide snowy runs with smooth grades (slightly preferring
         // gentle downhill launches across the plateau or into a snow valley).
@@ -192,12 +197,16 @@ namespace moppe::game {
               along (plan_unit_direction (Vec2 (std::cos (radians_value (a)),
                                                 std::sin (radians_value (a)))),
                      ring);
-            if (lot.ground.water_depth (q) > terrain::ElevationChange {})
+            if (lot.ground.water_depth (q) > terrain::ElevationChange {} &&
+                !lot.ground.frozen_water (q))
               continue;
             const proportion_t sq = lot.ground.snow_cover (q);
             if (sq < min_run_snow)
               continue;
-            const meters_t hq (lot.ground.elevation (q).delta_from_zero ());
+            const terrain::SurfaceElevation surface_q =
+              lot.ground.frozen_water (q) ? lot.ground.still_water (q)
+                                          : lot.ground.elevation (q);
+            const meters_t hq (surface_q.delta_from_zero ());
             if (abs (hq - h) > 0.28f * ring)
               continue;
             area_score += sq.numerical_value_in (one) * scale_factor[one];

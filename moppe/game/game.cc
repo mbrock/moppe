@@ -5,6 +5,7 @@
 
 #include <moppe/environment.hh>
 #include <moppe/game/game.hh>
+#include <moppe/mov/box3d_vec.hh>
 #include <moppe/profile.hh>
 
 namespace moppe {
@@ -19,6 +20,13 @@ namespace moppe {
           m_capture (options.screenshot_path), m_ready (false) {
       if (options.multiplayer)
         m_company.seek (*options.multiplayer);
+    }
+
+    MoppeGame::~MoppeGame () {
+      if (m_generated_world) {
+        mov::attach_ice (m_generated_world->surface (), {});
+        mov::attach_roads (m_generated_world->surface (), nullptr);
+      }
     }
 
     void MoppeGame::setup (render::Renderer& r, int, int) {

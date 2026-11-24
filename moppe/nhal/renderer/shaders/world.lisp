@@ -625,22 +625,21 @@
 (define-shader-function hash12 (p)
   (fract (* (sin (dot p (vec2 127.1 311.7))) 43758.5453)))
 
-;;; World-fixed groups of ice facets flash together. Filter their radius
-;;; in cell units and preserve integrated light as a pixel grows.
+;;; World-fixed micro-crystals of ice flash like pinpoint diamonds in direct
+;;; sun. Filter their radius in cell units and fade cleanly with pixel
+;;; footprint so distant snow never blooms into stretched white dots.
 (define-shader-function crystal-glint (space pixel normal halfway)
   (let* ((cell (floor space))
          (jitter (vec2 (hash12 cell) (hash12 (+ cell (vec2 23.0 41.0)))))
          (offset (- (fract space) (+ (vec2 0.25 0.25) (* jitter 0.50))))
-         (width (min 0.25 (+ 0.14 (* 0.5 pixel))))
+         (width (min 0.14 (+ 0.045 (* 0.45 pixel))))
          (facet-distance (+ (abs (swizzle offset :x)) (abs (swizzle offset :y))))
          (spot (- 1.0 (smoothstep 0.0 width facet-distance)))
-         ;; Include upright facets: a low camera looking along the slope
-         ;; sees reflections the flatter facets only send overhead.
          (tilt (- (* 2.0 jitter) (vec2 1.0 1.0)))
-         (facet (normalize (+ (* normal (max 0.06 (- 1.0 (dot tilt tilt))))
+         (facet (normalize (+ (* normal (max 0.08 (- 1.0 (dot tilt tilt))))
                               (vec3 (swizzle tilt :x) 0.0 (swizzle tilt :y))))))
-    (* spot (/ 0.0196 (* width width)) (- 1.0 (smoothstep 0.18 0.50 pixel))
-       (smoothstep 0.83 0.99 (dot facet halfway)))))
+    (* spot (/ 0.0064 (* width width)) (- 1.0 (smoothstep 0.14 0.42 pixel))
+       (smoothstep 0.94 0.997 (dot facet halfway)))))
 
 (define-shader-function value-noise (p)
   (let* ((i (floor p))
@@ -670,6 +669,33 @@
              (* k3 (swizzle u :x) (swizzle u :y)))
           (* (swizzle du :x) (+ k1 (* k3 (swizzle u :y))))
           (* (swizzle du :y) (+ k2 (* k3 (swizzle u :x)))))))
+
+;;; Wind-carved alpine snow relief (sastrugi): elongated wind-packed snow
+;;; ridges, medium snow-dune flutes, and crisp frost-crust micro-ripples,
+;;; each faded smoothly as the pixel footprint outgrows its wavelength.
+(define-shader-function sastrugi-slope (xz footprint)
+  (let* ((wx (vec2 0.86 0.51))
+         (wz (vec2 -0.51 0.86))
+         (u (dot xz wx))
+         (v (dot xz wz))
+         ;; Broad wind-sculpted sastrugi pillows (~8-14 m long, 3 m across).
+         (g-broad (value-noise-gradient (vec2 (* u 0.085) (* v 0.27))))
+         (f-broad (- 1.0 (smoothstep 1.2 3.2 footprint)))
+         ;; Medium asymmetrical snow-drift flutes (~3 m long, 1 m across).
+         (g-mid (value-noise-gradient (vec2 (+ (* u 0.24) (* 1.1 (swizzle g-broad :x)))
+                                            (+ (* v 0.82) 7.3))))
+         (f-mid (- 1.0 (smoothstep 0.30 0.95 footprint)))
+         ;; Close frost-crust ripples and wind-scoured snow grain (~0.35 m).
+         (g-fine (value-noise-gradient (vec2 (+ (* u 0.95) 13.7)
+                                             (+ (* v 2.90) 4.1))))
+         (f-fine (- 1.0 (smoothstep 0.06 0.22 footprint)))
+         (du (+ (* (swizzle g-broad :y) 0.085 0.30 f-broad)
+                (* (swizzle g-mid :y) 0.24 0.16 f-mid)
+                (* (swizzle g-fine :y) 0.95 0.035 f-fine)))
+         (dv (+ (* (swizzle g-broad :z) 0.27 0.30 f-broad)
+                (* (swizzle g-mid :z) 0.82 0.16 f-mid)
+                (* (swizzle g-fine :z) 2.90 0.035 f-fine))))
+    (+ (* wx du) (* wz dv))))
 
 ;;; A material boundary cut from a coarse field: a narrow blend, never
 ;;; narrower than a pixel of the field's own rate of change.
@@ -1196,6 +1222,7 @@
          ;; the higher it is and in wind-sheltered leeward cirques and
          ;; snow valleys; a trail is ridden through it.
          (lee (+ (* -0.80 (swizzle normal :z)) (* 0.60 (swizzle normal :x))))
+         (frozen-shore (smoothstep 0.56 0.68 rise))
          (snow (* (smoothstep 0.29 0.68 (+ (snow-reach rise (swizzle floor :y)
                                                        lee (swizzle land :z)
                                                        (* 0.10 (- drift 0.5)))
@@ -1208,29 +1235,33 @@
          (drift-phase (+ (* 1.35 (swizzle world :x))
                          (* 0.48 (swizzle world :z)) (* 6.0 patch)
                          (* 0.8 fleck)))
+         (snow-tone (+ 0.48 (* 0.26 patch) (* 0.14 (sin drift-phase))
+                       (* 0.12 (- fleck 0.5))))
          (snowy (mix trodden
-                     (mix (vec3 0.87 0.92 0.97) (vec3 0.99 0.99 0.98)
-                          (+ 0.54 (* 0.20 patch) (* 0.12 (sin drift-phase))))
+                     (mix (vec3 0.90 0.95 1.0) (vec3 0.995 0.998 1.0)
+                          (clamp snow-tone 0.0 1.0))
                      snow))
 
-         ;; The swash darkens whatever the water laps.
+         ;; The swash darkens whatever liquid water laps; frozen alpine tarns
+         ;; meet clean dry snowbanks instead of muddy wet gravel.
          (swash (* (- 1.0 (smoothstep 0.3 2.0 (+ shore (* 1.5 edge))))
-                   (max sunk (smoothstep 0.42 0.62 up))))
+                   (max sunk (smoothstep 0.42 0.62 up))
+                   (- 1.0 frozen-shore)))
          (stony (max cliff (* barren (- 1.0 snow))))
          ;; Sand and snow lie smooth.
          (smooth (max snow (* (band strand 0.5) (- 1.0 cliff)))))
     (make-ground-surface
-     :powder (vec2 snow (* snow 0.035 (cos drift-phase)))
+     :powder (vec2 snow (* snow 0.045 (cos drift-phase)))
      :albedo (* (mix snowy (* snowy (vec3 0.62 0.60 0.56)) swash)
-                (mix mottle 1.0 (max (* 0.65 smooth) (* 0.97 snow))))
+                (mix mottle 1.0 (max (* 0.65 smooth) (* 0.98 snow))))
      :relief (+ 0.10 (* 0.04 fell) (* 0.14 stony) (* -0.06 smooth)
                 (* 0.10 alvar-share) (* -0.06 bog-pool)
                 (* -0.06 bare-rock) (* -0.04 fen-cover))
      ;; Turf, litter, and soil scatter all they do not take in; rock is
-     ;; harder, the ice-polished whalebacks harder still; snow has its
-     ;; sheen, and whatever water lies on wets it smooth.
+     ;; harder, the ice-polished whalebacks harder still; fresh snow lies
+     ;; powdery, and whatever water lies on wets it smooth.
      :rough (mix (mix (mix (mix (mix (mix 0.95 0.72 stony) 0.45 bare-rock)
-                                0.55 snow)
+                                0.60 snow)
                            0.22 (* swash (- 1.0 sunk)))
                       0.08 bog-pool)
                  0.12 (* runnel fen-cover)))))
@@ -2269,7 +2300,7 @@
          (powder (* (- 1.0 road-flat) (ground-surface-powder surface)))
          (packed (* (swizzle powder :x) (smoothstep 0.0 0.13 (- 0.0 press))))
          (albedo (* (srgb path-ground)
-                    (mix (vec3 1.0 1.0 1.0) (vec3 0.63 0.76 0.91) packed)
+                    (mix (vec3 1.0 1.0 1.0) (vec3 0.55 0.74 0.94) packed)
                     ;; Wet ground darkens, rock and bare earth most: the
                     ;; water fills their pores and leaves no air to scatter.
                     (- 1.0 (* wet (mix (mix 0.25 0.55
@@ -2296,16 +2327,22 @@
                            (- 1.0 (* 0.6 road-flat)))
                         asphalt-slope paved-tread)
                    (- 1.0 puddle)))
-         ;; The full-resolution slopes of the trench and its rolled lips,
-         ;; even where both fit between two terrain vertices.
-         (near-slope (+ (* (swizzle powder :x) (swizzle (drift-profile xz) :yz))
-                       (* (vec2 1.0 0.36) (swizzle powder :y)
-                           (- 1.0 (smoothstep 0.15 1.0 footprint)) (- 1.0 packed))
-                       (* (swizzle powder :x) 12.5
-                        (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
-                                 (powder-height (- xz (vec2 0.04 0.0))))
-                              (- (powder-height (+ xz (vec2 0.0 0.04)))
-                                 (powder-height (- xz (vec2 0.0 0.04))))))))
+         ;; The full-resolution slopes of wind-carved sastrugi drifts, snow
+         ;; flutes, and pressed ski/belt trenches.
+         (snow-share (swizzle powder :x))
+         (sastrugi (only-where (> snow-share 0.01) (vec2 0.0 0.0)
+                     (* (sastrugi-slope xz footprint) snow-share
+                        (- 1.0 (* 0.75 packed)))))
+         (near-slope (+ (* snow-share (swizzle (drift-profile xz) :yz))
+                        sastrugi
+                        (* (vec2 1.0 0.36) (swizzle powder :y)
+                           (- 1.0 (smoothstep 0.15 1.0 footprint))
+                           (- 1.0 packed))
+                        (* snow-share 12.5
+                           (vec2 (- (powder-height (+ xz (vec2 0.04 0.0)))
+                                    (powder-height (- xz (vec2 0.04 0.0))))
+                                 (- (powder-height (+ xz (vec2 0.0 0.04)))
+                                    (powder-height (- xz (vec2 0.0 0.04))))))))
          (tilt (vec3 (+ (swizzle slope :x) (swizzle near-slope :x)) 0.0
                      (+ (swizzle slope :y) (swizzle near-slope :y))))
          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
@@ -2313,11 +2350,15 @@
          ;; The relief brightens and dims the sun the ground itself
          ;; catches, more where that is little, and never puts it out:
          ;; one tilted normal stands for a pixel's worth of facets.
+         ;; Snow scatters light softly beneath its surface (wrapped diffuse).
          (facing (clamp (/ (+ (dot normal sun) 0.08) 1.08) 0.0 1.0))
-         (lambert (* facing
-                     (+ 1.0 (clamp (/ (- (dot shaded sun) (dot normal sun))
-                                      (+ facing 0.35))
-                                   -0.6 0.8))))
+         (lambert-base (* facing
+                          (+ 1.0 (clamp (/ (- (dot shaded sun) (dot normal sun))
+                                           (+ facing 0.35))
+                                        -0.6 0.8))))
+         (snow-wrap (clamp (/ (+ (dot shaded sun) 0.26) 1.26) 0.0 1.0))
+         (lambert (mix lambert-base (max lambert-base (* 0.92 snow-wrap))
+                       (* 0.65 snow-share)))
          ;; The sun's shadow: a slope-scaled bias against acne on raking
          ;; ground, faded out into the haze.
          (taps (sun-lit shadow-map shadow-compare world
@@ -2333,28 +2374,26 @@
          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
          (fill (shade-fill direct overcast))
          (to-eye (/ (- eye world) (max distance 0.0001)))
-         (crystals (* (swizzle powder :x) (- 1.0 packed) direct
+         (crystals (* snow-share (- 1.0 packed) direct
                       (- 1.0 overcast)
                       (smoothstep 0.0 0.3 (dot shaded sun))))
-         (flash (only-where (and (> crystals 0.01) (< footprint 0.30)) 0.0
+         (flash (only-where (and (> crystals 0.01) (< footprint 0.07)) 0.0
                   (let* ((halfway (normalize (+ sun to-eye))))
-                    (* crystals (+ 1.0 (* 7.0 (- 1.0 (smoothstep 0.1 0.7
+                    (* crystals (+ 0.75 (* 1.4 (- 1.0 (smoothstep 0.1 0.7
                                                          (dot shaded to-eye)))))
-                       (+ (crystal-glint (* xz 5.0) (* footprint 5.0)
+                       (+ (crystal-glint (* xz 20.0) (* footprint 20.0)
                                          shaded halfway)
-                          (crystal-glint (* xz 1.7) (* footprint 1.7)
-                                         shaded halfway))))))
+                          (* 0.75 (crystal-glint (* xz 44.0) (* footprint 44.0)
+                                                 shaded halfway)))))))
          ;; The ground's roughness: its own, a road's tread where it holds
          ;; the ground (asphalt smoother than gravel, and polished in the
-         ;; wheel paths), and smoother wet.  Where the normal changes
-         ;; within a pixel the facets it stands for spread the highlight,
-         ;; so the roughness widens to cover them and nothing sparkles.
+         ;; wheel paths), smoother where skis/tracks compact snow, and wet.
          (road-rough (mix 0.88 (asphalt-rough asphalt-here)
                           (road-point-paved road)))
          ;; Rain films what does not soak it up -- the tread, rock -- and
          ;; leaves turf and litter as rough as ever.
-         (dry-rough (mix (ground-surface-rough surface) road-rough
-                         tread-share))
+         (dry-rough (mix (mix (ground-surface-rough surface) 0.28 packed)
+                         road-rough tread-share))
          (rough (mix (* dry-rough
                         (- 1.0 (* 0.35 wet (smoothstep 0.95 0.70 dry-rough))))
                      0.03 puddle))
@@ -2366,11 +2405,25 @@
          (mirror-rise (- (* 2.0 (max (dot shaded to-eye) 0.0)
                             (swizzle shaded :y))
                          (swizzle to-eye :y)))
+         ;; Alpine snow scatters crisp pale ice-blue sky light into shaded
+         ;; sastrugi hollows and tracks, and catches a soft forward-scattered
+         ;; powder sheen along backlit grazing crests.
+         (snow-shadow (* snow-share (- 1.0 (* 0.72 lambert direct))
+                         (- 1.0 (* 0.75 overcast))))
+         (snow-sky-tint (mix (vec3 1.0 1.0 1.0) (vec3 0.93 0.98 1.06)
+                             snow-shadow))
+         (snow-bounce (+ 1.0 (* 0.28 snow-share)))
+         (powder-sheen (* snow-share (- 1.0 packed) direct
+                          (expt (max (- 1.0 (max (dot shaded to-eye) 0.0)) 0.0)
+                                3.0)
+                          (+ 0.30 (* 0.70 (max (dot (- (vec3 0.0 0.0 0.0) to-eye)
+                                                    sun) 0.0)))
+                          0.16))
          (diffuse-light (+ (* (hemisphere-lobes (swizzle ambient :xyz) shaded
                                                 overcast)
-                              fill)
+                              fill snow-sky-tint snow-bounce)
                            (* (swizzle sun-diffuse :xyz)
-                              (* 0.9 lambert direct))
+                              (+ (* 0.9 lambert direct) powder-sheen))
                            (lamp-light lamp lamp-color world shaded)))
          (lit (swizzle (material-light albedo (vec4 0.0 rough-seen 0.0 0.0)
                                        shaded to-eye sun diffuse-light
@@ -2380,13 +2433,6 @@
                                        (swizzle fog-color :xyz)
                                        (swizzle sun-direction :w)
                                        (swizzle relief :w)
-                                       ;; Shade hides much of the sky, and
-                                       ;; rough ground's own facets hide
-                                       ;; the rest at a glancing look; and
-                                       ;; what it mirrors near the horizon
-                                       ;; is the hills and trees, not the
-                                       ;; sky, unless it is smooth enough
-                                       ;; to be water.
                                        (* (mix 0.4 1.0 direct)
                                           (- 1.0 (* 0.75 (smoothstep
                                                           0.35 0.9 rough)))
@@ -2395,7 +2441,8 @@
                                                (smoothstep 0.15 0.5
                                                            rough))) 1.0 0.0)
                        :xyz)))
-    (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz) flash 5.0))
+    (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz)
+                                             (vec3 0.90 0.96 1.05) flash 2.2))
                                    world eye fog-color
                                    (swizzle sky-sun :xyz) relief)
                             1.0))
@@ -5842,6 +5889,12 @@
          ;; way across every pool whichever way the river ran.
          (running (smoothstep 0.02 0.12 speed))
          (lively (smoothstep 0.15 0.9 speed))
+         ;; Still alpine lakes above the freezing altitude lock into solid
+         ;; glacial lake ice (blankis) with pressure cracks and wind-blown
+         ;; snow patches.
+         (water-rise (/ (- (swizzle world :y) (swizzle relief :x))
+                        (max 1.0 (swizzle relief :y))))
+         (frozen (* (smoothstep 0.58 0.70 water-rise) (- 1.0 running)))
          ;; The pace the eye is shown.  A pool creeps at centimetres a
          ;; second, which the ripples' short cycle would show as nothing at
          ;; all, so the pattern never drifts slower than a stroll; faster
@@ -5947,7 +6000,7 @@
                             (- 1.0 running)
                             (- 1.0 (smoothstep 1.5 8.0 depth))
                             (sin (* 1.208305 (+ time (swizzle coast :x)))))))
-         (slope (+ (swizzle ripples :xy) coast-slope))
+         (slope (* (+ (swizzle ripples :xy) coast-slope) (- 1.0 frozen)))
          (n (normalize (vec3 (* -1.0 (+ (swizzle slope :x) (swizzle tilt :x)
                                         (swizzle heave :x)))
                              1.0
@@ -6135,9 +6188,11 @@
                   (- 1.0 (smoothstep 0.4 3.0 depth))
                   (smoothstep 0.1 0.7 shore-crest) 0.75))
          (whitecap (* open-sea (smoothstep 0.6 0.95 crest) 0.35))
-         (source (clamp (max (max (max (churn descent) trail) (max fringe lap))
-                             (max surf whitecap))
-                        0.0 0.82))
+         (source (* (clamp (max (max (max (churn descent) trail)
+                                     (max fringe lap))
+                                (max surf whitecap))
+                           0.0 0.82)
+                    (- 1.0 frozen)))
          ;; Fast water draws its foam out into streaks along the current.
          (heading (heading-of downstream))
          (drawn (smoothstep 0.8 2.4 speed))
@@ -6245,6 +6300,100 @@
          (hazy (+ haze (* whole clear)
                   (* bed lit-through clear
                      (* (- 1.0 foam) (- 1.0 fresnel)))))
+         ;; Frozen alpine lake ice (blankis): translucent deep glacier-blue
+         ;; black ice with 3D parallax pressure cracks (sprickor), glassy sky
+         ;; and mountain reflections, frosted shore collars, and wind-blown
+         ;; snow-drift patches (snöfläckar).
+         (ice-hazy
+           (only-where (> frozen 0.005) hazy
+             (let* ((wx (vec2 0.86 0.51))
+                    (wz (vec2 -0.51 0.86))
+                    (u-wind (dot xz wx))
+                    (v-wind (dot xz wz))
+                    ;; Milky frozen bubble clouds & internal ice variation.
+                    (cloud-a (swizzle (wave-noise (* xz 0.055) (uint 51)) :x))
+                    (cloud-b (swizzle (wave-noise (* xz 0.19) (uint 52)) :x))
+                    (ice-cloud (clamp (+ (* 0.65 cloud-a) (* 0.35 cloud-b))
+                                      0.0 1.0))
+                    ;; Domain-warped organic pressure cracks on the top surface
+                    ;; and parallax-shifted deeper inside the ice sheet.
+                    (warp (vec2 (swizzle (wave-noise (* xz 0.06) (uint 53)) :x)
+                                (swizzle (wave-noise (* xz 0.06) (uint 54)) :x)))
+                    (c-uv (+ (* xz 0.11) (* warp 0.55)))
+                    (c-uv2 (+ (* (vec2 (+ (* 0.72 (swizzle xz :x))
+                                          (* -0.69 (swizzle xz :y)))
+                                       (+ (* 0.69 (swizzle xz :x))
+                                          (* 0.72 (swizzle xz :y))))
+                                 0.24)
+                              (* warp 0.45)))
+                    (crack-fade (- 1.0 (smoothstep 0.35 1.8 footprint)))
+                    (crack-a (- 1.0 (smoothstep 0.005 0.032
+                                                (abs (- (swizzle (wave-noise c-uv (uint 55)) :x)
+                                                        0.5)))))
+                    (crack-b (- 1.0 (smoothstep 0.004 0.025
+                                                (abs (- (swizzle (wave-noise c-uv2 (uint 56)) :x)
+                                                        0.5)))))
+                    (surface-crack (* (max crack-a (* 0.75 crack-b)) crack-fade))
+                    (inner-shift (* (swizzle view :xz)
+                                    (/ 0.22 (max (abs (swizzle view :y)) 0.25))))
+                    (inner-uv (+ (* (- xz inner-shift) 0.11) (* warp 0.55)))
+                    (inner-crack (* (- 1.0 (smoothstep 0.008 0.052
+                                                       (abs (- (swizzle (wave-noise inner-uv (uint 55)) :x)
+                                                               0.5))))
+                                    crack-fade 0.75))
+                    ;; Wind-blown snow patches stretched downwind across the ice
+                    ;; plus a tight frosted snow-ice collar around the shoreline,
+                    ;; leaving most of the lake gleaming fractured blue ice.
+                    (patch-noise (+ (* 0.65 (swizzle (wave-noise
+                                                      (vec2 (* u-wind 0.024)
+                                                            (* v-wind 0.072))
+                                                      (uint 57)) :x))
+                                    (* 0.35 (swizzle (wave-noise
+                                                      (vec2 (* u-wind 0.085)
+                                                            (* v-wind 0.21))
+                                                      (uint 58)) :x))))
+                    (drift-patch (smoothstep 0.62 0.80 patch-noise))
+                    (shore-collar (- 1.0 (smoothstep 0.04 0.55 depth)))
+                    (snow-on-ice (clamp (max drift-patch
+                                             (* shore-collar (+ 0.55 (* 0.45 patch-noise))))
+                                        0.0 1.0))
+                    ;; Subtle normal ripple on snow patches vs glassy flat ice.
+                    (ice-ripple (* (swizzle (wave-noise (* xz 0.45) (uint 59)) :yz)
+                                   (mix 0.010 0.075 snow-on-ice)
+                                   (- 1.0 (smoothstep 0.3 1.4 footprint))))
+                    (ice-n (normalize (vec3 (* -1.0 (swizzle ice-ripple :x))
+                                            1.0
+                                            (* -1.0 (swizzle ice-ripple :y)))))
+                    (ice-fresnel (+ 0.08 (* 0.88 (expt (max (- 1.0 (max (dot ice-n view) 0.0)) 0.0) 4.0))))
+                    ;; Deep translucent sapphire/glacier-teal black ice body.
+                    (deep-share (smoothstep 0.15 1.8 depth))
+                    (shallow-ice (srgb (vec3 0.46 0.68 0.82)))
+                    (deep-ice (mix (srgb (vec3 0.06 0.17 0.28))
+                                   (srgb (vec3 0.19 0.40 0.56))
+                                   ice-cloud))
+                    (ice-base (mix shallow-ice deep-ice deep-share))
+                    (ice-cracked (mix ice-base (srgb (vec3 0.44 0.74 0.90)) inner-crack))
+                    (ice-albedo (mix ice-cracked (srgb (vec3 0.92 0.96 1.0)) surface-crack))
+                    (ice-sun-dot (max (dot ice-n light) 0.0))
+                    (ice-fill (+ (* sky-light (vec3 0.94 0.99 1.08))
+                                 (* sun-light (+ 0.16 (* 0.84 ice-sun-dot)))))
+                    ;; Crisp glassy specular on bare ice, subdued on snow patches.
+                    (ice-half (normalize (+ light view)))
+                    (ice-spec (* sun-light (+ 0.06 (* 0.94 ice-fresnel))
+                                 (* 2.4 (expt (max (dot ice-n ice-half) 0.0) 110.0))
+                                 (- 1.0 (* 0.90 snow-on-ice))
+                                 (smoothstep 0.0 0.08 (swizzle light :y))))
+                    (bare-ice-lit (+ (* ice-albedo ice-fill (- 1.0 (* 0.60 ice-fresnel)))
+                                     (* reflection (* 0.84 ice-fresnel))
+                                     ice-spec))
+                    ;; Wind-packed snow patches on the ice match the alpine snowfield.
+                    (snow-wrap (clamp (/ (+ (dot ice-n light) 0.26) 1.26) 0.0 1.0))
+                    (snow-patch-lit (* (srgb (vec3 0.94 0.97 1.0))
+                                       (+ (* sky-light (vec3 0.93 0.98 1.06) 1.22)
+                                          (* sun-light (* 0.92 snow-wrap)))))
+                    (ice-surface (mix bare-ice-lit snow-patch-lit snow-on-ice)))
+               (+ haze (* ice-surface clear)))))
+         (top-hazy (mix hazy ice-hazy frozen))
          ;; From below, Snell's window admits the sky. Beyond its critical
          ;; angle the surface reflects the dark water, not the sky's
          ;; upside-down horizon. Nearby opaque objects retain the guarded
@@ -6280,10 +6429,11 @@
                     (inside (mix water-body returned trust)))
                (* (mix inside transmitted window)
                   (- 1.0 (* 0.65 foam))))))
-         (hazy (if front hazy underside))
+         (hazy (if front top-hazy underside))
          ;; The waterline: the surface thins to nothing over the last few
-         ;; centimetres.
-         (alpha (smoothstep 0.004 0.05 depth))
+         ;; centimetres (and frozen ice holds crisp right up to the snowbank).
+         (alpha (max (smoothstep 0.004 0.05 depth)
+                     (* frozen (smoothstep 0.001 0.02 depth))))
          ;; The pattern last frame lay upstream by the current's drift.
          (interval (clamp (- time (swizzle relief :z)) 0.0 0.1))
          (before (+ (- world (* (vec3 (swizzle current :x) 0.0

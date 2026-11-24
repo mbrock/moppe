@@ -110,14 +110,17 @@ namespace moppe::game {
           -1.6f * std::abs (radians_value (angle - carve)) * scale_factor[one];
         for (int step_i = 1; step_i <= 10; ++step_i) {
           const plan_position_t q = here + along (ray, step_i * 18.0f * u::m);
-          if (ground.water_depth (q) > terrain::ElevationChange {}) {
+          const bool frozen = ground.frozen_water (q);
+          if (ground.water_depth (q) > terrain::ElevationChange {} && !frozen) {
             score -= 10.0f * scale_factor[one];
             break;
           }
-          const meters_t next_h (ground.elevation (q).delta_from_zero ());
+          const terrain::SurfaceElevation surface_q =
+            frozen ? ground.still_water (q) : ground.elevation (q);
+          const meters_t next_h (surface_q.delta_from_zero ());
           const meters_t rise = abs (next_h - prev_h);
-          if (rise > 6.8f * u::m) {
-            score -= 6.0f * scale_factor[one];
+          if (rise > 5.0f * u::m) {
+            score -= 8.0f * scale_factor[one];
             break;
           }
           const proportion_t snow = ground.snow_cover (q);

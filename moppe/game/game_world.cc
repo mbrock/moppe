@@ -101,8 +101,41 @@ namespace moppe {
       m_snow_revision = 0;
       m_recipe = m_generated_world->recipe ();
       // Before the session places anything: its bodies stand on the
-      // roads.
+      // roads and on frozen high-elevation lake ice.
       mov::attach_roads (surface (), &m_generated_world->road_surface ());
+      {
+        const GeneratedWorld* gen = m_generated_world.get ();
+        const map::SurfaceGeometry* surf = &surface ();
+        const terrain::SurfaceElevation freeze_y =
+          terrain::surface_elevation_point (world ().water_level +
+                                            0.62f * m_land_relief);
+        const terrain::SurfaceElevation no_ice =
+          terrain::surface_elevation_point (-1e30f * u::m);
+        mov::attach_ice (
+          *surf,
+          [gen, surf, freeze_y, no_ice] (
+            plan_position_t pt) -> terrain::SurfaceElevation {
+            const position_t where = at_height (pt, 0.0f * u::m);
+            const terrain::SurfaceElevation field =
+              spatial::sample<terrain::surface_elevation> (*surf, where);
+            if (field < freeze_y - 30.0f * u::m)
+              return no_ice;
+            const terrain::WaterView water = gen->water_view ();
+            if (!water)
+              return no_ice;
+            const terrain::SurfaceElevation level =
+              water.sample<terrain::surface_elevation> (where);
+            if (level <= field || level < freeze_y)
+              return no_ice;
+            const speed_t flow_speed =
+              length (plan (water.sample<terrain::water_velocity> (where)
+                              .numerical_value_in (u::m / u::s))) *
+              u::m / u::s;
+            if (flow_speed >= 0.15f * u::m / u::s)
+              return no_ice;
+            return level;
+          });
+      }
       m_session = std::make_unique<GameSession> (world (), surface ());
       retired_session.reset ();
       retired_world.reset ();

@@ -23,9 +23,30 @@ namespace moppe::game {
       world, surface (), generated.water_view (), at_height (at, 0.0f * u::m)));
   }
 
+  bool WorldGround::frozen_water (const plan_position_t& at) const {
+    const terrain::SurfaceElevation ground = elevation (at);
+    const terrain::SurfaceElevation level = still_water (at);
+    if (level <= ground)
+      return false;
+    const terrain::SurfaceElevation freeze_y =
+      terrain::surface_elevation_point (
+        world.water_level + 0.62f * std::max (1.0f * u::m, land_relief));
+    if (level < freeze_y)
+      return false;
+    const terrain::WaterView water = generated.water_view ();
+    if (!water)
+      return true;
+    const speed_t flow_speed =
+      length (plan (
+        water.sample<terrain::water_velocity> (at_height (at, 0.0f * u::m))
+          .numerical_value_in (u::m / u::s))) *
+      u::m / u::s;
+    return flow_speed < 0.15f * u::m / u::s;
+  }
+
   proportion_t WorldGround::snow_cover (const plan_position_t& at) const {
     if (water_depth (at) > terrain::ElevationChange {})
-      return {};
+      return frozen_water (at) ? 0.90f * proportion[one] : proportion_t {};
     constexpr proportion_t part = 1.0f * proportion[one];
     const position_t where = at_height (at, 0.0f * u::m);
     const meters_t height =

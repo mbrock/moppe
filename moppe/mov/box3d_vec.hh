@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 
 #include <box3d/box3d.h>
 #include <box3d/math_functions.h>
@@ -314,6 +315,17 @@ namespace moppe::mov {
   // The roads attached to `surface`, or null.
   const terrain::RoadSurface*
   attached_roads (const map::SurfaceGeometry& surface);
+
+  // Solid frozen alpine lake ice: still water standing at or above the
+  // freezing elevation forms a flat load-bearing ice sheet for every body's
+  // footing. An empty callback detaches.
+  using IceHeightFn =
+    std::function<terrain::SurfaceElevation (plan_position_t)>;
+  void attach_ice (const map::SurfaceGeometry& surface, IceHeightFn ice_height);
+
+  // True when `at` stands on a solid frozen alpine lake attached to `surface`.
+  bool on_frozen_ice (const map::SurfaceGeometry& surface,
+                      const position_t& at);
 
   // The ground's height under a point: the height field, and over a road's
   // tread the road itself.

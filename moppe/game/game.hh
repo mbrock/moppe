@@ -43,6 +43,7 @@ namespace moppe {
     class MoppeGame : public platform::Game {
     public:
       MoppeGame (const LaunchOptions& options, terrain::WorldRecipe recipe);
+      ~MoppeGame () override;
 
       // -- lifecycle ---------------------------------------------------
 

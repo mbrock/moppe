@@ -1498,8 +1498,11 @@ namespace moppe::game {
     }
     const seconds_t elapsed = dt;
     GameLogicState& logic = session.logic ();
-    // Rivers and lakes hold back what goes through them as the sea does.
+    // Rivers and lakes hold back what goes through them as the sea does,
+    // except high alpine lakes locked under solid ice.
     const auto water_at = [&] (const position_t& at) {
+      if (mov::on_frozen_ice (surface, at))
+        return world.water_level;
       return water_surface_at (
         world, surface, water, at, seconds_into_play (logic.m_total_time));
     };

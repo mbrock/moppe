@@ -11,6 +11,8 @@ namespace moppe::mov {
   namespace {
     const map::SurfaceGeometry* roads_surface = nullptr;
     const terrain::RoadSurface* the_roads = nullptr;
+    const map::SurfaceGeometry* ice_surface = nullptr;
+    IceHeightFn the_ice {};
   }
 
   void attach_roads (const map::SurfaceGeometry& surface,
@@ -24,17 +26,47 @@ namespace moppe::mov {
     return &surface == roads_surface ? the_roads : nullptr;
   }
 
+  void attach_ice (const map::SurfaceGeometry& surface,
+                   IceHeightFn ice_height) {
+    ice_surface = ice_height ? &surface : nullptr;
+    the_ice = std::move (ice_height);
+  }
+
+  bool on_frozen_ice (const map::SurfaceGeometry& surface,
+                      const position_t& at) {
+    if (&surface != ice_surface || !the_ice)
+      return false;
+    const plan_position_t pt = plan (at);
+    const terrain::SurfaceElevation field =
+      spatial::sample<terrain::surface_elevation> (surface,
+                                                   at_height (pt, 0.f * u::m));
+    return the_ice (pt) > field;
+  }
+
   float ground_height (const map::SurfaceGeometry& surface, float x, float z) {
     const plan_position_t at = moppe::plan_position (x, z);
     const terrain::SurfaceElevation field =
       spatial::sample<terrain::surface_elevation> (surface,
                                                    at_height (at, 0.f * u::m));
-    return terrain::surface_elevation_value (
-      &surface == roads_surface ? the_roads->ground (at, field) : field);
+    terrain::SurfaceElevation h =
+      &surface == roads_surface ? the_roads->ground (at, field) : field;
+    if (&surface == ice_surface && the_ice) {
+      const terrain::SurfaceElevation ice = the_ice (at);
+      if (ice > h)
+        h = ice;
+    }
+    return terrain::surface_elevation_value (h);
   }
 
   Vec3 ground_normal (const map::SurfaceGeometry& surface, float x, float z) {
     const position_t at = moppe::position (Vec3 (x, 0, z));
+    if (&surface == ice_surface && the_ice) {
+      const plan_position_t pt = plan (at);
+      const terrain::SurfaceElevation field =
+        spatial::sample<terrain::surface_elevation> (surface, at);
+      if (the_ice (pt) > field)
+        return Vec3 (0, 1, 0);
+    }
     if (&surface == roads_surface) {
       // Use the road normal only when a neighbouring tread changes height.
       constexpr meters_t step = 0.25f * u::m;
