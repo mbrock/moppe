@@ -34,7 +34,7 @@ namespace moppe::game {
 
   proportion_t golden_light_for_elevation (float sine) {
     return daylight_for_elevation (sine) *
-           (1.0f - smoothstep (0.15f, 0.65f, sine));
+           (1.0f - smoothstep (0.08f, 0.34f, sine));
   }
 
   direction_t authored_sun_direction (proportion_t sun_height) {
@@ -107,7 +107,7 @@ namespace moppe::game {
       0.58f * sky.moonlight.numerical_value_in (one) * scale_factor[one];
 
     const DisplayColor warm (1.0f, 0.60f, 0.30f);
-    const DisplayColor ivory (1.0f, 0.96f, 0.84f);
+    const DisplayColor ivory (1.0f, 0.99f, 0.96f);
     const DisplayColor silver (0.56f, 0.70f, 1.0f);
     // The stronger of the two is the key light, less the other, so the
     // light passes through nothing as the key changes hands.
@@ -131,9 +131,9 @@ namespace moppe::game {
                               1.2f * moon_strength.numerical_value_in (one) *
                                 scale_factor[one]);
 
-    // The sky's fill: the day's grey-blue, and at night a deep blue that
-    // the moon lifts a little.
-    const DisplayColor day (0.39f, 0.43f, 0.49f);
+    // The sky's fill: crisp alpine blue by day, and at night a deep blue
+    // that the moon lifts a little.
+    const DisplayColor day (0.35f, 0.44f, 0.56f);
     const DisplayColor night =
       scale_display (DisplayColor (0.18f, 0.24f, 0.40f),
                      (0.80f + 0.30f * sky.moonlight.numerical_value_in (one)) *

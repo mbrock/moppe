@@ -43,10 +43,11 @@ namespace moppe {
       ground.leaves = m_forest.litter_at (plan (at));
       const proportion_t loose = std::max (tread, bare);
       const proportion_t whole = 1.0f * part;
-      ground.dust = ((0.2f * part + 0.8f * loose) * (whole - 0.6f * wet) *
-                     (whole - 0.7f * ground.leaves))
-                      .numerical_value_in (one) *
-                    part;
+      ground.dust =
+        ((0.2f * part + 0.8f * loose) * (whole - 0.6f * wet) *
+         (whole - 0.7f * ground.leaves) * (whole - 0.92f * ground.snow))
+          .numerical_value_in (one) *
+        part;
       ground.dust_color =
         mix_display (DisplayColor (0.56f, 0.53f, 0.43f),
                      DisplayColor (0.60f, 0.52f, 0.40f),

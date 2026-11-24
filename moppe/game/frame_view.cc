@@ -75,7 +75,7 @@ namespace moppe::game {
     const float daylight = daylight_for (sun_height);
     const float golden = golden_light_for (sun_height);
     const DisplayColor warm (1.0f, 0.60f, 0.30f);
-    const DisplayColor ivory (1.0f, 0.96f, 0.84f);
+    const DisplayColor ivory (1.0f, 0.99f, 0.96f);
     const DisplayColor sun_color =
       mix_display (ivory, warm, golden * blend_weight[one]);
 

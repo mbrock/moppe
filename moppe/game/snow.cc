@@ -70,8 +70,8 @@ namespace moppe::game {
              0.075f * u::m);
     } else if (sled) {
       for (const int sign : { -1, 1 })
-        stamp (sign * 0.48f * u::m, 0.90f * u::m, 0.07f * u::m, 0.065f * u::m);
-      stamp (meters_t {}, -1.03f * u::m, 0.24f * u::m, 0.145f * u::m, true);
+        stamp (sign * 0.48f * u::m, 0.90f * u::m, 0.085f * u::m, 0.095f * u::m);
+      stamp (meters_t {}, -1.03f * u::m, 0.25f * u::m, 0.165f * u::m, true);
     } else if (*driven == Machine::caddy || *driven == Machine::jeep ||
                *driven == Machine::tractor) {
       const meters_t track =
@@ -98,33 +98,34 @@ namespace moppe::game {
         (int (meters_value (state.m_snow_distance) * 8.0f) & 1) ? -1.0f : 1.0f;
       Dust::Style mist;
       mist.powder = true;
-      mist.size = (0.14f + (sled ? 0.62f : 0.28f) * vigour) * u::m;
-      mist.lifetime = (0.65f + 0.70f * vigour) * u::s;
-      mist.spread = (0.45f + vigour) * one;
+      mist.size = (0.09f + (sled ? 0.30f : 0.22f) * vigour) * u::m;
+      mist.lifetime = (0.45f + 0.50f * vigour) * u::s;
+      mist.spread = (0.55f + 0.85f * vigour) * one;
       mist.downward_acceleration =
-        2.5f * isq::acceleration[u::m / pow<2> (u::s)];
+        3.2f * isq::acceleration[u::m / pow<2> (u::s)];
       const velocity_t plume =
-        velocity ((direction_value (left) * side * (sled ? 3.4f : 1.7f) -
-                   direction_value (heading) * (sled ? 3.2f : 1.0f)) *
+        velocity ((direction_value (left) * side * (sled ? 4.2f : 1.7f) -
+                   direction_value (heading) * (sled ? 2.6f : 1.0f)) *
                     vigour +
-                  Vec3 (0, 0.75f + (sled ? 4.4f : 2.8f) * vigour, 0));
-      // The turbulent air behind the tunnel carries the fine powder
-      // along. The heavy chunks leave the belt and quickly fall clear.
+                  Vec3 (0, 0.65f + (sled ? 3.2f : 2.5f) * vigour, 0));
+      // The turbulent air behind the tunnel fans fine powder outward, leaving
+      // the twin ski ruts and chevron belt track sharp behind the sled.
       const velocity_t wake =
-        sled ? session.fleet ().snowmobile.velocity () * 0.45f : velocity_t {};
+        sled ? session.fleet ().snowmobile.velocity () * 0.35f : velocity_t {};
       session.dust ().emit (source,
                             plume + wake,
                             sled ? 3 : 1,
-                            DisplayColor (0.90f, 0.94f, 0.99f),
+                            DisplayColor (1.0f, 1.0f, 1.0f),
                             mist);
       if (sled) {
-        mist.size = 0.06f * u::m;
-        mist.lifetime = 0.8f * u::s;
+        mist.size = 0.048f * u::m;
+        mist.lifetime = 0.75f * u::s;
         mist.flake = true;
+        mist.spread = (0.85f + 1.35f * vigour) * one;
         mist.downward_acceleration =
           9.0f * isq::acceleration[u::m / pow<2> (u::s)];
         session.dust ().emit (
-          source, plume * 1.35f, 2, DisplayColor (0.94f, 0.97f, 1.0f), mist);
+          source, plume * 1.55f, 6, DisplayColor (1.0f, 1.0f, 1.0f), mist);
       }
     }
     state.m_snow_distance += distance;
@@ -169,15 +170,15 @@ namespace moppe::game {
         const auto rib =
           belt_phase < meters_t {}
             ? 1.0f
-            : 0.76f +
-                0.24f * std::cos (meters_value (belt_phase + along * spacing) *
+            : 0.68f +
+                0.32f * std::cos (meters_value (belt_phase + along * spacing) *
                                     31.4f +
                                   d * 0.55f);
         const auto hollow =
-          rib * (1.0f - smoothstep (0.6f * width, width + 0.5f, d));
+          rib * (1.0f - smoothstep (0.55f * width, width + 0.45f, d));
         const auto lip =
-          0.45f *
-          (1.0f - smoothstep (0.0f, 1.25f, std::abs (d - width - 0.45f)));
+          0.68f *
+          (1.0f - smoothstep (0.0f, 1.15f, std::abs (d - width - 0.50f)));
         const int displacement = std::lround (
           (sink / depth).numerical_value_in (one) * 127 * (lip - hollow));
         if (!displacement)

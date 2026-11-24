@@ -39,9 +39,9 @@ namespace moppe::game {
             travel - along (unit_direction (Vec3 (0, 1, 0)), fall));
         const meters_t radius = e.style.size *
                                 (0.7f + 0.5f * hash_lane (n, 3)) *
-                                (chip ? 1.0f : 0.55f + phase * 1.45f);
+                                (chip ? 1.0f : 0.45f + phase * 1.15f);
         const proportion_t alpha =
-          (chip ? 0.88f : 0.43f) * (1.0f - phase) * proportion[one];
+          (chip ? 0.96f : 0.38f) * (1.0f - phase) * proportion[one];
         const int sides = chip ? 3 : 8;
         const radians_t angle =
           (hash_lane (n, 4) * 6.28f + phase * (chip ? 3.6f : 0.45f)) * u::rad;
@@ -50,15 +50,15 @@ namespace moppe::game {
           const direction_t ray =
             env.cam_right * libm::cos (a) + env.cam_up * libm::sin (a);
           dl.normal (unit_direction (
-            normalized (direction_value (ray) -
-                        0.35f * direction_value (env.cam_forward))));
+            normalized (Vec3 (0, 0.92f, 0) + 0.28f * direction_value (ray) +
+                        0.30f * direction_value (env.sun_dir))));
           dl.color (e.color, chip ? alpha : proportion_t {});
           dl.vertex (centre +
                      quantity_cast<isq::position_vector> (along (ray, radius)));
         };
         for (int j = 0; j < sides; ++j) {
           dl.normal (unit_direction (normalized (
-            Vec3 (0, 0.9f, 0) - direction_value (env.cam_forward))));
+            Vec3 (0, 0.95f, 0) + 0.35f * direction_value (env.sun_dir))));
           dl.color (e.color, alpha);
           dl.vertex (centre);
           rim (j);
