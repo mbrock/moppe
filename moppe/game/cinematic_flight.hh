@@ -42,6 +42,10 @@ namespace moppe::game {
     position_t subject;
     speed_t cruise_speed = 90.0f * u::m / u::s;
     degrees_t field_of_view = 58.0f * u::deg;
+    // True on intimate FPV beats (river runs, sunlit trail corridors, water
+    // skims, close waterfall/sanctuary sweeps) that navigate between trees
+    // near ground/water level instead of lifting high above the canopy.
+    bool low_altitude = false;
   };
 
   // How a flight carries itself over the ground: the opening's is a fast,
@@ -65,15 +69,16 @@ namespace moppe::game {
     // How much of its aim is the waypoints' subject and not the route.
     proportion_t subject_weight = 0.50f * one;
     // The steepest it banks into a turn.
-    radians_t bank = 0.17f * u::rad;
+    radians_t bank = 0.24f * u::rad;
     // Arc-length smoothing scale for the subject look target along the ribbon.
-    meters_t subject_smoothing = 110.0f * u::m;
+    meters_t subject_smoothing = 70.0f * u::m;
   };
 
   struct CinematicFlightPlan {
     std::vector<CinematicLandmark> landmarks;
     std::vector<CinematicFlightWaypoint> waypoints;
     CinematicFlightStyle style;
+    seconds_t target_duration = 0.0f * u::s;
 
     bool empty () const noexcept {
       return waypoints.size () < 2;
@@ -208,6 +213,7 @@ namespace moppe::game {
 
     std::vector<CinematicFlightWaypoint> m_waypoints;
     CinematicFlightStyle m_style;
+    seconds_t m_target_duration = 0.0f * u::s;
     std::vector<ArcSample> m_arc_samples;
     position_t m_position {};
     velocity_t m_velocity {};

@@ -354,20 +354,24 @@ namespace moppe::game {
                        const position_t& subject,
                        meters_t clearance,
                        speed_t speed,
-                       degrees_t field_of_view) {
-      // This is an eagle flight, not a sightseeing helicopter. The authored
-      // values describe the shape of each beat; the global scale keeps every
-      // beat carrying decisive forward energy.
+                       degrees_t field_of_view,
+                       bool low_altitude = false) {
+      // High-altitude beats carry eagle-flight speed scaling; intimate FPV
+      // passes use direct physical speeds so waterfalls, sanctuaries, and
+      // sunlit forest corridors can be savoured up close.
       constexpr scale_factor_t flight_speed_scale = 1.55f * scale_factor[one];
+      const speed_t scaled =
+        low_altitude ? speed
+                     : speed * flight_speed_scale.numerical_value_in (one);
       flight_set_height (
         position,
         std::max (flight_height_of (position),
                   flight_ground (surface, moppe::plan (position)) + clearance));
-      plan.waypoints.push_back (
-        { .position = position,
-          .subject = subject,
-          .cruise_speed = speed * flight_speed_scale.numerical_value_in (one),
-          .field_of_view = field_of_view });
+      plan.waypoints.push_back ({ .position = position,
+                                  .subject = subject,
+                                  .cruise_speed = scaled,
+                                  .field_of_view = field_of_view,
+                                  .low_altitude = low_altitude });
     }
 
     void add_transit (CinematicFlightPlan& plan,
@@ -385,52 +389,56 @@ namespace moppe::game {
       const int steps =
         std::max (1,
                   static_cast<int> (
-                    (horizontal / (480.0f * u::m)).numerical_value_in (one)));
+                    (horizontal / (520.0f * u::m)).numerical_value_in (one)));
       for (int i = 1; i < steps; ++i) {
         const proportion_t t = static_cast<float> (i) / steps * one;
         position_t point = start + flight_shift (displacement_t (delta * t));
-        // Cruise high and level over the landscape between beats so transits
-        // stay cinematic and clear of valleys and forest crowns.
+        // Soar swiftly and cleanly over the landscape between highlights.
         const meters_t linear_y = flight_height_of (point);
         const meters_t ground_cruise =
-          flight_ground (surface, moppe::plan (point)) + 135.0f * u::m;
+          flight_ground (surface, moppe::plan (point)) + 125.0f * u::m;
         flight_set_height (point, std::max (linear_y, ground_cruise));
         add_waypoint (plan,
                       surface,
                       point,
                       subject,
-                      105.0f * u::m,
-                      225.0f * u::m / u::s,
-                      58.0f * u::deg);
+                      95.0f * u::m,
+                      245.0f * u::m / u::s,
+                      62.0f * u::deg,
+                      false);
       }
     }
 
-    // Subdivide coarse waypoint spans and lift every gate cleanly over the
-    // forest canopy within `corridor_radius`, with broad Gaussian anticipation
-    // and upper-preserving diffusion so climbs over woods are C2-smooth.
+    // Subdivide coarse waypoint spans, weave low-altitude FPV corridors
+    // laterally around trunks/crowns through open gaps (rivers, trails, light
+    // birch groves), and lift smoothly over foliage wherever no clean gap
+    // exists or during high-speed transits.
     void
-    lift_waypoints_over_canopy (std::vector<CinematicFlightWaypoint>& waypoints,
+    navigate_forest_and_canopy (std::vector<CinematicFlightWaypoint>& waypoints,
                                 const map::SurfaceGeometry& surface,
                                 std::span<const RiverFlightTree> trees,
-                                meters_t corridor_radius,
-                                meters_t canopy_margin,
-                                meters_t ground_clearance,
-                                meters_t anticipation) {
+                                meters_t high_corridor,
+                                meters_t high_margin,
+                                meters_t high_ground_clearance,
+                                meters_t high_anticipation) {
       if (waypoints.size () < 2 || trees.empty ())
         return;
 
-      constexpr meters_t max_step = 26.0f * u::m;
+      constexpr meters_t low_step = 8.0f * u::m;
+      constexpr meters_t high_step = 28.0f * u::m;
       std::vector<CinematicFlightWaypoint> dense;
-      dense.reserve (waypoints.size () * 4);
+      dense.reserve (waypoints.size () * 6);
       dense.push_back (waypoints.front ());
       for (std::size_t i = 0; i + 1 < waypoints.size (); ++i) {
         const CinematicFlightWaypoint& a = waypoints[i];
         const CinematicFlightWaypoint& b = waypoints[i + 1];
+        const bool is_low = a.low_altitude && b.low_altitude;
+        const meters_t step_limit = is_low ? low_step : high_step;
         const meters_t span = flight_length (b.position - a.position);
         const int pieces =
           std::max (1,
-                    static_cast<int> (
-                      std::ceil ((span / max_step).numerical_value_in (one))));
+                    static_cast<int> (std::ceil (
+                      (span / step_limit).numerical_value_in (one))));
         for (int k = 1; k <= pieces; ++k) {
           const blend_weight_t t = static_cast<float> (k) /
                                    static_cast<float> (pieces) *
@@ -442,13 +450,14 @@ namespace moppe::game {
               position_value (a.subject), position_value (b.subject), t)),
             .cruise_speed = flight_ease (a.cruise_speed, b.cruise_speed, t),
             .field_of_view = flight_ease (a.field_of_view, b.field_of_view, t),
+            .low_altitude = is_low,
           });
         }
       }
 
       const meters_t period_x = surface.domain ().period_x ();
       const meters_t period_z = surface.domain ().period_z ();
-      const meters_t tile_size = std::max (32.0f * u::m, corridor_radius);
+      const meters_t tile_size = std::max (32.0f * u::m, high_corridor);
       const int tiles_x = std::max (
         1, static_cast<int> ((period_x / tile_size).numerical_value_in (one)));
       const int tiles_z = std::max (
@@ -466,8 +475,127 @@ namespace moppe::game {
                            lane (z_of (at), period_z, tiles_z) };
       };
 
-      std::vector<std::vector<std::uint32_t>> standing (
-        static_cast<std::size_t> (tiles_x) * tiles_z);
+      const auto build_grid = [&] () {
+        std::vector<std::vector<std::uint32_t>> standing (
+          static_cast<std::size_t> (tiles_x) * tiles_z);
+        for (std::size_t i = 0; i < dense.size (); ++i) {
+          const auto [tx, tz] = tile_of (moppe::plan (dense[i].position));
+          standing[static_cast<std::size_t> (tz) * tiles_x + tx].push_back (
+            static_cast<std::uint32_t> (i));
+        }
+        return standing;
+      };
+
+      // Pass 1: Smooth lateral FPV gap-steering on low-altitude beats. Nearby
+      // trunks and crowns nudge the drone horizontally into open channels
+      // (rivers, trail clearings, sparse birch groves) instead of popping high
+      // above the woods.
+      std::vector<plan_position_t> original_plan (dense.size ());
+      for (std::size_t i = 0; i < dense.size (); ++i)
+        original_plan[i] = moppe::plan (dense[i].position);
+
+      constexpr meters_t steer_horizon = 16.5f * u::m;
+      const square_meters_t steer_horizon_sq = steer_horizon * steer_horizon;
+      constexpr meters_t max_total_shift = 11.0f * u::m;
+      for (int iter = 0; iter < 4; ++iter) {
+        const auto standing = build_grid ();
+        std::vector<Vec2> push (dense.size (), Vec2 (0.0f, 0.0f));
+        for (const RiverFlightTree& tree : trees) {
+          const auto [tx, tz] = tile_of (tree.at);
+          bool have_ground = false;
+          meters_t tree_ground = 0.0f * u::m;
+          for (int dz = -1; dz <= 1; ++dz)
+            for (int dx = -1; dx <= 1; ++dx)
+              for (const std::uint32_t idx :
+                   standing[static_cast<std::size_t> (
+                              terrain::wrap_index (tz + dz, tiles_z)) *
+                              tiles_x +
+                            terrain::wrap_index (tx + dx, tiles_x)]) {
+                if (!dense[idx].low_altitude || idx == 0 ||
+                    idx + 1 == dense.size ())
+                  continue;
+                const plan_position_t gate = moppe::plan (dense[idx].position);
+                const meters_t away_x = terrain::minimum_image_delta (
+                  x_of (gate) - x_of (tree.at), period_x);
+                const meters_t away_z = terrain::minimum_image_delta (
+                  z_of (gate) - z_of (tree.at), period_z);
+                const square_meters_t d2 = away_x * away_x + away_z * away_z;
+                if (d2 > steer_horizon_sq)
+                  continue;
+                if (!have_ground) {
+                  tree_ground = flight_ground (surface, tree.at);
+                  have_ground = true;
+                }
+                const meters_t gate_y = flight_height_of (dense[idx].position);
+                if (gate_y > tree_ground + tree.height + 5.5f * u::m)
+                  continue;
+                const meters_t crown_base = tree_ground + 0.30f * tree.height;
+                const meters_t safe_r =
+                  gate_y < crown_base
+                    ? 8.0f * u::m
+                    : std::clamp (0.36f * tree.height + 5.0f * u::m,
+                                  9.0f * u::m,
+                                  13.5f * u::m);
+                const meters_t dist =
+                  std::sqrt (d2.numerical_value_in (u::m * u::m)) * u::m;
+                if (dist >= safe_r + 2.5f * u::m)
+                  continue;
+                const meters_t overlap = safe_r + 2.5f * u::m - dist;
+                Vec2 dir =
+                  dist > 0.25f * u::m
+                    ? Vec2 (meters_value (away_x) / meters_value (dist),
+                            meters_value (away_z) / meters_value (dist))
+                    : Vec2 (1.0f, 0.0f);
+                push[idx] += dir * (0.45f * meters_value (overlap));
+              }
+        }
+        for (std::size_t i = 1; i + 1 < dense.size (); ++i) {
+          if (!dense[i].low_altitude)
+            continue;
+          const meters_t mag = std::hypot (push[i].x (), push[i].z ()) * u::m;
+          if (mag > 4.5f * u::m)
+            push[i] = push[i] * (4.5f / meters_value (mag));
+          position_value (dense[i].position)[0] += push[i].x ();
+          position_value (dense[i].position)[2] += push[i].z ();
+          // Keep lateral weave bounded near the authored corridor.
+          const plan_position_t now = moppe::plan (dense[i].position);
+          const meters_t shift_x = x_of (now) - x_of (original_plan[i]);
+          const meters_t shift_z = z_of (now) - z_of (original_plan[i]);
+          const meters_t shift_len =
+            std::hypot (meters_value (shift_x), meters_value (shift_z)) * u::m;
+          if (shift_len > max_total_shift) {
+            const auto keep = max_total_shift / shift_len;
+            position_value (dense[i].position)[0] =
+              meters_value (x_of (original_plan[i]) + shift_x * keep);
+            position_value (dense[i].position)[2] =
+              meters_value (z_of (original_plan[i]) + shift_z * keep);
+          }
+        }
+        // Smooth horizontal weave so gap navigation stays fluid.
+        std::vector<position_t> eased_xz (dense.size ());
+        for (int pass = 0; pass < 4; ++pass) {
+          for (std::size_t i = 0; i < dense.size (); ++i)
+            eased_xz[i] = dense[i].position;
+          for (std::size_t i = 1; i + 1 < dense.size (); ++i) {
+            if (!dense[i].low_altitude)
+              continue;
+            const Vec3& a = position_value (dense[i - 1].position);
+            const Vec3& b = position_value (dense[i].position);
+            const Vec3& c = position_value (dense[i + 1].position);
+            position_value (eased_xz[i])[0] =
+              0.25f * a[0] + 0.50f * b[0] + 0.25f * c[0];
+            position_value (eased_xz[i])[2] =
+              0.25f * a[2] + 0.50f * b[2] + 0.25f * c[2];
+          }
+          for (std::size_t i = 0; i < dense.size (); ++i)
+            dense[i].position = eased_xz[i];
+        }
+      }
+
+      // Pass 2: 3D vertical clearance. Low FPV segments stay down in open
+      // corridors and only hop smoothly over trees that genuinely block the
+      // woven line; high-speed transits keep full canopy clearance.
+      const auto standing = build_grid ();
       std::vector<meters_t> floor_y (dense.size ());
       std::vector<meters_t> arc (dense.size (), 0.0f * u::m);
       for (std::size_t i = 0; i < dense.size (); ++i) {
@@ -475,17 +603,16 @@ namespace moppe::game {
           arc[i] = arc[i - 1] +
                    flight_length (dense[i].position - dense[i - 1].position);
         const plan_position_t at = moppe::plan (dense[i].position);
-        floor_y[i] = flight_ground (surface, at) + ground_clearance;
-        const auto [tx, tz] = tile_of (at);
-        standing[static_cast<std::size_t> (tz) * tiles_x + tx].push_back (
-          static_cast<std::uint32_t> (i));
+        const meters_t min_ground =
+          dense[i].low_altitude ? 5.5f * u::m : high_ground_clearance;
+        floor_y[i] = flight_ground (surface, at) + min_ground;
       }
 
-      const square_meters_t radius_sq = corridor_radius * corridor_radius;
+      const square_meters_t high_r_sq = high_corridor * high_corridor;
       for (const RiverFlightTree& tree : trees) {
         const auto [tx, tz] = tile_of (tree.at);
         bool checked = false;
-        meters_t tree_ceiling = 0.0f * u::m;
+        meters_t tree_ground = 0.0f * u::m;
         for (int dz = -1; dz <= 1; ++dz)
           for (int dx = -1; dx <= 1; ++dx)
             for (const std::uint32_t idx :
@@ -498,14 +625,28 @@ namespace moppe::game {
                 x_of (tree.at) - x_of (gate), period_x);
               const meters_t away_z = terrain::minimum_image_delta (
                 z_of (tree.at) - z_of (gate), period_z);
-              if (away_x * away_x + away_z * away_z > radius_sq)
-                continue;
-              if (!checked) {
-                tree_ceiling = flight_ground (surface, tree.at) + tree.height +
-                               canopy_margin;
-                checked = true;
+              const square_meters_t d2 = away_x * away_x + away_z * away_z;
+              if (dense[idx].low_altitude) {
+                const meters_t tight_r = std::clamp (
+                  0.36f * tree.height + 5.0f * u::m, 9.0f * u::m, 13.5f * u::m);
+                if (d2 > tight_r * tight_r)
+                  continue;
+                if (!checked) {
+                  tree_ground = flight_ground (surface, tree.at);
+                  checked = true;
+                }
+                floor_y[idx] = std::max (
+                  floor_y[idx], tree_ground + tree.height + 8.0f * u::m);
+              } else {
+                if (d2 > high_r_sq)
+                  continue;
+                if (!checked) {
+                  tree_ground = flight_ground (surface, tree.at);
+                  checked = true;
+                }
+                floor_y[idx] = std::max (
+                  floor_y[idx], tree_ground + tree.height + high_margin);
               }
-              floor_y[idx] = std::max (floor_y[idx], tree_ceiling);
             }
       }
 
@@ -514,15 +655,16 @@ namespace moppe::game {
         raw_lift[i] = std::max (
           0.0f * u::m, floor_y[i] - flight_height_of (dense[i].position));
 
-      const meters_t horizon = 3.0f * anticipation;
-      const auto envelope = [anticipation] (meters_t separation) {
-        return std::exp ((-0.5f * separation * separation /
-                          (anticipation * anticipation))
-                           .numerical_value_in (one)) *
-               one;
-      };
       std::vector<meters_t> lift (dense.size ());
       for (std::size_t i = 0; i < dense.size (); ++i) {
+        const meters_t ant =
+          dense[i].low_altitude ? 48.0f * u::m : high_anticipation;
+        const meters_t horizon = 3.0f * ant;
+        const auto envelope = [ant] (meters_t separation) {
+          return std::exp ((-0.5f * separation * separation / (ant * ant))
+                             .numerical_value_in (one)) *
+                 one;
+        };
         meters_t peak_lift = raw_lift[i];
         for (std::size_t j = i; j > 0; --j) {
           const meters_t sep = arc[i] - arc[j - 1];
@@ -542,7 +684,7 @@ namespace moppe::game {
       }
 
       std::vector<meters_t> smoothed (dense.size ());
-      for (int pass = 0; pass < 36; ++pass) {
+      for (int pass = 0; pass < 28; ++pass) {
         smoothed.front () = lift.front ();
         smoothed.back () = lift.back ();
         for (std::size_t i = 1; i + 1 < dense.size (); ++i)
@@ -564,19 +706,106 @@ namespace moppe::game {
 
     void add_trail_reveal (CinematicFlightPlan& plan,
                            const map::SurfaceGeometry& surface,
-                           const terrain::TrailNetwork& trail) {
+                           const terrain::TrailNetwork& trail,
+                           bool fpv_forest_run) {
       const auto& alignment = trail.alignment.points;
       if (alignment.size () < 8 || trail.plan.home_base == no_cell)
         return;
 
-      // One quick oblique sweep establishes the circuit as a place before the
-      // broader landscape tour begins. Coarse gates reveal its large shape
-      // without making the drone consume the entire loop.
+      const position_t home =
+        trail_alignment_position (alignment.front (), surface);
+      if (fpv_forest_run && alignment.size () >= 12) {
+        // Open with a brief high establishing panorama over the trailhead and
+        // escarpment, then swoop straight down into the sunlit trail corridor
+        // at ground-level FPV height so god rays stream through the birches.
+        const std::size_t look_ahead =
+          std::max<std::size_t> (1, alignment.size () / 10);
+        position_t p0 = trail_alignment_position (alignment[0], surface);
+        position_t ahead0 = unwrap_near (
+          trail_alignment_position (alignment[look_ahead], surface),
+          p0,
+          surface);
+        const direction_t fwd0 =
+          level_direction (ahead0 - p0, unit_direction (Vec3 (0, 0, 1)));
+        const direction_t side0 = beside (fwd0);
+        position_t establish = p0 - flight_shift (along (fwd0, 140.0f * u::m)) +
+                               flight_shift (along (side0, 80.0f * u::m));
+        flight_set_height (establish, flight_height_of (p0) + 125.0f * u::m);
+        flight_set_height (
+          ahead0, flight_ground (surface, moppe::plan (ahead0)) + 4.0f * u::m);
+        add_waypoint (plan,
+                      surface,
+                      establish,
+                      ahead0,
+                      106.0f * u::m,
+                      140.0f * u::m / u::s,
+                      62.0f * u::deg,
+                      false);
+
+        // Swoop down onto the cleared trail corridor and thread through the
+        // sunlit woods for ~600 m.
+        position_t previous = p0;
+        meters_t travelled = 0.0f * u::m;
+        constexpr meters_t corridor_length = 600.0f * u::m;
+        constexpr meters_t gate_step = 48.0f * u::m;
+        meters_t next_gate = 0.0f * u::m;
+        std::vector<position_t> corridor;
+        for (std::size_t i = 0; i < alignment.size (); ++i) {
+          position_t pt = trail_alignment_position (alignment[i], surface);
+          pt = unwrap_near (pt, previous, surface);
+          if (i > 0)
+            travelled += flight_length (pt - previous);
+          if (travelled >= next_gate) {
+            corridor.push_back (pt);
+            next_gate += gate_step;
+          }
+          previous = pt;
+          if (travelled >= corridor_length)
+            break;
+        }
+        for (std::size_t i = 0; i < corridor.size (); ++i) {
+          const bool entry = i == 0;
+          const bool exit = i + 1 == corridor.size ();
+          const std::size_t look_i = std::min (corridor.size () - 1, i + 2);
+          position_t subject = corridor[look_i];
+          if (look_i == i && i > 0) {
+            const direction_t out = level_direction (
+              corridor[i] - corridor[i - 1], unit_direction (Vec3 (0, 0, 1)));
+            subject = corridor[i] + flight_shift (along (out, 90.0f * u::m));
+          }
+          flight_set_height (subject,
+                             flight_ground (surface, moppe::plan (subject)) +
+                               5.5f * u::m);
+          position_t eye = corridor[i];
+          const meters_t height_above =
+            entry ? 26.0f * u::m : (exit ? 34.0f * u::m : 9.0f * u::m);
+          flight_set_height (eye,
+                             flight_height_of (corridor[i]) + height_above);
+          add_waypoint (plan,
+                        surface,
+                        eye,
+                        subject,
+                        entry || exit ? 20.0f * u::m : 6.0f * u::m,
+                        entry
+                          ? 68.0f * u::m / u::s
+                          : (exit ? 98.0f * u::m / u::s : 46.0f * u::m / u::s),
+                        68.0f * u::deg,
+                        true);
+        }
+
+        plan.landmarks.push_back (
+          { .kind = CinematicLandmarkKind::Trail,
+            .cell = trail.plan.home_base,
+            .score = static_cast<float> (alignment.size ()),
+            .position = home });
+        return;
+      }
+
+      // Coarse high establishing sweep (used when no forest data is provided).
       constexpr std::size_t samples = 3;
       const std::size_t look_ahead =
         std::max<std::size_t> (1, alignment.size () / 8);
-      position_t previous_ground =
-        trail_alignment_position (alignment.front (), surface);
+      position_t previous_ground = home;
       for (std::size_t sample = 0; sample < samples; ++sample) {
         const std::size_t index = sample * alignment.size () / 4;
         const std::size_t ahead_index =
@@ -613,8 +842,6 @@ namespace moppe::game {
         previous_ground = ground;
       }
 
-      const position_t home =
-        trail_alignment_position (alignment.front (), surface);
       plan.landmarks.push_back (
         { .kind = CinematicLandmarkKind::Trail,
           .cell = trail.plan.home_base,
@@ -706,16 +933,132 @@ namespace moppe::game {
       }
     }
 
+    const bool fpv_mode = !trees.empty ();
     if (trail)
-      add_trail_reveal (plan, surface, *trail);
+      add_trail_reveal (plan, surface, *trail, fpv_mode);
 
     const terrain::RiverReach* const chosen_valley_reach =
       valley.cell != no_cell ? valley_reach (valley.cell, rivers) : nullptr;
-    const bool waterfall_on_valley =
-      chosen_valley_reach && waterfall.cell != no_cell &&
-      std::find (chosen_valley_reach->cells.begin (),
-                 chosen_valley_reach->cells.end (),
-                 waterfall.cell) != chosen_valley_reach->cells.end ();
+    const terrain::RiverReach* const waterfall_reach =
+      waterfall.cell != no_cell ? valley_reach (waterfall.cell, rivers)
+                                : nullptr;
+
+    // Build a continuous highland-to-downstream river run when possible:
+    // prefer following the highland reaches feeding directly into the best
+    // waterfall (or the upper course of the greatest river downstream) so the
+    // drone glides low over rushing water from the highlands down through the
+    // gorge.
+    auto collect_upstream_river =
+      [&] (const terrain::RiverReach* target_reach,
+           terrain::CellIndex stop_cell,
+           meters_t max_length) -> std::vector<position_t> {
+      std::vector<position_t> pts;
+      if (!target_reach)
+        return pts;
+      std::vector<const terrain::RiverReach*> chain;
+      std::vector<std::uint8_t> seen (rivers.reaches.size (), 0);
+      const terrain::RiverReach* cur = target_reach;
+      while (cur && chain.size () < 24) {
+        chain.push_back (cur);
+        if (cur->id < seen.size ())
+          seen[cur->id] = 1;
+        const terrain::RiverReach* above = nullptr;
+        for (const terrain::RiverReach& candidate : rivers.reaches) {
+          if (candidate.id < seen.size () && seen[candidate.id])
+            continue;
+          if (candidate.downstream_reach == cur->id &&
+              (!above || candidate.downstream_area > above->downstream_area))
+            above = &candidate;
+        }
+        cur = above;
+      }
+      for (auto it = chain.rbegin (); it != chain.rend (); ++it) {
+        const terrain::RiverReach& reach = **it;
+        const bool is_last = (&reach == target_reach);
+        if (!reach.alignment.points.empty () &&
+            (!is_last || stop_cell == no_cell)) {
+          for (const terrain::RiverAlignmentPoint& ap :
+               reach.alignment.points) {
+            position_t p =
+              at_height (ap.place, flight_ground (surface, ap.place));
+            if (!pts.empty ())
+              p = unwrap_near (p, pts.back (), surface);
+            pts.push_back (p);
+          }
+        } else {
+          for (const terrain::CellIndex cell : reach.cells) {
+            if (is_last && cell == stop_cell)
+              break;
+            position_t p = position_of (cell);
+            if (!pts.empty ())
+              p = unwrap_near (p, pts.back (), surface);
+            pts.push_back (p);
+          }
+        }
+      }
+      if (pts.size () < 2)
+        return pts;
+      meters_t acc = 0.0f * u::m;
+      std::size_t keep_from = pts.size () - 1;
+      while (keep_from > 0) {
+        acc += flight_length (pts[keep_from] - pts[keep_from - 1]);
+        if (acc >= max_length)
+          break;
+        --keep_from;
+      }
+      if (keep_from > 0)
+        pts.erase (pts.begin (),
+                   pts.begin () + static_cast<std::ptrdiff_t> (keep_from));
+      return pts;
+    };
+
+    std::vector<position_t> river_run;
+    bool waterfall_on_valley = false;
+    if (fpv_mode && waterfall_reach) {
+      river_run = collect_upstream_river (
+        waterfall_reach, waterfall.cell, 1350.0f * u::m);
+      if (river_run.size () >= 6 &&
+          flight_length (river_run.back () - river_run.front ()) >
+            320.0f * u::m)
+        waterfall_on_valley = true;
+      else
+        river_run.clear ();
+    }
+    if (fpv_mode && river_run.empty ()) {
+      const std::vector<const terrain::RiverReach*> greatest =
+        greatest_river_course (census.water_bodies (), rivers);
+      if (!greatest.empty ()) {
+        // Start where the highland river has opened into a clear water
+        // channel (skipping tiny headwater trickles buried under solid canopy)
+        // and follow it downstream for ~1.25 km.
+        for (auto it = greatest.rbegin (); it != greatest.rend (); ++it) {
+          const terrain::RiverReach& reach = **it;
+          for (const terrain::RiverAlignmentPoint& ap :
+               reach.alignment.points) {
+            if (river_run.empty () && ap.contributing_area < 2.2e6f * u::m2)
+              continue;
+            const meters_t water_y = std::max (
+              flight_ground (surface, ap.place),
+              terrain::surface_elevation_value (ap.water_level) * u::m);
+            position_t p = at_height (ap.place, water_y);
+            if (!river_run.empty ())
+              p = unwrap_near (p, river_run.back (), surface);
+            river_run.push_back (p);
+          }
+          if (river_run.size () >= 2 &&
+              flight_length (river_run.back () - river_run.front ()) >=
+                1250.0f * u::m)
+            break;
+        }
+      }
+    }
+    if (!fpv_mode) {
+      waterfall_on_valley =
+        chosen_valley_reach && waterfall.cell != no_cell &&
+        std::find (chosen_valley_reach->cells.begin (),
+                   chosen_valley_reach->cells.end (),
+                   waterfall.cell) != chosen_valley_reach->cells.end ();
+    }
 
     // Visit both waterfall and lake when both exist and stand apart; otherwise
     // keep whichever water feature is present.
@@ -740,7 +1083,10 @@ namespace moppe::game {
       plan_position_t anchor;
     };
     std::vector<TourStop> stops;
-    if (chosen_valley_reach && !chosen_valley_reach->cells.empty ())
+    if (!river_run.empty ())
+      stops.push_back ({ .kind = TourStopKind::Valley,
+                         .anchor = moppe::plan (river_run.front ()) });
+    else if (chosen_valley_reach && !chosen_valley_reach->cells.empty ())
       stops.push_back ({ .kind = TourStopKind::Valley,
                          .anchor = moppe::plan (position_of (valley.cell)) });
     if (visit_waterfall && !waterfall_on_valley)
@@ -793,55 +1139,239 @@ namespace moppe::game {
     }
 
     const auto add_waterfall_beat = [&] (bool from_valley) {
-      position_t subject = position_of (waterfall.cell);
+      position_t lip = position_of (waterfall.cell);
       if (!plan.waypoints.empty ())
-        subject =
-          unwrap_near (subject, plan.waypoints.back ().position, surface);
-      const direction_t flow = flight_cell_direction (
-        waterfall.cell, drainage.receiver[waterfall.cell], surface, drainage);
+        lip = unwrap_near (lip, plan.waypoints.back ().position, surface);
+      const terrain::Waterfall* fall_info = nullptr;
+      for (const terrain::Waterfall& wf : rivers.waterfalls)
+        if (wf.lip_cell == waterfall.cell) {
+          fall_info = &wf;
+          break;
+        }
+      position_t foot =
+        fall_info
+          ? unwrap_near (position_of (fall_info->foot_cell), lip, surface)
+          : lip;
+      const direction_t flow =
+        fall_info && length2 (displacement_value (foot - lip)) > 1.0f
+          ? level_direction (
+              foot - lip,
+              flight_cell_direction (waterfall.cell,
+                                     drainage.receiver[waterfall.cell],
+                                     surface,
+                                     drainage))
+          : flight_cell_direction (waterfall.cell,
+                                   drainage.receiver[waterfall.cell],
+                                   surface,
+                                   drainage);
       const direction_t side = beside (flow);
-      if (!from_valley) {
-        position_t approach = subject -
-                              flight_shift (along (flow, 195.0f * u::m)) +
-                              flight_shift (along (side, 85.0f * u::m));
-        flight_set_height (approach,
-                           flight_height_of (subject) + 105.0f * u::m);
-        add_transit (plan, surface, approach, subject);
+      // Aim straight at the middle of the plunging waterfall curtain.
+      position_t curtain = moppe::position (0.55f * position_value (lip) +
+                                            0.45f * position_value (foot));
+      const meters_t pool_y = flight_height_of (foot);
+
+      if (fpv_mode) {
+        // Probe the open canyon floor downstream of the plunge pool so the
+        // drone stays down in the river gorge facing the waterfall curtain
+        // instead of being pushed high up onto flanking cliff rims.
+        const auto open_canyon_point = [&] (meters_t downstream,
+                                            meters_t preferred_side) {
+          const meters_t candidates[5] = { preferred_side,
+                                           0.0f * u::m,
+                                           0.5f * preferred_side,
+                                           -0.5f * preferred_side,
+                                           -preferred_side };
+          position_t best = foot + flight_shift (along (flow, downstream)) +
+                            flight_shift (along (side, preferred_side));
+          meters_t best_y = flight_ground (surface, moppe::plan (best));
+          for (const meters_t off : candidates) {
+            const position_t p = foot +
+                                 flight_shift (along (flow, downstream)) +
+                                 flight_shift (along (side, off));
+            const meters_t y = flight_ground (surface, moppe::plan (p));
+            if (y < best_y - 2.0f * u::m) {
+              best = p;
+              best_y = y;
+            }
+          }
+          return best;
+        };
+        if (!from_valley) {
+          // Glide up the open downstream canyon looking straight into the
+          // roaring waterfall curtain and escarpment face.
+          position_t approach = open_canyon_point (175.0f * u::m, 22.0f * u::m);
+          flight_set_height (approach, pool_y + 38.0f * u::m);
+          add_transit (plan, surface, approach, curtain);
+          add_waypoint (plan,
+                        surface,
+                        approach,
+                        curtain,
+                        18.0f * u::m,
+                        62.0f * u::m / u::s,
+                        54.0f * u::deg,
+                        true);
+        } else {
+          // Sweeping over the lip from the upstream river run, banking wide
+          // and diving down into the canyon in front of the falls.
+          position_t crest_swing = lip +
+                                   flight_shift (along (flow, 30.0f * u::m)) +
+                                   flight_shift (along (side, 42.0f * u::m));
+          flight_set_height (crest_swing,
+                             flight_height_of (lip) + 20.0f * u::m);
+          add_waypoint (plan,
+                        surface,
+                        crest_swing,
+                        curtain,
+                        14.0f * u::m,
+                        44.0f * u::m / u::s,
+                        56.0f * u::deg,
+                        true);
+        }
+        // Slow lingering FPV arc right across the open plunge-pool gorge at
+        // mid-curtain height so the plunging white water fills the frame.
+        position_t front_right = open_canyon_point (96.0f * u::m, 18.0f * u::m);
+        flight_set_height (front_right, pool_y + 18.0f * u::m);
         add_waypoint (plan,
                       surface,
-                      approach,
-                      subject,
-                      68.0f * u::m,
-                      155.0f * u::m / u::s,
+                      front_right,
+                      curtain,
+                      10.0f * u::m,
+                      28.0f * u::m / u::s,
+                      50.0f * u::deg,
+                      true);
+        position_t front_mid = open_canyon_point (74.0f * u::m, 0.0f * u::m);
+        flight_set_height (front_mid, pool_y + 21.0f * u::m);
+        add_waypoint (plan,
+                      surface,
+                      front_mid,
+                      curtain,
+                      10.0f * u::m,
+                      24.0f * u::m / u::s,
+                      48.0f * u::deg,
+                      true);
+        position_t front_left = open_canyon_point (92.0f * u::m, -18.0f * u::m);
+        flight_set_height (front_left, pool_y + 26.0f * u::m);
+        add_waypoint (plan,
+                      surface,
+                      front_left,
+                      curtain,
+                      12.0f * u::m,
+                      28.0f * u::m / u::s,
+                      52.0f * u::deg,
+                      true);
+        position_t pull_out = foot +
+                              flight_shift (along (flow, 175.0f * u::m)) -
+                              flight_shift (along (side, 42.0f * u::m));
+        flight_set_height (pull_out, flight_height_of (lip) + 68.0f * u::m);
+        add_waypoint (plan,
+                      surface,
+                      pull_out,
+                      curtain,
+                      42.0f * u::m,
+                      145.0f * u::m / u::s,
+                      60.0f * u::deg,
+                      false);
+      } else {
+        if (!from_valley) {
+          position_t approach = lip -
+                                flight_shift (along (flow, 195.0f * u::m)) +
+                                flight_shift (along (side, 85.0f * u::m));
+          flight_set_height (approach, flight_height_of (lip) + 105.0f * u::m);
+          add_transit (plan, surface, approach, lip);
+          add_waypoint (plan,
+                        surface,
+                        approach,
+                        lip,
+                        68.0f * u::m,
+                        155.0f * u::m / u::s,
+                        60.0f * u::deg);
+        }
+        position_t close = lip - flight_shift (along (flow, 50.0f * u::m)) +
+                           flight_shift (along (side, 44.0f * u::m));
+        flight_set_height (close, flight_height_of (lip) + 46.0f * u::m);
+        add_waypoint (plan,
+                      surface,
+                      close,
+                      lip,
+                      34.0f * u::m,
+                      118.0f * u::m / u::s,
+                      55.0f * u::deg);
+        position_t exit = lip + flight_shift (along (flow, 180.0f * u::m)) -
+                          flight_shift (along (side, 65.0f * u::m));
+        flight_set_height (exit, flight_height_of (lip) + 92.0f * u::m);
+        add_waypoint (plan,
+                      surface,
+                      exit,
+                      lip,
+                      60.0f * u::m,
+                      165.0f * u::m / u::s,
                       60.0f * u::deg);
       }
-      position_t close = subject - flight_shift (along (flow, 50.0f * u::m)) +
-                         flight_shift (along (side, 44.0f * u::m));
-      flight_set_height (close, flight_height_of (subject) + 46.0f * u::m);
-      add_waypoint (plan,
-                    surface,
-                    close,
-                    subject,
-                    34.0f * u::m,
-                    118.0f * u::m / u::s,
-                    55.0f * u::deg);
-      position_t exit = subject + flight_shift (along (flow, 180.0f * u::m)) -
-                        flight_shift (along (side, 65.0f * u::m));
-      flight_set_height (exit, flight_height_of (subject) + 92.0f * u::m);
-      add_waypoint (plan,
-                    surface,
-                    exit,
-                    subject,
-                    60.0f * u::m,
-                    165.0f * u::m / u::s,
-                    60.0f * u::deg);
       record_landmark (
-        plan, CinematicLandmarkKind::Waterfall, waterfall, subject);
+        plan, CinematicLandmarkKind::Waterfall, waterfall, curtain);
     };
 
     for (const TourStop& stop : stops) {
       switch (stop.kind) {
       case TourStopKind::Valley: {
+        if (fpv_mode && river_run.size () >= 4) {
+          // Low FPV highland-to-downstream river run: skim right above the
+          // rushing water channel, banking cleanly through bends.
+          position_t anchor = river_run.front ();
+          if (!plan.waypoints.empty ())
+            anchor =
+              unwrap_near (anchor, plan.waypoints.back ().position, surface);
+          const displacement_t unwrap_delta = anchor - river_run.front ();
+          std::vector<position_t> gates;
+          constexpr meters_t river_step = 85.0f * u::m;
+          meters_t acc = 0.0f * u::m;
+          meters_t next_at = 0.0f * u::m;
+          for (std::size_t i = 0; i < river_run.size (); ++i) {
+            position_t p = river_run[i] + flight_shift (unwrap_delta);
+            if (i > 0)
+              acc += flight_length (river_run[i] - river_run[i - 1]);
+            if (acc >= next_at || i + 1 == river_run.size ()) {
+              gates.push_back (p);
+              next_at += river_step;
+            }
+          }
+          for (std::size_t i = 0; i < gates.size (); ++i) {
+            const bool first = i == 0;
+            const bool last = i + 1 == gates.size ();
+            const std::size_t ahead = std::min (gates.size () - 1, i + 2);
+            position_t subject = gates[ahead];
+            if (ahead == i && i > 0) {
+              const direction_t flow = level_direction (
+                gates[i] - gates[i - 1], unit_direction (Vec3 (0, 0, 1)));
+              subject = gates[i] + flight_shift (along (flow, 95.0f * u::m));
+            }
+            flight_set_height (subject,
+                               flight_ground (surface, moppe::plan (subject)) +
+                                 3.0f * u::m);
+            position_t eye = gates[i];
+            const meters_t water_clear =
+              first
+                ? 34.0f * u::m
+                : (last && !waterfall_on_valley ? 28.0f * u::m : 10.0f * u::m);
+            flight_set_height (eye, flight_height_of (gates[i]) + water_clear);
+            if (first)
+              add_transit (plan, surface, eye, subject);
+            add_waypoint (plan,
+                          surface,
+                          eye,
+                          subject,
+                          first ? 24.0f * u::m : 7.5f * u::m,
+                          first ? 95.0f * u::m / u::s : 66.0f * u::m / u::s,
+                          66.0f * u::deg,
+                          true);
+          }
+          position_t landmark_pos = gates[gates.size () / 2];
+          record_landmark (
+            plan, CinematicLandmarkKind::Valley, valley, landmark_pos);
+          if (waterfall_on_valley)
+            add_waterfall_beat (true);
+          break;
+        }
         const terrain::RiverReach* reach = chosen_valley_reach;
         std::size_t last_index = reach->cells.size () - 1;
         if (waterfall_on_valley) {
@@ -849,7 +1379,6 @@ namespace moppe::game {
             reach->cells.begin (), reach->cells.end (), waterfall.cell);
           const std::size_t water_index =
             static_cast<std::size_t> (water_on_reach - reach->cells.begin ());
-          // Feed the valley run directly into the waterfall approach.
           last_index = water_index > 1 ? water_index - 1 : water_index;
         }
         position_t previous = position_of (reach->cells.front ());
@@ -913,41 +1442,99 @@ namespace moppe::game {
             ? east
             : level_direction (subject - plan.waypoints.back ().position, east);
         const direction_t side = beside (incoming);
-        position_t approach = subject -
-                              flight_shift (along (incoming, 230.0f * u::m)) +
-                              flight_shift (along (side, 60.0f * u::m));
-        flight_set_height (approach, flight_height_of (subject) + 92.0f * u::m);
-        add_transit (plan, surface, approach, subject);
-        add_waypoint (plan,
-                      surface,
-                      approach,
-                      subject,
-                      52.0f * u::m,
-                      155.0f * u::m / u::s,
-                      62.0f * u::deg);
-        position_t glide = subject + flight_shift (along (side, 22.0f * u::m));
-        flight_set_height (glide, flight_height_of (subject) + 38.0f * u::m);
-        position_t far_water =
-          subject + flight_shift (along (incoming, 220.0f * u::m));
-        flight_set_height (far_water, flight_height_of (subject) + 4.0f * u::m);
-        add_waypoint (plan,
-                      surface,
-                      glide,
-                      far_water,
-                      30.0f * u::m,
-                      125.0f * u::m / u::s,
-                      60.0f * u::deg);
-        position_t exit = subject +
-                          flight_shift (along (incoming, 240.0f * u::m)) -
-                          flight_shift (along (side, 50.0f * u::m));
-        flight_set_height (exit, flight_height_of (subject) + 84.0f * u::m);
-        add_waypoint (plan,
-                      surface,
-                      exit,
-                      far_water,
-                      52.0f * u::m,
-                      165.0f * u::m / u::s,
-                      62.0f * u::deg);
+        const meters_t water_y = flight_height_of (subject);
+        if (fpv_mode) {
+          // Dramatic dive down to skim low over the open lake water.
+          position_t approach = subject -
+                                flight_shift (along (incoming, 260.0f * u::m)) +
+                                flight_shift (along (side, 45.0f * u::m));
+          flight_set_height (approach, water_y + 42.0f * u::m);
+          add_transit (plan, surface, approach, subject);
+          add_waypoint (plan,
+                        surface,
+                        approach,
+                        subject,
+                        16.0f * u::m,
+                        105.0f * u::m / u::s,
+                        64.0f * u::deg,
+                        true);
+          position_t skim_a = subject -
+                              flight_shift (along (incoming, 70.0f * u::m)) +
+                              flight_shift (along (side, 18.0f * u::m));
+          flight_set_height (skim_a, water_y + 7.5f * u::m);
+          position_t far_water =
+            subject + flight_shift (along (incoming, 340.0f * u::m));
+          flight_set_height (far_water, water_y + 4.0f * u::m);
+          add_waypoint (plan,
+                        surface,
+                        skim_a,
+                        far_water,
+                        6.5f * u::m,
+                        78.0f * u::m / u::s,
+                        66.0f * u::deg,
+                        true);
+          position_t skim_b = subject +
+                              flight_shift (along (incoming, 140.0f * u::m)) -
+                              flight_shift (along (side, 16.0f * u::m));
+          flight_set_height (skim_b, water_y + 8.5f * u::m);
+          add_waypoint (plan,
+                        surface,
+                        skim_b,
+                        far_water,
+                        7.0f * u::m,
+                        82.0f * u::m / u::s,
+                        66.0f * u::deg,
+                        true);
+          position_t exit = subject +
+                            flight_shift (along (incoming, 320.0f * u::m)) -
+                            flight_shift (along (side, 50.0f * u::m));
+          flight_set_height (exit, water_y + 62.0f * u::m);
+          add_waypoint (plan,
+                        surface,
+                        exit,
+                        far_water,
+                        36.0f * u::m,
+                        145.0f * u::m / u::s,
+                        62.0f * u::deg,
+                        false);
+        } else {
+          position_t approach = subject -
+                                flight_shift (along (incoming, 230.0f * u::m)) +
+                                flight_shift (along (side, 60.0f * u::m));
+          flight_set_height (approach, water_y + 92.0f * u::m);
+          add_transit (plan, surface, approach, subject);
+          add_waypoint (plan,
+                        surface,
+                        approach,
+                        subject,
+                        52.0f * u::m,
+                        155.0f * u::m / u::s,
+                        62.0f * u::deg);
+          position_t glide =
+            subject + flight_shift (along (side, 22.0f * u::m));
+          flight_set_height (glide, water_y + 38.0f * u::m);
+          position_t far_water =
+            subject + flight_shift (along (incoming, 220.0f * u::m));
+          flight_set_height (far_water, water_y + 4.0f * u::m);
+          add_waypoint (plan,
+                        surface,
+                        glide,
+                        far_water,
+                        30.0f * u::m,
+                        125.0f * u::m / u::s,
+                        60.0f * u::deg);
+          position_t exit = subject +
+                            flight_shift (along (incoming, 240.0f * u::m)) -
+                            flight_shift (along (side, 50.0f * u::m));
+          flight_set_height (exit, water_y + 84.0f * u::m);
+          add_waypoint (plan,
+                        surface,
+                        exit,
+                        far_water,
+                        52.0f * u::m,
+                        165.0f * u::m / u::s,
+                        62.0f * u::deg);
+        }
         record_landmark (plan, CinematicLandmarkKind::Lake, lake, subject);
         break;
       }
@@ -957,40 +1544,47 @@ namespace moppe::game {
           subject =
             unwrap_near (subject, plan.waypoints.back ().position, surface);
         position_t entry =
-          subject - flight_shift (along (saddle.direction, 260.0f * u::m));
-        flight_set_height (entry, flight_height_of (subject) + 95.0f * u::m);
+          subject - flight_shift (along (saddle.direction, 240.0f * u::m));
+        flight_set_height (entry,
+                           flight_height_of (subject) +
+                             (fpv_mode ? 54.0f : 95.0f) * u::m);
         add_transit (plan, surface, entry, subject);
         add_waypoint (plan,
                       surface,
                       entry,
                       subject,
-                      60.0f * u::m,
-                      165.0f * u::m / u::s,
-                      62.0f * u::deg);
+                      (fpv_mode ? 28.0f : 60.0f) * u::m,
+                      (fpv_mode ? 105.0f : 165.0f) * u::m / u::s,
+                      64.0f * u::deg,
+                      fpv_mode);
         position_t pass =
-          subject - flight_shift (along (saddle.direction, 20.0f * u::m));
-        flight_set_height (pass, flight_height_of (subject) + 42.0f * u::m);
+          subject - flight_shift (along (saddle.direction, 15.0f * u::m));
+        flight_set_height (
+          pass, flight_height_of (subject) + (fpv_mode ? 16.0f : 42.0f) * u::m);
         position_t beyond =
           subject + flight_shift (along (saddle.direction, 180.0f * u::m));
         flight_set_height (
-          beyond, flight_ground (surface, moppe::plan (beyond)) + 16.0f * u::m);
+          beyond, flight_ground (surface, moppe::plan (beyond)) + 12.0f * u::m);
         add_waypoint (plan,
                       surface,
                       pass,
                       beyond,
-                      34.0f * u::m,
-                      135.0f * u::m / u::s,
-                      66.0f * u::deg);
+                      (fpv_mode ? 12.0f : 34.0f) * u::m,
+                      (fpv_mode ? 84.0f : 135.0f) * u::m / u::s,
+                      68.0f * u::deg,
+                      fpv_mode);
         position_t exit =
-          subject + flight_shift (along (saddle.direction, 250.0f * u::m));
-        flight_set_height (exit, flight_height_of (subject) + 78.0f * u::m);
+          subject + flight_shift (along (saddle.direction, 240.0f * u::m));
+        flight_set_height (
+          exit, flight_height_of (subject) + (fpv_mode ? 64.0f : 78.0f) * u::m);
         add_waypoint (plan,
                       surface,
                       exit,
                       beyond,
-                      50.0f * u::m,
-                      175.0f * u::m / u::s,
-                      63.0f * u::deg);
+                      44.0f * u::m,
+                      165.0f * u::m / u::s,
+                      63.0f * u::deg,
+                      false);
         record_landmark (plan, CinematicLandmarkKind::Saddle, saddle, subject);
         break;
       }
@@ -999,7 +1593,8 @@ namespace moppe::game {
         if (!plan.waypoints.empty ())
           subject =
             unwrap_near (subject, plan.waypoints.back ().position, surface);
-        const meters_t radius = 125.0f * u::m;
+        // Close, intimate FPV arc around the hilltop Minoan stone enclosure.
+        const meters_t radius = (fpv_mode ? 46.0f : 115.0f) * u::m;
         const direction_t east = unit_direction (Vec3 (1, 0, 0));
         const direction_t incoming =
           plan.waypoints.empty ()
@@ -1007,11 +1602,12 @@ namespace moppe::game {
             : level_direction (subject - plan.waypoints.back ().position, east);
         const direction_t radial = beside (incoming);
         position_t first = subject + flight_shift (along (radial, radius));
-        flight_raise (first, 56.0f * u::m);
+        flight_raise (first, (fpv_mode ? 18.0f : 52.0f) * u::m);
         add_transit (plan, surface, first, subject);
         for (int i = 0; i < 4; ++i) {
           const proportion_t progress = static_cast<float> (i) / 3.0f * one;
-          const radians_t angle = radians_t (1.55f * u::rad * progress);
+          const radians_t angle =
+            radians_t ((fpv_mode ? 2.10f : 1.85f) * u::rad * progress);
           position_t eye =
             subject +
             flight_shift (
@@ -1019,17 +1615,19 @@ namespace moppe::game {
             flight_shift (
               along (incoming, std::sin (radians_value (angle)) * radius));
           flight_raise (eye,
-                        52.0f * u::m +
-                          18.0f * u::m * progress.numerical_value_in (one));
+                        (fpv_mode ? 15.0f : 48.0f) * u::m +
+                          (fpv_mode ? 10.0f : 18.0f) * u::m *
+                            progress.numerical_value_in (one));
           const position_t look =
-            subject + flight_shift (displacement (Vec3 (0.0f, 3.0f, 0.0f)));
+            subject + flight_shift (displacement (Vec3 (0.0f, 2.0f, 0.0f)));
           add_waypoint (plan,
                         surface,
                         eye,
                         look,
-                        40.0f * u::m,
-                        105.0f * u::m / u::s,
-                        54.0f * u::deg);
+                        (fpv_mode ? 10.0f : 36.0f) * u::m,
+                        (fpv_mode ? 28.0f : 105.0f) * u::m / u::s,
+                        50.0f * u::deg,
+                        fpv_mode);
         }
         plan.landmarks.push_back (
           { .kind = CinematicLandmarkKind::Sanctuary,
@@ -1043,8 +1641,13 @@ namespace moppe::game {
         if (!plan.waypoints.empty ())
           subject =
             unwrap_near (subject, plan.waypoints.back ().position, surface);
-        const meters_t radius = std::clamp (
-          surface.domain ().period_x () * 0.048f, 165.0f * u::m, 320.0f * u::m);
+        const meters_t radius =
+          fpv_mode ? std::clamp (surface.domain ().period_x () * 0.022f,
+                                 120.0f * u::m,
+                                 185.0f * u::m)
+                   : std::clamp (surface.domain ().period_x () * 0.048f,
+                                 165.0f * u::m,
+                                 320.0f * u::m);
         const direction_t east = unit_direction (Vec3 (1, 0, 0));
         direction_t incoming = east;
         if (!plan.waypoints.empty ())
@@ -1062,13 +1665,13 @@ namespace moppe::game {
           u::rad;
         const bool turning_right = signed_turn < 0.0f * u::rad;
         const radians_t orbit_angle =
-          std::clamp (abs (signed_turn), 0.70f * u::rad, 2.0f * u::rad);
+          std::clamp (abs (signed_turn), 0.85f * u::rad, 2.0f * u::rad);
         const direction_t radial = unit_direction (
           Vec3 (
             direction_value (incoming)[2], 0, -direction_value (incoming)[0]) *
           (turning_right ? -1.0f : 1.0f));
         position_t first = subject + flight_shift (along (radial, radius));
-        flight_raise (first, radius * 0.34f);
+        flight_raise (first, radius * (fpv_mode ? 0.22f : 0.34f));
         add_transit (plan, surface, first, subject);
         for (int i = 0; i < 5; ++i) {
           const proportion_t progress = static_cast<float> (i) / 4.0f * one;
@@ -1081,17 +1684,19 @@ namespace moppe::game {
               along (incoming, std::sin (radians_value (angle)) * radius));
           flight_raise (
             eye,
-            meters_t (radius * (0.34f * proportion[one] + 0.12f * progress)));
+            meters_t (radius * ((fpv_mode ? 0.20f : 0.34f) * proportion[one] +
+                                0.10f * progress)));
           const position_t look =
             subject + flight_shift (displacement (
-                        Vec3 (0, meters_value (radius * 0.06f), 0)));
+                        Vec3 (0, meters_value (radius * 0.04f), 0)));
           add_waypoint (plan,
                         surface,
                         eye,
                         look,
-                        68.0f * u::m,
-                        118.0f * u::m / u::s,
-                        53.0f * u::deg);
+                        (fpv_mode ? 24.0f : 68.0f) * u::m,
+                        (fpv_mode ? 78.0f : 118.0f) * u::m / u::s,
+                        54.0f * u::deg,
+                        fpv_mode);
         }
         record_landmark (plan, CinematicLandmarkKind::Peak, peak, subject);
         break;
@@ -1109,33 +1714,35 @@ namespace moppe::game {
         : level_direction (final_subject - plan.waypoints.back ().position,
                            unit_direction (Vec3 (1, 0, 1)));
     const position_t reveal =
-      final_subject - flight_shift (along (final_in, 210.0f * u::m)) +
-      flight_shift (displacement (Vec3 (0.0f, 98.0f, 0.0f)));
+      final_subject - flight_shift (along (final_in, 190.0f * u::m)) +
+      flight_shift (displacement (Vec3 (0.0f, fpv_mode ? 64.0f : 98.0f, 0.0f)));
     add_transit (plan, surface, reveal, final_subject);
     add_waypoint (plan,
                   surface,
                   reveal,
                   final_subject,
-                  68.0f * u::m,
-                  150.0f * u::m / u::s,
-                  60.0f * u::deg);
+                  (fpv_mode ? 38.0f : 68.0f) * u::m,
+                  (fpv_mode ? 95.0f : 150.0f) * u::m / u::s,
+                  60.0f * u::deg,
+                  fpv_mode);
     const position_t final_eye =
-      final_subject - flight_shift (along (final_in, 62.0f * u::m)) +
-      flight_shift (displacement (Vec3 (0.0f, 38.0f, 0.0f)));
+      final_subject - flight_shift (along (final_in, 44.0f * u::m)) +
+      flight_shift (displacement (Vec3 (0.0f, fpv_mode ? 18.0f : 38.0f, 0.0f)));
     add_waypoint (plan,
                   surface,
                   final_eye,
                   final_subject,
-                  32.0f * u::m,
-                  72.0f * u::m / u::s,
-                  62.0f * u::deg);
+                  (fpv_mode ? 14.0f : 32.0f) * u::m,
+                  (fpv_mode ? 42.0f : 72.0f) * u::m / u::s,
+                  62.0f * u::deg,
+                  fpv_mode);
     plan.landmarks.push_back ({ .kind = CinematicLandmarkKind::Arrival,
                                 .cell = no_cell,
                                 .score = 0.0f,
                                 .position = arrival });
 
-    // Pace the tour to a requested target duration while preserving the speed
-    // contrast between brisk transits and slower scenic landmark beats.
+    // Pace the tour to a requested target duration while preserving the wide
+    // speed contrast between fast overland transits and slow FPV highlights.
     if (duration > 0.0f * u::s && plan.waypoints.size () >= 2) {
       seconds_t nominal = 0.0f * u::s;
       for (std::size_t i = 0; i + 1 < plan.waypoints.size (); ++i) {
@@ -1147,33 +1754,45 @@ namespace moppe::game {
                             plan.waypoints[i + 1].cruise_speed));
         nominal += span / mean_speed;
       }
-      // Account for curvature braking around landmark bends when fitting the
-      // nominal route time to the requested target duration.
-      const seconds_t estimated = nominal * 1.25f;
+      const seconds_t estimated = nominal * 1.18f;
       const seconds_t target = std::max (8.0f * u::s, duration - 1.5f * u::s);
       if (estimated > 1.0f * u::s) {
         const scale_factor_t factor =
           std::clamp (quantity_cast<scale_factor> (estimated / target),
-                      0.55f * scale_factor[one],
-                      2.20f * scale_factor[one]);
+                      0.65f * scale_factor[one],
+                      1.80f * scale_factor[one]);
         for (CinematicFlightWaypoint& wp : plan.waypoints)
-          wp.cruise_speed =
-            std::clamp<speed_t> (speed_t (wp.cruise_speed * factor),
-                                 42.0f * u::m / u::s,
-                                 340.0f * u::m / u::s);
+          wp.cruise_speed = std::clamp<speed_t> (
+            speed_t (wp.cruise_speed * factor),
+            wp.low_altitude ? 30.0f * u::m / u::s : 120.0f * u::m / u::s,
+            wp.low_altitude ? 115.0f * u::m / u::s : 380.0f * u::m / u::s);
       }
     }
 
-    // Lift the finished route smoothly above forest crowns along the entire
-    // corridor so the drone never clips foliage during low passes or landing.
-    if (!trees.empty ())
-      lift_waypoints_over_canopy (plan.waypoints,
+    plan.target_duration = duration;
+
+    // With real forest data, steer low FPV corridors cleanly around trunks and
+    // crowns while keeping high transits well above the canopy.
+    if (fpv_mode) {
+      plan.style.clearance = 5.0f * u::m;
+      plan.style.floor = 4.0f * u::m;
+      plan.style.anticipation = 50.0f * u::m;
+      plan.style.slowest_turn = 24.0f * u::m / u::s;
+      plan.style.look_near_least = 18.0f * u::m;
+      plan.style.look_near_most = 72.0f * u::m;
+      plan.style.look_far_least = 110.0f * u::m;
+      plan.style.look_far_most = 320.0f * u::m;
+      plan.style.subject_weight = 0.68f * one;
+      plan.style.bank = 0.25f * u::rad;
+      plan.style.subject_smoothing = 34.0f * u::m;
+      navigate_forest_and_canopy (plan.waypoints,
                                   surface,
                                   trees,
-                                  34.0f * u::m,
-                                  15.0f * u::m,
-                                  plan.style.clearance,
-                                  plan.style.anticipation);
+                                  30.0f * u::m,
+                                  13.0f * u::m,
+                                  28.0f * u::m,
+                                  130.0f * u::m);
+    }
 
     return plan;
   }
@@ -1672,6 +2291,9 @@ namespace moppe::game {
 
     // 2. Gentle floor-preserving position diffusion removes any residual
     //    high-frequency wiggle from waypoint transitions or terrain bumps.
+    //    In low-altitude FPV mode, smooth altitude only so the ribbon never
+    //    cuts corners laterally into trailside or riverbank trees.
+    const bool preserve_xz = m_style.clearance < 10.0f * u::m;
     std::vector<position_t> smoothed_pos (count);
     for (int pass = 0; pass < 16; ++pass) {
       smoothed_pos.front () = m_arc_samples.front ().position;
@@ -1680,6 +2302,10 @@ namespace moppe::game {
         Vec3 blended = position_value (m_arc_samples[i - 1].position) * 0.25f +
                        position_value (m_arc_samples[i].position) * 0.50f +
                        position_value (m_arc_samples[i + 1].position) * 0.25f;
+        if (preserve_xz) {
+          blended[0] = position_value (m_arc_samples[i].position)[0];
+          blended[2] = position_value (m_arc_samples[i].position)[2];
+        }
         const meters_t ground_here =
           flight_ground (surface, moppe::plan (moppe::position (blended)));
         const meters_t floor_here =
@@ -1740,7 +2366,7 @@ namespace moppe::game {
       m_arc_samples[i].subject = smooth_subject[i];
 
     // 4. Curvature-aware speed envelope with smooth longitudinal limits.
-    std::vector<speed_t> speed_limit (count, 350.0f * u::m / u::s);
+    std::vector<speed_t> speed_limit (count, 390.0f * u::m / u::s);
     for (std::size_t i = 1; i + 1 < count; ++i) {
       std::size_t left = i - 1;
       while (left > 0 &&
@@ -1770,10 +2396,10 @@ namespace moppe::game {
       const auto curvature = angle / std::max (1.0f * u::m, tangent_separation);
       if (curvature > 1e-5f * u::rad / u::m)
         speed_limit[i] = std::clamp<speed_t> (
-          std::sqrt (42.0f / curvature.numerical_value_in (u::rad / u::m)) *
+          std::sqrt (78.0f / curvature.numerical_value_in (u::rad / u::m)) *
             u::m / u::s,
           m_style.slowest_turn,
-          350.0f * u::m / u::s);
+          395.0f * u::m / u::s);
     }
     for (std::size_t i = count - 1; i > 0; --i) {
       const meters_t span =
@@ -1781,7 +2407,7 @@ namespace moppe::game {
       const speed_t limit = speed_limit[i];
       const speed_t braking_limit =
         std::sqrt (speed_value (limit) * speed_value (limit) +
-                   2.0f * 16.0f * meters_value (span)) *
+                   2.0f * 54.0f * meters_value (span)) *
         u::m / u::s;
       speed_limit[i - 1] = std::min (speed_limit[i - 1], braking_limit);
     }
@@ -1791,21 +2417,54 @@ namespace moppe::game {
       const speed_t limit = speed_limit[i - 1];
       const speed_t acceleration_limit =
         std::sqrt (speed_value (limit) * speed_value (limit) +
-                   2.0f * 14.0f * meters_value (span)) *
+                   2.0f * 48.0f * meters_value (span)) *
         u::m / u::s;
       speed_limit[i] = std::min (speed_limit[i], acceleration_limit);
     }
     for (std::size_t i = 0; i < count; ++i)
       m_arc_samples[i].cruise_speed =
         std::min (m_arc_samples[i].cruise_speed, speed_limit[i]);
+
+    // 5. Post-ribbon duration pacing against the actual curvature-limited
+    //    arc so a requested length lands on target without dragging transits.
+    if (m_target_duration > 0.0f * u::s) {
+      seconds_t actual = 0.0f * u::s;
+      for (std::size_t i = 1; i < count; ++i) {
+        const meters_t span =
+          m_arc_samples[i].distance - m_arc_samples[i - 1].distance;
+        const speed_t mean =
+          std::max (8.0f * u::m / u::s,
+                    0.5f * (m_arc_samples[i - 1].cruise_speed +
+                            m_arc_samples[i].cruise_speed));
+        actual += span / mean;
+      }
+      const seconds_t target =
+        std::max (8.0f * u::s, m_target_duration - 2.0f * u::s);
+      if (actual > 1.0f * u::s) {
+        const scale_factor_t factor =
+          std::clamp (quantity_cast<scale_factor> ((actual * 1.06f) / target),
+                      0.65f * scale_factor[one],
+                      1.95f * scale_factor[one]);
+        for (std::size_t i = 0; i < count; ++i)
+          m_arc_samples[i].cruise_speed = std::clamp<speed_t> (
+            speed_t (m_arc_samples[i].cruise_speed * factor),
+            22.0f * u::m / u::s,
+            395.0f * u::m / u::s);
+      }
+    }
   }
 
   void CinematicFlight::start (const CinematicFlightPlan& plan,
                                const map::SurfaceGeometry& surface) {
     m_waypoints = plan.waypoints;
     m_style = plan.style;
+    m_target_duration = plan.target_duration;
+    const bool dense_fpv =
+      m_style.clearance < 10.0f * u::m && m_waypoints.size () >= 120;
     const int chaikin_passes =
-      m_waypoints.size () < 80 ? 4 : (m_waypoints.size () < 220 ? 2 : 1);
+      dense_fpv
+        ? 0
+        : (m_waypoints.size () < 80 ? 4 : (m_waypoints.size () < 220 ? 2 : 1));
     for (int pass = 0; pass < chaikin_passes && m_waypoints.size () >= 2;
          ++pass) {
       std::vector<CinematicFlightWaypoint> rounded;
@@ -1904,11 +2563,11 @@ namespace moppe::game {
 
     const metres_per_second_squared_t wanted_acceleration =
       std::clamp<metres_per_second_squared_t> ((wanted_speed - m_speed) *
-                                                 (1.8f / u::s),
-                                               -16.0f * u::m / u::s2,
-                                               14.0f * u::m / u::s2);
+                                                 (2.2f / u::s),
+                                               -54.0f * u::m / u::s2,
+                                               48.0f * u::m / u::s2);
     // The most the thrust changes in a second.
-    const auto jerk = 28.0f * u::m / (u::s2 * u::s);
+    const auto jerk = 90.0f * u::m / (u::s2 * u::s);
     const metres_per_second_squared_t acceleration_step =
       std::clamp<metres_per_second_squared_t> (wanted_acceleration -
                                                  m_longitudinal_acceleration,

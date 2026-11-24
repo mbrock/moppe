@@ -368,10 +368,24 @@ MOPPE_TEST (cinematic_flight_clears_forest_canopy_and_visits_sanctuary) {
     const terrain::SurfaceElevation ground =
       spatial::sample<terrain::surface_elevation> (
         fixture.surface, at_height (moppe::plan (p), 0.0f * u::m));
-    // Must stay comfortably above the 42 m forest crowns everywhere.
-    MOPPE_CHECK (position_value (p)[1] * u::m >=
-                 terrain::surface_elevation_value (ground) * u::m +
-                   42.0f * u::m);
+    const meters_t eye_y = position_value (p)[1] * u::m;
+    MOPPE_CHECK (eye_y >= terrain::surface_elevation_value (ground) * u::m +
+                            4.0f * u::m);
+    // Must never punch into any tree crown: either clear horizontally or above
+    // the 42 m crown top.
+    for (const game::RiverFlightTree& tree : trees) {
+      const meters_t dx = terrain::minimum_image_delta (
+        x_of (moppe::plan (p)) - x_of (tree.at), fixture.grid.period_x ());
+      const meters_t dz = terrain::minimum_image_delta (
+        z_of (moppe::plan (p)) - z_of (tree.at), fixture.grid.period_z ());
+      if (dx * dx + dz * dz < 6.0f * u::m * 6.0f * u::m) {
+        const terrain::SurfaceElevation tg =
+          spatial::sample<terrain::surface_elevation> (
+            fixture.surface, at_height (tree.at, 0.0f * u::m));
+        MOPPE_CHECK (eye_y >= terrain::surface_elevation_value (tg) * u::m +
+                                tree.height);
+      }
+    }
   }
   MOPPE_CHECK (!flight.active ());
   MOPPE_CHECK (frames > 60);

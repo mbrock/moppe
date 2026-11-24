@@ -42,12 +42,12 @@
       "escapes": 61
     },
     "Game logic": {
-      "share": 82.6,
+      "share": 83.1,
       "files": 48,
-      "typed": 1935,
+      "typed": 2028,
       "raw_float": 220,
-      "raw_vector": 187,
-      "escapes": 1021
+      "raw_vector": 192,
+      "escapes": 1047
     },
     "HUD & map": {
       "share": 81.4,
@@ -106,12 +106,12 @@
       "escapes": 256
     },
     "Tests": {
-      "share": 40.1,
+      "share": 40.2,
       "files": 86,
-      "typed": 670,
+      "typed": 674,
       "raw_float": 802,
       "raw_vector": 199,
-      "escapes": 1412
+      "escapes": 1413
     },
     "Vehicles & on-foot body": {
       "share": 77.6,
