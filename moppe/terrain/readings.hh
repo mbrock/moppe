@@ -21,12 +21,28 @@ namespace moppe::terrain {
     ElevationRange
     measure_elevation_range (const TerrainDomain& domain,
                              std::span<const SurfaceElevation> elevations);
+
+    // High-quantile terrestrial relief above sea level (92nd percentile of
+    // above-sea cells scaled to massif relief, capped at true maximum relief).
+    // Keeps biome boundaries (tree line, snowline, frozen alpine tarns)
+    // anchored to the massif even when jagged horn peaks tower above it.
+    meters_t
+    measure_climatic_relief (const TerrainDomain& domain,
+                             std::span<const SurfaceElevation> elevations,
+                             SurfaceElevation sea_level);
   }
 
   template <TerrainElevations Terrain>
   ElevationRange measure_elevation_range (const Terrain& terrain) {
     return detail::measure_elevation_range (terrain.domain (),
                                             elevations (terrain));
+  }
+
+  template <TerrainElevations Terrain>
+  meters_t measure_climatic_relief (const Terrain& terrain,
+                                    SurfaceElevation sea_level) {
+    return detail::measure_climatic_relief (
+      terrain.domain (), elevations (terrain), sea_level);
   }
 
   template <TerrainElevations Terrain>

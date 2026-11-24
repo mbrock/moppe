@@ -32,6 +32,76 @@ namespace moppe::terrain {
       h = (h ^ (h >> 13u)) * 1274126177u;
       return h ^ (h >> 16u);
     }
+
+    proportion_t lattice_value (std::int32_t gx,
+                                std::int32_t gz,
+                                std::uint32_t seed) noexcept {
+      const std::uint32_t h =
+        peak_hash (static_cast<std::uint32_t> (gx) ^ seed,
+                   static_cast<std::uint32_t> (gz) ^ (seed * 2654435761u));
+      return static_cast<float> (h & 0xffffu) * (1.0f / 65535.0f) *
+             proportion[one];
+    }
+
+    // Deterministic smooth value noise (0..1) for organic alpine domain
+    // warping.
+    proportion_t smooth_noise_octave (meters_t wx,
+                                      meters_t wz,
+                                      meters_t wavelength,
+                                      std::uint32_t seed) noexcept {
+      const quantity<one, float> sx = wx / wavelength;
+      const quantity<one, float> sz = wz / wavelength;
+      const quantity<one, float> fx =
+        std::floor (sx.numerical_value_in (one)) * one;
+      const quantity<one, float> fz =
+        std::floor (sz.numerical_value_in (one)) * one;
+      const std::int32_t ix =
+        static_cast<std::int32_t> (fx.numerical_value_in (one));
+      const std::int32_t iz =
+        static_cast<std::int32_t> (fz.numerical_value_in (one));
+      const proportion_t ux =
+        (sx - fx).numerical_value_in (one) * proportion[one];
+      const proportion_t uz =
+        (sz - fz).numerical_value_in (one) * proportion[one];
+      const proportion_t tx =
+        proportion_t (ux * ux * (3.0f * whole_part - 2.0f * ux));
+      const proportion_t tz =
+        proportion_t (uz * uz * (3.0f * whole_part - 2.0f * uz));
+      const proportion_t v00 = lattice_value (ix, iz, seed);
+      const proportion_t v10 = lattice_value (ix + 1, iz, seed);
+      const proportion_t v01 = lattice_value (ix, iz + 1, seed);
+      const proportion_t v11 = lattice_value (ix + 1, iz + 1, seed);
+      return moppe::lerp (
+        moppe::lerp (v00, v10, tx), moppe::lerp (v01, v11, tx), tz);
+    }
+
+    // Deterministic smooth value noise folded into crisp alpine ridges (0..1).
+    proportion_t ridged_noise_octave (meters_t wx,
+                                      meters_t wz,
+                                      meters_t wavelength,
+                                      std::uint32_t seed) noexcept {
+      const proportion_t v = smooth_noise_octave (wx, wz, wavelength, seed);
+      const proportion_t folded =
+        (1.0f - std::fabs (2.0f * v.numerical_value_in (one) - 1.0f)) *
+        proportion[one];
+      return cr::pow (folded.numerical_value_in (one), 1.50f) * proportion[one];
+    }
+
+    radians_t wrapped_angle_diff (radians_t a, radians_t b) noexcept {
+      const radians_t d = a - b;
+      return cr::atan2 (cr::sin (radians_value (d)),
+                        cr::cos (radians_value (d))) *
+             u::rad;
+    }
+
+    struct AlpineHorn {
+      meters_t x = 0.0f * u::m;
+      meters_t z = 0.0f * u::m;
+      meters_t radius = 260.0f * u::m;
+      meters_t prominence = 150.0f * u::m;
+      radians_t phase = 0.0f * u::rad;
+      int ribs = 4;
+    };
   }
 
   GlacialSculptingResult
@@ -721,11 +791,11 @@ namespace moppe::terrain {
           // Sculpt a sweeping descending glacier snow valley (glaciärtunga)
           // off the leeward flank of the kalfjäll snowfield down toward the
           // upper tree line, giving a continuous, banked alpine snow corridor.
+          bool found_exit = false;
+          radians_t best_exit = 0.0f * u::rad;
           const meters_t valley_len =
             std::min (parameters.snow_valley_length, 0.35f * world_span);
           if (valley_len >= 300.0f * u::m) {
-            bool found_exit = false;
-            radians_t best_exit = 0.0f * u::rad;
             scale_factor_t best_score = -1e9f * scale_factor[one];
             const SurfaceElevation target_exit_y =
               sea_level +
@@ -962,6 +1032,438 @@ namespace moppe::terrain {
                   outwash[cell] = std::max (outwash[cell], cover);
                 }
               }
+            }
+          }
+
+          // Sculpt a dramatic crescent of jagged alpine horn peaks (alptoppar)
+          // and knife-edge arêtes ringing ~195 deg of the inland snowfield rim,
+          // while keeping the opposite lowland drop-off vista and the
+          // descending glacier chute completely open.
+          if (parameters.sculpt_alpine_horns &&
+              parameters.alpine_horn_prominence > 10.0f * u::m) {
+            MOPPE_PROFILE_ZONE ("glacial.alpine_horns");
+            const scale_factor_t relief_factor =
+              std::clamp (
+                (land_relief / (280.0f * u::m)).numerical_value_in (one),
+                0.45f,
+                1.20f) *
+              scale_factor[one];
+            const meters_t base_prominence =
+              meters_t (parameters.alpine_horn_prominence * relief_factor);
+
+            // Pick the best crescent centre: clear of ocean, carved U-troughs,
+            // and the descending snow valley, preferring the highest inland
+            // backing so the lowest scenic drop-off stays wide open.
+            bool found_crest = false;
+            radians_t crest_center = 0.0f * u::rad;
+            meters_t best_crest_score = -1e9f * u::m;
+            const auto sample_arc_clear = [&] (radians_t center_ang,
+                                               radians_t min_exit_sep) {
+              if (found_exit && abs (wrapped_angle_diff (
+                                  center_ang, best_exit)) < min_exit_sep)
+                return std::pair<bool, meters_t> (false, 0.0f * u::m);
+              meters_t arc_sum = 0.0f * u::m;
+              meters_t opp_sum = 0.0f * u::m;
+              int arc_count = 0;
+              for (int s = -2; s <= 2; ++s) {
+                const radians_t ang =
+                  center_ang + static_cast<float> (s) * 0.68f * u::rad;
+                const scale_factor_t lobe =
+                  plateau_lobe (wrapped_angle_diff (ang, axis_angle));
+                const quantity<one, float> ca =
+                  cr::cos (radians_value (ang)) * one;
+                const quantity<one, float> sa =
+                  cr::sin (radians_value (ang)) * one;
+                const meters_t rad_here =
+                  0.5f * (r_along + r_across) * lobe.numerical_value_in (one);
+                for (const float mult : { 1.12f, 1.48f }) {
+                  const meters_t px = anchor_x + (mult * rad_here) * ca;
+                  const meters_t pz = anchor_z + (mult * rad_here) * sa;
+                  const int cx = static_cast<int> (
+                    std::lround ((px / spacing_x).numerical_value_in (one)));
+                  const int cz = static_cast<int> (
+                    std::lround ((pz / spacing_z).numerical_value_in (one)));
+                  const std::size_t cell =
+                    static_cast<std::size_t> (wrap_index (cz, height)) * width +
+                    wrap_index (cx, width);
+                  if (flood.ocean[cell] || trough_mask[cell])
+                    return std::pair<bool, meters_t> (false, 0.0f * u::m);
+                  arc_sum +=
+                    quantity_cast<isq::length> (formed[cell] - sea_level);
+                  ++arc_count;
+                }
+                // Check opposite side elevation so lower open vistas win.
+                const meters_t ox = anchor_x - (1.35f * rad_here) * ca;
+                const meters_t oz = anchor_z - (1.35f * rad_here) * sa;
+                const int ocx = static_cast<int> (
+                  std::lround ((ox / spacing_x).numerical_value_in (one)));
+                const int ocz = static_cast<int> (
+                  std::lround ((oz / spacing_z).numerical_value_in (one)));
+                const std::size_t ocell =
+                  static_cast<std::size_t> (wrap_index (ocz, height)) * width +
+                  wrap_index (ocx, width);
+                opp_sum +=
+                  quantity_cast<isq::length> (formed[ocell] - sea_level);
+              }
+              const meters_t mean_arc =
+                arc_sum / static_cast<float> (std::max (1, arc_count));
+              const meters_t mean_opp = opp_sum / 5.0f;
+              return std::pair<bool, meters_t> (true,
+                                                mean_arc - 1.15f * mean_opp);
+            };
+
+            for (const radians_t sep : { 1.85f * u::rad, 1.45f * u::rad }) {
+              for (int k = 0; k < 16; ++k) {
+                const radians_t cand =
+                  (static_cast<float> (k) * 6.2831853f / 16.0f) * u::rad;
+                const auto [ok, score] = sample_arc_clear (cand, sep);
+                if (ok && score > best_crest_score) {
+                  best_crest_score = score;
+                  crest_center = cand;
+                  found_crest = true;
+                }
+              }
+              if (found_crest)
+                break;
+            }
+
+            if (found_crest) {
+              constexpr radians_t arc_half_span = 1.70f * u::rad; // ~195 deg
+              constexpr int primary_count = 7;
+              constexpr int outboard_count = 6;
+              std::vector<AlpineHorn> horns;
+              horns.reserve (primary_count + outboard_count);
+
+              const auto horn_rand = [&] (std::uint32_t idx,
+                                          std::uint32_t salt) -> proportion_t {
+                const std::uint32_t h = peak_hash (
+                  massif_hash ^ (idx * 2246822519u), salt * 3266489917u + 13u);
+                return static_cast<float> (h & 0xffffu) * (1.0f / 65535.0f) *
+                       proportion[one];
+              };
+
+              const auto rim_point = [&] (radians_t world_ang,
+                                          scale_factor_t r_scale) {
+                const radians_t local =
+                  wrapped_angle_diff (world_ang, axis_angle);
+                const scale_factor_t lobe = plateau_lobe (local);
+                const quantity<one, float> cl =
+                  cr::cos (radians_value (local)) * one;
+                const quantity<one, float> sl =
+                  cr::sin (radians_value (local)) * one;
+                const meters_t lu = meters_t (r_along * lobe * r_scale) * cl;
+                const meters_t lv = meters_t (r_across * lobe * r_scale) * sl;
+                const meters_t rx = lu * axis_x - lv * axis_z;
+                const meters_t rz = lu * axis_z + lv * axis_x;
+                return std::pair<meters_t, meters_t> (anchor_x + rx,
+                                                      anchor_z + rz);
+              };
+
+              // 7 broad overlapping alpine massif summits ringing the inland
+              // rim; wide bases (400-540 m) merge into a continuous snow-and-
+              // rock mountain range instead of isolated cones.
+              for (int i = 0; i < primary_count; ++i) {
+                const proportion_t t =
+                  (static_cast<float> (i) /
+                   static_cast<float> (primary_count - 1)) *
+                  proportion[one];
+                const quantity<one, float> jitter =
+                  (horn_rand (static_cast<std::uint32_t> (i), 1u)
+                     .numerical_value_in (one) -
+                   0.5f) *
+                  0.12f * one;
+                const quantity<one, float> s =
+                  std::clamp (2.0f * t.numerical_value_in (one) - 1.0f +
+                                jitter.numerical_value_in (one),
+                              -0.98f,
+                              0.98f) *
+                  one;
+                const radians_t ang =
+                  crest_center + s.numerical_value_in (one) * arc_half_span;
+                const scale_factor_t r_scale =
+                  (1.02f +
+                   0.16f * horn_rand (static_cast<std::uint32_t> (i), 2u)
+                             .numerical_value_in (one)) *
+                  scale_factor[one];
+                const auto [hx, hz] = rim_point (ang, r_scale);
+                const scale_factor_t arch =
+                  cr::cos (1.02f * s.numerical_value_in (one)) *
+                  scale_factor[one];
+                const scale_factor_t var =
+                  (0.80f +
+                   0.34f * horn_rand (static_cast<std::uint32_t> (i), 3u)
+                             .numerical_value_in (one)) *
+                  scale_factor[one];
+                const meters_t prom = meters_t (base_prominence * arch * var);
+                const meters_t rad =
+                  (410.0f +
+                   130.0f * horn_rand (static_cast<std::uint32_t> (i), 4u)
+                              .numerical_value_in (one)) *
+                  u::m;
+                const radians_t ph =
+                  horn_rand (static_cast<std::uint32_t> (i), 5u)
+                    .numerical_value_in (one) *
+                  6.2831853f * u::rad;
+                const int ribs =
+                  3 +
+                  static_cast<int> (
+                    peak_hash (massif_hash, static_cast<std::uint32_t> (i)) %
+                    3u);
+                horns.push_back ({ .x = hx,
+                                   .z = hz,
+                                   .radius = rad,
+                                   .prominence = prom,
+                                   .phase = ph,
+                                   .ribs = ribs });
+              }
+
+              // 6 secondary outboard ridges & glacial shoulders staggered
+              // behind the primary cols for deep multi-layered mountain vistas.
+              for (int i = 0; i < outboard_count; ++i) {
+                const proportion_t t = ((static_cast<float> (i) + 0.5f) /
+                                        static_cast<float> (outboard_count)) *
+                                       proportion[one];
+                const quantity<one, float> s =
+                  (2.0f * t.numerical_value_in (one) - 1.0f) * one;
+                const radians_t ang =
+                  crest_center +
+                  s.numerical_value_in (one) * (0.94f * arc_half_span);
+                const scale_factor_t r_scale =
+                  (1.30f +
+                   0.24f * horn_rand (static_cast<std::uint32_t> (i + 16), 2u)
+                             .numerical_value_in (one)) *
+                  scale_factor[one];
+                const auto [hx, hz] = rim_point (ang, r_scale);
+                const scale_factor_t arch =
+                  cr::cos (0.98f * s.numerical_value_in (one)) *
+                  scale_factor[one];
+                const scale_factor_t var =
+                  (0.62f +
+                   0.34f * horn_rand (static_cast<std::uint32_t> (i + 16), 3u)
+                             .numerical_value_in (one)) *
+                  scale_factor[one];
+                const meters_t prom = meters_t (base_prominence * arch * var);
+                const meters_t rad =
+                  (370.0f +
+                   120.0f * horn_rand (static_cast<std::uint32_t> (i + 16), 4u)
+                              .numerical_value_in (one)) *
+                  u::m;
+                const radians_t ph =
+                  horn_rand (static_cast<std::uint32_t> (i + 16), 5u)
+                    .numerical_value_in (one) *
+                  6.2831853f * u::rad;
+                const int ribs =
+                  3 + static_cast<int> (
+                        peak_hash (massif_hash,
+                                   static_cast<std::uint32_t> (i + 32)) %
+                        3u);
+                horns.push_back ({ .x = hx,
+                                   .z = hz,
+                                   .radius = rad,
+                                   .prominence = prom,
+                                   .phase = ph,
+                                   .ribs = ribs });
+              }
+
+              const meters_t horn_bound =
+                2.05f * std::max (r_along, r_across) + 480.0f * u::m;
+              const int hmin_x = static_cast<int> (
+                std::floor (((anchor_x - horn_bound) / spacing_x)
+                              .numerical_value_in (one)));
+              const int hmax_x = static_cast<int> (
+                std::ceil (((anchor_x + horn_bound) / spacing_x)
+                             .numerical_value_in (one)));
+              const int hmin_z = static_cast<int> (
+                std::floor (((anchor_z - horn_bound) / spacing_z)
+                              .numerical_value_in (one)));
+              const int hmax_z = static_cast<int> (
+                std::ceil (((anchor_z + horn_bound) / spacing_z)
+                             .numerical_value_in (one)));
+              const std::uint32_t crag_seed = massif_hash ^ 0x51f29a3du;
+
+              for (int iz = hmin_z; iz <= hmax_z; ++iz)
+                for (int ix = hmin_x; ix <= hmax_x; ++ix) {
+                  const std::size_t cell =
+                    static_cast<std::size_t> (wrap_index (iz, height)) * width +
+                    wrap_index (ix, width);
+                  if (flood.ocean[cell] || trough_mask[cell])
+                    continue;
+                  const meters_t wx = static_cast<float> (ix) * spacing_x;
+                  const meters_t wz = static_cast<float> (iz) * spacing_z;
+                  const meters_t rx = wx - anchor_x;
+                  const meters_t rz = wz - anchor_z;
+                  const meters_t u_along = rx * axis_x + rz * axis_z;
+                  const meters_t u_across = -rx * axis_z + rz * axis_x;
+                  const radians_t local_theta =
+                    cr::atan2 (meters_value (u_across),
+                               meters_value (u_along)) *
+                    u::rad;
+                  const scale_factor_t lobe = plateau_lobe (local_theta);
+                  const quantity<one, float> nx =
+                    u_along / meters_t (r_along * lobe);
+                  const quantity<one, float> nz =
+                    u_across / meters_t (r_across * lobe);
+                  const scale_factor_t r_norm =
+                    cr::hypot (nx.numerical_value_in (one),
+                               nz.numerical_value_in (one)) *
+                    scale_factor[one];
+                  // Keep the wide rideable snowfield interior & frozen tarns
+                  // open while broad snow aprons sweep up the surrounding
+                  // range.
+                  if (r_norm <= 0.62f * scale_factor[one] ||
+                      r_norm >= 2.15f * scale_factor[one])
+                    continue;
+
+                  const radians_t world_ang =
+                    cr::atan2 (meters_value (rz), meters_value (rx)) * u::rad;
+                  const radians_t from_crest =
+                    abs (wrapped_angle_diff (world_ang, crest_center));
+                  if (from_crest >= arc_half_span + 0.55f * u::rad)
+                    continue;
+
+                  // Keep the descending glacier snow chute wide open.
+                  proportion_t chute_clear = whole_part;
+                  if (found_exit) {
+                    const radians_t from_exit =
+                      abs (wrapped_angle_diff (world_ang, best_exit));
+                    chute_clear =
+                      band (0.42f * u::rad, 0.76f * u::rad, from_exit);
+                    if (chute_clear <= 1e-4f * proportion[one])
+                      continue;
+                  }
+
+                  const proportion_t inner_fade =
+                    band (0.62f * scale_factor[one],
+                          0.92f * scale_factor[one],
+                          r_norm);
+                  const proportion_t outer_fade =
+                    whole_part - band (1.28f * scale_factor[one],
+                                       2.05f * scale_factor[one],
+                                       r_norm);
+                  const proportion_t arc_fade =
+                    whole_part - band (arc_half_span - 0.12f * u::rad,
+                                       arc_half_span + 0.45f * u::rad,
+                                       from_crest);
+
+                  // Broad continuous mountain-range backbone linking all
+                  // summits with wide snowy cols and sweeping glacier aprons.
+                  const proportion_t range_band =
+                    proportion_t (inner_fade * outer_fade * arc_fade);
+                  meters_t lift =
+                    meters_t (base_prominence * 0.56f * range_band);
+
+                  // Blend overlapping broad summit massifs smoothly (never
+                  // narrow isolated needle cones).
+                  for (const AlpineHorn& horn : horns) {
+                    const meters_t dx = wx - horn.x;
+                    const meters_t dz = wz - horn.z;
+                    const meters_t d = hypot (plan_displacement (dx, dz));
+                    if (d >= horn.radius)
+                      continue;
+                    const radians_t phi =
+                      cr::atan2 (meters_value (dz), meters_value (dx)) * u::rad;
+                    const proportion_t rib_wave =
+                      std::fabs (cr::sin (
+                        0.5f * static_cast<float> (horn.ribs) *
+                        (radians_value (phi) - radians_value (horn.phase)))) *
+                      proportion[one];
+                    const scale_factor_t rib_reach =
+                      (0.76f +
+                       0.24f * (1.0f - rib_wave.numerical_value_in (one))) *
+                      scale_factor[one];
+                    const meters_t eff_r = meters_t (horn.radius * rib_reach);
+                    if (d >= eff_r)
+                      continue;
+                    const proportion_t u =
+                      (1.0f - (d / eff_r).numerical_value_in (one)) *
+                      proportion[one];
+                    // Broad natural alpine massif profile: sweeping snowy
+                    // flanks rising into faceted rocky summits without pinched
+                    // shark-fin spikes.
+                    const scale_factor_t massif_shape =
+                      (0.80f * cr::pow (u.numerical_value_in (one), 1.30f) +
+                       0.20f * cr::pow (u.numerical_value_in (one), 1.85f)) *
+                      scale_factor[one];
+                    const meters_t horn_lift =
+                      meters_t (horn.prominence * massif_shape);
+                    // Smooth max keeps saddles organic between adjacent peaks.
+                    const meters_t diff = abs (horn_lift - lift);
+                    const meters_t blend =
+                      std::max (0.0f * u::m, 34.0f * u::m - diff);
+                    lift = std::max (lift, horn_lift) +
+                           (blend * blend) / (136.0f * u::m);
+                  }
+
+                  const meters_t masked_lift =
+                    meters_t (lift * inner_fade * chute_clear);
+                  if (masked_lift <= 0.5f * u::m)
+                    continue;
+
+                  // Domain-warped 4-octave ridged multifractal alpine terrain:
+                  // carves sweeping glacier couloirs, knife-edge arêtes, and
+                  // steep dark-gneiss cliff bands across the snowy massifs.
+                  const meters_t warp_x =
+                    (smooth_noise_octave (wx, wz, 460.0f * u::m, crag_seed + 3u)
+                       .numerical_value_in (one) -
+                     0.5f) *
+                    220.0f * u::m;
+                  const meters_t warp_z =
+                    (smooth_noise_octave (wx, wz, 460.0f * u::m, crag_seed + 9u)
+                       .numerical_value_in (one) -
+                     0.5f) *
+                    220.0f * u::m;
+                  const meters_t qx = wx + warp_x;
+                  const meters_t qz = wz + warp_z;
+                  const proportion_t r0 =
+                    ridged_noise_octave (qx, qz, 520.0f * u::m, crag_seed);
+                  const proportion_t r1 = ridged_noise_octave (
+                    qx, qz, 220.0f * u::m, crag_seed + 17u);
+                  const proportion_t r2 =
+                    ridged_noise_octave (qx, qz, 96.0f * u::m, crag_seed + 53u);
+                  const proportion_t r3 =
+                    ridged_noise_octave (qx, qz, 44.0f * u::m, crag_seed + 97u);
+                  const scale_factor_t w1 =
+                    (0.46f + 0.54f * r0.numerical_value_in (one)) *
+                    scale_factor[one];
+                  const scale_factor_t w2 =
+                    (0.40f + 0.60f * r0.numerical_value_in (one)) *
+                    scale_factor[one];
+                  const proportion_t ridge_fbm =
+                    (0.40f * r0.numerical_value_in (one) +
+                     0.32f * r1.numerical_value_in (one) *
+                       w1.numerical_value_in (one) +
+                     0.19f * r2.numerical_value_in (one) *
+                       w2.numerical_value_in (one) +
+                     0.09f * r3.numerical_value_in (one) *
+                       w2.numerical_value_in (one)) *
+                    proportion[one];
+                  const meters_t sculpted_lift =
+                    masked_lift *
+                    (0.52f + 0.76f * ridge_fbm.numerical_value_in (one));
+                  if (sculpted_lift <= 0.0f * u::m)
+                    continue;
+
+                  const proportion_t above_sea_fade =
+                    band (sea_level + 4.0f * u::m,
+                          sea_level + 28.0f * u::m,
+                          formed[cell]);
+                  const meters_t final_lift =
+                    meters_t (sculpted_lift * above_sea_fade);
+                  if (final_lift <= 0.0f * u::m)
+                    continue;
+
+                  const SurfaceElevation horn_y = formed[cell] + final_lift;
+                  if (horn_y > formed[cell]) {
+                    formed[cell] = horn_y;
+                    carved_mask[cell] = 1;
+                    // Clear soft outwash cover on rising rocky horn faces so
+                    // steep gneiss headwalls read crisp beside snow couloirs.
+                    if (final_lift > 22.0f * u::m)
+                      outwash[cell] = 0.0f * sediment_thickness[u::m];
+                  }
+                }
+
+              result.horns += horns.size ();
             }
           }
 

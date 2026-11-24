@@ -95,10 +95,8 @@ namespace moppe {
       std::unique_ptr<GameSession> retired_session = std::move (m_session);
       m_generated_world = std::move (completed);
       m_params = m_generated_world->params ();
-      m_land_relief = std::max (
-        1.0f * u::m,
-        meters_t (terrain::measure_elevation_range (surface ()).maximum -
-                  terrain::surface_elevation_point (world ().water_level)));
+      m_land_relief = terrain::measure_climatic_relief (
+        surface (), terrain::surface_elevation_point (world ().water_level));
       m_snow_revision = 0;
       m_recipe = m_generated_world->recipe ();
       // Before the session places anything: its bodies stand on the
@@ -276,11 +274,8 @@ namespace moppe {
       MOPPE_PROFILE_ZONE ("startup.scatter_boulders");
       const meters_t sea_level = world ().water_level;
       // The land's own relief over the sea, never under a metre.
-      const meters_t relief = std::max<meters_t> (
-        quantity_cast<isq::length> (
-          terrain::measure_elevation_range (surface ()).maximum -
-          terrain::surface_elevation_point (sea_level)),
-        1.0f * u::m);
+      const meters_t relief = terrain::measure_climatic_relief (
+        surface (), terrain::surface_elevation_point (sea_level));
       const auto start = std::chrono::steady_clock::now ();
       BoulderPlan plan =
         plan_boulders (surface (),

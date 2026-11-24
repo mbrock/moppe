@@ -54,9 +54,12 @@ namespace moppe::terrain {
     meters_t fjord_inlet_length = 260.0f * u::m;
     // Alluvial glacial outwash blanket laid on the carved U-trough floor.
     meters_t valley_floor_outwash = 2.6f * u::m;
-    // High kalfjäll snowfield massif (rolling ice-cap plateau) and its
-    // descending glacier tongue (snow-filled valley reaching toward tree line).
+    // High kalfjäll snowfield massif (rolling ice-cap plateau), its jagged
+    // alpine horn & arête crown ringing the inland rim, and its descending
+    // glacier tongue (snow-filled valley reaching toward tree line).
     bool sculpt_snowfield = true;
+    bool sculpt_alpine_horns = true;
+    meters_t alpine_horn_prominence = 195.0f * u::m;
     proportion_t snowfield_relief_share = 0.84f * proportion[one];
     meters_t snowfield_radius_along = 920.0f * u::m;
     meters_t snowfield_radius_across = 660.0f * u::m;
@@ -84,6 +87,7 @@ namespace moppe::terrain {
     cubic_meters_f64_t cut = 0.0 * u::m * u::m * u::m;
     std::size_t troughs = 0;
     std::size_t snowfields = 0;
+    std::size_t horns = 0;
     std::size_t cirques = 0;
   };
 

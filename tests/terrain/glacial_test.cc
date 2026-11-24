@@ -1,5 +1,6 @@
 #include <moppe/gfx/signal.hh>
 #include <moppe/terrain/glacial.hh>
+#include <moppe/terrain/readings.hh>
 #include <moppe/terrain/river.hh>
 
 #include <tests/test.hh>
@@ -180,4 +181,67 @@ MOPPE_TEST (
   // Broad rideable snowfield + descending snow valley must cover a substantial
   // area (> 100 cells = > 0.25 km² on this 3.2 km test grid).
   MOPPE_CHECK (high_covered > 100);
+}
+
+MOPPE_TEST (alpine_horns_ring_snowfield_without_skewing_climatic_relief) {
+  // A broad 4.8 km alpine massif surrounded by lowland foothills: glacial
+  // sculpting should ring the inland rim of the snowfield with dramatic jagged
+  // alpine horn peaks (> +80 m above the snowfield), keep the snowfield center
+  // rideable, and leave climatic relief anchored near the massif plateau.
+  constexpr int size = 96;
+  constexpr int mid = size / 2;
+  constexpr meters_t spacing = 50.0f * u::m;
+  constexpr meters_t sea_m = 50.0f * u::m;
+  const SurfaceElevation sea = surface_elevation_point (sea_m);
+  const TerrainDomain grid (static_cast<std::size_t> (size),
+                            static_cast<std::size_t> (size),
+                            spacing,
+                            spacing);
+  std::vector<float> heights (static_cast<std::size_t> (size) * size);
+  for (int z = 0; z < size; ++z)
+    for (int x = 0; x < size; ++x) {
+      const meters_t dx = static_cast<float> (x - mid) * spacing;
+      const meters_t dz = static_cast<float> (z - mid) * spacing;
+      const meters_t r = hypot (plan_displacement (dx, dz));
+      const proportion_t massif =
+        1.0f * proportion[one] - band (0.0f * u::m, 1850.0f * u::m, r);
+      const proportion_t inland = band (-1400.0f * u::m, 1400.0f * u::m, dx);
+      const meters_t h = sea_m + 14.0f * u::m +
+                         meters_t (235.0f * u::m * massif) +
+                         meters_t (35.0f * u::m * inland);
+      heights[static_cast<std::size_t> (z) * size + x] = meters_value (h);
+    }
+
+  const ElevationMap terrain = make_elevation_map (grid, heights);
+  const FloodField flood = analyze_standing_water (terrain, sea);
+  const LakeCensus census = census_lakes (flood);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
+  const RiverNetwork rivers = extract_river_network (
+    flood, census, drainage, visible_river_minimum_area ());
+
+  GlacialSculpting params;
+  params.snowfield_radius_along = 560.0f * u::m;
+  params.snowfield_radius_across = 420.0f * u::m;
+  params.snow_valley_length = 720.0f * u::m;
+  params.snow_valley_half_width = 65.0f * u::m;
+  const GlacialSculptingResult glacial = sculpt_glacial_valleys (
+    terrain, flood, census, drainage, rivers, sea, params);
+
+  MOPPE_CHECK (glacial.snowfields == 1);
+  MOPPE_CHECK (glacial.horns >= 7);
+
+  SurfaceElevation max_horn = sea;
+  for (const SurfaceElevation y : glacial.heights)
+    max_horn = std::max (max_horn, y);
+  const SurfaceElevation center_y =
+    glacial.heights[static_cast<std::size_t> (mid) * size + mid];
+  // Towering alpine horns rise substantially above the snowfield floor.
+  MOPPE_CHECK (max_horn - center_y > 85.0f * u::m);
+  // Climatic relief stays anchored near the massif plateau rather than jumping
+  // all the way up to the narrow summit spires.
+  const meters_t climatic =
+    terrain::detail::measure_climatic_relief (grid, glacial.heights, sea);
+  const meters_t raw_max = quantity_cast<isq::length> (max_horn - sea);
+  MOPPE_CHECK (climatic < raw_max - 35.0f * u::m);
+  MOPPE_CHECK (climatic > 180.0f * u::m);
 }

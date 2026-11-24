@@ -101,11 +101,10 @@ namespace moppe {
       m_period = plan (extent_value (world.map_size)) * spatial_extent[u::m];
       m_lod_scale = std::max (m_cell_x, m_cell_z);
 
-      // The material bands grade over this world's own land, so ask the
-      // surface how high it actually reaches instead of assuming a range.
-      const terrain::ElevationChange land_relief =
-        terrain::measure_elevation_range (surface).maximum -
-        terrain::surface_elevation_point (world.water_level);
+      // The material bands grade over this world's own massif relief, so narrow
+      // towering alpine horn spires never push the snowline off the snowfield.
+      const meters_t land_relief = terrain::measure_climatic_relief (
+        surface, terrain::surface_elevation_point (world.water_level));
 
       render::TerrainParams params;
       params.width = static_cast<int> (surface.domain ().width ());
@@ -113,8 +112,7 @@ namespace moppe {
       params.scale =
         Vec3 (meters_value (m_cell_x), 1.0f, meters_value (m_cell_z));
       params.sea_level = meters_value (world.water_level);
-      params.land_relief =
-        std::max (land_relief.numerical_value_in (u::m), 1.0f);
+      params.land_relief = std::max (meters_value (land_relief), 1.0f);
       params.tex_scale = 0.5f / meters_value (m_cell_x);
       params.shadow_strength = graphics.terrain_shadows ? 0.92f : 0.0f;
       params.fog_scale = attenuation_value (world.fog_scale);

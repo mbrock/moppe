@@ -197,9 +197,8 @@ namespace moppe::game {
     // sits just under where the terrain shader begins to hold snow, so the
     // last trees thin out into the snowfields instead of ending under them.
     constexpr proportion_t tree_line_share_of_relief = 0.62f * proportion[one];
-    const meters_t land_relief = quantity_cast<isq::length> (
-      terrain::measure_elevation_range (geometry).maximum -
-      terrain::surface_elevation_point (water_level));
+    const meters_t land_relief = terrain::measure_climatic_relief (
+      geometry, terrain::surface_elevation_point (water_level));
     // A near-flat world (the grass laboratory's rolling plain, or any
     // low-forcing recipe) still deserves a terrestrial habitat band: clamp
     // the tree line above the analysis floor instead of refusing to finish
@@ -315,7 +314,9 @@ namespace moppe::game {
     map::DisturbanceMap disturbance = plan_disturbance (
       geometry, readings, water, roads, recipe.seed ().value ^ 0x7d15ba7eU);
     const meters_t land_top =
-      terrain::measure_height_range (geometry).maximum * u::m;
+      recipe.water_datum () +
+      terrain::measure_climatic_relief (
+        geometry, terrain::surface_elevation_point (recipe.water_datum ()));
     map::VegetationMap vegetation =
       map::analyze_vegetation (geometry,
                                get<terrain::soil_wetness> (readings),

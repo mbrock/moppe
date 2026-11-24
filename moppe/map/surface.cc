@@ -301,7 +301,7 @@ namespace moppe::map {
       const terrain::GlacialSculptingResult glacial =
         terrain::sculpt_glacial_valleys (
           surface, pre_flood, pre_lakes, pre_drainage, pre_rivers, sea_level);
-      if (glacial.troughs > 0 || glacial.snowfields > 0 ||
+      if (glacial.troughs > 0 || glacial.snowfields > 0 || glacial.horns > 0 ||
           glacial.cirques > 0) {
         const terrain::TerrainDomain& domain = surface.domain ();
         for (const terrain::TerrainIndex site : spatial::sites (surface)) {

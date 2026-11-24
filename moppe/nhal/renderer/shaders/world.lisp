@@ -6377,32 +6377,32 @@
                     (cloud-b (swizzle (wave-noise (* xz 0.19) (uint 52)) :x))
                     (ice-cloud (clamp (+ (* 0.62 cloud-a) (* 0.38 cloud-b))
                                       0.0 1.0))
-                    ;; Domain-warped organic pressure cracks on the top surface
-                    ;; and parallax-shifted deeper inside the crystal ice sheet.
-                    (warp (vec2 (swizzle (wave-noise (* xz 0.06) (uint 53)) :x)
-                                (swizzle (wave-noise (* xz 0.06) (uint 54)) :x)))
-                    (c-uv (+ (* xz 0.10) (* warp 0.62)))
+                    ;; Domain-warped fine crystalline pressure cracks on the top
+                    ;; surface and parallax-shifted deeper inside the ice sheet.
+                    (warp (vec2 (swizzle (wave-noise (* xz 0.08) (uint 53)) :x)
+                                (swizzle (wave-noise (* xz 0.08) (uint 54)) :x)))
+                    (c-uv (+ (* xz 0.18) (* warp 0.52)))
                     (c-uv2 (+ (* (vec2 (+ (* 0.72 (swizzle xz :x))
                                           (* -0.69 (swizzle xz :y)))
                                        (+ (* 0.69 (swizzle xz :x))
                                           (* 0.72 (swizzle xz :y))))
-                                 0.23)
-                              (* warp 0.48)))
-                    (crack-fade (- 1.0 (smoothstep 0.40 2.2 footprint)))
-                    (crack-a (- 1.0 (smoothstep 0.005 0.036
+                                 0.40)
+                              (* warp 0.42)))
+                    (crack-fade (- 1.0 (smoothstep 0.25 1.5 footprint)))
+                    (crack-a (- 1.0 (smoothstep 0.002 0.011
                                                 (abs (- (swizzle (wave-noise c-uv (uint 55)) :x)
                                                         0.5)))))
-                    (crack-b (- 1.0 (smoothstep 0.004 0.026
+                    (crack-b (- 1.0 (smoothstep 0.002 0.009
                                                 (abs (- (swizzle (wave-noise c-uv2 (uint 56)) :x)
                                                         0.5)))))
-                    (surface-crack (* (max crack-a (* 0.78 crack-b)) crack-fade))
+                    (surface-crack (* (max crack-a (* 0.72 crack-b)) crack-fade))
                     (inner-shift (* (swizzle view :xz)
-                                    (/ 0.24 (max (abs (swizzle view :y)) 0.25))))
-                    (inner-uv (+ (* (- xz inner-shift) 0.10) (* warp 0.62)))
-                    (inner-crack (* (- 1.0 (smoothstep 0.008 0.058
+                                    (/ 0.22 (max (abs (swizzle view :y)) 0.25))))
+                    (inner-uv (+ (* (- xz inner-shift) 0.18) (* warp 0.52)))
+                    (inner-crack (* (- 1.0 (smoothstep 0.003 0.022
                                                        (abs (- (swizzle (wave-noise inner-uv (uint 55)) :x)
                                                                0.5))))
-                                    crack-fade 0.85))
+                                    crack-fade 0.72))
                     ;; Narrow broken shore shelf-ice plates (isflak) hugging
                     ;; only the very shallowest edge (< 0.42 m), leaving clear
                     ;; luminous turquoise mirror ice reaching almost to shore.
