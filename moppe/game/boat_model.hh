@@ -8,19 +8,23 @@
 
 namespace moppe::game::boat_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh hull;
-  extern const model_mesh::Mesh longtail;
-  extern const model_mesh::Mesh propeller;
+  inline constexpr model_mesh::Mesh hull {
+    "boat", 0u, 61192u, 0u, 48406u, true
+  };
+  inline constexpr model_mesh::Mesh longtail { "boat", 61192u, 1300u,
+                                               48406u, 2416u,  true };
+  inline constexpr model_mesh::Mesh propeller { "boat", 62492u, 382u,
+                                                50822u, 744u,   true };
 
   // Points in model space.
-  extern const Vec3 exhaust;
-  extern const Vec3 foot_left;
-  extern const Vec3 foot_right;
-  extern const Vec3 hub;
-  extern const Vec3 pivot;
-  extern const Vec3 seat_fore;
-  extern const Vec3 seat_helm;
-  extern const Vec3 tiller_grip;
+  inline const Vec3 exhaust (-0.23f, 0.6778f, -0.937f);
+  inline const Vec3 foot_left (0.13f, 0.06f, 0.1018f);
+  inline const Vec3 foot_right (-0.13f, 0.06f, 0.1018f);
+  inline const Vec3 hub (0.0f, -0.05f, -2.6f);
+  inline const Vec3 pivot (0.0f, 0.429f, -0.8982f);
+  inline const Vec3 seat_fore (0.0f, 0.2f, 0.5718f);
+  inline const Vec3 seat_helm (0.0f, 0.2f, -0.3482f);
+  inline const Vec3 tiller_grip (-0.3f, 0.5074f, 0.1186f);
 }
 
 #endif

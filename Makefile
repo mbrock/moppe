@@ -10,7 +10,7 @@
 
 all: moppe
 
-BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
+BLENDER ?= $(shell nix build .#blender -o build/blender-nix --print-out-paths)/bin/blender
 FIGURE_PREVIEW ?= /tmp/hiker.png
 
 # Re-export the hiker from models/hiker.blend and render its lineup.

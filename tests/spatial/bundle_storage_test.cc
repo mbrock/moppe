@@ -273,3 +273,64 @@ MOPPE_TEST (a_fixed_point_grid_holds_its_range_in_floats_exactly) {
   MOPPE_CHECK (spatial::fixed16_grid (0.0f, 0.0f).has_value ());
   MOPPE_CHECK (!spatial::fixed16_grid (1.0f, 0.0f).has_value ());
 }
+
+MOPPE_TEST (a_quantized_vector_column_travels_as_fixed16_struct) {
+  StoredVectorBundle bundle (StoredRing { 3 });
+  auto& column = spatial::get<stored_direction> (bundle);
+  column[0] = StoredDirection (Vec3 { -1.25f, 0.001f, 3.75f },
+                               StoredDirection::reference);
+  column[1] = StoredDirection (Vec3 { 0.3141f, -0.5f, 0.1234f },
+                               StoredDirection::reference);
+  column[2] =
+    StoredDirection (Vec3 { 2.5f, 0.5f, -2.0f }, StoredDirection::reference);
+
+  const std::optional grids = spatial::quantize_fixed16 (column);
+  MOPPE_CHECK (grids.has_value ());
+
+  std::stringstream file (std::ios::in | std::ios::out | std::ios::binary);
+  spatial::write_bundle (file, bundle, spatial::FloatStorage::fixed_point);
+
+  file.seekg (0);
+  spatial::detail::UniqueArrayStream stream;
+  MOPPE_CHECK (spatial::detail::read_ipc_stream (file, stream));
+  ArrowError error;
+  ArrowErrorInit (&error);
+  spatial::detail::UniqueSchema schema;
+  MOPPE_CHECK (ArrowArrayStreamGetSchema (
+                 stream.get (), schema.get (), &error) == NANOARROW_OK);
+  MOPPE_CHECK (std::string_view (schema->children[0]->format) == "+s");
+  MOPPE_CHECK (schema->children[0]->n_children == 3);
+  MOPPE_CHECK (std::string_view (schema->children[0]->children[0]->name) ==
+               "x");
+  MOPPE_CHECK (std::string_view (schema->children[0]->children[0]->format) ==
+               "S");
+  MOPPE_CHECK (std::string_view (schema->children[0]->children[2]->name) ==
+               "z");
+
+  file.seekg (0);
+  const std::optional loaded = spatial::read_bundle<StoredVectorBundle> (file);
+  MOPPE_CHECK (loaded.has_value ());
+  for (std::size_t i = 0; i < 3; ++i) {
+    const Vec3 expected = column[i].numerical_value_in (one);
+    const Vec3 actual =
+      spatial::get<stored_direction> (*loaded)[i].numerical_value_in (one);
+    for (std::size_t c = 0; c < 3; ++c)
+      MOPPE_CHECK (expected[c] == actual[c]);
+  }
+}
+
+MOPPE_TEST (a_bundle_exports_to_the_arrow_c_data_interface) {
+  StoredVectorBundle bundle (StoredRing { 3 });
+  auto& column = spatial::get<stored_direction> (bundle);
+  column[1] =
+    StoredDirection (Vec3 { 0.25f, -0.5f, 1.0f }, StoredDirection::reference);
+  (void)spatial::quantize_fixed16 (column);
+
+  spatial::detail::UniqueSchema schema;
+  spatial::detail::UniqueArray array;
+  MOPPE_CHECK (spatial::export_bundle (
+    bundle, *schema.get (), *array.get (), spatial::FloatStorage::fixed_point));
+  MOPPE_CHECK (array->length == 3);
+  MOPPE_CHECK (schema->n_children == 1);
+  MOPPE_CHECK (std::string_view (schema->children[0]->format) == "+s");
+}

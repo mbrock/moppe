@@ -256,18 +256,9 @@ namespace moppe::game {
     // model's panes face out, so each is drawn again facing in, for a
     // rider looking out through them.
     {
-      std::vector<model_mesh::Vertex> inner (m::glass.vertices.begin (),
-                                             m::glass.vertices.end ());
-      for (model_mesh::Vertex& v : inner)
-        for (float& n : v.normal)
-          n = -n;
-      std::vector<model_mesh::Triangle> turned (m::glass.triangles.begin (),
-                                                m::glass.triangles.end ());
-      for (model_mesh::Triangle& t : turned)
-        std::swap (t.vertex[1], t.vertex[2]);
       render::DrawList glass;
       model_mesh::record (glass, m::glass);
-      model_mesh::record (glass, { inner, turned, m::glass.paints });
+      model_mesh::record (glass, m::glass, true);
       m_bus.glass = { { renderer.create_mesh (glass) } };
     }
     m_doors = { model_mesh::bake (renderer, m::door_fore),

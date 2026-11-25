@@ -8,38 +8,46 @@
 
 namespace moppe::game::caddy_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh column;
-  extern const model_mesh::Mesh glass;
-  extern const model_mesh::Mesh hardtop;
-  extern const model_mesh::Mesh seats;
-  extern const model_mesh::Mesh steering_wheel;
-  extern const model_mesh::Mesh tailgate;
-  extern const model_mesh::Mesh wheel;
+  inline constexpr model_mesh::Mesh body { "caddy", 0u,     37542u,
+                                           0u,      55772u, false };
+  inline constexpr model_mesh::Mesh column { "caddy", 37542u, 66u,
+                                             55772u,  124u,   false };
+  inline constexpr model_mesh::Mesh glass { "caddy", 37608u, 329u,
+                                            55896u,  566u,   false };
+  inline constexpr model_mesh::Mesh hardtop { "caddy", 37937u, 4918u,
+                                              56462u,  8304u,  false };
+  inline constexpr model_mesh::Mesh seats { "caddy", 42855u, 1580u,
+                                            64766u,  3056u,  false };
+  inline constexpr model_mesh::Mesh steering_wheel { "caddy", 44435u, 1202u,
+                                                     67822u,  2380u,  false };
+  inline constexpr model_mesh::Mesh tailgate { "caddy", 45637u, 2634u,
+                                               70202u,  2104u,  false };
+  inline constexpr model_mesh::Mesh wheel { "caddy", 48271u, 6400u,
+                                            72306u,  6440u,  false };
 
   // Points in model space.
-  extern const Vec3 door_left;
-  extern const Vec3 door_right;
-  extern const Vec3 footrest_left;
-  extern const Vec3 footrest_right;
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 headlight_left;
-  extern const Vec3 headlight_right;
-  extern const Vec3 hitch;
-  extern const Vec3 pedal_left;
-  extern const Vec3 pedal_right;
-  extern const Vec3 seat_driver;
-  extern const Vec3 seat_passenger;
-  extern const Vec3 steering_column;
-  extern const Vec3 steering_hub;
-  extern const Vec3 tail_light_left;
-  extern const Vec3 tail_light_right;
-  extern const Vec3 tailgate_hinge;
-  extern const Vec3 wheel_fl;
-  extern const Vec3 wheel_fr;
-  extern const Vec3 wheel_rl;
-  extern const Vec3 wheel_rr;
+  inline const Vec3 door_left (1.15f, -0.288f, 0.3f);
+  inline const Vec3 door_right (-1.15f, -0.288f, 0.3f);
+  inline const Vec3 footrest_left (-0.265f, 0.122f, 0.66f);
+  inline const Vec3 footrest_right (-0.455f, 0.122f, 0.66f);
+  inline const Vec3 grip_left (0.55f, 0.682f, 0.32f);
+  inline const Vec3 grip_right (0.17f, 0.682f, 0.32f);
+  inline const Vec3 headlight_left (0.555f, 0.412f, 1.995f);
+  inline const Vec3 headlight_right (-0.555f, 0.412f, 1.995f);
+  inline const Vec3 hitch (0.0f, 0.092f, -2.43f);
+  inline const Vec3 pedal_left (0.455f, 0.122f, 0.64f);
+  inline const Vec3 pedal_right (0.265f, 0.122f, 0.64f);
+  inline const Vec3 seat_driver (0.36f, 0.282f, -0.08f);
+  inline const Vec3 seat_passenger (-0.36f, 0.282f, -0.08f);
+  inline const Vec3 steering_column (0.36f, 0.2629f, 1.228f);
+  inline const Vec3 steering_hub (0.36f, 0.682f, 0.32f);
+  inline const Vec3 tail_light_left (0.75f, 0.432f, -2.225f);
+  inline const Vec3 tail_light_right (-0.75f, 0.432f, -2.225f);
+  inline const Vec3 tailgate_hinge (0.0f, 0.332f, -2.193f);
+  inline const Vec3 wheel_fl (0.695f, 0.0f, 1.3125f);
+  inline const Vec3 wheel_fr (-0.695f, 0.0f, 1.3125f);
+  inline const Vec3 wheel_rl (0.685f, 0.0f, -1.3125f);
+  inline const Vec3 wheel_rr (-0.685f, 0.0f, -1.3125f);
 }
 
 #endif

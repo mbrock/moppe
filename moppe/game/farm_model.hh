@@ -8,40 +8,59 @@
 
 namespace moppe::game::farm_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh barn;
-  extern const model_mesh::Mesh barn_base;
-  extern const model_mesh::Mesh barn_base_far;
-  extern const model_mesh::Mesh barn_far;
-  extern const model_mesh::Mesh barn_mid;
-  extern const model_mesh::Mesh house;
-  extern const model_mesh::Mesh house_base;
-  extern const model_mesh::Mesh house_base_far;
-  extern const model_mesh::Mesh house_far;
-  extern const model_mesh::Mesh house_mid;
-  extern const model_mesh::Mesh mill;
-  extern const model_mesh::Mesh mill_base;
-  extern const model_mesh::Mesh mill_base_far;
-  extern const model_mesh::Mesh mill_far;
-  extern const model_mesh::Mesh mill_mid;
-  extern const model_mesh::Mesh mill_wheel;
-  extern const model_mesh::Mesh mill_wheel_far;
-  extern const model_mesh::Mesh mill_wheel_mid;
+  inline constexpr model_mesh::Mesh barn {
+    "farm", 0u, 16571u, 0u, 17642u, false
+  };
+  inline constexpr model_mesh::Mesh barn_base { "farm", 16571u, 4512u,
+                                                17642u, 2256u,  false };
+  inline constexpr model_mesh::Mesh barn_base_far { "farm", 21083u, 48u,
+                                                    19898u, 24u,    false };
+  inline constexpr model_mesh::Mesh barn_far { "farm", 21131u, 690u,
+                                               19922u, 336u,   false };
+  inline constexpr model_mesh::Mesh barn_mid { "farm", 21821u, 2946u,
+                                               20258u, 1472u,  false };
+  inline constexpr model_mesh::Mesh house { "farm", 24767u, 4554u,
+                                            21730u, 2424u,  false };
+  inline constexpr model_mesh::Mesh house_base { "farm", 29321u, 1968u,
+                                                 24154u, 980u,   false };
+  inline constexpr model_mesh::Mesh house_base_far { "farm", 31289u, 144u,
+                                                     25134u, 68u,    false };
+  inline constexpr model_mesh::Mesh house_far { "farm", 31433u, 1050u,
+                                                25202u, 508u,   false };
+  inline constexpr model_mesh::Mesh house_mid { "farm", 32483u, 1602u,
+                                                25710u, 788u,   false };
+  inline constexpr model_mesh::Mesh mill { "farm", 34085u, 2006u,
+                                           26498u, 1024u,  false };
+  inline constexpr model_mesh::Mesh mill_base { "farm", 36091u, 1896u,
+                                                27522u, 948u,   false };
+  inline constexpr model_mesh::Mesh mill_base_far { "farm", 37987u, 24u,
+                                                    28470u, 12u,    false };
+  inline constexpr model_mesh::Mesh mill_far { "farm", 38011u, 618u,
+                                               28482u, 288u,   false };
+  inline constexpr model_mesh::Mesh mill_mid { "farm", 38629u, 638u,
+                                               28770u, 324u,   false };
+  inline constexpr model_mesh::Mesh mill_wheel { "farm", 39267u, 1828u,
+                                                 29094u, 960u,   false };
+  inline constexpr model_mesh::Mesh mill_wheel_far { "farm", 41095u, 420u,
+                                                     30054u, 256u,   false };
+  inline constexpr model_mesh::Mesh mill_wheel_mid { "farm", 41515u, 1444u,
+                                                     30310u, 768u,   false };
 
   // Points in model space.
-  extern const Vec3 barn_doorway;
-  extern const Vec3 barn_floor;
-  extern const Vec3 barn_lantern;
-  extern const Vec3 barn_nest_0;
-  extern const Vec3 barn_nest_1;
-  extern const Vec3 barn_nest_2;
-  extern const Vec3 barn_nest_3;
-  extern const Vec3 barn_pen_high;
-  extern const Vec3 barn_pen_low;
-  extern const Vec3 barn_stall_0;
-  extern const Vec3 barn_stall_1;
-  extern const Vec3 barn_stall_2;
-  extern const Vec3 barn_stall_3;
-  extern const Vec3 mill_axle;
+  inline const Vec3 barn_doorway (0.0f, 0.34f, 4.0f);
+  inline const Vec3 barn_floor (0.0f, 0.34f, 0.0f);
+  inline const Vec3 barn_lantern (0.0f, 2.72f, 0.7f);
+  inline const Vec3 barn_nest_0 (-5.59f, 0.92f, -3.55f);
+  inline const Vec3 barn_nest_1 (-5.59f, 0.92f, -3.0f);
+  inline const Vec3 barn_nest_2 (-5.59f, 0.92f, -2.45f);
+  inline const Vec3 barn_nest_3 (-5.59f, 0.92f, -1.9f);
+  inline const Vec3 barn_pen_high (-0.54f, 0.34f, -1.35f);
+  inline const Vec3 barn_pen_low (-3.3f, 0.34f, -3.36f);
+  inline const Vec3 barn_stall_0 (4.96f, 0.34f, -3.58f);
+  inline const Vec3 barn_stall_1 (3.16f, 0.34f, -3.58f);
+  inline const Vec3 barn_stall_2 (1.585f, 0.34f, -3.58f);
+  inline const Vec3 barn_stall_3 (0.235f, 0.34f, -3.58f);
+  inline const Vec3 mill_axle (-2.95f, 1.2f, 0.0f);
 }
 
 #endif

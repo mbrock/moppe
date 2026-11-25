@@ -43,6 +43,15 @@ namespace moppe {
       if (file_exists (relative))
         return relative;
 
+#ifdef MOPPE_TEST_SOURCE_DIR
+      // 4. Source tree in development tests and probes.
+      {
+        std::string p = std::string (MOPPE_TEST_SOURCE_DIR) + "/" + relative;
+        if (file_exists (p))
+          return p;
+      }
+#endif
+
       // Fall through with the bundle path for a useful error message.
       if (res)
         return std::string (res.UTF8String) + "/" + relative;

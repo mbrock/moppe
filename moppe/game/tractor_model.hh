@@ -8,28 +8,34 @@
 
 namespace moppe::game::tractor_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh column;
-  extern const model_mesh::Mesh front_wheel;
-  extern const model_mesh::Mesh hitch;
-  extern const model_mesh::Mesh rear_wheel;
-  extern const model_mesh::Mesh steering_wheel;
+  inline constexpr model_mesh::Mesh body { "tractor", 0u,    4450u,
+                                           0u,        7784u, false };
+  inline constexpr model_mesh::Mesh column { "tractor", 4450u, 16u,
+                                             7784u,     28u,   false };
+  inline constexpr model_mesh::Mesh front_wheel { "tractor", 4466u, 1278u,
+                                                  7812u,     2548u, false };
+  inline constexpr model_mesh::Mesh hitch { "tractor", 5744u, 124u,
+                                            10360u,    220u,  false };
+  inline constexpr model_mesh::Mesh rear_wheel { "tractor", 5868u, 5094u,
+                                                 10580u,    4816u, false };
+  inline constexpr model_mesh::Mesh steering_wheel { "tractor", 10962u, 626u,
+                                                     15396u,    1236u,  false };
 
   // Points in model space.
-  extern const Vec3 exhaust;
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 headlight_left;
-  extern const Vec3 headlight_right;
-  extern const Vec3 pedal_left;
-  extern const Vec3 pedal_right;
-  extern const Vec3 seat_driver;
-  extern const Vec3 steering_column;
-  extern const Vec3 steering_hub;
-  extern const Vec3 wheel_fl;
-  extern const Vec3 wheel_fr;
-  extern const Vec3 wheel_rl;
-  extern const Vec3 wheel_rr;
+  inline const Vec3 exhaust (-0.17f, 2.06f, 0.92f);
+  inline const Vec3 grip_left (0.2f, 1.62f, -0.5f);
+  inline const Vec3 grip_right (-0.2f, 1.62f, -0.5f);
+  inline const Vec3 headlight_left (0.33f, 1.1f, 1.3f);
+  inline const Vec3 headlight_right (-0.33f, 1.1f, 1.3f);
+  inline const Vec3 pedal_left (0.37f, 0.68f, -0.4f);
+  inline const Vec3 pedal_right (-0.37f, 0.68f, -0.4f);
+  inline const Vec3 seat_driver (0.0f, 1.16f, -1.0f);
+  inline const Vec3 steering_column (0.0f, 1.0388f, 0.3137f);
+  inline const Vec3 steering_hub (0.0f, 1.62f, -0.5f);
+  inline const Vec3 wheel_fl (0.66f, 0.37f, 1.1f);
+  inline const Vec3 wheel_fr (-0.66f, 0.37f, 1.1f);
+  inline const Vec3 wheel_rl (0.76f, 0.66f, -0.8f);
+  inline const Vec3 wheel_rr (-0.76f, 0.66f, -0.8f);
 }
 
 #endif

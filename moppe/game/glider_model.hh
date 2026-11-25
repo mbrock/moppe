@@ -8,13 +8,15 @@
 
 namespace moppe::game::glider_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh glider;
-  extern const model_mesh::Mesh tether;
+  inline constexpr model_mesh::Mesh glider { "glider", 0u,    4682u,
+                                             0u,       9260u, false };
+  inline constexpr model_mesh::Mesh tether { "glider", 4682u, 16u,
+                                             9260u,    24u,   false };
 
   // Points in model space.
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 harness;
+  inline const Vec3 grip_left (-0.36f, -1.38f, 0.42f);
+  inline const Vec3 grip_right (0.36f, -1.38f, 0.42f);
+  inline const Vec3 harness (0.0f, -1.12f, -0.42f);
 }
 
 #endif

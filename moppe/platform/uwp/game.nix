@@ -45,6 +45,7 @@ xbox.mkXboxApp {
       (root + "/third_party/box3d")
       (root + "/third_party/nanoarrow")
       (root + "/third_party/core-math")
+      (root + "/third_party/zstd")
       (root + "/data")
       (root + "/fonts")
       (root + "/textures")

@@ -8,14 +8,17 @@
 
 namespace moppe::game::rooster_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh head;
-  extern const model_mesh::Mesh leg;
+  inline constexpr model_mesh::Mesh body { "rooster", 0u,    2590u,
+                                           0u,        5152u, false };
+  inline constexpr model_mesh::Mesh head { "rooster", 2590u, 992u,
+                                           5152u,     1924u, false };
+  inline constexpr model_mesh::Mesh leg { "rooster", 3582u, 630u,
+                                          7076u,     1236u, false };
 
   // Points in model space.
-  extern const Vec3 beak;
-  extern const Vec3 hip;
-  extern const Vec3 neck;
+  inline const Vec3 beak (0.0f, 0.4476f, 0.2436f);
+  inline const Vec3 hip (0.054f, 0.198f, -0.012f);
+  inline const Vec3 neck (0.0f, 0.324f, 0.108f);
 }
 
 #endif

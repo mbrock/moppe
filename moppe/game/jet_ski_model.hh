@@ -8,20 +8,24 @@
 
 namespace moppe::game::jet_ski_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh bars;
-  extern const model_mesh::Mesh hull;
-  extern const model_mesh::Mesh nozzle;
+  inline constexpr model_mesh::Mesh bars {
+    "jet_ski", 0u, 245u, 0u, 458u, false
+  };
+  inline constexpr model_mesh::Mesh hull { "jet_ski", 245u,   11047u,
+                                           458u,      20650u, false };
+  inline constexpr model_mesh::Mesh nozzle { "jet_ski", 11292u, 60u,
+                                             21108u,    112u,   false };
 
   // Points in model space.
-  extern const Vec3 column;
-  extern const Vec3 column_top;
-  extern const Vec3 foot_left;
-  extern const Vec3 foot_right;
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 intake;
-  extern const Vec3 jet;
-  extern const Vec3 seat;
+  inline const Vec3 column (0.0f, 0.8f, 0.42f);
+  inline const Vec3 column_top (0.0f, 0.97f, 0.34f);
+  inline const Vec3 foot_left (0.31f, 0.27f, 0.02f);
+  inline const Vec3 foot_right (-0.31f, 0.27f, 0.02f);
+  inline const Vec3 grip_left (0.31f, 0.985f, 0.285f);
+  inline const Vec3 grip_right (-0.31f, 0.985f, 0.285f);
+  inline const Vec3 intake (0.0f, 0.03f, -0.55f);
+  inline const Vec3 jet (0.0f, 0.13f, -1.09f);
+  inline const Vec3 seat (0.0f, 0.66f, -0.3f);
 }
 
 #endif

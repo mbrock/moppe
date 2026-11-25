@@ -8,14 +8,16 @@
 
 namespace moppe::game::hen_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh head;
-  extern const model_mesh::Mesh leg;
+  inline constexpr model_mesh::Mesh body { "hen", 0u, 2144u, 0u, 4264u, false };
+  inline constexpr model_mesh::Mesh head { "hen", 2144u, 1952u,
+                                           4264u, 3844u, false };
+  inline constexpr model_mesh::Mesh leg { "hen", 4096u, 630u,
+                                          8108u, 1236u, false };
 
   // Points in model space.
-  extern const Vec3 beak;
-  extern const Vec3 hip;
-  extern const Vec3 neck;
+  inline const Vec3 beak (0.0f, 0.373f, 0.203f);
+  inline const Vec3 hip (0.045f, 0.165f, -0.01f);
+  inline const Vec3 neck (0.0f, 0.27f, 0.09f);
 }
 
 #endif

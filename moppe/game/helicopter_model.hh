@@ -8,16 +8,19 @@
 
 namespace moppe::game::helicopter_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh main_rotor;
-  extern const model_mesh::Mesh tail_rotor;
+  inline constexpr model_mesh::Mesh body { "helicopter", 0u,    5188u,
+                                           0u,           9740u, false };
+  inline constexpr model_mesh::Mesh main_rotor { "helicopter", 5188u, 512u,
+                                                 9740u,        992u,  false };
+  inline constexpr model_mesh::Mesh tail_rotor { "helicopter", 5700u, 158u,
+                                                 10732u,       296u,  false };
 
   // Points in model space.
-  extern const Vec3 beacon;
-  extern const Vec3 rotor_hub;
-  extern const Vec3 seat_passenger;
-  extern const Vec3 seat_pilot;
-  extern const Vec3 tail_hub;
+  inline const Vec3 beacon (0.0f, 2.42f, -0.95f);
+  inline const Vec3 rotor_hub (0.0f, 2.68f, 0.0f);
+  inline const Vec3 seat_passenger (0.33f, 0.92f, 0.1f);
+  inline const Vec3 seat_pilot (-0.33f, 0.92f, 0.1f);
+  inline const Vec3 tail_hub (0.3f, 1.86f, -5.95f);
 }
 
 #endif

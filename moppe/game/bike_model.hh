@@ -8,32 +8,40 @@
 
 namespace moppe::game::bike_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh chassis;
-  extern const model_mesh::Mesh fork_sliders;
-  extern const model_mesh::Mesh nozzle;
-  extern const model_mesh::Mesh shock_body;
-  extern const model_mesh::Mesh shock_shaft;
-  extern const model_mesh::Mesh steering;
-  extern const model_mesh::Mesh swingarm;
-  extern const model_mesh::Mesh wheel;
+  inline constexpr model_mesh::Mesh chassis { "bike", 0u,    3648u,
+                                              0u,     6948u, false };
+  inline constexpr model_mesh::Mesh fork_sliders { "bike", 3648u, 634u,
+                                                   6948u,  1232u, false };
+  inline constexpr model_mesh::Mesh nozzle { "bike", 4282u, 145u,
+                                             8180u,  260u,  false };
+  inline constexpr model_mesh::Mesh shock_body { "bike", 4427u, 790u,
+                                                 8440u,  1556u, false };
+  inline constexpr model_mesh::Mesh shock_shaft { "bike", 5217u, 132u,
+                                                  9996u,  248u,  false };
+  inline constexpr model_mesh::Mesh steering { "bike", 5349u, 2146u,
+                                               10244u, 4184u, false };
+  inline constexpr model_mesh::Mesh swingarm { "bike", 7495u, 518u,
+                                               14428u, 1004u, false };
+  inline constexpr model_mesh::Mesh wheel { "bike", 8013u,  13426u,
+                                            15432u, 10308u, false };
 
   // Points in model space.
-  extern const Vec3 fork_top;
-  extern const Vec3 front_axle;
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 headlight;
-  extern const Vec3 muffler_tip;
-  extern const Vec3 nozzle_left;
-  extern const Vec3 nozzle_right;
-  extern const Vec3 peg_left;
-  extern const Vec3 peg_right;
-  extern const Vec3 rear_axle;
-  extern const Vec3 saddle;
-  extern const Vec3 shock_bottom;
-  extern const Vec3 shock_top;
-  extern const Vec3 steering_head;
-  extern const Vec3 swingarm_pivot;
+  inline const Vec3 fork_top (0.0f, 0.5494f, 0.3353f);
+  inline const Vec3 front_axle (0.0f, 0.0f, 0.61f);
+  inline const Vec3 grip_left (-0.31f, 0.735f, 0.125f);
+  inline const Vec3 grip_right (0.31f, 0.735f, 0.125f);
+  inline const Vec3 headlight (0.0f, 0.4868f, 0.5366f);
+  inline const Vec3 muffler_tip (0.155f, 0.14f, -0.9f);
+  inline const Vec3 nozzle_left (-0.16f, -0.04f, -0.18f);
+  inline const Vec3 nozzle_right (0.16f, -0.04f, -0.18f);
+  inline const Vec3 peg_left (-0.215f, -0.035f, 0.02f);
+  inline const Vec3 peg_right (0.215f, -0.035f, 0.02f);
+  inline const Vec3 rear_axle (0.0f, 0.0f, -0.61f);
+  inline const Vec3 saddle (0.0f, 0.49f, -0.24f);
+  inline const Vec3 shock_bottom (0.0f, 0.0f, -0.54f);
+  inline const Vec3 shock_top (0.0f, 0.26f, -0.585f);
+  inline const Vec3 steering_head (0.0f, 0.46f, 0.38f);
+  inline const Vec3 swingarm_pivot (0.0f, -0.03f, -0.24f);
 }
 
 #endif

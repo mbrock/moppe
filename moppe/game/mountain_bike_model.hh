@@ -8,24 +8,32 @@
 
 namespace moppe::game::mountain_bike_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh cassette;
-  extern const model_mesh::Mesh crank;
-  extern const model_mesh::Mesh fork_lowers;
-  extern const model_mesh::Mesh frame;
-  extern const model_mesh::Mesh pedal;
-  extern const model_mesh::Mesh steering;
-  extern const model_mesh::Mesh wheel;
+  inline constexpr model_mesh::Mesh cassette { "mountain_bike", 0u,   672u, 0u,
+                                               1344u,           false };
+  inline constexpr model_mesh::Mesh crank { "mountain_bike", 672u,  1452u,
+                                            1344u,           2448u, false };
+  inline constexpr model_mesh::Mesh fork_lowers {
+    "mountain_bike", 2124u, 503u, 3792u, 958u, false
+  };
+  inline constexpr model_mesh::Mesh frame { "mountain_bike", 2627u, 1683u,
+                                            4750u,           3206u, false };
+  inline constexpr model_mesh::Mesh pedal { "mountain_bike", 4310u, 204u,
+                                            7956u,           376u,  false };
+  inline constexpr model_mesh::Mesh steering { "mountain_bike", 4514u, 916u,
+                                               8332u,           1756u, false };
+  inline constexpr model_mesh::Mesh wheel { "mountain_bike", 5430u, 6174u,
+                                            10088u,          7896u, false };
 
   // Points in model space.
-  extern const Vec3 bottom_bracket;
-  extern const Vec3 crank_end;
-  extern const Vec3 front_axle;
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 rear_axle;
-  extern const Vec3 saddle;
-  extern const Vec3 steering_head;
-  extern const Vec3 steering_top;
+  inline const Vec3 bottom_bracket (0.0f, -0.035f, -0.11f);
+  inline const Vec3 crank_end (0.066f, -0.21f, -0.11f);
+  inline const Vec3 front_axle (0.0f, 0.0f, 0.53f);
+  inline const Vec3 grip_left (-0.245f, 0.5982f, 0.3753f);
+  inline const Vec3 grip_right (0.245f, 0.5982f, 0.3753f);
+  inline const Vec3 rear_axle (0.0f, 0.0f, -0.53f);
+  inline const Vec3 saddle (0.0f, 0.6699f, -0.3317f);
+  inline const Vec3 steering_head (0.0f, 0.3841f, 0.3554f);
+  inline const Vec3 steering_top (0.0f, 0.5732f, 0.2903f);
 }
 
 #endif

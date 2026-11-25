@@ -128,6 +128,14 @@ FetchContent_Declare(mp-units
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(mp-units)
 
+#zstd's decoder, vendored as its single-file amalgamation
+#(third_party / zstd / VENDOR.md), unpacks compressed Arrow IPC bundles and the
+#assets a release builds in.
+add_library(zstd-decoder STATIC third_party/zstd/zstddeclib.c)
+target_include_directories(zstd-decoder SYSTEM PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd)
+set_target_properties(zstd-decoder PROPERTIES UNITY_BUILD OFF)
+
 #nanoarrow is vendored as its upstream amalgamation so bundle storage is
 #available offline and uses the same implementation on every platform.
 add_library(nanoarrow STATIC
@@ -137,16 +145,9 @@ add_library(nanoarrow STATIC
 add_library(nanoarrow::nanoarrow ALIAS nanoarrow)
 target_include_directories(nanoarrow SYSTEM PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanoarrow)
+target_compile_definitions(nanoarrow PRIVATE NANOARROW_IPC_WITH_ZSTD)
+target_link_libraries(nanoarrow PUBLIC zstd-decoder)
 set_target_properties(nanoarrow PROPERTIES UNITY_BUILD OFF)
-
-#zstd's decoder, vendored as its single-file amalgamation
-#(third_party / zstd / VENDOR.md), unpacks the assets a release builds in.
-if(MOPPE_EMBED_ASSETS)
-  add_library(zstd-decoder STATIC third_party/zstd/zstddeclib.c)
-  target_include_directories(zstd-decoder SYSTEM PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd)
-  set_target_properties(zstd-decoder PROPERTIES UNITY_BUILD OFF)
-endif()
 
 #Box3D is vendored from upstream(see third_party / box3d / VENDOR.md).Only the
 #library is built; its own CMake files and samples are not vendored.
@@ -474,31 +475,7 @@ set(MOPPE_SCENE_SOURCES
 )
 
 set(MOPPE_MODEL_SOURCES
-  moppe/game/bike_model.cc
-  moppe/game/boat_model.cc
-  moppe/game/bus_model.cc
-  moppe/game/caddy_model.cc
-  moppe/game/chick_model.cc
-  moppe/game/cow_model.cc
-  moppe/game/farm_model.cc
   moppe/game/figure_mesh.cc
-  moppe/game/glider_model.cc
-  moppe/game/helicopter_model.cc
-  moppe/game/hen_model.cc
-  moppe/game/horse_model.cc
-  moppe/game/jeep_model.cc
-  moppe/game/jet_ski_model.cc
-  moppe/game/snowmobile_model.cc
-  moppe/game/long_john_model.cc
-  moppe/game/moose_model.cc
-  moppe/game/mountain_bike_model.cc
-  moppe/game/pig_model.cc
-  moppe/game/reindeer_model.cc
-  moppe/game/roe_deer_model.cc
-  moppe/game/rooster_model.cc
-  moppe/game/sheep_model.cc
-  moppe/game/tractor_model.cc
-  moppe/game/trailer_model.cc
 )
 
 set(MOPPE_ENGINE_SOURCES
@@ -1536,6 +1513,8 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     moppe/platform/mac/core_probe_mac.cc)
   moppe_configure_code_target(moppe-core-probe)
   target_link_libraries(moppe-core-probe PRIVATE moppe-engine)
+  target_compile_definitions(moppe-core-probe PRIVATE
+    MOPPE_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   moppe_configure_apple_target(moppe-core-probe)
 endif()
 
@@ -1655,7 +1634,7 @@ if(WIN32 AND NOT MOPPE_WINDOWS_DESKTOP)
     target_compile_definitions(moppe-core-xbox PRIVATE
       NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
     install(TARGETS moppe-core-xbox RUNTIME DESTINATION bin)
-    install(DIRECTORY fonts textures
+    install(DIRECTORY fonts textures data
       DESTINATION share/moppe-core-xbox)
   endif()
 endif()

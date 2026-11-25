@@ -8,78 +8,86 @@
 
 namespace moppe::game::bus_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh door_aft;
-  extern const model_mesh::Mesh door_fore;
-  extern const model_mesh::Mesh glass;
-  extern const model_mesh::Mesh steering_wheel;
-  extern const model_mesh::Mesh wheel;
-  extern const model_mesh::Mesh wheel_rear;
+  inline constexpr model_mesh::Mesh body {
+    "bus", 0u, 20647u, 0u, 31010u, false
+  };
+  inline constexpr model_mesh::Mesh door_aft { "bus",  20647u, 224u,
+                                               31010u, 202u,   false };
+  inline constexpr model_mesh::Mesh door_fore { "bus",  20871u, 224u,
+                                                31212u, 202u,   false };
+  inline constexpr model_mesh::Mesh glass { "bus",  21095u, 364u,
+                                            31414u, 330u,   false };
+  inline constexpr model_mesh::Mesh steering_wheel { "bus",  21459u, 1096u,
+                                                     31744u, 2176u,  false };
+  inline constexpr model_mesh::Mesh wheel { "bus",  22555u, 1644u,
+                                            33920u, 3248u,  false };
+  inline constexpr model_mesh::Mesh wheel_rear { "bus",  24199u, 2900u,
+                                                 37168u, 5760u,  false };
 
   // Points in model space.
-  extern const Vec3 aisle;
-  extern const Vec3 destination;
-  extern const Vec3 door;
-  extern const Vec3 door_aft_hinge;
-  extern const Vec3 door_fore_hinge;
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 headlight_left;
-  extern const Vec3 headlight_right;
-  extern const Vec3 pedal_left;
-  extern const Vec3 pedal_right;
-  extern const Vec3 seat_01;
-  extern const Vec3 seat_02;
-  extern const Vec3 seat_03;
-  extern const Vec3 seat_04;
-  extern const Vec3 seat_05;
-  extern const Vec3 seat_06;
-  extern const Vec3 seat_07;
-  extern const Vec3 seat_08;
-  extern const Vec3 seat_09;
-  extern const Vec3 seat_10;
-  extern const Vec3 seat_11;
-  extern const Vec3 seat_12;
-  extern const Vec3 seat_13;
-  extern const Vec3 seat_14;
-  extern const Vec3 seat_15;
-  extern const Vec3 seat_16;
-  extern const Vec3 seat_17;
-  extern const Vec3 seat_18;
-  extern const Vec3 seat_19;
-  extern const Vec3 seat_20;
-  extern const Vec3 seat_21;
-  extern const Vec3 seat_22;
-  extern const Vec3 seat_23;
-  extern const Vec3 seat_24;
-  extern const Vec3 seat_25;
-  extern const Vec3 seat_26;
-  extern const Vec3 seat_27;
-  extern const Vec3 seat_28;
-  extern const Vec3 seat_29;
-  extern const Vec3 seat_30;
-  extern const Vec3 seat_31;
-  extern const Vec3 seat_32;
-  extern const Vec3 seat_33;
-  extern const Vec3 seat_34;
-  extern const Vec3 seat_35;
-  extern const Vec3 seat_36;
-  extern const Vec3 seat_37;
-  extern const Vec3 seat_38;
-  extern const Vec3 seat_39;
-  extern const Vec3 seat_40;
-  extern const Vec3 seat_41;
-  extern const Vec3 seat_42;
-  extern const Vec3 seat_driver;
-  extern const Vec3 steering_column;
-  extern const Vec3 steering_hub;
-  extern const Vec3 step;
-  extern const Vec3 tail_light_left;
-  extern const Vec3 tail_light_right;
-  extern const Vec3 wheel_fl;
-  extern const Vec3 wheel_fr;
-  extern const Vec3 wheel_rl;
-  extern const Vec3 wheel_rr;
+  inline const Vec3 aisle (-0.3f, 0.82f, 2.925f);
+  inline const Vec3 destination (0.0f, 2.56f, 5.356f);
+  inline const Vec3 door (-1.8f, 0.0f, 2.925f);
+  inline const Vec3 door_aft_hinge (-1.235f, 0.0f, 2.406f);
+  inline const Vec3 door_fore_hinge (-1.235f, 0.0f, 3.444f);
+  inline const Vec3 grip_left (0.87f, 1.66f, 4.9f);
+  inline const Vec3 grip_right (0.37f, 1.66f, 4.9f);
+  inline const Vec3 headlight_left (0.8629f, 1.0f, 5.4646f);
+  inline const Vec3 headlight_right (-0.8629f, 1.0f, 5.4646f);
+  inline const Vec3 pedal_left (0.72f, 0.9f, 5.09f);
+  inline const Vec3 pedal_right (0.52f, 0.9f, 5.09f);
+  inline const Vec3 seat_01 (-0.91f, 1.29f, 3.93f);
+  inline const Vec3 seat_02 (-0.49f, 1.29f, 3.93f);
+  inline const Vec3 seat_03 (0.49f, 1.29f, 3.35f);
+  inline const Vec3 seat_04 (0.91f, 1.29f, 3.35f);
+  inline const Vec3 seat_05 (0.49f, 1.29f, 2.55f);
+  inline const Vec3 seat_06 (0.91f, 1.29f, 2.55f);
+  inline const Vec3 seat_07 (-0.91f, 1.29f, 1.75f);
+  inline const Vec3 seat_08 (-0.49f, 1.29f, 1.75f);
+  inline const Vec3 seat_09 (0.49f, 1.29f, 1.75f);
+  inline const Vec3 seat_10 (0.91f, 1.29f, 1.75f);
+  inline const Vec3 seat_11 (-0.91f, 1.29f, 0.95f);
+  inline const Vec3 seat_12 (-0.49f, 1.29f, 0.95f);
+  inline const Vec3 seat_13 (0.49f, 1.29f, 0.95f);
+  inline const Vec3 seat_14 (0.91f, 1.29f, 0.95f);
+  inline const Vec3 seat_15 (-0.91f, 1.29f, 0.15f);
+  inline const Vec3 seat_16 (-0.49f, 1.29f, 0.15f);
+  inline const Vec3 seat_17 (0.49f, 1.29f, 0.15f);
+  inline const Vec3 seat_18 (0.91f, 1.29f, 0.15f);
+  inline const Vec3 seat_19 (-0.91f, 1.29f, -0.65f);
+  inline const Vec3 seat_20 (-0.49f, 1.29f, -0.65f);
+  inline const Vec3 seat_21 (0.49f, 1.29f, -0.65f);
+  inline const Vec3 seat_22 (0.91f, 1.29f, -0.65f);
+  inline const Vec3 seat_23 (-0.91f, 1.29f, -1.45f);
+  inline const Vec3 seat_24 (-0.49f, 1.29f, -1.45f);
+  inline const Vec3 seat_25 (0.49f, 1.29f, -1.45f);
+  inline const Vec3 seat_26 (0.91f, 1.29f, -1.45f);
+  inline const Vec3 seat_27 (-0.91f, 1.29f, -2.25f);
+  inline const Vec3 seat_28 (-0.49f, 1.29f, -2.25f);
+  inline const Vec3 seat_29 (0.49f, 1.29f, -2.25f);
+  inline const Vec3 seat_30 (0.91f, 1.29f, -2.25f);
+  inline const Vec3 seat_31 (-0.91f, 1.29f, -3.05f);
+  inline const Vec3 seat_32 (-0.49f, 1.29f, -3.05f);
+  inline const Vec3 seat_33 (0.49f, 1.29f, -3.05f);
+  inline const Vec3 seat_34 (0.91f, 1.29f, -3.05f);
+  inline const Vec3 seat_35 (-0.91f, 1.29f, -3.85f);
+  inline const Vec3 seat_36 (-0.49f, 1.29f, -3.85f);
+  inline const Vec3 seat_37 (0.49f, 1.29f, -3.85f);
+  inline const Vec3 seat_38 (0.91f, 1.29f, -3.85f);
+  inline const Vec3 seat_39 (-0.86f, 1.29f, -4.5f);
+  inline const Vec3 seat_40 (-0.3f, 1.29f, -4.5f);
+  inline const Vec3 seat_41 (0.3f, 1.29f, -4.5f);
+  inline const Vec3 seat_42 (0.86f, 1.29f, -4.5f);
+  inline const Vec3 seat_driver (0.62f, 1.35f, 4.44f);
+  inline const Vec3 steering_column (0.62f, 0.7616f, 5.3392f);
+  inline const Vec3 steering_hub (0.62f, 1.66f, 4.9f);
+  inline const Vec3 step (-0.9925f, 0.52f, 2.925f);
+  inline const Vec3 tail_light_left (0.9489f, 1.02f, -5.4265f);
+  inline const Vec3 tail_light_right (-0.9489f, 1.02f, -5.4265f);
+  inline const Vec3 wheel_fl (1.07f, 0.49f, 4.15f);
+  inline const Vec3 wheel_fr (-1.07f, 0.49f, 4.15f);
+  inline const Vec3 wheel_rl (0.945f, 0.49f, -2.3f);
+  inline const Vec3 wheel_rr (-0.945f, 0.49f, -2.3f);
 }
 
 #endif

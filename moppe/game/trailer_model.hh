@@ -8,13 +8,15 @@
 
 namespace moppe::game::trailer_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh wheel;
+  inline constexpr model_mesh::Mesh body { "trailer", 0u,    4284u,
+                                           0u,        3468u, false };
+  inline constexpr model_mesh::Mesh wheel { "trailer", 4284u, 1726u,
+                                            3468u,     2560u, false };
 
   // Points in model space.
-  extern const Vec3 eye;
-  extern const Vec3 wheel_l;
-  extern const Vec3 wheel_r;
+  inline const Vec3 eye (0.0f, 0.47f, 2.3f);
+  inline const Vec3 wheel_l (0.62f, 0.36f, 0.0f);
+  inline const Vec3 wheel_r (-0.62f, 0.36f, 0.0f);
 }
 
 #endif

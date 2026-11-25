@@ -48,7 +48,7 @@ def main():
         with open(path, "rb") as file:
             data = file.read()
         identity.update(relative.encode() + b"\0" + data)
-        delta = relative.endswith(".arrows")
+        delta = relative.startswith("worlds/") and relative.endswith(".arrows")
         packed = os.path.join(output, f"asset-{index}.zst")
         subprocess.run(
             [zstd, "-19", "-q", "-f", "-o", packed],

@@ -8,14 +8,18 @@
 
 namespace moppe::game::chick_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh head;
-  extern const model_mesh::Mesh leg;
+  inline constexpr model_mesh::Mesh body {
+    "chick", 0u, 1012u, 0u, 2016u, false
+  };
+  inline constexpr model_mesh::Mesh head { "chick", 1012u, 2062u,
+                                           2016u,   4096u, false };
+  inline constexpr model_mesh::Mesh leg { "chick", 3074u, 630u,
+                                          6112u,   1236u, false };
 
   // Points in model space.
-  extern const Vec3 beak;
-  extern const Vec3 hip;
-  extern const Vec3 neck;
+  inline const Vec3 beak (0.0f, 0.1341f, 0.0711f);
+  inline const Vec3 hip (0.0203f, 0.0742f, -0.0045f);
+  inline const Vec3 neck (0.0f, 0.1125f, 0.027f);
 }
 
 #endif

@@ -8,30 +8,37 @@
 
 namespace moppe::game::snowmobile_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh bars;
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh cleat;
-  extern const model_mesh::Mesh glass;
-  extern const model_mesh::Mesh ski_left;
-  extern const model_mesh::Mesh ski_right;
-  extern const model_mesh::Mesh track;
+  inline constexpr model_mesh::Mesh bars { "snowmobile", 0u,   232u,
+                                           0u,           296u, false };
+  inline constexpr model_mesh::Mesh body { "snowmobile", 232u,  11703u,
+                                           296u,         8160u, false };
+  inline constexpr model_mesh::Mesh cleat { "snowmobile", 11935u, 48u,
+                                            8456u,        24u,    false };
+  inline constexpr model_mesh::Mesh glass { "snowmobile", 11983u, 264u,
+                                            8480u,        132u,   false };
+  inline constexpr model_mesh::Mesh ski_left { "snowmobile", 12247u, 1408u,
+                                               8612u,        852u,   false };
+  inline constexpr model_mesh::Mesh ski_right { "snowmobile", 13655u, 1408u,
+                                                9464u,        852u,   false };
+  inline constexpr model_mesh::Mesh track { "snowmobile", 15063u, 2736u,
+                                            10316u,       2120u,  false };
 
   // Points in model space.
-  extern const Vec3 cleat_origin;
-  extern const Vec3 column;
-  extern const Vec3 column_top;
-  extern const Vec3 foot_left;
-  extern const Vec3 foot_right;
-  extern const Vec3 grip_left;
-  extern const Vec3 grip_right;
-  extern const Vec3 passenger_foot_left;
-  extern const Vec3 passenger_foot_right;
-  extern const Vec3 passenger_grip_left;
-  extern const Vec3 passenger_grip_right;
-  extern const Vec3 passenger_seat;
-  extern const Vec3 seat;
-  extern const Vec3 ski_pivot_left;
-  extern const Vec3 ski_pivot_right;
+  inline const Vec3 cleat_origin (0.0f, 0.01f, -1.03f);
+  inline const Vec3 column (0.0f, 0.765f, 0.24f);
+  inline const Vec3 column_top (0.0f, 1.005f, 0.143f);
+  inline const Vec3 foot_left (0.338f, 0.377f, -0.008f);
+  inline const Vec3 foot_right (-0.338f, 0.377f, -0.008f);
+  inline const Vec3 grip_left (0.287f, 1.034f, 0.024f);
+  inline const Vec3 grip_right (-0.287f, 1.034f, 0.024f);
+  inline const Vec3 passenger_foot_left (0.338f, 0.377f, -0.576f);
+  inline const Vec3 passenger_foot_right (-0.338f, 0.377f, -0.576f);
+  inline const Vec3 passenger_grip_left (0.235f, 0.654f, -0.72f);
+  inline const Vec3 passenger_grip_right (-0.235f, 0.654f, -0.72f);
+  inline const Vec3 passenger_seat (0.0f, 0.763f, -0.681f);
+  inline const Vec3 seat (0.0f, 0.695f, -0.198f);
+  inline const Vec3 ski_pivot_left (0.48f, 0.197f, 0.9f);
+  inline const Vec3 ski_pivot_right (-0.48f, 0.197f, 0.9f);
 }
 
 #endif

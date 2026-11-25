@@ -8,26 +8,35 @@
 
 namespace moppe::game::sheep_model {
   // Assemblies, each in its own frame.
-  extern const model_mesh::Mesh body;
-  extern const model_mesh::Mesh fore_lower;
-  extern const model_mesh::Mesh fore_upper;
-  extern const model_mesh::Mesh head;
-  extern const model_mesh::Mesh hind_lower;
-  extern const model_mesh::Mesh hind_upper;
-  extern const model_mesh::Mesh neck;
-  extern const model_mesh::Mesh tail;
+  inline constexpr model_mesh::Mesh body {
+    "sheep", 0u, 2410u, 0u, 4816u, false
+  };
+  inline constexpr model_mesh::Mesh fore_lower { "sheep", 2410u, 246u,
+                                                 4816u,   480u,  false };
+  inline constexpr model_mesh::Mesh fore_upper { "sheep", 2656u, 178u,
+                                                 5296u,   352u,  false };
+  inline constexpr model_mesh::Mesh head { "sheep", 2834u, 1492u,
+                                           5648u,   2960u, false };
+  inline constexpr model_mesh::Mesh hind_lower { "sheep", 4326u, 246u,
+                                                 8608u,   480u,  false };
+  inline constexpr model_mesh::Mesh hind_upper { "sheep", 4572u, 178u,
+                                                 9088u,   352u,  false };
+  inline constexpr model_mesh::Mesh neck { "sheep", 4750u, 142u,
+                                           9440u,   280u,  false };
+  inline constexpr model_mesh::Mesh tail { "sheep", 4892u, 82u,
+                                           9720u,   160u,  false };
 
   // Points in model space.
-  extern const Vec3 carpus;
-  extern const Vec3 fore_hoof;
-  extern const Vec3 hind_hoof;
-  extern const Vec3 hip;
-  extern const Vec3 hock;
-  extern const Vec3 muzzle;
-  extern const Vec3 poll;
-  extern const Vec3 shoulder;
-  extern const Vec3 tail_root;
-  extern const Vec3 withers;
+  inline const Vec3 carpus (0.1f, 0.22f, 0.29f);
+  inline const Vec3 fore_hoof (0.1f, 0.0f, 0.3f);
+  inline const Vec3 hind_hoof (0.11f, 0.0f, -0.355f);
+  inline const Vec3 hip (0.11f, 0.58f, -0.3f);
+  inline const Vec3 hock (0.11f, 0.24f, -0.38f);
+  inline const Vec3 muzzle (0.0f, 0.61f, 0.7f);
+  inline const Vec3 poll (0.0f, 0.82f, 0.48f);
+  inline const Vec3 shoulder (0.1f, 0.56f, 0.28f);
+  inline const Vec3 tail_root (0.0f, 0.72f, -0.46f);
+  inline const Vec3 withers (0.0f, 0.52f, 0.3f);
 }
 
 #endif

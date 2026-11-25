@@ -43,7 +43,7 @@
     },
     "Game logic": {
       "share": 83.2,
-      "files": 48,
+      "files": 49,
       "typed": 2038,
       "raw_float": 220,
       "raw_vector": 192,
@@ -74,12 +74,12 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 76.7,
+      "share": 76.8,
       "files": 64,
-      "typed": 1480,
-      "raw_float": 296,
+      "typed": 1477,
+      "raw_float": 291,
       "raw_vector": 154,
-      "escapes": 829
+      "escapes": 843
     },
     "Rivers, water & sediment": {
       "share": 98.4,
@@ -108,10 +108,10 @@
     "Tests": {
       "share": 43.1,
       "files": 88,
-      "typed": 771,
+      "typed": 773,
       "raw_float": 815,
-      "raw_vector": 202,
-      "escapes": 1451
+      "raw_vector": 204,
+      "escapes": 1453
     },
     "Vehicles & on-foot body": {
       "share": 78.1,

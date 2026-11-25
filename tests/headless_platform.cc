@@ -14,6 +14,15 @@ namespace moppe {
         if (std::filesystem::exists (p))
           return p;
       }
+      if (std::filesystem::exists (relative))
+        return relative;
+#ifdef MOPPE_TEST_SOURCE_DIR
+      {
+        std::string p = std::string (MOPPE_TEST_SOURCE_DIR) + "/" + relative;
+        if (std::filesystem::exists (p))
+          return p;
+      }
+#endif
       return relative;
     }
   }

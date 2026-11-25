@@ -3,7 +3,7 @@
 
   inputs.nixbox.url = "github:mbrock/nixbox";
   inputs.luv.url = "github:mbrock/luv";
-  inputs.nixpkgs.follows = "luv/nixpkgs";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
     {
@@ -35,6 +35,10 @@
         {
           # Lowers moppe/nhal's Lisp shaders to MSL, HLSL, and reflection.
           luv-shaderc = luv.packages.${system}.luv-shaderc;
+          # Blender with pyarrow and moppe_export for writing model bundles.
+          blender = import ./tools/figure/blender.nix {
+            pkgs = nixpkgs.legacyPackages.${system};
+          };
           nhal-xbox = import ./moppe/nhal/xbox.nix {
             inherit xbox;
             luv-shaderc = self.packages.${system}.luv-shaderc;
@@ -75,6 +79,10 @@
           luv-shaderc = {
             type = "app";
             program = "${self.packages.${system}.luv-shaderc}/bin/luv-shaderc";
+          };
+          blender = {
+            type = "app";
+            program = nixpkgs.lib.getExe self.packages.${system}.blender;
           };
           # nix run .#deploy-nhal-xbox: sign, install, launch, and screenshot.
           deploy-nhal-xbox = xbox.mkDeploy self.packages.${system}.nhal-xbox;

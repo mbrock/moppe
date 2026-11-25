@@ -509,4 +509,41 @@ namespace moppe::game {
   QUANTITY_SPEC (head_carriage, mp_units::dimensionless);
 }
 
+namespace moppe::game::model_mesh {
+  // ---- Rigid models ----
+  //
+  // Columns of a rigid model's Arrow bundles (game/model_bundle.hh). Each
+  // column within a domain carries its own specification so a bundle binds
+  // columns unambiguously by spec and validates units on read.
+
+  // Vertices: model-space offset, shading normal, and on weathered films
+  // (the boat's plywood) flattened film coordinates and wear (negative where
+  // there is no film).
+  QUANTITY_SPEC (vertex_position, mp_units::isq::displacement);
+  QUANTITY_SPEC (vertex_normal, direction);
+  QUANTITY_SPEC (film_coordinates, mp_units::isq::displacement);
+  QUANTITY_SPEC (surface_wear, mp_units::dimensionless, mp_units::subkind);
+
+  // Triangles: three assembly-local vertex indices and a paint index.
+  QUANTITY_SPEC (corner_a, mp_units::dimensionless, mp_units::subkind);
+  QUANTITY_SPEC (corner_b, mp_units::dimensionless, mp_units::subkind);
+  QUANTITY_SPEC (corner_c, mp_units::dimensionless, mp_units::subkind);
+  QUANTITY_SPEC (paint_index, mp_units::dimensionless, mp_units::subkind);
+
+  // Paints: display RGB, unlit flag, and Principled BSDF parameters.
+  QUANTITY_SPEC (paint_colour,
+                 mp_units::dimensionless,
+                 mp_units::quantity_tensor_order::vector,
+                 mp_units::subkind);
+  QUANTITY_SPEC (paint_unlit, mp_units::dimensionless, mp_units::subkind);
+  QUANTITY_SPEC (paint_metallic, proportion);
+  QUANTITY_SPEC (paint_roughness, proportion);
+  QUANTITY_SPEC (paint_coat, proportion);
+  QUANTITY_SPEC (paint_coat_roughness, proportion);
+  QUANTITY_SPEC (paint_transmission, proportion);
+  QUANTITY_SPEC (paint_ior, mp_units::isq::refractive_index);
+  QUANTITY_SPEC (paint_sheen, proportion);
+  QUANTITY_SPEC (paint_emission, scale_factor);
+}
+
 #endif
