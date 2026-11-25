@@ -1055,12 +1055,27 @@ namespace moppe::game {
                                    seconds_t dt) {
     const CameraRig rig = camera_rig ();
     if (m_logic.m_cam_mode == CAM_HELMET) {
-      // Ride inside the head, lightly smoothed so terrain bumps do not
-      // rattle the eyeballs. The head turns about the vertical and then
-      // nods about its own right, from the way ahead.
+      // Ride inside the head, keeping gaze pitch steadier than chassis bounce
+      // (vestibulo-ocular reflex) while keeping heading turns crisp.
+      direction_t gaze = rig.ahead;
+      if (m_logic.m_doing.way == Doing::Way::driving &&
+          m_logic.m_doing.machine != Machine::helicopter) {
+        const plan_displacement_t flat =
+          plan_displacement (direction_value (rig.ahead)[0] * u::m,
+                             direction_value (rig.ahead)[2] * u::m);
+        const meters_t flat_len = hypot (flat);
+        if (flat_len > 0.01f * u::m) {
+          // Attenuate fast chassis pitch chatter while still tilting cleanly
+          // on steep hills and wheelies.
+          gaze = unit_direction (Vec3 (
+            meters_value (x_of (flat) / flat_len.numerical_value_in (u::m)),
+            direction_value (rig.ahead)[1] * 0.45f,
+            meters_value (z_of (flat) / flat_len.numerical_value_in (u::m))));
+        }
+      }
       const direction_t up = unit_direction (Vec3 (0, 1, 0));
       Vec3 look = Quaternion::rotate (
-        direction_value (rig.ahead), direction_value (up), -m_logic.m_look_yaw);
+        direction_value (gaze), direction_value (up), -m_logic.m_look_yaw);
       Vec3 right = cross (look, direction_value (up));
       if (length2 (right) > 1e-6f) {
         normalize (right);
@@ -1068,13 +1083,24 @@ namespace moppe::game {
           Quaternion::rotate (look, right, radians_t (m_logic.m_look_pitch));
       }
       Vec3& eye = position_value (m_logic.m_fp_eye);
-      // A helicopter flies too fast for the eye to chase: it is carried
-      // along, and only what the cabin does about it is smoothed.
-      if (m_logic.m_doing == Doing::driving (Machine::helicopter))
+      // Carry the eye with the machine's travel so speed does not drag it
+      // behind the rider's head; absorb vertical suspension chatter more
+      // softly than horizontal motion.
+      if (m_logic.m_doing.way == Doing::Way::driving) {
         eye += velocity_value (rig.velocity) *
                static_cast<float> (dt.numerical_value_in (u::s));
-      eye += (position_value (rig.eye) - eye) *
-             smoothing_alpha (25.0f / u::s, dt).numerical_value_in (one);
+        const blend_weight_t horiz = smoothing_alpha (30.0f / u::s, dt);
+        const blend_weight_t vert = smoothing_alpha (10.0f / u::s, dt);
+        const displacement_t delta = rig.eye - m_logic.m_fp_eye;
+        eye[0] +=
+          displacement_value (delta)[0] * horiz.numerical_value_in (one);
+        eye[1] += displacement_value (delta)[1] * vert.numerical_value_in (one);
+        eye[2] +=
+          displacement_value (delta)[2] * horiz.numerical_value_in (one);
+      } else {
+        eye += (position_value (rig.eye) - eye) *
+               smoothing_alpha (25.0f / u::s, dt).numerical_value_in (one);
+      }
       m_camera.place (m_logic.m_fp_eye, moppe::position (eye + look * 10.0f));
       return;
     }

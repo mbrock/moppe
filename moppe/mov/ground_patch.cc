@@ -96,10 +96,25 @@ namespace moppe::mov {
     return length2 (normal) > 1e-8f ? normalized (normal) : Vec3 (0, 1, 0);
   }
 
+  namespace {
+    // Integer subdivision of the terrain lattice: at least 2 so every other
+    // sample hits a lattice vertex, and finer on coarse worlds (e.g. 2.44 m
+    // spacing -> /3 = 0.81 m) so road crowns and terrain folds stay smooth.
+    meters_t patch_step (meters_t lattice_spacing) {
+      const scale_factor_t sub =
+        std::max (
+          2.0f,
+          std::ceil (
+            (lattice_spacing / (0.85f * u::m)).numerical_value_in (one))) *
+        scale_factor[one];
+      return lattice_spacing / sub.numerical_value_in (one);
+    }
+  }
+
   GroundPatch::GroundPatch (const map::SurfaceGeometry& surface, Params params)
       : m_surface (surface), m_params (params),
-        m_dx (0.5f * surface.domain ().spacing_x ()),
-        m_dz (0.5f * surface.domain ().spacing_z ()) {}
+        m_dx (patch_step (surface.domain ().spacing_x ())),
+        m_dz (patch_step (surface.domain ().spacing_z ())) {}
 
   GroundPatch::~GroundPatch () {
     forget ();
@@ -327,8 +342,13 @@ namespace moppe::mov {
                               const TrunkField* trunks,
                               const Vec3& p) {
     const plan_displacement_t off = plan_position (plan (p)) - centre ();
-    if (abs (x_of (off)) < m_params.recentre_distance &&
-        abs (z_of (off)) < m_params.recentre_distance)
+    const scale_factor_t margin =
+      0.3f * static_cast<float> (m_params.samples - 1) * scale_factor[one];
+    const meters_t limit_x = std::min (m_params.recentre_distance,
+                                       margin.numerical_value_in (one) * m_dx);
+    const meters_t limit_z = std::min (m_params.recentre_distance,
+                                       margin.numerical_value_in (one) * m_dz);
+    if (abs (x_of (off)) < limit_x && abs (z_of (off)) < limit_z)
       return;
     int column = 0, row = 0;
     origin_for (p, column, row);

@@ -553,3 +553,40 @@ MOPPE_TEST (the_rear_brake_sets_a_wheelie_down_and_full_throttle_loops_it) {
     MOPPE_CHECK (direction_value (bike.up ())[1] < 0.5f);
   }
 }
+
+MOPPE_TEST (rigid_bike_rides_rough_offroad_sideslope_without_bouncing_wildly) {
+  // Rolling off-road terrain with both transverse side-slopes (~14 deg) and
+  // longitudinal bumps, riding straight across at trail speed.
+  const map::SurfaceGeometry surface =
+    rigid_test_surface ([] (float x, float z) {
+      constexpr float tau = 6.2831853f;
+      return 12.0f + 4.0f * std::sin (tau * x / 100.0f) +
+             0.35f * std::sin (tau * z / 18.0f) +
+             0.18f * std::sin (tau * (x + z) / 11.0f);
+    });
+  mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
+  bike.set_thrust (sig (0.75f));
+  int grounded_steps = 0;
+  constexpr int total_steps = 8 * 120;
+  proportion_t min_upright = 1.0f * proportion[one];
+  speed_t peak_impact = 0.0f * u::m / u::s;
+  for (int i = 0; i < total_steps; ++i) {
+    bike.update (tick);
+    if (bike.grounded ())
+      ++grounded_steps;
+    min_upright = std::min (
+      min_upright,
+      static_cast<float> (direction_value (bike.up ())[1]) * proportion[one]);
+    peak_impact = std::max (peak_impact, bike.pop_impact ());
+  }
+  const proportion_t planted =
+    (float (grounded_steps) / float (total_steps)) * proportion[one];
+  const speed_t forward_speed =
+    dot (velocity_value (bike.velocity ()), direction_value (bike.forward ())) *
+    u::m / u::s;
+  // Stays planted on its tyres, upright, and free of violent chassis slams.
+  MOPPE_CHECK (planted > 0.85f * proportion[one]);
+  MOPPE_CHECK (min_upright > 0.75f * proportion[one]);
+  MOPPE_CHECK (peak_impact < 3.0f * u::m / u::s);
+  MOPPE_CHECK (forward_speed > 8.0f * u::m / u::s);
+}

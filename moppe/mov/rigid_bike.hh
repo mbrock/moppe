@@ -205,18 +205,20 @@ namespace moppe {
       // The engine and the pressed body from axle to axle, its underside
       // at the skid plate, reaching out over the front tyre; and the
       // seated rider, hips to head.
-      .frame_a = displacement (Vec3 (0.0f, -0.32f, -0.62f)),
-      .frame_b = displacement (Vec3 (0.0f, -0.37f, 0.62f)),
-      .frame_radius = 0.17f * u::m,
+      .frame_a = displacement (Vec3 (0.0f, -0.27f, -0.62f)),
+      .frame_b = displacement (Vec3 (0.0f, -0.30f, 0.62f)),
+      .frame_radius = 0.16f * u::m,
       .rider_a = displacement (Vec3 (0.0f, 0.18f, -0.22f)),
       .rider_b = displacement (Vec3 (0.0f, 0.63f, -0.1f)),
       .rider_radius = 0.22f * u::m,
-      // The telescopic fork's 11 cm and the twin shocks' 7.
-      .front_travel = 0.11f * u::m,
-      .rear_travel = 0.07f * u::m,
-      .front_sag = 0.035f * u::m,
-      .rear_sag = 0.025f * u::m,
-      .damping_ratio = 0.4f * damping_ratio[one],
+      // Trail-tuned long-travel fork and twin shocks: enough droop to keep
+      // the tyres planted over dips and enough damped bump stroke to soak up
+      // rough off-road terrain without slamming the stops.
+      .front_travel = 0.20f * u::m,
+      .rear_travel = 0.18f * u::m,
+      .front_sag = 0.065f * u::m,
+      .rear_sag = 0.060f * u::m,
+      .damping_ratio = 0.72f * damping_ratio[one],
       // Trail tyres: a block tread, neither road nor knobbly.
       .tire_friction = 1.35f * isq::static_friction_coefficient[one],
       .skid_friction = 0.65f * isq::kinetic_friction_factor[one],
@@ -268,12 +270,12 @@ namespace moppe {
       .rider_a = displacement (Vec3 (0.0f, 0.0f, -0.18f)),
       .rider_b = displacement (Vec3 (0.0f, 0.62f, 0.05f)),
       .rider_radius = 0.24f * u::m,
-      // Five centimetres of fork, and the tyres' give behind.
-      .front_travel = 0.06f * u::m,
-      .rear_travel = 0.03f * u::m,
-      .front_sag = 0.02f * u::m,
-      .rear_sag = 0.012f * u::m,
-      .damping_ratio = 0.5f * damping_ratio[one],
+      // Trail fork and supple rear compliance for off-road tracks.
+      .front_travel = 0.11f * u::m,
+      .rear_travel = 0.07f * u::m,
+      .front_sag = 0.035f * u::m,
+      .rear_sag = 0.025f * u::m,
+      .damping_ratio = 0.68f * damping_ratio[one],
       .tire_friction = 1.3f * isq::static_friction_coefficient[one],
       .skid_friction = 0.62f * isq::kinetic_friction_factor[one],
       // Full lock turns it hard at a walk and fades soon after, keeping a

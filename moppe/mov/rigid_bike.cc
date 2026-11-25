@@ -212,7 +212,8 @@ namespace moppe {
         patch.forget ();
       }
 
-      b3BodyId create_body (const RigidBodyState& s) {
+      b3BodyId create_body (const RigidBodyState& s,
+                            bool fast_rotation = false) {
         b3BodyDef def = b3DefaultBodyDef ();
         def.type = b3_dynamicBody;
         def.position = to_b3 (s.position);
@@ -220,6 +221,7 @@ namespace moppe {
         def.linearVelocity = to_b3 (s.linear_velocity);
         def.angularVelocity = to_b3 (s.angular_velocity);
         def.enableSleep = false;
+        def.allowFastRotation = fast_rotation;
         return b3CreateBody (world, &def);
       }
 
@@ -231,7 +233,7 @@ namespace moppe {
 
       b3BodyId
       create_wheel (const RigidBodyState& s, meters_t radius, b3ShapeId* tire) {
-        const b3BodyId wheel = create_body (s);
+        const b3BodyId wheel = create_body (s, true);
         b3ShapeDef shape = b3DefaultShapeDef ();
         shape.updateBodyMass = false;
         shape.baseMaterial.friction = tire_material (rig.tire_friction);
@@ -431,7 +433,8 @@ namespace moppe {
                        kilogram_square_metres_t inertia,
                        damping_t rate,
                        seconds_t step,
-                       const Vec3* pivot = nullptr) {
+                       const Vec3* pivot = nullptr,
+                       const Vec3* tangent_normal = nullptr) {
         const Vec3 w = from_b3 (b3Body_GetAngularVelocity (chassis));
         const blend_weight_t gain = settle (rate, step);
         // Radians a second, as Box3D turns its bodies. A radian is a
@@ -447,8 +450,12 @@ namespace moppe {
         if (!pivot)
           return;
         const Vec3 centre = from_b3 (b3Body_GetPosition (chassis));
-        const Vec3 swing =
-          cross (axis * per_second_value (change), centre - *pivot);
+        Vec3 swing = cross (axis * per_second_value (change), centre - *pivot);
+        // Never let a roll/yaw pivot compensation push the bike vertically
+        // into or off a side-slope: keep the assist strictly in the ground's
+        // tangent plane (and horizontal when correcting roll on a slope).
+        if (tangent_normal)
+          swing -= (*tangent_normal) * dot (swing, *tangent_normal);
         b3Body_ApplyForceToCenter (
           chassis,
           to_b3 (swing *
@@ -614,8 +621,12 @@ namespace moppe {
         const Vec3 right = cross (forward, level);
         Vec3 landing_normal = world_up;
         const bool hanging = controls.hung && !grounded;
+        // Wait a short beat before engaging mid-air landing attitude so a
+        // wheel briefly skipping over rough terrain does not fight the
+        // suspension by torquing the chassis to a distant landing slope.
+        const bool midair = !grounded && airborne > 0.12f * u::s;
         const bool landing =
-          !grounded && !hanging &&
+          midair && !hanging &&
           predict_landing (surface,
                            rig.ride_height (),
                            p + up * meters_value (rig.reference_height),
@@ -666,11 +677,12 @@ namespace moppe {
              : 1.0f) *
           proportion[one];
         steer_rate (forward,
-                    angle_about (forward, up, target_up) * 9.0f / u::s,
+                    angle_about (forward, up, target_up) * 8.0f / u::s,
                     roll_inertia,
-                    30.0f * rolls.numerical_value_in (one) / u::s,
+                    20.0f * rolls.numerical_value_in (one) / u::s,
                     dt,
-                    grounded ? &under : nullptr);
+                    grounded ? &under : nullptr,
+                    grounded ? &world_up : nullptr);
 
         // Pitch. Grounded, the suspension and the engine pitch the bike
         // freely: nothing may lever the chassis while it stands on its tires,
@@ -690,7 +702,7 @@ namespace moppe {
         // vertical goes over: righting it would flip it round.
         const bool reared = wheelie > released &&
                             (airborne < 0.3f * u::s || dot (up, level) < 0.1f);
-        if (hanging || (!grounded && speed > 2.0f * u::m / u::s && !reared)) {
+        if (hanging || (midair && speed > 2.0f * u::m / u::s && !reared)) {
           Vec3 aim;
           if (hanging) {
             aim = direction_value (controls.hang_forward);
