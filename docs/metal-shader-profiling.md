@@ -361,3 +361,79 @@ prototype uses extra Metal texture bindings and generated-MSL
 substitutions; a portable implementation needs a Luv material producer
 and a texture layout that fits NHAL's other backends. These timings
 describe one M5 route, with weather comparisons on a short part of it.
+
+## Wet asphalt, grain filtering and cache format on the M5
+
+On the same road ride, the 100×35 distant-asphalt crop in frames 160–175
+was compared against live shading at 1440×810 in rain. Each spatial
+entry is the share of presented crop pixels differing by more than eight
+8-bit levels in any channel. The temporal column uses the same threshold
+on the difference between consecutive frame changes. These metrics
+measure agreement with the existing renderer.
+
+| Terrain and road shader | Cache MiB | Spatial | Adjacent-frame change |
+| --- | ---: | ---: | ---: |
+| Prior combined cache | 48 | 3.009% | 3.705% |
+| Restore live macro normal | 48 | 2.998% | 3.693% |
+| Restore live detail slope | 48 | 0.189% | 0.270% |
+| Box-filter crown and shoulder camber during bake | 48 | 3.018% | 3.701% |
+| Four bilinear taps along the longer screen derivative for slope and normal | 48 | 3.404% | 4.114% |
+| Cache the strength of the fine grain, evaluate grain on screen | 50 | 0.402% | 0.758% |
+| Same grain treatment with three RGBA8 main outputs | 26 | 0.273% | 0.554% |
+| Same grain treatment keeping macro normal and masks in RGBA16F | 34 | 0.243% | 0.484% |
+
+The crown filter integrates its signed camber over a lateral box from
+the projected texel. The four-tap filter covers at most eight texels,
+without mips or roughness compensation. These are distinct from testing
+hardware anisotropy with a prefiltered mip chain.
+
+Both asphalt aggregate and surrounding soil use the same fine rotated
+detail sheet. Their slopes differ by a scalar strength. The producer
+subtracts that term from the dry slope and writes the strength to R8.
+The consumer adds the term back using the original detail texture at
+the current screen footprint. The remaining slope and the expensive
+road geometry, asphalt masks and ground material still come from the
+cache. The 2 MiB strength field is shared by terrain and ribbon.
+
+Packing the original three attachments into RGBA8 without the grain
+change gave 2.684% spatial error on the wet asphalt. Packing is a
+separate choice from filtering. The signed slope uses a rational
+encoding with zero at byte 128, while the signed powder tilt uses its
+known amplitude. Hardware filters the encoded values. A reduction in
+allocated bytes alone does not measure GPU memory traffic.
+
+A separate diagnostic captured the actual footprint at those crop pixels.
+54,536 of 56,000 samples carried the terrain or road-ribbon tag. Horizontal
+camera distance ranged from 9 to 13 m (rounded), with a median of 11 m.
+97.9% of tagged samples selected the 12.5 cm level as their fine level;
+the rest used the 3.125 cm level. The ratio of the major to minor axes of
+the XZ screen footprint had median 5.0 and 99th percentile 6.0 (measured
+to the nearest quarter). This crop does not measure a road 60–100 m away.
+
+In two fair-weather timing runs per setting, over the same route frames
+97–480 and in opposite configuration order, the 48 MiB cache took
+9.087 ms of summed GPU pass time at 1440×810. Packing its three outputs
+to 24 MiB gave 9.093 ms. The on-screen grain variant took 9.127 ms at
+50, 34 and 26 MiB to three decimal places. The 26 MiB version used
+4.314 ms in the main scene and 0.073 ms for strip refresh. These are
+timings, not bandwidth counters.
+
+The same two baseline runs at both resolutions recorded individual pass
+times directly from each completed frame. From 960×540 to 1440×810,
+occlusion rose from 0.197 to 0.733 ms, its two blur/apply passes
+combined from 0.089 to 0.199 ms, sun shafts from 0.226 to 0.483 ms
+and temporal neighbourhood from 0.087 to 0.207 ms. That puts ambient
+occlusion first for a resolution-scaling experiment. The 1.18 ms of
+growth outside the main scene pass also includes resumed scene draws.
+
+Two further 1440×810 fixed views compared the same grain treatment in
+50 MiB versus 26 MiB. On the snowmobile, 2 of 2,073,600 output pixels
+differed by more than eight levels due to packing; at the Caddy shoreline,
+27 did. Comparing the packed version **to the live renderer** gave 2.12%
+and 5.14% respectively. The shoreline still warrants work on how the
+material itself is sampled at different scales.
+
+The [replayable probe and crop comparison](https://github.com/mbrock/moppe/tree/2beb7e8d/tools/terrain-material-probe)
+are on the experiment branch. The packing figures are allocated memory
+for these texture formats. The timing and visual results are specific
+to the tested M5 scenes.
