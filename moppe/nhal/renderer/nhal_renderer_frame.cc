@@ -75,13 +75,17 @@ namespace moppe::nhal {
         std::max (1u, std::uint32_t (std::lround (view.height * base_scale)));
       const float dynamic_share =
         m_dynamic.share ().numerical_value_in (mp_units::one);
-      const std::uint32_t scene_width = std::clamp (
+      auto aligned_even = [] (std::uint32_t value, std::uint32_t cap) {
+        if (cap < 2u)
+          return std::clamp (value, 1u, cap);
+        const std::uint32_t clamped = std::clamp (value, 2u, cap);
+        return clamped == cap ? cap : std::max (2u, clamped & ~1u);
+      };
+      const std::uint32_t scene_width = aligned_even (
         std::uint32_t (std::lround (float (cap_width) * dynamic_share)),
-        1u,
         cap_width);
-      const std::uint32_t scene_height = std::clamp (
+      const std::uint32_t scene_height = aligned_even (
         std::uint32_t (std::lround (float (cap_height) * dynamic_share)),
-        1u,
         cap_height);
       if (m_width != view.width || m_height != view.height)
         make_drawable_targets ();

@@ -451,7 +451,9 @@ namespace moppe::nhal {
         m_serial = next;
         m_fx_fence_signaled = false;
         m_fx_encoded_this_frame = false;
-        m_fx_wait_pending = false;
+        m_fx_wait_render = false;
+        m_fx_wait_compute = false;
+        m_fx_wait_copy = false;
         const std::uint32_t slot = (m_serial - 1) % frames_in_flight;
         m_slot = slot;
         m_arena = { static_cast<std::byte*> (m_arena_buffers[slot].contents),
@@ -527,7 +529,7 @@ namespace moppe::nhal {
         m_encoder = [m_commands renderCommandEncoderWithDescriptor:pass];
         if (desc.label)
           m_encoder.label = @(desc.label);
-        if (m_fx_wait_pending) {
+        if (m_fx_wait_render) {
           MTLStages fx_before = MTLStageVertex | MTLStageFragment;
           if (desc.wait_count > 0) {
             fx_before = 0;
@@ -536,7 +538,7 @@ namespace moppe::nhal {
           }
           if (fx_before)
             [m_encoder waitForFence:m_fx_fence beforeEncoderStages:fx_before];
-          m_fx_wait_pending = false;
+          m_fx_wait_render = false;
         }
         if (desc.wait_count > 0) {
           for (std::uint32_t i = 0; i < desc.wait_count; ++i) {
@@ -565,10 +567,10 @@ namespace moppe::nhal {
         m_compute = [m_commands computeCommandEncoder];
         if (label)
           m_compute.label = @(label);
-        if (m_fx_wait_pending) {
+        if (m_fx_wait_compute) {
           [m_compute waitForFence:m_fx_fence
               beforeEncoderStages:MTLStageDispatch | MTLStageBlit];
-          m_fx_wait_pending = false;
+          m_fx_wait_compute = false;
         }
         if (const MTLStages after = mtl_stages (wait_after))
           [m_compute barrierAfterQueueStages:after
@@ -601,9 +603,9 @@ namespace moppe::nhal {
         if (!m_copy) {
           m_copy = [m_commands computeCommandEncoder];
           m_copy.label = @"buffer copies";
-          if (m_fx_wait_pending) {
+          if (m_fx_wait_copy) {
             [m_copy waitForFence:m_fx_fence beforeEncoderStages:MTLStageBlit];
-            m_fx_wait_pending = false;
+            m_fx_wait_copy = false;
           }
           m_copy_waited = Stage::none;
         }
@@ -778,7 +780,9 @@ namespace moppe::nhal {
           [m_temporal_scaler encodeToCommandBuffer:m_commands];
           timestamp ();
           m_fx_encoded_this_frame = true;
-          m_fx_wait_pending = true;
+          m_fx_wait_render = true;
+          m_fx_wait_compute = true;
+          m_fx_wait_copy = true;
           return true;
         }
 #endif
@@ -1023,9 +1027,9 @@ namespace moppe::nhal {
                                 options:MTLResourceStorageModeShared];
         make_resident (pending.buffer);
         id<MTL4ComputeCommandEncoder> copy = [m_commands computeCommandEncoder];
-        if (m_fx_wait_pending) {
+        if (m_fx_wait_copy) {
           [copy waitForFence:m_fx_fence beforeEncoderStages:MTLStageBlit];
-          m_fx_wait_pending = false;
+          m_fx_wait_copy = false;
         }
         [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment
                          beforeStages:MTLStageBlit
@@ -1294,7 +1298,9 @@ namespace moppe::nhal {
       bool m_temporal_reset_required = true;
       bool m_fx_fence_signaled = false;
       bool m_fx_encoded_this_frame = false;
-      bool m_fx_wait_pending = false;
+      bool m_fx_wait_render = false;
+      bool m_fx_wait_compute = false;
+      bool m_fx_wait_copy = false;
     };
   }
 

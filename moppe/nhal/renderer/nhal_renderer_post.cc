@@ -257,7 +257,7 @@ namespace moppe::nhal {
       desc.label = "motion blur";
       desc.color_count = 1;
       desc.colors[0] = { m_post.blurred, Load::discard, Store::store };
-      desc.waits[0] = { Stage::fragment, Stage::fragment };
+      desc.waits[0] = { Stage::fragment | Stage::compute, Stage::fragment };
       desc.wait_count = 1;
       m_device->begin_render_pass (desc);
       m_device->set_pipeline (m_post.motion_blur);
