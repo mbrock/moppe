@@ -195,7 +195,8 @@ in the checkout builds and publishes at once.
 runners at each push to master: Nix for luv-shaderc and the land's
 compiler, a pinned emsdk, `make web`, and the four files as the site, the
 page as `index.html`. The baked land is kept between runs until the
-terrain's code changes. A run from nothing takes five minutes.
+terrain's code changes, and handed to `make web` as `WEB_LAND`, which
+skips the baker. A run from nothing takes five minutes.
 
 ## The build's particulars
 

@@ -96,7 +96,10 @@ jobs:
           cmake="$(dirname "$(command -v cmake)")"
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           export PATH="$RUNNER_TEMP/luv-shaderc/bin:$cmake:$PATH"
-          make web
+          # The land baked above or restored from the cache: baking here,
+          # outside Nix, would configure the baker with the runner's own
+          # compiler, which lacks SDL's X11 and Wayland headers.
+          make web WEB_LAND="$(ls build-web/land-cache/land-*.arrows)"
 
       - name: Lay out the site
         run: |

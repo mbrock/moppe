@@ -172,10 +172,11 @@ xbox:
 # page carries its world's land, baked here, so a visit need not generate it.
 # Lands are baked into build-web/land-cache, kept between builds, and the
 # page packs build-web/lands, which holds only the land this build reads.
+# WEB_LAND names a land already baked, which skips the baker.
 web:
 	mkdir -p build-web/land-cache
-	land=$$(MOPPE_LAND_DIR=$(CURDIR)/build-web/land-cache \
-		./tools/bake-land 1024 play 123) && \
+	land=$${WEB_LAND:-$$(MOPPE_LAND_DIR=$(CURDIR)/build-web/land-cache \
+		./tools/bake-land 1024 play 123)} && \
 	if [ "$$(ls build-web/lands 2>/dev/null)" != "$$(basename "$$land")" ]; \
 	then rm -rf build-web/lands && mkdir -p build-web/lands && \
 		cp "$$land" build-web/lands/; fi
