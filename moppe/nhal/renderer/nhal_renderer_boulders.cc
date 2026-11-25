@@ -160,6 +160,7 @@ namespace moppe::nhal {
         shadow ? m_boulders.shadow_candidates : m_boulders.candidates;
       job.arguments = arguments;
       job.groups = (m_boulders.count + 63) / 64;
+      job.shadow = shadow;
       job.active = true;
       return job;
     }
@@ -170,6 +171,9 @@ namespace moppe::nhal {
       m_device->set_buffer (2, m_boulders.records);
       m_device->set_buffer (3, job.candidates);
       m_device->set_buffer (4, job.arguments);
+      m_device->set_uniforms (
+        5, hzb_block<shaders::boulder_cull::HzbInfo> (!job.shadow));
+      m_device->set_buffer (6, m_hzb.pyramid);
       m_device->dispatch (job.groups);
     }
 

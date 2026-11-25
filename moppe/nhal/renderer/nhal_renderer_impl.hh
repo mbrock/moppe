@@ -645,8 +645,32 @@ namespace moppe::nhal {
         Buffer candidates {};
         Buffer arguments {};
         std::uint32_t groups = 0;
+        bool shadow = false;
         bool active = false;
       };
+
+      // Portable reversed-Z HZB occlusion pyramid (512x256 down to 2x1,
+      // 174,762 floats) built at the end of the scene pass and queried in
+      // the next frame's visibility culling passes.
+      struct HzbState {
+        Pipeline build, reduce;
+        Buffer pyramid;
+        Mat4 view_proj {};
+        Vec3 eye {};
+        std::array<float, 4> cull {};
+        bool valid = false;
+      };
+
+      void build_hzb ();
+      bool use_hzb () const;
+      template <typename Block>
+      Block hzb_block (bool enable) const {
+        Block b {};
+        b.hzb_view = matrix (m_hzb.view_proj);
+        b.hzb_eye = lanes (m_hzb.eye, (enable && m_hzb.valid) ? 1.0f : 0.0f);
+        b.hzb_cull = m_hzb.cull;
+        return b;
+      }
 
       // The ground tiles around the camera that carry blades, counted into
       // the sward's indirect draw: a window of 0.6-metre cells anchored to
@@ -795,6 +819,9 @@ namespace moppe::nhal {
       FrameParams m_params {};
       Transient m_frame_block;
       Mat4 m_previous_view_proj;
+      Mat4 m_scene_view_proj;
+      Vec3 m_scene_eye;
+      HzbState m_hzb;
       float m_previous_time = 0;
       std::uint32_t m_frame = 0;
       std::array<float, 2> m_frame_jitter { 0.0f, 0.0f };

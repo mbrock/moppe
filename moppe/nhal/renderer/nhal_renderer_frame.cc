@@ -10,6 +10,14 @@ namespace moppe::nhal {
       const RenderPipelineDesc scene = scene_target ();
       m_exposure = m_device->create_compute_pipeline (
         { &shaders::exposure::program, m_shaders.exposure, "exposure" });
+      m_hzb.build = m_device->create_compute_pipeline (
+        { &shaders::hzb_build::program, m_shaders.hzb_build, "hzb build" });
+      m_hzb.reduce = m_device->create_compute_pipeline (
+        { &shaders::hzb_reduce::program, m_shaders.hzb_reduce, "hzb reduce" });
+      m_hzb.pyramid =
+        m_device->create_buffer ({ .size = 174763 * sizeof (float),
+                                   .usage = buffer_storage_write,
+                                   .label = "hzb pyramid" });
       RenderPipelineDesc rain = scene;
       rain.program = &shaders::rain::program;
       rain.vertex = m_shaders.rain[0];
@@ -176,10 +184,66 @@ namespace moppe::nhal {
         m_device->end_compute_pass ();
       }
 
+      m_scene_view_proj = view_proj;
+      m_scene_eye = camera;
       m_previous_view_proj = view_proj;
       m_previous_time = time;
       m_restart = false;
       return true;
+    }
+
+    bool NhalRenderer::use_hzb () const {
+      static const bool disabled = [] {
+        const char* v = moppe::environment ("MOPPE_NO_HZB");
+        return v && std::string_view (v) == "1";
+      }();
+      return !disabled;
+    }
+
+    void NhalRenderer::build_hzb () {
+      if (!m_scene_begun || !use_hzb () || !m_hzb.pyramid ||
+          m_scene_width > 2560 || m_scene_height > 1280) {
+        m_hzb.valid = false;
+        return;
+      }
+      m_device->begin_compute_pass ("hzb pyramid", Stage::fragment, true);
+      m_device->set_pipeline (m_hzb.build);
+      shaders::hzb_build::Build build {};
+      build.dims = {
+        float (m_scene_width), float (m_scene_height), 512.0f, 256.0f
+      };
+      m_device->set_uniforms (0, build);
+      m_device->set_texture (0, m_scene_depth);
+      m_device->set_buffer (1, m_hzb.pyramid);
+      m_device->dispatch (512 / 8, 256 / 8);
+
+      m_device->set_pipeline (m_hzb.reduce);
+      std::uint32_t src_w = 512, src_h = 256, src_off = 0;
+      for (std::uint32_t mip = 1; mip <= 8; ++mip) {
+        m_device->compute_barrier ();
+        const std::uint32_t dst_w = src_w / 2;
+        const std::uint32_t dst_h = src_h / 2;
+        const std::uint32_t dst_off = src_off + src_w * src_h;
+        shaders::hzb_reduce::Reduce red {};
+        red.params = {
+          float (dst_w), float (dst_h), float (src_off), float (dst_off)
+        };
+        m_device->set_uniforms (0, red);
+        m_device->set_buffer (1, m_hzb.pyramid);
+        m_device->dispatch ((dst_w + 7) / 8, (dst_h + 7) / 8);
+        src_w = dst_w;
+        src_h = dst_h;
+        src_off = dst_off;
+      }
+      m_device->end_compute_pass ();
+
+      m_hzb.view_proj = m_scene_view_proj;
+      m_hzb.eye = m_scene_eye;
+      m_hzb.cull = { ForestGrid::row_length (m_scene_view_proj, 0),
+                     ForestGrid::row_length (m_scene_view_proj, 1),
+                     ForestGrid::row_length (m_scene_view_proj, 3),
+                     0.0f };
+      m_hzb.valid = true;
     }
 
     void NhalRenderer::close_scene () {
@@ -207,6 +271,7 @@ namespace moppe::nhal {
         m_scene_open = false;
       }
       m_scene_closed = true;
+      build_hzb ();
     }
 
     bool NhalRenderer::use_temporal_scaler () const {
@@ -385,6 +450,7 @@ namespace moppe::nhal {
 
     void NhalRenderer::reset_temporal_state () {
       m_restart = true;
+      m_hzb.valid = false;
       m_dynamic.pause ();
       m_device->flush_resources ();
     }
@@ -501,6 +567,7 @@ namespace moppe::nhal {
         if (t)
           m_device->destroy (t);
       m_post.submerged = {};
+      m_hzb.valid = false;
       // Allocate the scene targets once at full-budget capacity; dynamic
       // resolution scales only the active viewport within them.
       m_scene_cap_w = scene_width;

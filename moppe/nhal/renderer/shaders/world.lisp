@@ -3155,6 +3155,186 @@
                                 (max (swizzle period :y) 0.001))
                              0.5))))))
 
+;;; -- hierarchical Z-buffer (HZB) occlusion pyramid --------------------------
+;;;
+;;; A flat 512x256 reversed-Z min-depth pyramid (mips 0..8 down to 2x1,
+;;; 174,762 floats = 699 KB) built from the completed scene depth buffer and
+;;; queried in the next frame's visibility culling passes (forest, boulders).
+;;; Because reversed-Z stores 1 at the near plane and 0 at the far plane,
+;;; conservative min-reduction keeps the farthest occluder in each footprint;
+;;; anything whose padded near-depth is strictly farther than that value (and
+;;; safely inside the previous frame's viewport) is occluded with zero pop-in.
+(defparameter *hzb-build*
+  '((dims :vec4)))                  ; scene_w, scene_h, hzb_w (512), hzb_h (256)
+
+(defparameter *hzb-reduce*
+  '((params :vec4)))                ; dst_w, dst_h, src_offset, dst_offset
+
+(defparameter *hzb-cull*
+  '((hzb-view :mat4)                ; previous frame unjittered view-proj
+    (hzb-eye :vec4)                 ; prev eye xyz, w = 1 when valid
+    (hzb-cull :vec4)))              ; row0, row1, row3 lengths of hzb-view
+
+(define-shader-function hzb-mip-offset (m)
+  (if (= m (uint 0)) (uint 0)
+      (if (= m (uint 1)) (uint 131072)
+          (if (= m (uint 2)) (uint 163840)
+              (if (= m (uint 3)) (uint 172032)
+                  (if (= m (uint 4)) (uint 174080)
+                      (if (= m (uint 5)) (uint 174592)
+                          (if (= m (uint 6)) (uint 174720)
+                              (if (= m (uint 7)) (uint 174752)
+                                  (uint 174760))))))))))
+
+(define-shader-function hzb-mip-w (m)
+  (if (= m (uint 0)) (uint 512)
+      (if (= m (uint 1)) (uint 256)
+          (if (= m (uint 2)) (uint 128)
+              (if (= m (uint 3)) (uint 64)
+                  (if (= m (uint 4)) (uint 32)
+                      (if (= m (uint 5)) (uint 16)
+                          (if (= m (uint 6)) (uint 8)
+                              (if (= m (uint 7)) (uint 4)
+                                  (uint 2))))))))))
+
+(define-shader-function hzb-mip-h (m)
+  (if (= m (uint 0)) (uint 256)
+      (if (= m (uint 1)) (uint 128)
+          (if (= m (uint 2)) (uint 64)
+              (if (= m (uint 3)) (uint 32)
+                  (if (= m (uint 4)) (uint 16)
+                      (if (= m (uint 5)) (uint 8)
+                          (if (= m (uint 6)) (uint 4)
+                              (if (= m (uint 7)) (uint 2)
+                                  (uint 1))))))))))
+
+(define-shader-abstraction hzb-min-block (depth sx0 sx1 sy0 sy1)
+  (let ((acc '1.0))
+    (dotimes (oy 5)
+      (dotimes (ox 5)
+        (setf acc `(min ,acc
+                        (swizzle
+                         (texel-load ,depth
+                                     (uvec2 (min (+ ,sx0 (uint ,ox)) ,sx1)
+                                            (min (+ ,sy0 (uint ,oy)) ,sy1)))
+                         :x)))))
+    acc))
+
+(define-shader hzb-build-compute
+    (:stage :compute
+     :workgroup-size (8 8 1)
+     :inputs ((invocation :uvec3 :built-in :global-invocation-id))
+     :resources ((build :uniform-block :binding 0 :members #.*hzb-build*)
+                 (scene-depth :depth-texture-2d :binding 0)
+                 (hzb :storage-buffer :binding 1 :element :float
+                      :access :read-write)))
+  (let* ((x (swizzle invocation :x))
+         (y (swizzle invocation :y)))
+    (when (and (< x (uint 512)) (< y (uint 256)))
+      (let* ((sw (uint (swizzle dims :x)))
+             (sh (uint (swizzle dims :y)))
+             (sx0 (/ (* x sw) (uint 512)))
+             (sy0 (/ (* y sh) (uint 256)))
+             (rx1 (/ (+ (* (+ x (uint 1)) sw) (uint 511)) (uint 512)))
+             (ry1 (/ (+ (* (+ y (uint 1)) sh) (uint 255)) (uint 256)))
+             (sx1 (min (- sw (uint 1))
+                       (max sx0 (if (> rx1 (uint 0)) (- rx1 (uint 1)) (uint 0)))))
+             (sy1 (min (- sh (uint 1))
+                       (max sy0 (if (> ry1 (uint 0)) (- ry1 (uint 1)) (uint 0)))))
+             (d (hzb-min-block scene-depth sx0 sx1 sy0 sy1)))
+        (set-buffer-element hzb (+ (* y (uint 512)) x) d)))))
+
+(define-shader-program hzb-build
+  :compute hzb-build-compute)
+
+(define-shader hzb-reduce-compute
+    (:stage :compute
+     :workgroup-size (8 8 1)
+     :inputs ((invocation :uvec3 :built-in :global-invocation-id))
+     :resources ((reduce :uniform-block :binding 0 :members #.*hzb-reduce*)
+                 (hzb :storage-buffer :binding 1 :element :float
+                      :access :read-write)))
+  (let* ((x (swizzle invocation :x))
+         (y (swizzle invocation :y))
+         (dw (uint (swizzle params :x)))
+         (dh (uint (swizzle params :y))))
+    (when (and (< x dw) (< y dh))
+      (let* ((sw (* dw (uint 2)))
+             (soff (uint (swizzle params :z)))
+             (doff (uint (swizzle params :w)))
+             (sx (* x (uint 2)))
+             (sy (* y (uint 2)))
+             (r0 (+ soff (* sy sw)))
+             (r1 (+ soff (* (+ sy (uint 1)) sw)))
+             (d00 (buffer-element hzb (+ r0 sx)))
+             (d10 (buffer-element hzb (+ r0 (+ sx (uint 1)))))
+             (d01 (buffer-element hzb (+ r1 sx)))
+             (d11 (buffer-element hzb (+ r1 (+ sx (uint 1)))))
+             (d (min (min d00 d10) (min d01 d11))))
+        (set-buffer-element hzb (+ doff (+ (* y dw) x)) d)))))
+
+(define-shader-program hzb-reduce
+  :compute hzb-reduce-compute)
+
+;;; True only when the padded bounding sphere (CENTRE, RADIUS) was strictly
+;;; inside the previous frame's viewport and strictly behind the farthest
+;;; occluder depth across its screen-space footprint (reversed-Z: near=1).
+(define-shader-abstraction hzb-occluded (centre radius hzb-view hzb-eye
+                                         hzb-cull hzb)
+  `(let* ((hzb-on (> (swizzle ,hzb-eye :w) 0.5))
+          (hzb-r ,radius)
+          (hzb-to (- ,centre (swizzle ,hzb-eye :xyz)))
+          (hzb-dist (sqrt (dot hzb-to hzb-to)))
+          (hzb-pclip (* ,hzb-view (vec4 ,centre 1.0)))
+          (hzb-pw (swizzle hzb-pclip :w))
+          (hzb-inv-w (/ 1.0 (max hzb-pw 0.001)))
+          (hzb-inv-near (/ 1.0 (max (- hzb-pw hzb-r) 0.5)))
+          (hzb-nx (* (swizzle hzb-pclip :x) hzb-inv-w))
+          (hzb-ny (* (swizzle hzb-pclip :y) hzb-inv-w))
+          (hzb-rx (* (* hzb-r (swizzle ,hzb-cull :x)) hzb-inv-near))
+          (hzb-ry (* (* hzb-r (swizzle ,hzb-cull :y)) hzb-inv-near))
+          (hzb-u0 (+ (* (- hzb-nx hzb-rx) 0.5) 0.5))
+          (hzb-u1 (+ (* (+ hzb-nx hzb-rx) 0.5) 0.5))
+          (hzb-v0 (- 0.5 (* (+ hzb-ny hzb-ry) 0.5)))
+          (hzb-v1 (- 0.5 (* (- hzb-ny hzb-ry) 0.5)))
+          (hzb-near-pt (- ,centre (* hzb-to (/ hzb-r (max hzb-dist 0.001)))))
+          (hzb-nclip (* ,hzb-view (vec4 hzb-near-pt 1.0)))
+          (hzb-nw (swizzle hzb-nclip :w))
+          (hzb-valid (and hzb-on
+                          (> hzb-dist (+ hzb-r 1.5))
+                          (> hzb-pw (+ hzb-r 1.0))
+                          (> hzb-nw 0.1)
+                          (> hzb-u0 0.02) (< hzb-u1 0.98)
+                          (> hzb-v0 0.02) (< hzb-v1 0.98))))
+     (and hzb-valid
+          (let* ((hzb-span (max (* (- hzb-u1 hzb-u0) 512.0)
+                                (* (- hzb-v1 hzb-v0) 256.0)))
+                 (hzb-m (uint (clamp (floor (+ (* 1.442695
+                                                  (log (max hzb-span 1.0)))
+                                               0.999))
+                                     0.0 8.0)))
+                 (hzb-mw (hzb-mip-w hzb-m))
+                 (hzb-mh (hzb-mip-h hzb-m))
+                 (hzb-off (hzb-mip-offset hzb-m))
+                 (hzb-fw (float hzb-mw))
+                 (hzb-fh (float hzb-mh))
+                 (hzb-x0 (min (- hzb-mw (uint 1))
+                              (uint (max 0.0 (floor (* hzb-u0 hzb-fw))))))
+                 (hzb-x1 (min (- hzb-mw (uint 1))
+                              (uint (max 0.0 (floor (* hzb-u1 hzb-fw))))))
+                 (hzb-y0 (min (- hzb-mh (uint 1))
+                              (uint (max 0.0 (floor (* hzb-v0 hzb-fh))))))
+                 (hzb-y1 (min (- hzb-mh (uint 1))
+                              (uint (max 0.0 (floor (* hzb-v1 hzb-fh))))))
+                 (hzb-r0 (+ hzb-off (* hzb-y0 hzb-mw)))
+                 (hzb-r1 (+ hzb-off (* hzb-y1 hzb-mw)))
+                 (hzb-far (min (min (buffer-element ,hzb (+ hzb-r0 hzb-x0))
+                                    (buffer-element ,hzb (+ hzb-r0 hzb-x1)))
+                               (min (buffer-element ,hzb (+ hzb-r1 hzb-x0))
+                                    (buffer-element ,hzb (+ hzb-r1 hzb-x1)))))
+                 (hzb-z-near (/ (swizzle hzb-nclip :z) hzb-nw)))
+            (< hzb-z-near (* hzb-far 0.992))))))
+
 ;;; One individual's local frame and proportions, transforming a pre-generated
 ;;; botanical archetype (tree_archetypes.cc) into the world with its own yaw,
 ;;; lean, height, crown width, trunk girth, and ecological state.
@@ -3237,7 +3417,9 @@
                  (classified :storage-buffer :binding 6 :element :uint
                              :access :read-write)
                  (visible :storage-buffer :binding 7 :element :vec4
-                          :access :read-write)))
+                          :access :read-write)
+                 (hzb-info :uniform-block :binding 8 :members #.*hzb-cull*)
+                 (hzb :storage-buffer :binding 9 :element :float)))
   (let* ((lane (swizzle invocation :x))
          (block (* (/ lane (uint 64)) (uint 2)))
          (item (mod lane (uint 64)))
@@ -3274,7 +3456,12 @@
           (when (and inside
                      (or (and shadow (or (< (swizzle mode :x) 1.5)
                                          (> crown 1.2)))
-                         (>= crown-pixels 4.0)))
+                         (and (>= crown-pixels 4.0)
+                              (not (hzb-occluded centre
+                                                 (max (* 0.58 height)
+                                                      (* 1.35 crown))
+                                                 hzb-view hzb-eye
+                                                 hzb-cull hzb)))))
             (let* ((identity (bit-cast :uint (swizzle id-row :w)))
                    (stagger (+ 0.88 (* 0.24 (tree-hash identity (uint 63)))))
                    (pixels (* 0.5 height scale stagger))
@@ -5072,7 +5259,9 @@
                  (candidates :storage-buffer :binding 3 :element :uint
                              :access :read-write)
                  (arguments :storage-buffer :binding 4 :element :uint
-                            :access :read-write)))
+                            :access :read-write)
+                 (hzb-info :uniform-block :binding 5 :members #.*hzb-cull*)
+                 (hzb :storage-buffer :binding 6 :element :float)))
   (let* ((index (swizzle invocation :x)))
     (when (< index (uint (swizzle world :z)))
       (let* ((rock (buffer-element rocks (* index (uint 3))))
@@ -5092,7 +5281,12 @@
              (pixels (/ (* radius 0.5 (swizzle cull :y) (swizzle cull :w))
                         (max (sqrt (dot offset offset)) 0.6)))
              (shadow (> (swizzle mode :x) 0.5)))
-        (when (and inside (or shadow (>= pixels 0.75)))
+        (when (and inside
+                   (or shadow
+                       (and (>= pixels 0.75)
+                            (not (hzb-occluded centre (* 1.15 bound)
+                                               hzb-view hzb-eye
+                                               hzb-cull hzb)))))
           (let* ((class (if (and (not shadow) (> pixels 14.0)) (uint 1)
                             (uint 0)))
                  (slot (atomic-add arguments (+ (* class (uint 5)) (uint 1))

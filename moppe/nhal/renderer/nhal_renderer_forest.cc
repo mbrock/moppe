@@ -377,6 +377,10 @@ namespace moppe::nhal {
       m_device->set_buffer (5, job.ranges);
       m_device->set_buffer (6, m_forest.classified);
       m_device->set_buffer (7, job.visible);
+      m_device->set_uniforms (
+        8,
+        hzb_block<shaders::forest_cull::HzbInfo> (job.forest.mode[0] < 0.5f));
+      m_device->set_buffer (9, m_hzb.pyramid);
       m_device->dispatch (pass == 1 ? 1 : job.groups);
     }
 
