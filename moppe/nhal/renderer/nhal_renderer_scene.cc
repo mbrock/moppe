@@ -32,6 +32,18 @@ namespace moppe::nhal {
       behind.depth_compare = CompareOp::less;
       behind.label = "world labels behind";
       m_world_labels_behind = m_device->create_render_pipeline (behind);
+
+      // Pre-warm the draw-list pipeline states used on every world frame so
+      // the opening title screen does not stall compiling them lazily.
+      for (const int key : { 28, 12, 23, 5, 21, 7 }) {
+        DrawState state;
+        state.blend = (key & 1) != 0;
+        state.additive = (key & 2) != 0;
+        state.depth_test = (key & 4) != 0;
+        state.depth_write = (key & 8) != 0;
+        state.cull = (key & 16) != 0;
+        uber (state);
+      }
     }
 
     void NhalRenderer::draw_sky (const render::SkyParams&) {

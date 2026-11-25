@@ -60,15 +60,29 @@ namespace moppe::nhal {
         return false;
       hold_frame_rate (params);
       const render::Viewport view = viewport_pixels ();
-      const float scale = scene_scale (params);
-      const std::uint32_t scene_width =
-        std::max (1u, std::uint32_t (std::lround (view.width * scale)));
-      const std::uint32_t scene_height =
-        std::max (1u, std::uint32_t (std::lround (view.height * scale)));
+      const float base_scale = scene_scale (params);
+      const std::uint32_t cap_width =
+        std::max (1u, std::uint32_t (std::lround (view.width * base_scale)));
+      const std::uint32_t cap_height =
+        std::max (1u, std::uint32_t (std::lround (view.height * base_scale)));
+      const float dynamic_share =
+        m_dynamic.share ().numerical_value_in (mp_units::one);
+      const std::uint32_t scene_width = std::clamp (
+        std::uint32_t (std::lround (float (cap_width) * dynamic_share)),
+        1u,
+        cap_width);
+      const std::uint32_t scene_height = std::clamp (
+        std::uint32_t (std::lround (float (cap_height) * dynamic_share)),
+        1u,
+        cap_height);
       if (m_width != view.width || m_height != view.height)
         make_drawable_targets ();
-      if (m_scene_width != scene_width || m_scene_height != scene_height)
-        make_scene_targets (scene_width, scene_height);
+      if (m_scene_cap_w != cap_width || m_scene_cap_h != cap_height)
+        make_scene_targets (cap_width, cap_height);
+      m_scene_width = scene_width;
+      m_scene_height = scene_height;
+      m_post.half_width = std::max (1u, (m_scene_width + 1u) / 2u);
+      m_post.half_height = std::max (1u, (m_scene_height + 1u) / 2u);
       m_params = params;
       m_terrain.chunks.clear ();
       m_scene_open = m_scene_begun = m_scene_closed = m_resolved = m_presented =
@@ -115,6 +129,10 @@ namespace moppe::nhal {
       frame.temporal_blend = {
         m_restart ? 1.0f : 0.1f, 0.0f, float (m_width), float (m_height)
       };
+      frame.scene_extent = { float (m_scene_width) / float (m_scene_cap_w),
+                             float (m_scene_height) / float (m_scene_cap_h),
+                             1.0f / float (m_scene_cap_w),
+                             1.0f / float (m_scene_cap_h) };
       frame.shadow = { 0, 1.0f / shadow_size, 0, 0 };
       const Vec3 sky_sun =
         length2 (sky_sun_dir) > 1e-6f ? sky_sun_dir : sun_dir;
@@ -217,6 +235,8 @@ namespace moppe::nhal {
           .depth = m_scene_depth,
           .motion = m_scene_motion,
           .output = next,
+          .input_width = m_scene_width,
+          .input_height = m_scene_height,
           .jitter_x = m_frame_jitter[0],
           .jitter_y = -m_frame_jitter[1],
           .motion_scale_x = float (m_scene_width),
@@ -238,6 +258,8 @@ namespace moppe::nhal {
         gather.waits[0] = { Stage::fragment, Stage::fragment };
         gather.wait_count = 1;
         m_device->begin_render_pass (gather);
+        m_device->set_viewport (
+          0.0f, 0.0f, float (m_scene_width), float (m_scene_height));
         m_device->set_pipeline (m_neighbourhood);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_texture (0, m_scene_color);
@@ -363,6 +385,8 @@ namespace moppe::nhal {
 
     void NhalRenderer::reset_temporal_state () {
       m_restart = true;
+      m_dynamic.pause ();
+      m_device->flush_resources ();
     }
 
     void NhalRenderer::set_aspect_limit (float maximum) {
@@ -407,10 +431,9 @@ namespace moppe::nhal {
                     std::min (point_relative, affordable);
       if (override_scale > 0.0f)
         scale = override_scale;
-      // Bound the ordinary size, not the controller's result: a quarter
-      // drawable floor otherwise defeats adaptation on large displays.
-      return std::clamp (scale, 0.25f, 1.0f) *
-             m_dynamic.share ().numerical_value_in (mp_units::one);
+      // Ordinary full-budget scene scale before dynamic resolution shrinks
+      // the active viewport inside the fixed-capacity scene targets.
+      return std::clamp (scale, 0.25f, 1.0f);
     }
 
     void NhalRenderer::hold_frame_rate (const FrameParams& params) {
@@ -478,62 +501,67 @@ namespace moppe::nhal {
         if (t)
           m_device->destroy (t);
       m_post.submerged = {};
-      // The scene at its share of the drawable, upscaled temporally.
+      // Allocate the scene targets once at full-budget capacity; dynamic
+      // resolution scales only the active viewport within them.
+      m_scene_cap_w = scene_width;
+      m_scene_cap_h = scene_height;
       m_scene_width = scene_width;
       m_scene_height = scene_height;
-      m_post.half_width = std::max (1u, (m_scene_width + 1u) / 2u);
-      m_post.half_height = std::max (1u, (m_scene_height + 1u) / 2u);
+      m_post.half_cap_w = std::max (1u, (m_scene_cap_w + 1u) / 2u);
+      m_post.half_cap_h = std::max (1u, (m_scene_cap_h + 1u) / 2u);
+      m_post.half_width = m_post.half_cap_w;
+      m_post.half_height = m_post.half_cap_h;
       m_scene_color =
-        m_device->create_texture ({ m_scene_width,
-                                    m_scene_height,
+        m_device->create_texture ({ m_scene_cap_w,
+                                    m_scene_cap_h,
                                     Format::rgba16_float,
                                     usage_render_target | usage_sampled,
                                     1,
                                     "scene" });
       m_scene_motion =
-        m_device->create_texture ({ m_scene_width,
-                                    m_scene_height,
+        m_device->create_texture ({ m_scene_cap_w,
+                                    m_scene_cap_h,
                                     Format::rg16_float,
                                     usage_render_target | usage_sampled,
                                     1,
                                     "scene motion" });
-      m_scene_depth = m_device->create_texture ({ m_scene_width,
-                                                  m_scene_height,
+      m_scene_depth = m_device->create_texture ({ m_scene_cap_w,
+                                                  m_scene_cap_h,
                                                   Format::d32_float,
                                                   usage_depth | usage_sampled,
                                                   1,
                                                   "scene depth" });
       m_water.beneath =
-        m_device->create_texture ({ m_scene_width,
-                                    m_scene_height,
+        m_device->create_texture ({ m_scene_cap_w,
+                                    m_scene_cap_h,
                                     Format::rgba16_float,
                                     usage_render_target | usage_sampled,
                                     1,
                                     "scene beneath water" });
       m_water.beneath_depth =
-        m_device->create_texture ({ m_scene_width,
-                                    m_scene_height,
+        m_device->create_texture ({ m_scene_cap_w,
+                                    m_scene_cap_h,
                                     Format::r32_float,
                                     usage_render_target | usage_sampled,
                                     1,
                                     "scene depth beneath water" });
       for (Texture& t : m_bounds)
-        t = m_device->create_texture ({ m_scene_width,
-                                        m_scene_height,
+        t = m_device->create_texture ({ m_scene_cap_w,
+                                        m_scene_cap_h,
                                         Format::rgba16_float,
                                         usage_render_target | usage_sampled,
                                         1,
                                         "temporal neighbourhood" });
       m_post.ao =
-        m_device->create_texture ({ m_post.half_width,
-                                    m_post.half_height,
+        m_device->create_texture ({ m_post.half_cap_w,
+                                    m_post.half_cap_h,
                                     Format::rg16_float,
                                     usage_render_target | usage_sampled,
                                     1,
                                     "occlusion" });
       m_post.shafts_half =
-        m_device->create_texture ({ m_post.half_width,
-                                    m_post.half_height,
+        m_device->create_texture ({ m_post.half_cap_w,
+                                    m_post.half_cap_h,
                                     Format::rgba16_float,
                                     usage_render_target | usage_sampled,
                                     1,
@@ -568,6 +596,8 @@ namespace moppe::nhal {
         pass.wait_count = 1;
       }
       m_device->begin_render_pass (pass);
+      m_device->set_viewport (
+        0.0f, 0.0f, float (m_scene_width), float (m_scene_height));
       m_scene_open = m_scene_begun = true;
     }
 

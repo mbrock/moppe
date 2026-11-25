@@ -72,6 +72,10 @@ namespace moppe::nhal {
         post.occlusion[2] = render::camera_near_m;
         post.occlusion[3] = render::camera_far_m;
       }
+      post.scene_extent = { float (m_scene_width) / float (m_scene_cap_w),
+                            float (m_scene_height) / float (m_scene_cap_h),
+                            1.0f / float (m_scene_cap_w),
+                            1.0f / float (m_scene_cap_h) };
       return post;
     }
 
@@ -106,16 +110,20 @@ namespace moppe::nhal {
         m_device->begin_render_pass (desc);
       };
       pass (m_post.ao, "occlusion");
+      m_device->set_viewport (
+        0.0f, 0.0f, float (m_post.half_width), float (m_post.half_height));
       m_device->set_pipeline (m_post.gtao);
       m_device->set_uniforms (0, post);
       m_device->set_texture (0, m_scene_depth);
       m_device->draw (3);
       m_device->end_render_pass ();
       pass (m_scene_color, "occlusion apply");
+      m_device->set_viewport (
+        0.0f, 0.0f, float (m_scene_width), float (m_scene_height));
       m_device->set_pipeline (m_post.gtao_apply);
       shaders::gtao::Post applied = post;
-      applied.blur = { 1.0f / float (m_post.half_width),
-                       1.0f / float (m_post.half_height),
+      applied.blur = { 1.0f / float (m_post.half_cap_w),
+                       1.0f / float (m_post.half_cap_h),
                        float (m_post.half_width),
                        float (m_post.half_height) };
       m_device->set_uniforms (0, applied);
@@ -150,6 +158,8 @@ namespace moppe::nhal {
       march.waits[0] = { Stage::fragment, Stage::fragment };
       march.wait_count = 1;
       m_device->begin_render_pass (march);
+      m_device->set_viewport (
+        0.0f, 0.0f, float (m_post.half_width), float (m_post.half_height));
       m_device->set_pipeline (m_post.shafts);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, post);
@@ -159,8 +169,8 @@ namespace moppe::nhal {
       m_device->end_render_pass ();
 
       shaders::gtao::Post applied = post;
-      applied.blur = { 1.0f / float (m_post.half_width),
-                       1.0f / float (m_post.half_height),
+      applied.blur = { 1.0f / float (m_post.half_cap_w),
+                       1.0f / float (m_post.half_cap_h),
                        float (m_post.half_width),
                        float (m_post.half_height) };
       RenderPassDesc desc;
@@ -170,6 +180,8 @@ namespace moppe::nhal {
       desc.waits[0] = { Stage::fragment, Stage::fragment };
       desc.wait_count = 1;
       m_device->begin_render_pass (desc);
+      m_device->set_viewport (
+        0.0f, 0.0f, float (m_scene_width), float (m_scene_height));
       m_device->set_pipeline (m_post.shafts_apply);
       m_device->set_uniforms (0, applied);
       m_device->set_texture (0, m_post.shafts_half);
@@ -185,8 +197,8 @@ namespace moppe::nhal {
       close_scene ();
       if (!m_post.submerged)
         m_post.submerged =
-          m_device->create_texture ({ m_scene_width,
-                                      m_scene_height,
+          m_device->create_texture ({ m_scene_cap_w,
+                                      m_scene_cap_h,
                                       Format::rgba16_float,
                                       usage_render_target | usage_sampled,
                                       1,
@@ -203,6 +215,8 @@ namespace moppe::nhal {
       pass.waits[0] = { Stage::fragment, Stage::fragment };
       pass.wait_count = 1;
       m_device->begin_render_pass (pass);
+      m_device->set_viewport (
+        0.0f, 0.0f, float (m_scene_width), float (m_scene_height));
       m_device->set_pipeline (m_post.underwater);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, terrain_block ());

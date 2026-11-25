@@ -43,6 +43,14 @@ namespace moppe::render {
       return float (m_step) / float (steps) * proportion[one];
     }
 
+    // Discards the in-flight window after a cold start or camera cut so a
+    // one-off spike does not trigger an unnecessary resolution step.
+    void pause () {
+      m_passing = std::max (m_passing, in_flight);
+      m_sum = seconds (0.0f);
+      m_count = 0;
+    }
+
     // One frame's GPU time, where frames are due every `period`.
     void observe (seconds_t gpu_time, seconds_t period) {
       if (!(gpu_time > seconds (0.0f)) || !(period > seconds (0.0f)))

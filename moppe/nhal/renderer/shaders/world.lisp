@@ -25,6 +25,7 @@
       (view-forward :vec4)
       (temporal :vec4)             ; scene width, height, jitter x, y (NDC)
       (temporal-blend :vec4)       ; new frame's weight, 0, output size
+      (scene-extent :vec4)         ; active/cap UV scale xy, inv cap size zw
       (sun-view :mat4)             ; world to the near cascade's clip
       (shadow :vec4)               ; strength, a cascade's texel size, and
                                    ; per metre of light depth: near, far
@@ -5983,6 +5984,8 @@
          ;; the march.
          (worth (smoothstep 0.035 0.06 fresnel))
          (dither (plant-hash (cell-identity (swizzle fragment :xy)) (uint 71)))
+         (scene-uv-scale (swizzle scene-extent :xy))
+         (scene-uv-max (- (vec2 1.0 1.0) (/ (vec2 0.5 0.5) (swizzle temporal :xy))))
          (march
            (counted-fold (i (if (> worth 0.0) (uint 14) (uint 0))
                           state (vec3 0.0 0.0 0.0)
@@ -5998,7 +6001,10 @@
                                 0.5)))
                     (ray-z (/ (swizzle c :z) w))
                     (scene-z (swizzle (sample-level beneath-depth nearest-clamp
-                                                    at 0.0)
+                                                    (* (clamp at (vec2 0.0 0.0)
+                                                              scene-uv-max)
+                                                       scene-uv-scale)
+                                                    0.0)
                                       :x))
                     (gap (* w (- 1.0 (/ ray-z (max scene-z 1e-7)))))
                     (hit (and (> scene-z ray-z)
@@ -6018,7 +6024,10 @@
                     (at (scene-uv c (swizzle temporal :zw)))
                     (ray-z (/ (swizzle c :z) (max (swizzle c :w) 0.0001)))
                     (scene-z (swizzle (sample-level beneath-depth nearest-clamp
-                                                    at 0.0)
+                                                    (* (clamp at (vec2 0.0 0.0)
+                                                              scene-uv-max)
+                                                       scene-uv-scale)
+                                                    0.0)
                                       :x)))
                (if (> scene-z ray-z)
                    (vec2 (swizzle span :x) middle)
@@ -6030,7 +6039,11 @@
          (border (min (min (swizzle met :x) (- 1.0 (swizzle met :x)))
                       (min (swizzle met :y) (- 1.0 (swizzle met :y)))))
          (trust (* found worth (smoothstep 0.0 0.07 border)))
-         (seen (swizzle (sample-level beneath linear-clamp met 0.0) :xyz))
+         (seen (swizzle (sample-level beneath linear-clamp
+                                      (* (clamp met (vec2 0.0 0.0) scene-uv-max)
+                                         scene-uv-scale)
+                                      0.0)
+                        :xyz))
          (reflection (mix beyond seen trust))
          ;; Through the water: the bed a little displaced by the ripples
          ;; (unless that would show something standing in front of the
@@ -6038,12 +6051,20 @@
          ;; ratio of the two depths along one ray.
          (bend (* slope (* 0.05 (min depth 1.5)) (/ 8.0 (+ distance 8.0))))
          (bent (+ screen bend))
-         (bent-z (swizzle (sample-level beneath-depth nearest-clamp bent 0.0)
+         (bent-z (swizzle (sample-level beneath-depth nearest-clamp
+                                        (* (clamp bent (vec2 0.0 0.0)
+                                                  scene-uv-max)
+                                           scene-uv-scale)
+                                        0.0)
                           :x))
          (under (if (< bent-z surface-z) bent screen))
-         (bed-z (swizzle (sample-level beneath-depth nearest-clamp under 0.0)
+         (under-tex (* (clamp under (vec2 0.0 0.0) scene-uv-max)
+                       scene-uv-scale))
+         (bed-z (swizzle (sample-level beneath-depth nearest-clamp under-tex
+                                       0.0)
                          :x))
-         (ground (swizzle (sample-level beneath linear-clamp under 0.0) :xyz))
+         (ground (swizzle (sample-level beneath linear-clamp under-tex 0.0)
+                          :xyz))
          (below (clamp (* distance (- (/ surface-z (max bed-z 1e-7)) 1.0))
                        0.0 80.0))
          ;; Whatever the ground above water grows, under it lies wet silt
@@ -7063,7 +7084,10 @@
   (let* ((size (swizzle temporal :xy))
          (here (ndc-uv (+ ndc (swizzle temporal :zw))))
          (centre (scene-texel (floor (* here size)) 0.0 0.0 size))
-         (fresh (swizzle (sample scene linear-clamp here) :rgb))
+         (half-tex (/ (vec2 0.5 0.5) size))
+         (fresh-uv (* (clamp here half-tex (- (vec2 1.0 1.0) half-tex))
+                      (swizzle scene-extent :xy)))
+         (fresh (swizzle (sample scene linear-clamp fresh-uv) :rgb))
          (below (texel-load bounds-low centre))
          (above (texel-load bounds-high centre))
          (low (swizzle below :xyz))
@@ -7194,14 +7218,15 @@
 
 (define-shader scene-copy-fragment
     (:stage :fragment
-     :inputs ((uv :vec2 :location 0))
+     :inputs ((uv :vec2 :location 0)
+              (pixel :vec4 :built-in :frag-coord))
      :outputs ((color :vec4 :location 0)
                (depth :vec4 :location 1))
      :resources ((scene :texture-2d :binding 0)
-                 (scene-depth :depth-texture-2d :binding 1)
-                 (nearest-clamp :sampler :binding 2)))
-  (let* ((z (swizzle (sample scene-depth nearest-clamp uv) :x)))
-    (set-output color (sample scene nearest-clamp uv))
+                 (scene-depth :depth-texture-2d :binding 1)))
+  (let* ((at (uvec2 (floor (swizzle pixel :xy))))
+         (z (swizzle (texel-load scene-depth at) :x)))
+    (set-output color (texel-load scene at))
     (set-output depth (vec4 z 0.0 0.0 1.0))))
 
 (define-shader-program scene-copy
@@ -7278,7 +7303,8 @@
       (occlusion :vec4)            ; radius m, strength, near m, far m
       (shafts :vec4)               ; reach m, extinction / m, steps, 0
       (shaft-color :vec4)          ; linear sun colour times strength
-      (blur :vec4))))              ; texel step x, y; 1 on the last pass
+      (blur :vec4)                 ; texel step x, y; active half size zw
+      (scene-extent :vec4))))      ; active/cap UV scale xy, inv cap size zw
 
 (define-shader-function view-ray (uv forward right up)
   (normalize (+ forward (* right (- (* 2.0 (swizzle uv :x)) 1.0))
@@ -7363,7 +7389,8 @@
          (lens-depth (- (swizzle lens-water :x) (swizzle lens :y)))
          (wet (* (smoothstep -0.025 0.025 lens-depth)
                   (smoothstep 0.0 0.025 (swizzle lens-water :y))))
-         (z (swizzle (sample-level scene-depth nearest-clamp uv 0.0) :x))
+         (tex-uv (* uv (swizzle scene-extent :xy)))
+         (z (swizzle (sample-level scene-depth nearest-clamp tex-uv 0.0) :x))
          (distance (min 80.0 (/ (view-depth z near far) along)))
          ;; One refinement of the upward exit against the local, wavy
          ;; sheet. A downward ray ends at opaque geometry (or extinction),
@@ -7405,7 +7432,7 @@
                       (+ (* (swizzle ambient :xyz) 1.4)
                          (* (swizzle sun-diffuse :xyz) down-light phase
                             (max (swizzle light :y) 0.0)))))
-         (seen (swizzle (sample-level image linear-clamp uv 0.0) :xyz))
+         (seen (swizzle (sample-level image linear-clamp tex-uv 0.0) :xyz))
          (submerged (+ (* seen through)
                         (* scatter (- (vec3 1.0 1.0 1.0) through)))))
     (set-output color (vec4 (mix seen submerged wet) 1.0))))
@@ -7424,8 +7451,14 @@
 (define-shader-abstraction depth-tangent (at-uv step)
   `(let* ((minus-uv (- ,at-uv ,step))
           (plus-uv (+ ,at-uv ,step))
-          (zm (swizzle (sample scene-depth nearest-clamp minus-uv) :x))
-          (zp (swizzle (sample scene-depth nearest-clamp plus-uv) :x))
+          (zm (swizzle (sample scene-depth nearest-clamp
+                               (* (clamp minus-uv (vec2 0.0 0.0) uv-max)
+                                  uv-scale))
+                       :x))
+          (zp (swizzle (sample scene-depth nearest-clamp
+                               (* (clamp plus-uv (vec2 0.0 0.0) uv-max)
+                                  uv-scale))
+                       :x))
           (dm (abs (- (view-depth zm near far) depth)))
           (dp (abs (- (view-depth zp near far) depth)))
           (ahead (<= dp dm))
@@ -7448,13 +7481,18 @@
          (camera (swizzle eye :xyz))
          (near (swizzle occlusion :z))
          (far (swizzle occlusion :w))
+         (uv-scale (swizzle scene-extent :xy))
+         (uv-max (- (vec2 1.0 1.0) (* (swizzle blur :xy) 0.5)))
          ;; Snap to the exact centre of full-res texel (2*hx, 2*hy): the half-res
          ;; texel centre falls directly on the boundary between two full-res
          ;; depth texels, which otherwise makes depth-tangent collapse to zero.
          (sample-uv (* (+ (* (floor (swizzle pixel :xy)) 2.0)
                           (vec2 0.5 0.5))
                        (swizzle blur :xy)))
-         (z (swizzle (sample scene-depth nearest-clamp sample-uv) :x))
+         (z (swizzle (sample scene-depth nearest-clamp
+                             (* (clamp sample-uv (vec2 0.0 0.0) uv-max)
+                                uv-scale))
+                     :x))
          (depth (view-depth z near far))
          ;; Skip the sky completely; every horizon pixel otherwise runs the
          ;; tangent reconstruction and all ten spiral taps for nothing.
@@ -7494,7 +7532,10 @@
                                           (* (vec2 (cos angle) (sin angle))
                                              (* uv-radius reach))))
                                (tap-z (swizzle (sample scene-depth nearest-clamp
-                                                       tap-uv)
+                                                       (* (clamp tap-uv
+                                                                 (vec2 0.0 0.0)
+                                                                 uv-max)
+                                                          uv-scale))
                                                :x))
                                (tap (depth-position tap-uv tap-z camera forward
                                                     right up near far))
@@ -7532,7 +7573,11 @@
                  (occluded :texture-2d :binding 0)
                  (scene-depth :depth-texture-2d :binding 1)
                  (nearest-clamp :sampler :binding 2)))
-  (let* ((z (swizzle (sample-level scene-depth nearest-clamp uv 0.0) :x))
+  (let* ((z (swizzle (sample-level scene-depth nearest-clamp
+                                   (* (swizzle pixel :xy)
+                                      (swizzle scene-extent :zw))
+                                   0.0)
+                     :x))
          (ao
            (only-where (> z 0.000001) 1.0
              (let* ((near (swizzle occlusion :z))
@@ -7540,6 +7585,7 @@
                     (centre (view-depth z near far))
                     (inv-c (/ 1.0 (max centre 0.001)))
                     (inv-half (swizzle blur :xy))
+                    (half-max (- (swizzle blur :zw) (vec2 0.5 0.5)))
                     ;; Each half-res texel (hx, hy) sits at full-res pixel
                     ;; (2*hx, 2*hy), so full-res pixel (fx, fy) maps to
                     ;; (fx / 2, fy / 2) in half-res index space.
@@ -7553,7 +7599,9 @@
                                      (vec4 0.0 0.0 1.0e9 1.0))
                         (let* ((dx (- (float (mod k (uint 3))) 1.0))
                                (dy (- (float (/ k (uint 3))) 1.0))
-                               (at (* (+ cell (vec2 (+ dx 0.5) (+ dy 0.5)))
+                               (at (* (clamp (+ cell (vec2 (+ dx 0.5)
+                                                           (+ dy 0.5)))
+                                             (vec2 0.5 0.5) half-max)
                                       inv-half))
                                (tap (swizzle (sample-level occluded
                                                            nearest-clamp at 0.0)
@@ -7603,7 +7651,11 @@
          (ray (view-ray sample-uv (swizzle ray-forward :xyz)
                         (swizzle ray-right :xyz) (swizzle ray-up :xyz)))
          (camera (swizzle eye :xyz))
-         (surface (swizzle (sample scene-depth nearest-clamp sample-uv) :x))
+         (uv-max (- (vec2 1.0 1.0) (* (swizzle blur :xy) 0.5)))
+         (surface (swizzle (sample scene-depth nearest-clamp
+                                   (* (clamp sample-uv (vec2 0.0 0.0) uv-max)
+                                      (swizzle scene-extent :xy)))
+                           :x))
          (depth (view-depth surface (swizzle occlusion :z)
                             (swizzle occlusion :w)))
          (jitter (interleaved-noise (swizzle pixel :xy)))
@@ -7660,22 +7712,39 @@
                  (nearest-clamp :sampler :binding 2)))
   (let* ((near (swizzle occlusion :z))
          (far (swizzle occlusion :w))
-         (z (swizzle (sample-level scene-depth nearest-clamp uv 0.0) :x))
+         (z (swizzle (sample-level scene-depth nearest-clamp
+                                   (* (swizzle pixel :xy)
+                                      (swizzle scene-extent :zw))
+                                   0.0)
+                     :x))
          (centre (view-depth z near far))
          (inv-half (swizzle blur :xy))
+         (half-max (- (swizzle blur :zw) (vec2 0.5 0.5)))
          (pos (* (- (swizzle pixel :xy) (vec2 0.5 0.5)) 0.5))
          (base (floor pos))
          (f (- pos base))
          (fx (swizzle f :x))
          (fy (swizzle f :y))
          (t00 (sample-level scattered nearest-clamp
-                            (* (+ base (vec2 0.5 0.5)) inv-half) 0.0))
+                            (* (clamp (+ base (vec2 0.5 0.5))
+                                      (vec2 0.5 0.5) half-max)
+                               inv-half)
+                            0.0))
          (t10 (sample-level scattered nearest-clamp
-                            (* (+ base (vec2 1.5 0.5)) inv-half) 0.0))
+                            (* (clamp (+ base (vec2 1.5 0.5))
+                                      (vec2 0.5 0.5) half-max)
+                               inv-half)
+                            0.0))
          (t01 (sample-level scattered nearest-clamp
-                            (* (+ base (vec2 0.5 1.5)) inv-half) 0.0))
+                            (* (clamp (+ base (vec2 0.5 1.5))
+                                      (vec2 0.5 0.5) half-max)
+                               inv-half)
+                            0.0))
          (t11 (sample-level scattered nearest-clamp
-                            (* (+ base (vec2 1.5 1.5)) inv-half) 0.0))
+                            (* (clamp (+ base (vec2 1.5 1.5))
+                                      (vec2 0.5 0.5) half-max)
+                               inv-half)
+                            0.0))
          (inv-c (/ 1.0 (max centre 0.001)))
          (r00 (* (abs (- (swizzle t00 :w) centre)) inv-c))
          (r10 (* (abs (- (swizzle t10 :w) centre)) inv-c))

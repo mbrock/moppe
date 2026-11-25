@@ -320,6 +320,10 @@ namespace moppe::nhal {
     Texture depth;
     Texture motion;
     Texture output;
+    // Active top-left content region of the input textures; 0 uses the
+    // texture's full dimensions.
+    std::uint32_t input_width = 0;
+    std::uint32_t input_height = 0;
     float jitter_x = 0.0f;
     float jitter_y = 0.0f;
     float motion_scale_x = 1.0f;
@@ -353,6 +357,9 @@ namespace moppe::nhal {
     virtual void destroy (Buffer buffer) = 0;
     virtual void destroy (Texture texture) = 0;
     virtual void destroy (Pipeline pipeline) = 0;
+    // Makes newly created resources ready before the next frame begins (e.g.
+    // committing Metal 4 residency sets at the end of loading).
+    virtual void flush_resources () {}
 
     // -- the drawable -------------------------------------------------
     virtual Format surface_format () const = 0;

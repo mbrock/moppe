@@ -353,6 +353,7 @@ namespace moppe::nhal {
       Texture ao;
       Texture shafts_half;
       std::uint32_t half_width = 1, half_height = 1;
+      std::uint32_t half_cap_w = 1, half_cap_h = 1;
       Texture bloom[2];
       std::uint32_t bloom_width = 1, bloom_height = 1;
       // The resolved image, smeared (apply_motion_blur).
@@ -781,6 +782,7 @@ namespace moppe::nhal {
       Texture m_white, m_black, m_clear;
 
       std::uint32_t m_width = 0, m_height = 0;
+      std::uint32_t m_scene_cap_w = 0, m_scene_cap_h = 0;
       std::uint32_t m_scene_width = 0, m_scene_height = 0;
       render::DynamicResolution m_dynamic;
       Texture m_scene_color, m_scene_motion, m_scene_depth, m_history[2];

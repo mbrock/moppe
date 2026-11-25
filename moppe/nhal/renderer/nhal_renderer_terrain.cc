@@ -149,6 +149,8 @@ namespace moppe::nhal {
       }
       m_terrain.have = true;
       m_terrain.cache_dirty = true;
+      if (use_terrain_cache ())
+        ensure_terrain_cache ();
     }
 
     void NhalRenderer::set_terrain_materials (
@@ -466,6 +468,9 @@ namespace moppe::nhal {
 
       if (strips.empty ())
         return;
+
+      if (cold_fill)
+        m_dynamic.pause ();
 
       const Load load = cold_fill ? Load::discard : Load::load;
       RenderPassDesc pass;

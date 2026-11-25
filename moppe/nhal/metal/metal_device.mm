@@ -409,6 +409,10 @@ namespace moppe::nhal {
           m_retired_objects.retire (m_serial, p.compute);
       }
 
+      void flush_resources () override {
+        commit_residency ();
+      }
+
       Format surface_format () const override {
         return m_surface_format;
       }
@@ -682,13 +686,18 @@ namespace moppe::nhal {
         const MetalTexture& depth = m_textures[desc.depth];
         const MetalTexture& motion = m_textures[desc.motion];
         const MetalTexture& output = m_textures[desc.output];
-        const std::uint32_t in_w = color.desc.width;
-        const std::uint32_t in_h = color.desc.height;
+        const std::uint32_t tex_w = color.desc.width;
+        const std::uint32_t tex_h = color.desc.height;
+        const std::uint32_t in_w =
+          desc.input_width ? std::min (desc.input_width, tex_w) : tex_w;
+        const std::uint32_t in_h =
+          desc.input_height ? std::min (desc.input_height, tex_h) : tex_h;
         const std::uint32_t out_w = output.desc.width;
         const std::uint32_t out_h = output.desc.height;
-        if (!in_w || !in_h || out_w < in_w || out_h < in_h ||
-            depth.desc.width != in_w || depth.desc.height != in_h ||
-            motion.desc.width != in_w || motion.desc.height != in_h)
+        if (!in_w || !in_h || !tex_w || !tex_h || out_w < tex_w ||
+            out_h < tex_h || depth.desc.width != tex_w ||
+            depth.desc.height != tex_h || motion.desc.width != tex_w ||
+            motion.desc.height != tex_h)
           return false;
         const float scale_x = float (out_w) / float (in_w);
         const float scale_y = float (out_h) / float (in_h);
@@ -696,8 +705,10 @@ namespace moppe::nhal {
             scale_x > m_fx_max_scale || scale_y > m_fx_max_scale)
           return false;
         if (@available (macOS 26.0, iOS 26.0, tvOS 27.1, *)) {
-          const TemporalScalerKey key { in_w,
-                                        in_h,
+          // Key on the fixed texture capacity, not the dynamic content rect,
+          // so dynamic resolution never recreates the MetalFX scaler.
+          const TemporalScalerKey key { tex_w,
+                                        tex_h,
                                         out_w,
                                         out_h,
                                         color.desc.format,
@@ -720,6 +731,12 @@ namespace moppe::nhal {
             d.outputWidth = key.out_w;
             d.outputHeight = key.out_h;
             d.autoExposureEnabled = NO;
+            d.inputContentPropertiesEnabled = YES;
+            const float cap_scale = std::min (float (out_w) / float (tex_w),
+                                              float (out_h) / float (tex_h));
+            d.inputContentMinScale =
+              std::clamp (cap_scale, m_fx_min_scale, m_fx_max_scale);
+            d.inputContentMaxScale = m_fx_max_scale;
             d.requiresSynchronousInitialization =
               m_had_temporal_scaler ? NO : YES;
             m_temporal_scaler = [d newTemporalScalerWithDevice:m_device
@@ -746,8 +763,8 @@ namespace moppe::nhal {
           m_temporal_scaler.motionTexture = motion.texture;
           m_temporal_scaler.exposureTexture = m_neutral_exposure;
           m_temporal_scaler.outputTexture = output.texture;
-          m_temporal_scaler.inputContentWidth = key.in_w;
-          m_temporal_scaler.inputContentHeight = key.in_h;
+          m_temporal_scaler.inputContentWidth = in_w;
+          m_temporal_scaler.inputContentHeight = in_h;
           m_temporal_scaler.preExposure = 1.0f;
           m_temporal_scaler.jitterOffsetX = desc.jitter_x;
           m_temporal_scaler.jitterOffsetY = desc.jitter_y;

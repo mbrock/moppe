@@ -134,6 +134,8 @@ namespace moppe::nhal {
       pass.waits[0] = { Stage::fragment, Stage::fragment };
       pass.wait_count = 1;
       m_device->begin_render_pass (pass);
+      m_device->set_viewport (
+        0.0f, 0.0f, float (m_scene_width), float (m_scene_height));
       m_device->set_pipeline (m_water.scene_copy);
       m_device->set_texture (0, m_scene_color);
       m_device->set_texture (1, m_scene_depth);
