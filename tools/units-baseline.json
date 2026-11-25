@@ -74,12 +74,12 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 76.8,
+      "share": 76.9,
       "files": 64,
-      "typed": 1477,
+      "typed": 1479,
       "raw_float": 291,
       "raw_vector": 154,
-      "escapes": 843
+      "escapes": 844
     },
     "Rivers, water & sediment": {
       "share": 98.4,

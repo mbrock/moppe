@@ -73,6 +73,8 @@ namespace moppe::game::model_mesh {
   using VertexPosition =
     mp_units::quantity<vertex_position[mp_units::si::metre], Vec3>;
   using VertexNormal = mp_units::quantity<vertex_normal[mp_units::one], Vec3>;
+  using AmbientOcclusion =
+    mp_units::quantity<ambient_occlusion[mp_units::one], float>;
   using FilmCoordinates =
     mp_units::quantity<film_coordinates[mp_units::si::metre], Vec2>;
   using SurfaceWear = mp_units::quantity<surface_wear[mp_units::one], float>;
@@ -100,8 +102,8 @@ namespace moppe::game::model_mesh {
   using PaintEmission =
     mp_units::quantity<paint_emission[mp_units::one], float>;
 
-  using VertexBundle =
-    spatial::Bundle<VertexDomain, VertexPosition, VertexNormal>;
+  using VertexBundle = spatial::
+    Bundle<VertexDomain, VertexPosition, VertexNormal, AmbientOcclusion>;
   using FilmBundle =
     spatial::Bundle<VertexDomain, FilmCoordinates, SurfaceWear>;
   using TriangleBundle =

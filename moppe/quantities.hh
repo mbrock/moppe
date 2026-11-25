@@ -516,11 +516,12 @@ namespace moppe::game::model_mesh {
   // column within a domain carries its own specification so a bundle binds
   // columns unambiguously by spec and validates units on read.
 
-  // Vertices: model-space offset, shading normal, and on weathered films
-  // (the boat's plywood) flattened film coordinates and wear (negative where
-  // there is no film).
+  // Vertices: model-space offset, shading normal, baked ambient occlusion,
+  // and on weathered films (the boat's plywood) flattened film coordinates
+  // and wear (negative where there is no film).
   QUANTITY_SPEC (vertex_position, mp_units::isq::displacement);
   QUANTITY_SPEC (vertex_normal, direction);
+  QUANTITY_SPEC (ambient_occlusion, proportion);
   QUANTITY_SPEC (film_coordinates, mp_units::isq::displacement);
   QUANTITY_SPEC (surface_wear, mp_units::dimensionless, mp_units::subkind);
 

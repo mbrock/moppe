@@ -208,7 +208,8 @@ namespace moppe::nhal {
         corners.push_back (it->second);
         if (fresh) {
           unique.push_back (v);
-          mesh->wind |= v.wind != 0 || v.flutter != 0;
+          const bool is_material = (v.surface.a & 128) != 0;
+          mesh->wind |= !is_material && (v.wind != 0 || v.flutter != 0);
           const Vec3 p (v.px, v.py, v.pz);
           for (int i = 0; i < 3; ++i) {
             low[i] = std::min<float> (low[i], p[i]);

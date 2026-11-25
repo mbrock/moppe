@@ -50,6 +50,22 @@ MOPPE_TEST (helicopter_panes_share_a_late_run_and_keep_their_finish) {
   const auto& pane = dl.vertices ()[runs[1].first];
   MOPPE_CHECK ((pane.fogged & 1) == 0);
   MOPPE_CHECK ((pane.fogged >> 1) > 0);
+  // Glass panes stay unoccluded (AO darkness 0).
+  MOPPE_CHECK (pane.wind == 0);
+}
+
+MOPPE_TEST (exported_vehicles_carry_baked_ambient_occlusion) {
+  render::DrawList dl;
+  game::model_mesh::record (dl, game::bike_model::chassis);
+  uint8_t min_dark = 255;
+  uint8_t max_dark = 0;
+  for (const render::Vertex& v : dl.vertices ()) {
+    MOPPE_CHECK ((v.surface.a & 128) != 0);
+    min_dark = std::min (min_dark, v.wind);
+    max_dark = std::max (max_dark, v.wind);
+  }
+  MOPPE_CHECK (min_dark < 30);
+  MOPPE_CHECK (max_dark > 100);
 }
 
 MOPPE_TEST (boat_hull_loads_compressed_bundles_and_weathered_film) {

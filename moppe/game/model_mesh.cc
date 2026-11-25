@@ -93,6 +93,7 @@ namespace moppe::game::model_mesh {
 
     const auto& positions = spatial::get<vertex_position> (loaded.vertices);
     const auto& normals = spatial::get<vertex_normal> (loaded.vertices);
+    const auto& aos = spatial::get<ambient_occlusion> (loaded.vertices);
     const auto& corner_as = spatial::get<corner_a> (loaded.triangles);
     const auto& corner_bs = spatial::get<corner_b> (loaded.triangles);
     const auto& corner_cs = spatial::get<corner_c> (loaded.triangles);
@@ -168,6 +169,7 @@ namespace moppe::game::model_mesh {
           dl.normal (unit_direction (reversed
                                        ? -normals[v].numerical_value_in (one)
                                        : normals[v].numerical_value_in (one)));
+          dl.occlusion (aos[v]);
           if (film_uvs && wears) {
             const auto& uv = (*film_uvs)[v].numerical_value_ref_in (u::m);
             dl.uv (uv[0], uv[1]);
@@ -184,6 +186,7 @@ namespace moppe::game::model_mesh {
     dl.state (before);
     dl.lit (true);
     dl.plain ();
+    dl.occlusion (1.0f * proportion[one]);
     dl.uv (0.0f, 0.0f);
     dl.worn (-1.0f);
   }

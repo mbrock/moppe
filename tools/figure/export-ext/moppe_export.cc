@@ -62,16 +62,19 @@ namespace {
   }
 
   ExportedBundle export_vertices (Array<float, -1, 3> positions,
-                                  Array<float, -1, 3> normals) {
+                                  Array<float, -1, 3> normals,
+                                  Array<float, -1> ao) {
     const std::size_t n = positions.shape (0);
-    if (normals.shape (0) != n)
-      throw std::invalid_argument ("positions and normals lengths differ");
+    if (normals.shape (0) != n || ao.shape (0) != n)
+      throw std::invalid_argument ("vertex column lengths differ");
 
     mm::VertexBundle bundle (mm::VertexDomain { n });
     auto& pos_col = spatial::get<mm::vertex_position> (bundle);
     auto& norm_col = spatial::get<mm::vertex_normal> (bundle);
+    auto& ao_col = spatial::get<mm::ambient_occlusion> (bundle);
     const float* p = positions.data ();
     const float* no = normals.data ();
+    const float* occ = ao.data ();
     for (std::size_t i = 0; i < n; ++i) {
       pos_col[i] =
         mm::VertexPosition (Vec3 (p[3 * i], p[3 * i + 1], p[3 * i + 2]),
@@ -79,9 +82,12 @@ namespace {
       norm_col[i] =
         mm::VertexNormal (Vec3 (no[3 * i], no[3 * i + 1], no[3 * i + 2]),
                           mm::VertexNormal::reference);
+      ao_col[i] =
+        mm::AmbientOcclusion (occ[i], mm::AmbientOcclusion::reference);
     }
     (void)spatial::quantize_fixed16 (pos_col);
     (void)spatial::quantize_fixed16 (norm_col);
+    (void)spatial::quantize_fixed16 (ao_col);
     return export_to_python (bundle, spatial::FloatStorage::fixed_point);
   }
 
@@ -195,8 +201,11 @@ NB_MODULE (moppe_export, m) {
           &ExportedBundle::arrow_c_array,
           nb::arg ("requested_schema") = nb::none ());
 
-  m.def (
-    "vertices", &export_vertices, nb::arg ("positions"), nb::arg ("normals"));
+  m.def ("vertices",
+         &export_vertices,
+         nb::arg ("positions"),
+         nb::arg ("normals"),
+         nb::arg ("ao"));
   m.def ("film", &export_film, nb::arg ("uvs"), nb::arg ("wear"));
   m.def (
     "triangles", &export_triangles, nb::arg ("corners"), nb::arg ("paints"));

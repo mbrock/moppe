@@ -73,6 +73,9 @@ namespace moppe {
       // out from the stem, so the two weights together say where on the
       // plant a vertex sits and the vertex shader needs no other clue.
       void flutter (proportion_t w);
+      // Baked ambient visibility on material vertices: 1 fully open to
+      // indirect sky light (the default), 0 deep in a crevice.
+      void occlusion (proportion_t visibility);
       void set_texture (const Texture* t);
       // What subsequent lit vertices are made of; plain () goes back to
       // the draw list's own shading.
@@ -167,6 +170,7 @@ namespace moppe {
       uint8_t m_coat_roughness = 0;
       uint8_t m_wind;
       uint8_t m_flutter;
+      uint8_t m_occlusion = 0;
       Surface m_surface;
       const Texture* m_texture;
       DrawState m_state;

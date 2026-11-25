@@ -28,6 +28,7 @@ namespace moppe {
       m_fogged = true;
       m_wind = 0;
       m_flutter = 0;
+      m_occlusion = 0;
       m_surface = Surface ();
       m_coat_roughness = 0;
       m_texture = 0;
@@ -159,6 +160,10 @@ namespace moppe {
     void DrawList::flutter (proportion_t w) {
       m_flutter = PackedRgba8::quantize (w.numerical_value_in (one));
     }
+    void DrawList::occlusion (proportion_t visibility) {
+      m_occlusion = static_cast<uint8_t> (
+        255 - PackedRgba8::quantize (visibility.numerical_value_in (one)));
+    }
     void DrawList::material (float metallic,
                              float roughness,
                              float coat,
@@ -181,6 +186,7 @@ namespace moppe {
     void DrawList::plain () {
       m_surface = Surface ();
       m_coat_roughness = 0;
+      m_occlusion = 0;
     }
     void DrawList::set_texture (const Texture* t) {
       m_texture = t;
@@ -225,7 +231,7 @@ namespace moppe {
       v.color = m_color;
       v.lit = m_lit ? std::max<uint8_t> (m_worn, 1) : 0;
       v.fogged = (m_coat_roughness << 1) | unsigned (m_fogged);
-      v.wind = m_wind;
+      v.wind = (m_surface.a & 128) != 0 ? m_occlusion : m_wind;
       v.flutter = m_flutter;
       v.surface = m_surface;
       return v;

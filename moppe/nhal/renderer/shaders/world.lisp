@@ -2079,7 +2079,7 @@
                (here :vec4 :location 5)
                (then :vec4 :location 6)
                (made :vec4 :location 7)
-               (coat-roughness :float :location 8))     ; render::Surface
+               (finish-extra :vec2 :location 8))        ; coat roughness, AO
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (vertices :storage-buffer :binding 1 :element :uint)
                  (draw :uniform-block :binding 2 :members #.*draw*)
@@ -2103,8 +2103,13 @@
          (packed (vertex-word vertices first :color))
          (flags (vertex-word vertices first :lit))
          (stuff (vertex-word vertices first :surface))
-         (bend (byte-of flags (uint 16.0)))
-         (flutter (byte-of flags (uint 24.0)))
+         (is-material (step 0.5 (byte-of stuff (uint 24.0))))
+         (raw-bend (byte-of flags (uint 16.0)))
+         ;; Material vertices reuse the wind byte for baked ambient occlusion
+         ;; darkness (0 = open); plain vertices carry plant bend there.
+         (bend (* raw-bend (- 1.0 is-material)))
+         (ao (if (> is-material 0.5) (- 1.0 raw-bend) 1.0))
+         (flutter (* (byte-of flags (uint 24.0)) (- 1.0 is-material)))
          (time (swizzle camera-position :w))
          (placed (swizzle (* model local) :xyz))
          (windy (> (swizzle normal-y :w) 0.5))
@@ -2125,8 +2130,10 @@
                                        (byte-of packed (uint 8.0))
                                        (byte-of packed (uint 16.0))))
                            (byte-of packed (uint 24.0))))
-    (set-output coat-roughness (/ (float (logand (shift-right flags (uint 9))
-                                                 (uint 127))) 127.0))
+    (set-output finish-extra
+                (vec2 (/ (float (logand (shift-right flags (uint 9))
+                                        (uint 127))) 127.0)
+                      ao))
     ;; Bit 8 carries fog. Lit values above 1 carry wear;
     ;; lit above 1 is a weathered film, worn (lit - 2) / 253, which the
     ;; fourth lane carries as one more than its wear.
@@ -3329,7 +3336,7 @@
               (here :vec4 :location 5)
               (then :vec4 :location 6)
               (made :vec4 :location 7)
-               (coat-roughness :float :location 8))
+              (finish-extra :vec2 :location 8))
      :outputs ((color :vec4 :location 0)
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
@@ -3389,6 +3396,8 @@
                     h-lit))
          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
          (sun-light (* (swizzle sun-diffuse :xyz) direct))
+         (coat-roughness (swizzle finish-extra :x))
+         (ao (swizzle finish-extra :y))
          (indirect (world-sky-indirect (swizzle ambient :xyz)
                                        (swizzle sun-diffuse :xyz) sun
                                        (swizzle sky-sun :xyz) overcast n
@@ -3401,7 +3410,7 @@
          (sky-open (world-sky-open gi-sample (swizzle canopy-info :y)
                                    (swizzle world-gi :z)
                                    (swizzle world-gi :w) overcast 0.0))
-         (diffuse-light (+ indirect
+         (diffuse-light (+ (* indirect (mix 0.18 1.0 ao))
                            (* sun-light lambert)
                            (lamp-light lamp lamp-color world n)))
          (sky-rim (* albedo (* (vec3 0.025 0.04 0.065) sky-open
@@ -3422,7 +3431,8 @@
                                      (swizzle sun-direction :w)
                                      (swizzle relief :w)
                                      (* (mix 0.55 1.0 direct)
-                                        (mix 0.30 1.0 sky-open))
+                                        (mix 0.30 1.0 sky-open)
+                                        (mix 0.15 1.0 ao))
                                      (swizzle base :w)
                                      (min 1.0 (sqrt (+ (* coat-roughness
                                                          coat-roughness)

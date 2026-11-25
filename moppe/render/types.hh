@@ -69,8 +69,10 @@ namespace moppe {
       // Lambert + specular (1) vs. emissive passthrough (0); 2..255 is lit
       // and a weathered film worn (lit - 2) / 253, at the uv in metres.
       uint8_t lit;
-      uint8_t fogged;  // haze in bit 0, coat roughness in bits 1..7
-      uint8_t wind;    // 0..255 lean with the gust, growing up the plant
+      uint8_t fogged; // haze in bit 0, coat roughness in bits 1..7
+      // 0..255 lean with the gust on plain vertices; on material vertices
+      // (surface.a & 128), baked ambient occlusion darkness (0 = open).
+      uint8_t wind;
       uint8_t flutter; // 0..255 shake of foliage, growing out from the stem
       Surface surface;
     };
