@@ -239,3 +239,51 @@ MOPPE_TEST (the_barns_stock_stays_in_its_stalls_and_pen) {
   }
   MOPPE_CHECK (moved);
 }
+
+// Animals keep off built roads and their immediate verges: they never spawn
+// on the carriageway, and even if one is pushed onto it they move off
+// instead of lingering to graze there.
+MOPPE_TEST (animals_do_not_spawn_or_linger_on_built_roads) {
+  AnimalGround country = animals_test_country ();
+  const auto base_pasture = country.pasture;
+  country.pasture = [base_pasture] (plan_position_t p) {
+    Pasture out = base_pasture (p);
+    const meters_t across = abs (x_of (p) - 1000.0f * u::m);
+    if (across < 10.0f * u::m) {
+      const float t =
+        std::clamp ((meters_value (across) - 5.5f) / 4.5f, 0.0f, 1.0f);
+      out.road = (1.0f - t * t * (3.0f - 2.0f * t)) * proportion[one];
+    }
+    return out;
+  };
+  const Fold folds[] = {
+    { .kind = Fold::Kind::trailhead,
+      .at = position (Vec3 (1000.0f, 130.0f, 1000.0f)) },
+    { .kind = Fold::Kind::farm,
+      .at = position (Vec3 (1000.0f, 130.0f, 1120.0f)) },
+  };
+  Animals animals;
+  animals.rebuild (plan_animals (
+    country,
+    folds,
+    position (Vec3 (1000.0f, 130.0f, 1000.0f)),
+    plan_extent (animals_test_size * u::m, animals_test_size * u::m),
+    19));
+  MOPPE_CHECK (!animals.animals ().empty ());
+  for (const Animal& a : animals.animals ())
+    MOPPE_CHECK (country.pasture (plan (a.position)).road <=
+                 0.05f * proportion[one]);
+
+  const seconds_t dt = seconds (1.0f / 30.0f);
+  for (int step = 0; step < 90 * 30; ++step)
+    animals.step (country,
+                  {},
+                  position (Vec3 (1000.0f, 0.0f, 1000.0f)),
+                  5000.0f * u::m,
+                  dt);
+  for (const Animal& a : animals.animals ()) {
+    if (a.doing == Animal::Doing::grazing || a.doing == Animal::Doing::standing)
+      MOPPE_CHECK (country.pasture (plan (a.position)).road <=
+                   0.25f * proportion[one]);
+  }
+}

@@ -165,36 +165,43 @@ namespace moppe::game {
              steepness (g, at) < 0.55f * terrain::terrain_slope[one];
     }
 
-    // How much a species wants to be at a point, 0..1.
+    // How much a species wants to be at a point, 0..1. Built roads and their
+    // immediate verges offer nothing to graze or browse.
     proportion_t liking (Species species, const Pasture& p) {
       constexpr proportion_t whole = 1.0f * proportion[one];
+      const proportion_t off_road = whole - p.road;
+      proportion_t base = 0.0f * proportion[one];
       switch (species) {
       case Species::horse:
       case Species::cow:
       case Species::sheep:
       case Species::pig:
-        return quantity_cast<proportion> (p.grazed * (whole - 0.8f * p.forest) *
+        base = quantity_cast<proportion> (p.grazed * (whole - 0.8f * p.forest) *
                                           (whole - 0.7f * p.bog));
+        break;
       case Species::moose:
         // Browse in young and open forest, by the mires.
-        return smooth01 (0.2f, 0.45f, p.forest.numerical_value_in (one)) *
-               (1.0f - 0.3f * smooth01 (0.8f,
-                                        1.0f,
-                                        p.forest.numerical_value_in (one))) *
-               (0.6f +
-                0.4f * smooth01 (0.0f, 0.3f, p.bog.numerical_value_in (one))) *
-               (whole - p.fell);
+        base =
+          smooth01 (0.2f, 0.45f, p.forest.numerical_value_in (one)) *
+          (1.0f -
+           0.3f * smooth01 (0.8f, 1.0f, p.forest.numerical_value_in (one))) *
+          (0.6f +
+           0.4f * smooth01 (0.0f, 0.3f, p.bog.numerical_value_in (one))) *
+          (whole - p.fell);
+        break;
       case Species::roe_deer:
         // The edges: half in the open, half under the trees.
-        return quantity_cast<proportion> (
+        base = quantity_cast<proportion> (
           smooth01 (0.05f, 0.3f, p.forest.numerical_value_in (one)) *
           (1.0f - smooth01 (0.55f, 0.8f, p.forest.numerical_value_in (one))) *
           (whole - 0.8f * p.fell) * (whole - 0.6f * p.bog));
+        break;
       case Species::reindeer:
-        return smooth01 (0.25f, 0.6f, p.fell.numerical_value_in (one)) *
+        base = smooth01 (0.25f, 0.6f, p.fell.numerical_value_in (one)) *
                (whole - p.forest);
+        break;
       }
-      return 0.0f * proportion[one];
+      return quantity_cast<proportion> (base * off_road);
     }
 
     // Brought into the world's one copy, in each lane that wraps.
@@ -244,7 +251,7 @@ namespace moppe::game {
           wrap_into (home + plan_displacement (Vec2 (std::cos (turn) * rv,
                                                      std::sin (turn) * rv)),
                      g);
-        if (!footing (g, at))
+        if (!footing (g, at) || g.pasture (at).road > 0.05f * proportion[one])
           continue;
         bool crowded = false;
         for (std::size_t k = plan.animals.size () - placed;
@@ -397,9 +404,12 @@ namespace moppe::game {
                        g);
           if (!footing (g, at))
             continue;
-          float score = (liking (stock[k].species, g.pasture (at)) *
-                         (1.0f - 0.4f * r / reach))
-                          .numerical_value_in (one);
+          const Pasture p = g.pasture (at);
+          if (p.road > 0.05f * proportion[one])
+            continue;
+          float score =
+            (liking (stock[k].species, p) * (1.0f - 0.4f * r / reach))
+              .numerical_value_in (one);
           // Each kind keeps a little apart from the others.
           for (const plan_position_t& other : taken)
             score *= smooth01 (
@@ -452,7 +462,8 @@ namespace moppe::game {
           if (!footing (g, at))
             continue;
           const Pasture p = g.pasture (at);
-          if (p.grazed > 0.3f * proportion[one])
+          if (p.grazed > 0.3f * proportion[one] ||
+              p.road > 0.05f * proportion[one])
             continue;
           for (const Species kind :
                { Species::moose, Species::roe_deer, Species::reindeer }) {
@@ -561,7 +572,11 @@ namespace moppe::game {
         g);
       if (!footing (g, at) || !g.dry (mid))
         continue;
-      float score = liking (a.species, g.pasture (at)).numerical_value_in (one);
+      const Pasture p = g.pasture (at);
+      float score = liking (a.species, p).numerical_value_in (one);
+      // Animals may cross a road on the way to fresh grass, but never pick
+      // the carriageway or its shoulder as a place to stand and graze.
+      score -= 4.0f * p.road.numerical_value_in (one);
       const meters_t from_home = flat_distance (at, plan (herd.home), g);
       const meters_t range = herd.range;
       score -= 2.0f * smooth01 (0.7f * range, range, from_home);
@@ -589,7 +604,8 @@ namespace moppe::game {
     const heading_t base =
       length2 (plan_value (away)) > 1e-4f ? heading_of (away) : a.heading;
     // Away, but where the ground lets it go: try straight away first and
-    // then further round to either side.
+    // then further round to either side, preferring off-road ground.
+    std::optional<plan_position_t> fallback;
     for (int k = 0; k < 9; ++k) {
       const radians_t swing = ((k % 2 ? 1.0f : -1.0f) * 0.35f * ((k + 1) / 2) +
                                0.3f * (rand (r) - 0.5f)) *
@@ -603,10 +619,19 @@ namespace moppe::game {
                      along (plan_forward_of (base + swing), 0.5f * distance),
                    g);
       if (footing (g, at) && g.dry (mid)) {
-        a.goal = at;
-        a.left = 30.0f * u::s;
-        return;
+        if (g.pasture (at).road < 0.2f * proportion[one]) {
+          a.goal = at;
+          a.left = 30.0f * u::s;
+          return;
+        }
+        if (!fallback)
+          fallback = at;
       }
+    }
+    if (fallback) {
+      a.goal = *fallback;
+      a.left = 30.0f * u::s;
+      return;
     }
     // Hemmed in: it stands its ground and watches.
     a.doing = Animal::Doing::alert;
@@ -856,9 +881,15 @@ namespace moppe::game {
       using Doing = Animal::Doing;
       const bool there =
         flat_distance (plan (a.position), a.goal, g) < 0.8f * u::m;
+      const bool on_road =
+        g.pasture (plan (a.position)).road > 0.25f * proportion[one];
       switch (a.doing) {
       case Doing::grazing:
-        if (a.left < seconds_t {}) {
+        if (on_road) {
+          choose (a, herd, g, middles[a.herd]);
+          a.doing = Doing::walking;
+          a.left = 40.0f * u::s;
+        } else if (a.left < seconds_t {}) {
           const float u = rand (r);
           if (u < 0.55f) {
             choose (a, herd, g, middles[a.herd]);
@@ -873,7 +904,11 @@ namespace moppe::game {
         }
         break;
       case Doing::standing:
-        if (a.left < seconds_t {}) {
+        if (on_road) {
+          choose (a, herd, g, middles[a.herd]);
+          a.doing = Doing::walking;
+          a.left = 40.0f * u::s;
+        } else if (a.left < seconds_t {}) {
           if (rand (r) < 0.6f) {
             a.doing = Doing::grazing;
             a.left = (8.0f + 22.0f * rand (r)) * u::s;
@@ -886,8 +921,13 @@ namespace moppe::game {
         break;
       case Doing::walking:
         if (there || a.left < seconds_t {}) {
-          a.doing = Doing::grazing;
-          a.left = (8.0f + 22.0f * rand (r)) * u::s;
+          if (on_road) {
+            choose (a, herd, g, middles[a.herd]);
+            a.left = 40.0f * u::s;
+          } else {
+            a.doing = Doing::grazing;
+            a.left = (8.0f + 22.0f * rand (r)) * u::s;
+          }
         }
         break;
       case Doing::alert:

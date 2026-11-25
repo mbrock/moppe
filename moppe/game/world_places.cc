@@ -175,6 +175,15 @@ namespace moppe::game {
               .reading<quantity> (moppe::position (Vec3 (x, 0.0f, z)))
               .numerical_value_in (one);
           };
+          proportion_t road_near = 0.0f * proportion[one];
+          if (ground.roads) {
+            const terrain::RoadSample sample = ground.roads->nearest (p);
+            if (sample.found && sample.kind == terrain::Road::Kind::Road)
+              road_near =
+                (1.0f -
+                 smoothstep (5.5f, 10.0f, meters_value (abs (sample.across)))) *
+                proportion[one];
+          }
           return Pasture {
             .grazed = read (map::grazing_pressure) * proportion[one],
             .forest = read (map::forest_cover) * proportion[one],
@@ -189,6 +198,7 @@ namespace moppe::game {
                               0.05f, 0.2f, read (map::dwarf_birch_abundance))) *
               proportion[one],
             .bog = read (map::sphagnum_abundance) * proportion[one],
+            .road = road_near,
           };
         },
       .clear =

@@ -71,6 +71,9 @@ namespace moppe::game {
     proportion_t fell = 0.0f * proportion[one];
     // Mire.
     proportion_t bog = 0.0f * proportion[one];
+    // Built carriageway and its immediate verge, 0 away from roads to 1 on
+    // the road itself.
+    proportion_t road = 0.0f * proportion[one];
   };
 
   // What the animals read of the world.
