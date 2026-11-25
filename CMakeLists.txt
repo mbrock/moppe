@@ -771,6 +771,7 @@ set(MOPPE_NHAL_RENDERER_SOURCES
   moppe/nhal/renderer/nhal_renderer_shadow.cc
   moppe/nhal/renderer/nhal_renderer_terrain.cc
   moppe/nhal/renderer/nhal_renderer_water.cc
+  moppe/nhal/renderer/tree_archetypes.cc
 )
 
 # Adds the NHAL renderer to TARGET, with its world programs embedded in

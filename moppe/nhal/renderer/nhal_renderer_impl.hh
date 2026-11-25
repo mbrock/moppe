@@ -75,13 +75,17 @@ namespace moppe::nhal {
                                            chunk_cells / 4 + 1,
                                            chunk_cells / 8 + 1 };
 
-    // The trunk forest's (species, tier) classes, as forest_trunks.metal
-    // numbers them: six detail tiers of birch (and pine, which shares its
-    // topology), then six of spruce, then six of fell birch. A class's
-    // topology -- facets, masses, and which vertices each triangle joins --
-    // is a function of the two alone; world.lisp's forest-vertex places the
-    // vertices in the same numbering.
+    // The forest's botanical archetype classes: five ecological species
+    // (Birch, Spruce, Pine, FellBirch, Snag), each with multiple sculpted
+    // silhouettes across coverage-conserving LOD tiers, built once at startup
+    // in tree_archetypes.cc.
+    constexpr std::uint32_t forest_species = tree_steps::species;
+    constexpr std::uint32_t forest_variants = tree_steps::variants;
     constexpr std::uint32_t forest_tiers = tree_steps::tiers;
+    constexpr std::uint32_t forest_shadow_classes =
+      forest_species * forest_variants;
+    constexpr std::uint32_t forest_classes =
+      forest_shadow_classes * forest_tiers;
     constexpr std::uint32_t shadow_size = 2048;
     // Indices of the far cascade's stand-in for a tree: a double cone.
     constexpr std::uint32_t far_tree_indices = 36;
@@ -92,9 +96,6 @@ namespace moppe::nhal {
     constexpr std::uint32_t grass_classes = 6;
     // The canopy's 16-metre patches over twice its farthest reach.
     constexpr std::uint32_t sward_window_side = 160;
-    // Birch, spruce, and fell birch: each a topology of its own.
-    constexpr std::uint32_t forest_species = 3;
-    constexpr std::uint32_t forest_classes = forest_species * forest_tiers;
 
     // The scene pass's targets: RGBA16F colour, RG16F motion, and
     // reversed-Z depth, culling back faces; what every scene program
@@ -271,7 +272,7 @@ namespace moppe::nhal {
 
       Pipeline draw, cull, shadow, far_shadow, leaves;
       Buffer far_indices;
-      Buffer records, candidates, arguments, indices;
+      Buffer records, candidates, arguments, vertices, indices;
       std::uint32_t count = 0;
       std::uint32_t class_first[forest_classes] {};
       std::uint32_t class_count[forest_classes] {};

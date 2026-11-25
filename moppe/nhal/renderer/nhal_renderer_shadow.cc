@@ -212,15 +212,17 @@ namespace moppe::nhal {
         m_device->set_buffer (1, m_forest.shadow_block[index]);
         m_device->set_buffer (3, m_forest.records);
         m_device->set_buffer (4, m_forest.shadow_candidates[index]);
-        for (std::uint32_t species = 0; species < forest_species; ++species) {
+        if (!far)
+          m_device->set_buffer (5, m_forest.vertices);
+        for (std::uint32_t cls = 0; cls < forest_shadow_classes; ++cls) {
           shaders::forest_shadow::Draw draw {};
-          draw.class_ = { float (species), 0, 0, 0 };
+          draw.class_ = { float (cls), 0, 0, 0 };
           m_device->set_uniforms (2, draw);
           m_device->draw_indexed_indirect (
             far ? m_forest.far_indices : m_forest.indices,
             IndexType::uint16,
             m_forest.shadow_arguments[index],
-            species * sizeof (DrawIndexedIndirectArgs));
+            cls * sizeof (DrawIndexedIndirectArgs));
         }
       }
       if (index == render::LocalShadowParams::near &&

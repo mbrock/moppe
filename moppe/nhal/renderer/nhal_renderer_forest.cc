@@ -4,99 +4,11 @@
 // the leaves drifting down where the crowns have turned.
 
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
+#include <moppe/nhal/renderer/tree_archetypes.hh>
 #include <moppe/terrain/torus.hh>
 
 namespace moppe::nhal {
   namespace detail {
-    namespace {
-      // A step function of the tier from one of world.lisp's *tree-steps*
-      // rows: its value at the coarsest tier, then each tier it changes at
-      // and the value from there on.
-      template <std::size_t N>
-      constexpr std::uint32_t tree_step (const unsigned (&row)[N],
-                                         std::uint32_t tier) {
-        std::uint32_t value = row[0];
-        for (std::size_t i = 1; i + 1 < N; i += 2)
-          if (tier >= row[i])
-            value = row[i + 1];
-        return value;
-      }
-
-      struct TreeTopology {
-        std::uint32_t sides, crown_sides, masses;
-        bool conifer, branches, fell;
-
-        // SPECIES as the cull numbers classes: 0 birch, 1 spruce, 2 fell
-        // birch, whose clumps go in pairs on stems of their own at any tier,
-        // each branch bent at a knee through a third ring.
-        TreeTopology (std::uint32_t species, std::uint32_t tier)
-            : sides (tree_step (tree_steps::sides, tier)),
-              crown_sides (sides == 10 ? 9u : sides),
-              masses (tree_step (species == 1   ? tree_steps::masses_spruce
-                                 : species == 2 ? tree_steps::masses_fell
-                                                : tree_steps::masses_birch,
-                                 tier)),
-              conifer (species == 1),
-              branches (species == 2 ||
-                        (species == 0 && tier >= tree_steps::branches)),
-              fell (species == 2) {}
-
-        std::uint32_t mass_vertices () const {
-          return conifer ? crown_sides + 2 : 8 + (fell ? 9 : branches ? 6 : 0);
-        }
-        std::uint32_t mass_primitives () const {
-          return conifer ? 2 * crown_sides
-                         : 12 + (fell       ? 12
-                                 : branches ? 6
-                                            : 0);
-        }
-
-        void triangles (std::vector<std::uint16_t>& out) const {
-          auto add = [&] (std::uint32_t a, std::uint32_t b, std::uint32_t c) {
-            out.insert (
-              out.end (),
-              { std::uint16_t (a), std::uint16_t (b), std::uint16_t (c) });
-          };
-          // Three bands of quads between the trunk's four rings.
-          for (std::uint32_t p = 0; p < sides * 6; ++p) {
-            const std::uint32_t band = p / (2 * sides);
-            const std::uint32_t quad = (p / 2) % sides;
-            const std::uint32_t next = (quad + 1) % sides;
-            const std::uint32_t a = band * sides + quad,
-                                b = band * sides + next;
-            const std::uint32_t c = a + sides, d = b + sides;
-            add ((p & 1) ? b : a, (p & 1) ? d : b, c);
-          }
-          for (std::uint32_t mass = 0; mass < masses; ++mass) {
-            const std::uint32_t first = sides * 4 + mass * mass_vertices ();
-            const std::uint32_t n = crown_sides;
-            for (std::uint32_t p = 0; p < mass_primitives (); ++p) {
-              if (conifer) {
-                // A cone: its ring to the apex, then to the closing centre.
-                const std::uint32_t side = p % n;
-                add (first + side,
-                     first + (side + 1) % n,
-                     first + (p < n ? n : n + 1));
-              } else if (p < 12) {
-                // A clump: six faces about its top tip, six about its bottom.
-                const std::uint32_t k = p % 6;
-                const std::uint32_t e0 = first + 2 + k;
-                const std::uint32_t e1 = first + 2 + (k + 1) % 6;
-                add (
-                  p < 6 ? first : first + 1, p < 6 ? e0 : e1, p < 6 ? e1 : e0);
-              } else {
-                // Its branch, a three-sided prism in one or two bands.
-                const std::uint32_t q = p - 12, band = q / 6, k = q % 6 / 2;
-                const std::uint32_t a = first + 8 + band * 3 + k;
-                const std::uint32_t b = first + 8 + band * 3 + (k + 1) % 3;
-                add ((q & 1) ? b : a, (q & 1) ? b + 3 : b, a + 3);
-              }
-            }
-          }
-        }
-      };
-    }
-
     void NhalRenderer::make_forest_pipelines () {
       const RenderPipelineDesc scene = scene_target ();
       const RenderPipelineDesc caster = shadow_caster ();
@@ -104,7 +16,6 @@ namespace moppe::nhal {
       forest.program = &shaders::forest::program;
       forest.vertex = m_shaders.forest[0];
       forest.fragment = m_shaders.forest[1];
-      forest.cull = Cull::none;
       forest.label = "forest";
       m_forest.draw = m_device->create_render_pipeline (forest);
       m_forest.cull =
@@ -207,16 +118,19 @@ namespace moppe::nhal {
       }
 
       if (!m_forest.indices) {
-        std::vector<std::uint16_t> indices;
+        const TreeArchetypeLibrary lib =
+          build_tree_archetypes (forest_species, forest_variants, forest_tiers);
         for (std::uint32_t c = 0; c < forest_classes; ++c) {
-          m_forest.class_first[c] = std::uint32_t (indices.size ());
-          TreeTopology (c / forest_tiers, c % forest_tiers).triangles (indices);
-          m_forest.class_count[c] =
-            std::uint32_t (indices.size ()) - m_forest.class_first[c];
+          m_forest.class_first[c] = lib.slices[c].first_index;
+          m_forest.class_count[c] = lib.slices[c].index_count;
         }
+        m_forest.vertices = m_device->create_buffer (
+          { .size = lib.vertices.size () * sizeof (TreeArchetypeVertex),
+            .label = "forest archetypes" },
+          std::as_bytes (std::span (lib.vertices)));
         m_forest.indices = m_device->create_buffer (
-          { .size = indices.size () * 2, .label = "forest topology" },
-          std::as_bytes (std::span (indices)));
+          { .size = lib.indices.size () * 2, .label = "forest topology" },
+          std::as_bytes (std::span (lib.indices)));
       }
     }
 
@@ -453,6 +367,7 @@ namespace moppe::nhal {
       m_device->set_buffer (1, m_forest.block);
       m_device->set_buffer (3, m_forest.records);
       m_device->set_buffer (4, m_forest.candidates);
+      m_device->set_buffer (5, m_forest.vertices);
       m_device->set_texture (8, m_sun_shadow.map);
       for (std::uint32_t c = 0; c < forest_classes; ++c) {
         shaders::forest::Draw draw {};

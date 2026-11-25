@@ -3120,43 +3120,27 @@
                     (uint #x00ffffff)))
      16777216.0))
 
-;;; The tree classes' shape, which the renderer's TreeTopology (the index
-;;; buffer each class shares) must agree with, as one table that both read:
-;;; CMake turns the rows into tree_steps.hh. TIERS is how many detail tiers
-;;; there are; a step row is a value at the coarsest tier and then, for each
-;;; tier at which it changes, that tier and the value from it on.
+;;; The tree classes' shape, shared between world.lisp and C++ via CMake's
+;;; generated tree_steps.hh: five ecological species (Birch, Spruce, Pine,
+;;; FellBirch, Snag), each with multiple pre-generated botanical archetype
+;;; variants across coverage-conserving LOD tiers.
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *tree-steps*
-    '((:tree-tiers 6)
-      (:tree-sides 5 2 7 5 10)
-      (:tree-masses-birch 4 1 7 4 10)
-      (:tree-masses-spruce 3 1 4 4 5)
-      (:tree-masses-fell 6 1 10 4 12)   ; clumps go in pairs, one to a stem
-      (:tree-branches 3)))              ; the tier birch grows branches from
+    '((:tree-species 5)
+      (:tree-variants 3)
+      (:tree-tiers 3)))
 
   (defun tree-step (row)
     (rest (assoc row *tree-steps*))))
 
-(define-shader-abstraction branch-tier ()
-  (float (first (tree-step :tree-branches))))
+(define-shader-abstraction tree-species ()
+  `(uint ,(first (tree-step :tree-species))))
+
+(define-shader-abstraction tree-variants ()
+  `(uint ,(first (tree-step :tree-variants))))
 
 (define-shader-abstraction tree-tiers ()
   `(uint ,(first (tree-step :tree-tiers))))
-
-;;; A row's value at TIER, as nested comparisons against the tiers' floats.
-(define-shader-abstraction tier-step (tier row)
-  (let* ((row (tree-step row))
-         (form `(uint ,(first row))))
-    (loop for (from value) on (rest row) by #'cddr
-          do (setf form `(if (>= ,tier ,(float from))
-                             (uint ,value)
-                             ,form)))
-    form))
-
-;;; The detail tier of an individual this many pixels tall, 0 to 5.
-(define-shader-function tree-tier (pixels)
-  (+ (step 20.0 pixels) (step 30.0 pixels) (step 40.0 pixels)
-     (step 60.0 pixels) (step 90.0 pixels)))
 
 ;;; The world is periodic: each individual wraps toward the view.
 (define-shader-function tree-root (root period eye)
@@ -3174,11 +3158,16 @@
 ;;; first pass records each survivor's rank within its class. One workgroup
 ;;; prefixes the draw counts before the survivors scatter in the third pass.
 (define-shader-abstraction forest-class-count ()
-  `(uint ,(* 3 (first (tree-step :tree-tiers)))))
+  `(uint ,(* (first (tree-step :tree-species))
+             (first (tree-step :tree-variants))
+             (first (tree-step :tree-tiers)))))
 
 (define-shader-abstraction forest-class-start (class)
-  (loop with start = '(forest-class-count)
-        for i below (1- (* 3 (first (tree-step :tree-tiers))))
+  (loop with count = (* (first (tree-step :tree-species))
+                        (first (tree-step :tree-variants))
+                        (first (tree-step :tree-tiers)))
+        with start = '(forest-class-count)
+        for i below (1- count)
         do (setf start `(+ ,start
                            (if (> ,class (uint ,i))
                                (* (uint 2)
@@ -3210,9 +3199,9 @@
         (let* ((row (* index (uint 4)))
                (root-height (buffer-element trees row))
                (crown (swizzle (buffer-element trees (+ row (uint 1))) :w))
-               (kind (bit-cast :uint
-                               (swizzle (buffer-element trees (+ row (uint 3)))
-                                        :y)))
+               (id-row (buffer-element trees (+ row (uint 3))))
+               (seed (bit-cast :uint (swizzle id-row :x)))
+               (kind (bit-cast :uint (swizzle id-row :y)))
                (shadow (> (swizzle mode :x) 0.5))
                (height (swizzle root-height :w))
                (centre-of (swizzle eye :xyz))
@@ -3237,16 +3226,19 @@
                      (or (and shadow (or (< (swizzle mode :x) 1.5)
                                          (> crown 1.2)))
                          (>= crown-pixels 4.0)))
-            (let* ((identity (bit-cast :uint
-                                       (swizzle (buffer-element trees (+ row (uint 3))) :w)))
+            (let* ((identity (bit-cast :uint (swizzle id-row :w)))
                    (stagger (+ 0.88 (* 0.24 (tree-hash identity (uint 63)))))
                    (pixels (* 0.5 height scale stagger))
-                   ;; Classes by topology: birch and pine, spruce, fell birch.
-                   (species (if (= kind (uint 1)) (uint 1)
-                                (if (= kind (uint 3)) (uint 2) (uint 0))))
-                   (class (if shadow species
-                              (+ (uint (tree-tier pixels))
-                                 (* species (tree-tiers)))))
+                   ;; Size-invariant completion distance (docs/forest-lod.md):
+                   ;; saplings finish upgrading at the same distance as tall
+                   ;; trees rather than waiting until beside the walker.
+                   (measure (* pixels (clamp (/ 22.5 (max height 1.0)) 1.0 3.5)))
+                   (species (min kind (- (tree-species) (uint 1))))
+                   (variant (mod seed (tree-variants)))
+                   (tier (uint (+ (step 32.0 measure) (step 105.0 measure))))
+                   (slot-base (+ (* species (tree-variants)) variant))
+                   (class (if shadow slot-base
+                              (+ (* slot-base (tree-tiers)) tier)))
                    (slot (atomic-add arguments (+ (* class (uint 5)) (uint 1))
                                      (uint 1)))
                    (rank (+ (uint 1) (+ class (* slot (forest-class-count))))))
@@ -3270,430 +3262,49 @@
 (define-shader-program forest-cull
   :compute forest-cull-compute)
 
-;;; One individual's frame and proportions, as forest_trunks.metal's
-;;; TrunkTree: nearly vertical with a small lean of its own; closure
-;;; decides where the crown starts, open-grown trees keeping their branches
-;;; low and a closed stand standing as a hall of clear trunks.
-(define-shader-struct tree-shape
+;;; One individual's local frame and proportions, transforming a pre-generated
+;;; botanical archetype (tree_archetypes.cc) into the world with its own yaw,
+;;; lean, height, crown width, trunk girth, and ecological state.
+(define-shader-struct tree-frame
   (root :vec3) (up :vec3) (right :vec3) (forward :vec3)
-  (height :float) (crown-base :float) (crown-radius :float)
-  (trunk-radius :float) (seed-turn :float) (closure :float)
-  (seed :uint) (conifer :bool) (pine :bool) (fell :bool) (snag :bool)
-  (sides :uint) (crown-sides :uint) (detail-pixels :float) (branches :bool)
-  (eye :vec3) (pixel :float))
+  (height :float) (crown-radius :float) (trunk-radius :float)
+  (closure :float) (seed :uint) (kind :uint))
 
-;;; No stem is drawn thinner than a pixel.  A trunk or bough that would be
-;;; is drawn a pixel across, and so proportionally fewer of them are drawn
-;;; at all: each tree's trunk and each of its boughs has its own place in
-;;; the order (a hash), and is left out once its share of the pixel falls
-;;; below it.  A far stand so shows as much bark as it would if it could
-;;; be resolved, in lines that every sample of every frame finds, rather
-;;; than as slivers the jitter catches one frame and misses the next.
-;;; PIXEL is how many metres a pixel spans a metre from the eye; zero (the
-;;; sun's view) draws every stem as it is.
-
-;;; The least radius a stem at POINT is drawn with: half a pixel there.
-(define-shader-function stem-floor (point eye pixel)
-  (let* ((to (- point eye)))
-    (* 0.5 pixel (sqrt (dot to to)))))
-
-;;; The radius a stem tapering from radius A to B covers along their
-;;; segment, twice over: as it is, and (TAKEN) drawn at FLOOR or wider.
-(define-shader-function stem-taper (a b floor)
-  (vec2 (+ a b) (+ (max a floor) (max b floor))))
-
-;;; A stem's share of the bark it is drawn with: what its segments, each
-;;; weighed by its length and given by STEM-TAPER, cover as they are over
-;;; what they cover widened, 1 where nothing needs widening.
-(define-shader-function stem-share (covered)
-  (/ (swizzle covered :x) (max (swizzle covered :y) 0.000001)))
-
-(define-shader-function grow-tree (root-height up-radius ecology identity root
-                                   pixels crown-scale eye pixel)
-  (let* ((tier (tree-tier pixels))
-         (seed (bit-cast :uint (swizzle identity :x)))
-         (conifer (= (bit-cast :uint (swizzle identity :y)) (uint 1)))
-         ;; A Scots pine draws with the birch's clumps, held flat and high
-         ;; on a long clear trunk that leans more than a spruce's.
-         (pine (= (bit-cast :uint (swizzle identity :y)) (uint 2)))
-         ;; A fell birch: a few crooked stems from one low base, each with
-         ;; its clump, as wide as it is tall.
-         (fell (= (bit-cast :uint (swizzle identity :y)) (uint 3)))
-         ;; A snag: a tree a fire killed, drawn with the birch's numbering
-         ;; but no leaves, its boughs broken to stubs and its top snapped.
-         (snag (= (bit-cast :uint (swizzle identity :y)) (uint 4)))
+(define-shader-function make-tree-instance (root-height up-radius ecology
+                                            identity root crown-scale)
+  (let* ((seed (bit-cast :uint (swizzle identity :x)))
+         (kind (bit-cast :uint (swizzle identity :y)))
+         (conifer (= kind (uint 1)))
+         (pine (= kind (uint 2)))
+         (fell (= kind (uint 3)))
+         (snag (= kind (uint 4)))
          (lean-turn (* 6.2831853 (tree-hash seed (uint 3))))
-         (lean (* (if pine 0.11 (if fell 0.22 (if snag 0.12 0.065)))
+         (lean (* (if pine 0.09 (if fell 0.14 (if snag 0.11 0.055)))
                   (tree-hash seed (uint 4))))
          (up (normalize (+ (vec3 0.0 1.0 0.0)
                            (* 0.08 (vec3 (swizzle up-radius :x) 0.0
                                          (swizzle up-radius :z)))
                            (* lean (vec3 (cos lean-turn) 0.0
                                          (sin lean-turn))))))
-         (right (normalize (cross3 up (vec3 0.0 0.0 1.0))))
+         (right0 (normalize (cross3 up (vec3 0.0 0.0 1.0))))
+         (fwd0 (cross3 right0 up))
+         (yaw (* 6.2831853 (tree-hash seed (uint 7))))
+         (cy (cos yaw))
+         (sy (sin yaw))
+         (right (+ (* right0 cy) (* fwd0 sy)))
+         (forward (- (* fwd0 cy) (* right0 sy)))
          (height (swizzle root-height :w))
-         (closure (smoothstep 0.12 0.42 (swizzle ecology :z)))
-         (base-share (+ (mix (if conifer 0.04
-                                 (if pine 0.50
-                                     (if fell 0.10 (if snag 0.25 0.40))))
-                             (if conifer 0.20
-                                 (if pine 0.66
-                                     (if fell 0.18 (if snag 0.40 0.60))))
-                             closure)
-                        (* 0.08 (- (tree-hash seed (uint 5)) 0.5))))
-         (sides (tier-step tier :tree-sides)))
-    (make-tree-shape
-     :root root :up up :right right :forward (cross3 right up)
+         (closure (smoothstep 0.12 0.42 (swizzle ecology :z))))
+    (make-tree-frame
+     :root root :up up :right right :forward forward
      :height height
-     :crown-base (* height base-share)
      :crown-radius (* (swizzle up-radius :w) crown-scale
-                      (if pine 1.25 (if snag 0.75 1.0)))
+                      (if pine 1.22 (if snag 0.78 1.0)))
      :trunk-radius (* height (if (or conifer snag) 0.0078
                                  (if fell 0.014 0.0085))
-                      (+ 0.85 (* 0.3 (tree-hash seed (uint 6)))))
-     :seed-turn (* 6.2831853 (tree-hash seed (uint 7)))
+                      (+ 0.85 (* 0.30 (tree-hash seed (uint 6)))))
      :closure closure
-     :seed seed :conifer conifer :pine pine :fell fell :snag snag
-     :sides sides
-     :crown-sides (if (= sides (uint 10)) (uint 9) sides)
-     :detail-pixels pixels
-     :branches (or fell (and (not conifer) (>= tier (branch-tier))))
-     :eye eye :pixel pixel)))
-
-(define-shader-struct tree-vertex
-  (position :vec3) (normal :vec3) (bark :vec2) (crown-height :float)
-  (foliage :bool) (branch :bool) (mass :uint) (corner :uint))
-
-;;; One vertex of an individual, in the numbering its class's index buffer
-;;; joins into triangles: the trunk's four rings, then each crown mass.
-(define-shader-function tree-vertex-at (tree index)
-  (let* ((pi2 6.2831853)
-         (root (tree-shape-root tree))
-         (up (tree-shape-up tree))
-         (right (tree-shape-right tree))
-         (forward (tree-shape-forward tree))
-         (height (tree-shape-height tree))
-         (crown-base (tree-shape-crown-base tree))
-         (crown-radius (tree-shape-crown-radius tree))
-         (trunk-radius (tree-shape-trunk-radius tree))
-         (seed-turn (tree-shape-seed-turn tree))
-         (seed (tree-shape-seed tree))
-         (conifer (tree-shape-conifer tree))
-         (sides (tree-shape-sides tree))
-         (crown-sides (tree-shape-crown-sides tree))
-         (trunk-vertices (* sides (uint 4)))
-         (is-trunk (< index trunk-vertices))
-         ;; Rings at the flared root, breast height, the crown's base, and
-         ;; the tip.
-         (ring (/ index sides))
-         (trunk-turn (+ seed-turn (/ (* pi2 (float (mod index sides)))
-                                     (float sides))))
-         ;; The trunk grows out of the soil rather than standing on it: its
-         ;; first ring sits below the ground and flares into uneven root
-         ;; buttresses, narrowing to the bole within a metre.
-         (fell (tree-shape-fell tree))
-         (snag (tree-shape-snag tree))
-         ;; A fell birch's main stem is only one of its stems: short, and
-         ;; with its crown starting near the ground.  A snag's runs its
-         ;; whole height to where it broke, a jagged stump of a top.
-         (jag (tree-hash seed (+ (uint 320) (mod index sides))))
-         (trunk-along (if (= ring (uint 0)) -0.35
-                          (if (= ring (uint 1)) (if fell (* 0.5 crown-base) 0.9)
-                              (if (= ring (uint 2)) crown-base
-                                  (* height
-                                     (if conifer 0.94
-                                         (if fell 0.55
-                                             (if snag (- 1.0 (* 0.06 jag))
-                                                 0.86))))))))
-         (trunk-width (if (= ring (uint 0))
-                          (+ 1.75 (* 0.65 (tree-hash seed
-                                                     (+ (uint 300)
-                                                        (mod index sides)))))
-                          (if (= ring (uint 1)) 1.05
-                              (if (= ring (uint 2)) 0.72
-                                  (if snag (+ 0.30 (* 0.25 jag)) 0.14)))))
-         (trunk-out (+ (* right (cos trunk-turn)) (* forward (sin trunk-turn))))
-         ;; A trunk left out of a far stand folds to its root.
-         (eye (tree-shape-eye tree))
-         (pixel (tree-shape-pixel tree))
-         (trunk-centre (+ root (* up trunk-along)))
-         ;; Widened, a stem loses its taper, so it is kept by what it
-         ;; covers over what it covers drawn: the bole to the crown's base,
-         ;; and on to the tip (a snag's broken top as wide as most).
-         (root-floor (stem-floor root eye pixel))
-         (bole-start (if fell (* 0.5 crown-base) 0.9))
-         (tip-along (* height (if conifer 0.94
-                                  (if fell 0.55 (if snag 0.97 0.86)))))
-         (trunk-share
-           (stem-share
-            (+ (* (max (- crown-base bole-start) 0.0)
-                  (stem-taper (* 1.05 trunk-radius) (* 0.72 trunk-radius)
-                              root-floor))
-               (* (max (- tip-along crown-base) 0.0)
-                  (stem-taper (* 0.72 trunk-radius)
-                              (* (if snag 0.425 0.14) trunk-radius)
-                              root-floor)))))
-         (trunk-kept (< (tree-hash seed (uint 330)) trunk-share))
-         (trunk-point (if trunk-kept
-                          (+ trunk-centre
-                             (* trunk-out
-                                (max (* trunk-radius trunk-width)
-                                     (stem-floor trunk-centre eye pixel))))
-                          root))
-         ;; The crown masses.
-         (local (if is-trunk (uint 0) (- index trunk-vertices)))
-         (per-mass (if conifer (+ crown-sides (uint 2))
-                       (if fell (uint 17)
-                           (if (tree-shape-branches tree) (uint 14)
-                               (uint 8)))))
-         (mass (/ local per-mass))
-         (corner (mod local per-mass))
-         (fmass (float mass))
-         (span (- height crown-base))
-         (twist (+ seed-turn (* 1.7 fmass)))
-         ;; Three whorls define the silhouette. The next two fill the gaps
-         ;; halfway up each interval, without moving the first three.
-         (f0 (if (< mass (uint 3)) (/ fmass 3.0) (/ (- fmass 2.5) 3.0)))
-         (jitter (* 0.06 (- (tree-hash seed (+ (uint 20) mass)) 0.5)))
-         (cone-base (+ crown-base (* span (+ (* 0.90 f0) jitter))))
-         (cone-top (if (= mass (uint 2)) height
-                       (+ crown-base (* span (min (+ (* 0.90 f0)
-                                                     (if (< mass (uint 3))
-                                                         0.55 0.38)) 1.0)))))
-         (cone-radius (* crown-radius
-                         (mix 1.0 0.72 (tree-shape-closure tree))
-                         (- 1.0 (* 0.80 f0))
-                         (+ 0.82 (* 0.36 (tree-hash seed (+ (uint 30) mass))))))
-         (cone-turn (+ twist (/ (* pi2 (float corner)) (float crown-sides))))
-         (on-ring (< corner crown-sides))
-         (cone-along (if on-ring
-                         (- cone-base (* (if (= (logand corner (uint 1))
-                                                (uint 1))
-                                             0.06 0.0)
-                                         span))
-                         (if (= corner crown-sides) cone-top
-                             (+ cone-base (* 0.12 span)))))
-         (cone-point (+ root (* up cone-along)
-                        (if on-ring
-                            (* (+ (* right (cos cone-turn))
-                                  (* forward (sin cone-turn)))
-                               cone-radius)
-                            (vec3 0.0 0.0 0.0))))
-         ;; A birch clump, spiralling up the stem by the golden angle in a
-         ;; narrow oval envelope, so sky shows between them.
-         ;; A low-discrepancy sequence spans the crown even in its first
-         ;; four clumps. Each rank has the same site in every topology.
-         (rise (clamp (+ (fract (+ 0.12 (* 0.618034 fmass)))
-                         (* 0.06 (- (tree-hash seed (+ (uint 80) mass)) 0.5)))
-                      0.0 1.0))
-         (pine (tree-shape-pine tree))
-         ;; A pine's crown is an umbrella: its clumps reach as far out at
-         ;; the top as below it.
-         (envelope (if pine (- 1.0 (* 0.35 rise))
-                       (expt (sin (* 3.1415927 (+ 0.12 (* 0.80 rise)))) 0.7)))
-         (clump-turn (+ seed-turn (* 2.39996 fmass)
-                        (* 0.8 (- (tree-hash seed (+ (uint 90) mass)) 0.5))))
-         (reach (* crown-radius envelope
-                   (+ (if pine 0.45 0.30)
-                      (* 0.45 (tree-hash seed (+ (uint 100) mass))))))
-         (clump-along (+ crown-base
-                         (* span (if pine (+ 0.30 (* 0.62 rise))
-                                     (+ 0.06 (* 0.86 rise))))))
-         ;; A fell birch's clumps go in pairs on stems of their own. Each
-         ;; stem springs from the shared base and sweeps out low, pressed
-         ;; down by the snow, then bends up at a knee; the pair's second
-         ;; clump hangs off a twig forking from the stem's upper part.
-         (stem (/ mass (uint 2)))
-         (twig (= (logand mass (uint 1)) (uint 1)))
-         (stem-turn (+ seed-turn (* 2.39996 (float stem))
-                       (* 0.60 (- (tree-hash seed (+ (uint 1000) stem)) 0.5))))
-         (stem-out (+ (* right (cos stem-turn)) (* forward (sin stem-turn))))
-         (stem-reach (* crown-radius
-                        (+ 0.60 (* 0.50 (tree-hash seed
-                                                   (+ (uint 1020) stem))))))
-         (stem-root (+ root
-                       (* up (* height
-                                (+ 0.02 (* 0.08 (tree-hash seed
-                                                           (+ (uint 1040)
-                                                              stem))))))
-                       (* stem-out (* 1.4 trunk-radius))))
-         (stem-knee (+ stem-root
-                       (* stem-out
-                          (* stem-reach
-                             (+ 0.45 (* 0.30 (tree-hash seed
-                                                        (+ (uint 1060)
-                                                           stem))))))
-                       (* up (* height
-                                (+ 0.06 (* 0.14 (tree-hash seed
-                                                           (+ (uint 1080)
-                                                              stem))))))))
-         (stem-top (+ root (* stem-out stem-reach)
-                      (* up (+ crown-base
-                               (* span
-                                  (+ 0.45 (* 0.50 (tree-hash
-                                                   seed
-                                                   (+ (uint 1100) stem)))))))))
-         (twig-turn (+ stem-turn
-                       (* (if (> (tree-hash seed (+ (uint 1120) stem)) 0.5)
-                              1.0 -1.0)
-                          (+ 0.45 (* 0.40 (tree-hash seed
-                                                     (+ (uint 1140) stem)))))))
-         (twig-start (mix stem-knee stem-top
-                          (+ 0.40 (* 0.25 (tree-hash seed
-                                                     (+ (uint 1160) stem))))))
-         (twig-top (+ twig-start
-                      (* (+ (* right (cos twig-turn))
-                            (* forward (sin twig-turn)))
-                         (* crown-radius
-                            (+ 0.30 (* 0.25 (tree-hash seed
-                                                       (+ (uint 1180)
-                                                          stem))))))
-                      (* up (* span
-                               (+ 0.04 (* 0.16 (tree-hash seed
-                                                          (+ (uint 1200)
-                                                             stem))))))))
-         (centre (if fell (if twig twig-top stem-top)
-                     (+ root (* up clump-along)
-                        (* (+ (* right (cos clump-turn))
-                              (* forward (sin clump-turn)))
-                           reach))))
-         ;; Where its branch leaves the stem.
-         (attach (if fell (if twig twig-start stem-root)
-                     (+ root (* up (max (- clump-along (* 0.9 reach))
-                                        (* 0.92 crown-base))))))
-         ;; A fell birch's clumps are small and many, as its leaves gather
-         ;; at the tips of its twigs.
-         (clump-radius (if fell
-                           (* crown-radius (if twig 0.85 1.0)
-                              (+ 0.19 (* 0.12 (tree-hash seed
-                                                         (+ (uint 110) mass)))))
-                           (* crown-radius
-                              (+ 0.50 (* 0.34 (tree-hash seed
-                                                         (+ (uint 110) mass))))
-                              (- 1.0 (* 0.35 rise)) (if (< mass (uint 4)) 1.24 0.92))))
-         (clump-up (normalize
-                    (+ up (* right (* 0.5 (- (tree-hash seed (+ (uint 130) mass))
-                                             0.5)))
-                       (* forward (* 0.5 (- (tree-hash seed (+ (uint 140) mass))
-                                            0.5))))))
-         (across (normalize (cross3 clump-up forward)))
-         (depth (cross3 across clump-up))
-         (k (- corner (uint 2)))
-         (leaf-lane (+ (* (uint 6) mass) k))
-         (leaf-turn (+ twist (* 1.0471976 (float k))
-                       (* 0.5 (- (tree-hash seed (+ (uint 120) leaf-lane)) 0.5))))
-         (leaf-reach (* clump-radius
-                        (+ 0.74 (* 0.42 (tree-hash seed
-                                                   (+ (uint 180) leaf-lane))))))
-         (leaf-lift (* (if pine 0.60 1.0)
-                       (+ (if (= (logand k (uint 1)) (uint 1)) 0.26 -0.34)
-                          (* 0.16 (- (tree-hash seed (+ (uint 240) leaf-lane))
-                                     0.5)))))
-         (tip (if pine 0.60 1.0))
-         (leaf-point
-           (if (= corner (uint 0))
-               (+ centre (* clump-up (* 0.66 tip clump-radius)))
-               (if (= corner (uint 1))
-                   (- centre (* clump-up (* 0.92 tip clump-radius)))
-                   (+ centre (* clump-up (* leaf-lift clump-radius))
-                      (* (+ (* across (cos leaf-turn)) (* depth (sin leaf-turn)))
-                         leaf-reach)))))
-         ;; A clump's branch: a thin prism from the stem into the clump; a
-         ;; fell birch's bends at a knee through a third ring.
-         (is-branch (and (not is-trunk) (not conifer) (>= corner (uint 8))))
-         (bk (- corner (uint 8)))
-         (band (/ bk (uint 3)))
-         (knee (if twig
-                   (+ (mix twig-start twig-top 0.5) (* up (* 0.03 span)))
-                   stem-knee))
-         ;; A snag's boughs are broken off a metre or two out.
-         (branch-end (mix (if fell knee attach) centre (if snag 0.50 0.85)))
-         (axis (normalize (if fell
-                              (if (= band (uint 0)) (- knee attach)
-                                  (if (= band (uint 1)) (- branch-end attach)
-                                      (- branch-end knee)))
-                              (- branch-end attach))))
-         (branch-side (normalize (cross3 axis (+ forward (* 0.3 right)))))
-         (branch-other (cross3 axis branch-side))
-         (branch-turn (* 2.0943951 (float (mod bk (uint 3)))))
-         (around (+ (* branch-side (cos branch-turn))
-                    (* branch-other (sin branch-turn))))
-         (first-ring (< bk (uint 3)))
-         (branch-radius
-           (* trunk-radius
-              (if fell
-                  (if (= band (uint 0)) (if twig 0.38 0.95)
-                      (if (= band (uint 1)) (if twig 0.26 0.76)
-                          (if twig 0.12 0.40)))
-                  (if first-ring (if snag 0.30 0.34) (if snag 0.07 0.10)))))
-         ;; A bough is kept by its thickness along it, and one left out
-         ;; folds to where it leaves the stem.  Only a kept trunk keeps
-         ;; boughs, so many more of those, that none hangs in the air; a
-         ;; fell birch's stems each spring from the ground.
-         (branch-centre (if fell
-                            (if (= band (uint 0)) attach
-                                (if (= band (uint 1)) knee branch-end))
-                            (if first-ring attach branch-end)))
-         (attach-floor (stem-floor attach eye pixel))
-         (branch-share
-           (stem-share
-            (if fell
-                (+ (stem-taper (* trunk-radius (if twig 0.38 0.95))
-                               (* trunk-radius (if twig 0.26 0.76))
-                               attach-floor)
-                   (stem-taper (* trunk-radius (if twig 0.26 0.76))
-                               (* trunk-radius (if twig 0.12 0.40))
-                               attach-floor))
-                (stem-taper (* trunk-radius (if snag 0.30 0.34))
-                            (* trunk-radius (if snag 0.07 0.10))
-                            attach-floor))))
-         (branch-kept (and (or fell trunk-kept)
-                           (< (* (tree-hash seed (+ (uint 340) mass))
-                                 (if fell 1.0 (min trunk-share 1.0)))
-                              branch-share)))
-         (branch-point (if branch-kept
-                           (+ branch-centre
-                              (* around
-                                 (max branch-radius
-                                      (stem-floor branch-centre eye pixel))))
-                           attach))
-         ;; A snag has no leaves: its clumps fold to a point and draw
-         ;; nothing.
-         (point (if is-trunk trunk-point
-                    (if is-branch branch-point
-                        (if conifer cone-point
-                            (if snag attach leaf-point)))))
-         ;; Grow newly admitted organs from their attachment over a band
-         ;; of pixels. Branches on the original clumps have their own tier.
-         (initial (if conifer (uint 3) (if fell (uint 6) (uint 4))))
-         (middle (if conifer (uint 4) (if fell (uint 10) (uint 7))))
-         (start (if (>= mass middle) 60.0
-                    (if (>= mass initial) 20.0 0.0)))
-         (start (if (and is-branch (not fell)) (max start 40.0) start))
-         (growth (if (or is-trunk (= start 0.0)) 1.0
-                     (smoothstep start (* 1.22 start)
-                                 (tree-shape-detail-pixels tree))))
-         (anchor (if conifer (+ root (* up cone-base)) attach))
-         (point (if (< growth 1.0) (mix anchor point growth) point))
-         (foliage (and (not is-trunk) (not is-branch))))
-    (make-tree-vertex
-     :position point
-     :normal (if is-trunk trunk-out
-                 (if is-branch around
-                     (normalize (- point (+ root (* up (+ crown-base
-                                                           (* 0.5 span))))))))
-     :bark (if is-trunk
-               (vec2 (* trunk-turn trunk-radius) trunk-along)
-               (vec2 (* branch-turn branch-radius) (dot (- point root) up)))
-     :crown-height (if foliage
-                       (clamp (/ (- (dot (- point root) up) crown-base)
-                                 (max span 0.01))
-                              0.0 1.0)
-                       0.0)
-     :foliage foliage
-     :branch is-branch
-     :mass mass
-     :corner corner)))
+     :seed seed :kind kind)))
 
 ;;; A birch leaf's colour as it ripens, in display space: summer green,
 ;;; tired olive, lime, lemon, gold, amber, and at the last russet.
@@ -3710,66 +3321,47 @@
                      (clamp (/ (- ripe 0.82) 0.20) 0.0 1.0))))
     (mix amber (vec3 0.64 0.30 0.13) (clamp (/ (- ripe 1.02) 0.22) 0.0 1.0))))
 
-;;; Bark, branch, needles, or leaves that turn clump by clump in autumn,
-;;; in display space. A birch turns as its stand does (AUTUMN), earlier or
-;;; later by its own temper, from the top of the crown down and from the
-;;; outside in, clump by clump; and it goes as far as its temper takes it:
-;;; most to lemon and gold, some on to amber, a few to russet. Each corner
-;;; of a clump strays a little either way, so a faceted clump shades from
-;;; one hue into the next across its faces.
-(define-shader-function tree-palette (tree vertex moisture autumn)
-  (let* ((seed (tree-shape-seed tree))
-         (conifer (tree-shape-conifer tree))
-         (mass (tree-vertex-mass vertex))
-         (fmass (float mass))
-         (corner (tree-vertex-corner vertex))
+;;; Species bark, branch, needle, and clump-by-clump autumn leaf palette,
+;;; driven by the archetype's baked clump seed and crown height.
+(define-shader-function tree-archetype-albedo (tf clump-seed crown-h y-frac
+                                               foliage branch moisture autumn)
+  (let* ((seed (tree-frame-seed tf))
+         (kind (tree-frame-kind tf))
+         (conifer (= kind (uint 1)))
+         (pine (= kind (uint 2)))
+         (fell (= kind (uint 3)))
+         (snag (= kind (uint 4)))
          (hue (- (tree-hash seed (uint 50)) 0.5))
-         (wobble (- (tree-hash seed (+ (uint 400) (* mass (uint 16)) corner))
-                    0.5))
-         (shade (+ 0.92 (* 0.12 (tree-vertex-crown-height vertex))
-                   (* -0.06 (tree-hash seed (uint 51)))
-                   (if conifer 0.0
-                       (+ (* 0.16 (- (tree-hash seed (+ (uint 200) mass)) 0.5))
-                          (* 0.10 wobble)))))
-         (needle (vec3 (+ 0.20 (* 0.05 hue)) (+ 0.36 (* 0.06 moisture)) 0.22))
-         ;; Scots pine: greyer, bluer needles in tufts, which never turn.
-         (pine (tree-shape-pine tree))
-         (pine-needle (vec3 (+ 0.24 (* 0.04 hue)) (+ 0.36 (* 0.04 hue)) 0.27))
-         ;; Its bark is grey plates low down and thin fox-orange flakes
-         ;; from the middle of the trunk up.
-         (rise (clamp (/ (swizzle (tree-vertex-bark vertex) :y)
-                         (max (tree-shape-height tree) 0.01))
-                      0.0 1.0))
+         (clump-var (- clump-seed 0.5))
+         (shade (+ 0.92 (* 0.12 crown-h) (* -0.06 (tree-hash seed (uint 51)))
+                   (* 0.16 clump-var)))
+         (needle (vec3 (+ 0.17 (* 0.05 hue))
+                       (+ 0.34 (* 0.06 moisture))
+                       (+ 0.19 (* 0.02 hue))))
+         (pine-needle (vec3 (+ 0.22 (* 0.04 hue))
+                            (+ 0.35 (* 0.04 hue))
+                            0.26))
          (pine-bark (mix (vec3 0.36 0.30 0.26) (vec3 0.80 0.46 0.26)
-                         (smoothstep 0.25 0.55 rise)))
-         ;; A fell birch's stems: chalk-white birch bark, a little warmer
-         ;; on some trees than others; its lenticels and dark base are the
-         ;; birch's own (bark-shade, forest-fragment).
-         (fell (tree-shape-fell tree))
+                         (smoothstep 0.25 0.55 y-frac)))
          (fell-bark (vec3 (+ 0.80 (* 0.04 hue)) (+ 0.77 (* 0.03 hue)) 0.71))
-         ;; A snag: bark gone, the wood weathered silver-grey, charred
-         ;; black where the fire licked its foot.
-         (snag (tree-shape-snag tree))
          (snag-wood (mix (vec3 0.11 0.10 0.09)
                          (vec3 (+ 0.68 (* 0.05 hue)) (+ 0.66 (* 0.04 hue))
                                (+ 0.62 (* 0.02 hue)))
-                         (smoothstep 0.04 0.30 (+ rise (* 0.08 wobble)))))
-         (green (vec3 (+ 0.42 (* 0.08 hue)) (+ 0.60 (* 0.05 moisture)) 0.22))
+                         (smoothstep 0.04 0.30 (+ y-frac (* 0.06 clump-var)))))
+         (green (vec3 (+ 0.40 (* 0.08 hue)) (+ 0.58 (* 0.05 moisture)) 0.21))
          (temper (- (tree-hash seed (uint 53)) 0.5))
          (reach (+ 0.58 (* 0.62 (expt (tree-hash seed (uint 52)) 1.8))
-                   (* 0.24 (- (tree-hash seed (+ (uint 210) mass)) 0.5))))
+                   (* 0.24 clump-var)))
          (turning (clamp (+ (* 1.15 autumn) (* 0.45 temper)
-                            (* 0.30 (- (tree-hash seed (+ (uint 70) mass)) 0.5))
-                            (* 0.30 (- (tree-vertex-crown-height vertex) 0.45))
-                            (* 0.14 wobble) -0.08)
+                            (* 0.34 clump-var)
+                            (* 0.30 (- crown-h 0.45)) -0.08)
                          0.0 1.0))
          (ripe (* turning reach))
-         ;; Summer's own variety of greens stays under the first turning.
          (leaf (mix green (autumn-leaf ripe) (clamp (/ ripe 0.25) 0.0 1.0))))
-    (if (tree-vertex-foliage vertex)
+    (if foliage
         (* (if conifer needle (if pine pine-needle leaf)) shade)
         (if snag snag-wood
-            (if (tree-vertex-branch vertex)
+            (if branch
                 (if pine (vec3 0.62 0.38 0.24)
                     (if fell fell-bark (vec3 0.34 0.31 0.29)))
                 (if conifer (vec3 0.38 0.30 0.24)
@@ -3790,16 +3382,6 @@
           (* -1.0 (+ (* 0.15 (abs gust) lean) (* 0.10 (abs bough) shake)))
           (+ (* 0.53 gust lean) (* (- (* 0.47 bough) (* 0.38 flick)) shake)))))
 
-(define-shader-function tree-sway (tree vertex time)
-  (let* ((point (tree-vertex-position vertex))
-         (rise (clamp (/ (dot (- point (tree-shape-root tree))
-                              (tree-shape-up tree))
-                         (max (tree-shape-height tree) 0.01))
-                      0.0 1.0)))
-    (wind-offset point (* 0.30 (* rise rise))
-                 (if (tree-vertex-foliage vertex) (* 0.25 rise) 0.0)
-                 time)))
-
 (define-shader forest-vertex
     (:stage :vertex
      :inputs ((vertex-index :uint :built-in :vertex-index)
@@ -3817,41 +3399,83 @@
                  (forest :uniform-block :binding 1 :members #.*forest*)
                  (draw :uniform-block :binding 2 :members #.*forest-class*)
                  (trees :storage-buffer :binding 3 :element :vec4)
-                 (candidates :storage-buffer :binding 4 :element :uint)))
+                 (candidates :storage-buffer :binding 4 :element :uint)
+                 (archetypes :storage-buffer :binding 5 :element :vec4)))
   (let* ((at (+ (buffer-element candidates (uint (swizzle class :x)))
                 (* instance-index (uint 2))))
          (row (* (buffer-element candidates at) (uint 4)))
-         (pixels (bit-cast :float (buffer-element candidates (+ at (uint 1)))))
          (root-height (buffer-element trees row))
          (ecology (buffer-element trees (+ row (uint 2))))
-         (tree (grow-tree root-height (buffer-element trees (+ row (uint 1)))
-                          ecology (buffer-element trees (+ row (uint 3)))
-                          (tree-root (swizzle root-height :xyz)
-                                     (swizzle world :xy)
-                                     (swizzle camera-position :xyz))
-                          pixels 1.0
-                          (swizzle camera-position :xyz)
-                          (/ (* 2.0 (sqrt (dot (swizzle view-up :xyz)
-                                               (swizzle view-up :xyz))))
-                             (swizzle temporal :y))))
-         (vertex (tree-vertex-at tree vertex-index))
-         (point (tree-vertex-position vertex))
-         (current (+ point (tree-sway tree vertex
-                                      (swizzle camera-position :w))))
-         (previous (+ point (tree-sway tree vertex (swizzle relief :z))))
+         (eye (swizzle camera-position :xyz))
+         (tf (make-tree-instance root-height
+                                 (buffer-element trees (+ row (uint 1)))
+                                 ecology
+                                 (buffer-element trees (+ row (uint 3)))
+                                 (tree-root (swizzle root-height :xyz)
+                                            (swizzle world :xy) eye)
+                                 1.0))
+         (base (* vertex-index (uint 3)))
+         (v0 (buffer-element archetypes base))
+         (v1 (buffer-element archetypes (+ base (uint 1))))
+         (v2 (buffer-element archetypes (+ base (uint 2))))
+         (part (swizzle v2 :w))
+         (foliage (> part 1.5))
+         (branch (and (> part 0.5) (not foliage)))
+         (is-trunk (< (swizzle v0 :w) 0.5))
+         (tree-kind (tree-frame-kind tf))
+         (fell (= tree-kind (uint 3)))
+         (py (swizzle v0 :y))
+         (y-pos (max py 0.0))
+         ;; Closed stands gently lift crowns while keeping roots anchored.
+         (y-frac (+ py (if (and (> part 0.5) (not fell))
+                           (* (- 1.0 y-pos) y-pos 0.14 (tree-frame-closure tf))
+                           0.0)))
+         ;; Coverage-conserving distant trunk pixel-floor (ensemble-continuity):
+         ;; widen subpixel trunks to 0.4 px while keeping only the reciprocal
+         ;; fraction of trees so total distant bark area is conserved without
+         ;; subpixel TAA fizzing.
+         (to-eye (- (tree-frame-root tf) eye))
+         (dist (sqrt (dot to-eye to-eye)))
+         (pixel (/ (* 2.0 (sqrt (dot (swizzle view-up :xyz)
+                                     (swizzle view-up :xyz))))
+                   (swizzle temporal :y)))
+         (tr (tree-frame-trunk-radius tf))
+         (wide-r (max tr (* 0.40 dist pixel)))
+         (trunk-kept (< (tree-hash (tree-frame-seed tf) (uint 330))
+                        (/ tr (max wide-r 0.0001))))
+         (r-scale (if is-trunk
+                      (if trunk-kept wide-r 0.0)
+                      (tree-frame-crown-radius tf)))
+         (local (+ (* (tree-frame-right tf) (* (swizzle v0 :x) r-scale))
+                   (* (tree-frame-up tf) (* y-frac (tree-frame-height tf)))
+                   (* (tree-frame-forward tf) (* (swizzle v0 :z) r-scale))))
+         (point (+ (tree-frame-root tf) local))
+         (n-world (normalize (+ (* (tree-frame-right tf) (swizzle v1 :x))
+                                (* (tree-frame-up tf) (swizzle v1 :y))
+                                (* (tree-frame-forward tf) (swizzle v1 :z)))))
+         (rise (clamp y-frac 0.0 1.0))
+         (bend (* 0.28 (* rise rise)))
+         (flutter (* (swizzle v2 :z) 0.28))
+         (current (+ point (wind-offset point bend flutter
+                                        (swizzle camera-position :w))))
+         (previous (+ point (wind-offset point bend flutter
+                                         (swizzle relief :z))))
          (here-clip (* view-proj (vec4 current 1.0))))
     (set-output clip-position (clip here-clip (swizzle temporal :zw)))
     (set-output world-position current)
-    (set-output surface-normal (tree-vertex-normal vertex))
-    (set-output albedo (srgb (tree-palette tree vertex (swizzle ecology :y)
-                                           (swizzle ecology :w))))
-    (set-output bark (tree-vertex-bark vertex))
-    (set-output crown-height (tree-vertex-crown-height vertex))
-    (set-output kind (vec2 (if (tree-vertex-foliage vertex) 1.0 0.0)
-                           (if (or (tree-shape-conifer tree)
-                                   (tree-shape-snag tree))
+    (set-output surface-normal n-world)
+    (set-output albedo (srgb (tree-archetype-albedo
+                              tf (swizzle v2 :x) (swizzle v2 :y) rise
+                              foliage branch (swizzle ecology :y)
+                              (swizzle ecology :w))))
+    (set-output bark (vec2 (* (swizzle v2 :x) r-scale)
+                           (* y-frac (tree-frame-height tf))))
+    (set-output crown-height (swizzle v1 :w))
+    (set-output kind (vec2 (if foliage 1.0 0.0)
+                           (if (or (= tree-kind (uint 1))
+                                   (= tree-kind (uint 4)))
                                1.0
-                               (if (tree-shape-pine tree) 2.0 0.0))))
+                               (if (= tree-kind (uint 2)) 2.0 0.0))))
     (set-output here here-clip)
     (set-output then (* previous-view-proj (vec4 previous 1.0)))))
 
@@ -3894,10 +3518,29 @@
          (furrowed (min (swizzle kind :y) 1.0))
          (eye (swizzle camera-position :xyz))
          (to-eye (- eye world-position))
-         (view (/ to-eye (max (sqrt (dot to-eye to-eye)) 0.001)))
+         (dist (max (sqrt (dot to-eye to-eye)) 0.001))
+         (view (/ to-eye dist))
          (light (swizzle sun-direction :xyz))
-         ;; The vertex normal follows the envelope of the whole crown.
+         ;; The vertex normal blends crown-wide dome and local cluster relief.
          (n (normalize surface-normal))
+         ;; Baked 3D volumetric crown ambient occlusion from the archetype.
+         (ao crown-height)
+         ;; Close-up leaf-cluster micro-relief (value + normal perturbation)
+         ;; that collapses smoothly to the macro crown normal at distance so
+         ;; far stands stay calm under TAA.
+         (near-fade (smoothstep 120.0 16.0 dist))
+         (lp (vec2 (+ (* (swizzle world-position :x) 2.5)
+                      (* (swizzle world-position :y) 1.8))
+                   (+ (* (swizzle world-position :z) 2.5)
+                      (* (swizzle world-position :y) 1.2))))
+         (l0 (value-noise lp))
+         (lx (value-noise (+ lp (vec2 0.25 0.0))))
+         (lz (value-noise (+ lp (vec2 0.0 0.25))))
+         (l2 (value-noise (* lp 2.2)))
+         (leaf-bump (* (vec3 (- l0 lx) (* 0.45 (- l2 0.5)) (- l0 lz))
+                       (* 1.45 near-fade foliage)))
+         (n (normalize (+ n leaf-bump)))
+         (dapple (mix 1.0 (+ 0.82 (* 0.24 l0) (* 0.14 l2)) near-fade))
          ;; Where the trunk meets the ground the light fails and the bark
          ;; changes: moss climbs a spruce's buttresses, and a birch's pale
          ;; bark gives way to its dark, fissured base.
@@ -3905,7 +3548,7 @@
          (rooted (mix (mix (srgb (vec3 0.24 0.22 0.20))
                            (srgb (vec3 0.27 0.34 0.15)) furrowed)
                       albedo (- 1.0 (* 0.75 base))))
-         (surface (if (> foliage 0.5) albedo
+         (surface (if (> foliage 0.5) (* albedo dapple)
                       (* rooted (bark-shade bark furrowed)
                          (mix 1.0 0.55 (* base base)))))
          ;; Crowns keep metres of light-depth margin so a crown does not
@@ -3913,21 +3556,24 @@
          (lit (sun-lit shadow-map shadow-compare world-position
                        (if (> foliage 0.5) 1.5 0.35) 0.5))
          (visibility (mix 0.18 1.0 lit))
-         ;; Foliage wraps the light a little: a crown is porous.
+         ;; Foliage wraps the light a little: a crown is porous, while deep
+         ;; interiors carry cool volumetric shade.
          (sun (if (> foliage 0.5)
-                  (clamp (/ (+ (dot n light) 0.35) 1.35) 0.0 1.0)
+                  (* (clamp (/ (+ (dot n light) 0.35) 1.35) 0.0 1.0)
+                     (mix 0.62 1.0 ao))
                   (clamp (dot n light) 0.0 1.0)))
-         (occlusion (if (> foliage 0.5) (mix 0.72 1.0 crown-height) 0.80))
+         (occlusion (if (> foliage 0.5) (mix 0.42 1.0 ao) (mix 0.68 0.92 ao)))
          (sun-light (swizzle sun-diffuse :xyz))
-         (shaded (* surface (+ (* sun-light (* sun visibility 0.95))
+         (shaded (* surface (+ (* sun-light (* sun visibility 0.98))
                                (* (hemisphere-light (swizzle ambient :xyz) n)
                                   occlusion)
                                (lamp-light lamp lamp-color world-position
                                            n))))
-         ;; Against the sun, needles and leaves glow with transmitted light.
+         ;; Against the sun, outer needles and leaves glow with warm
+         ;; transmitted light; deep shaded interiors stay cool.
          (glow (* surface sun-light
-                  (* foliage visibility 0.35
-                     (expt (clamp (dot (* -1.0 view) light) 0.0 1.0) 4.0)))))
+                  (* foliage visibility ao 0.40
+                     (expt (clamp (dot (* -1.0 view) light) 0.0 1.0) 3.5)))))
     (set-output color (vec4 (hazed (+ shaded glow) world-position eye fog-color
                                    (swizzle sky-sun :xyz) relief)
                             1.0))
@@ -4011,22 +3657,43 @@
                  (forest :uniform-block :binding 1 :members #.*forest*)
                  (draw :uniform-block :binding 2 :members #.*forest-class*)
                  (trees :storage-buffer :binding 3 :element :vec4)
-                 (candidates :storage-buffer :binding 4 :element :uint)))
+                 (candidates :storage-buffer :binding 4 :element :uint)
+                 (archetypes :storage-buffer :binding 5 :element :vec4)))
   (let* ((at (+ (buffer-element candidates (uint (swizzle class :x)))
                 (* instance-index (uint 2))))
          (row (* (buffer-element candidates at) (uint 4)))
          (root-height (buffer-element trees row))
-         (tree (grow-tree root-height (buffer-element trees (+ row (uint 1)))
-                          (buffer-element trees (+ row (uint 2)))
-                          (buffer-element trees (+ row (uint 3)))
-                          (tree-root (swizzle root-height :xyz)
-                                     (swizzle world :xy) (swizzle focus :xyz))
-                          0.0 0.62 (swizzle focus :xyz) 0.0))
-         (vertex (tree-vertex-at tree vertex-index))
-         (point (+ (tree-vertex-position vertex)
-                   (tree-sway tree vertex (swizzle focus :w)))))
+         (tf (make-tree-instance root-height
+                                 (buffer-element trees (+ row (uint 1)))
+                                 (buffer-element trees (+ row (uint 2)))
+                                 (buffer-element trees (+ row (uint 3)))
+                                 (tree-root (swizzle root-height :xyz)
+                                            (swizzle world :xy)
+                                            (swizzle focus :xyz))
+                                 0.80))
+         (base (* vertex-index (uint 3)))
+         (v0 (buffer-element archetypes base))
+         (v2 (buffer-element archetypes (+ base (uint 2))))
+         (part (swizzle v2 :w))
+         (is-trunk (< (swizzle v0 :w) 0.5))
+         (fell (= (tree-frame-kind tf) (uint 3)))
+         (py (swizzle v0 :y))
+         (y-pos (max py 0.0))
+         (y-frac (+ py (if (and (> part 0.5) (not fell))
+                           (* (- 1.0 y-pos) y-pos 0.14 (tree-frame-closure tf))
+                           0.0)))
+         (r-scale (if is-trunk (tree-frame-trunk-radius tf)
+                      (tree-frame-crown-radius tf)))
+         (local (+ (* (tree-frame-right tf) (* (swizzle v0 :x) r-scale))
+                   (* (tree-frame-up tf) (* y-frac (tree-frame-height tf)))
+                   (* (tree-frame-forward tf) (* (swizzle v0 :z) r-scale))))
+         (point (+ (tree-frame-root tf) local))
+         (rise (clamp y-frac 0.0 1.0))
+         (swayed (+ point (wind-offset point (* 0.28 (* rise rise))
+                                       (* (swizzle v2 :z) 0.28)
+                                       (swizzle focus :w)))))
     (set-output clip-position
-                (clip (* light-view (vec4 point 1.0)) (vec2 0.0 0.0)))))
+                (clip (* light-view (vec4 swayed 1.0)) (vec2 0.0 0.0)))))
 
 (define-shader-program forest-shadow
   :vertex forest-shadow-vertex)
@@ -4050,25 +3717,30 @@
                 (* instance-index (uint 2))))
          (row (* (buffer-element candidates at) (uint 4)))
          (root-height (buffer-element trees row))
-         (tree (grow-tree root-height (buffer-element trees (+ row (uint 1)))
-                          (buffer-element trees (+ row (uint 2)))
-                          (buffer-element trees (+ row (uint 3)))
-                          (tree-root (swizzle root-height :xyz)
-                                     (swizzle world :xy) (swizzle focus :xyz))
-                          0.0 1.0 (swizzle focus :xyz) 0.0))
-         (base (tree-shape-crown-base tree))
-         (top (tree-shape-height tree))
-         (waist (mix base top (if (tree-shape-conifer tree) 0.15 0.5)))
-         (radius (* (tree-shape-crown-radius tree)
-                    (if (tree-shape-conifer tree) 1.05 1.0)))
+         (tf (make-tree-instance root-height
+                                 (buffer-element trees (+ row (uint 1)))
+                                 (buffer-element trees (+ row (uint 2)))
+                                 (buffer-element trees (+ row (uint 3)))
+                                 (tree-root (swizzle root-height :xyz)
+                                            (swizzle world :xy)
+                                            (swizzle focus :xyz))
+                                 1.0))
+         (kind (tree-frame-kind tf))
+         (conifer (= kind (uint 1)))
+         (pine (= kind (uint 2)))
+         (fell (= kind (uint 3)))
+         (top (tree-frame-height tf))
+         (base (* top (if conifer 0.12 (if pine 0.56 (if fell 0.14 0.44)))))
+         (waist (mix base top (if conifer 0.15 0.5)))
+         (radius (* (tree-frame-crown-radius tf) (if conifer 1.05 1.0)))
          (corner (float (- vertex-index (uint 2))))
-         (turn (+ (tree-shape-seed-turn tree) (* corner 1.0471976)))
-         (ring (* radius (+ (* (cos turn) (tree-shape-right tree))
-                            (* (sin turn) (tree-shape-forward tree)))))
+         (turn (* corner 1.0471976))
+         (ring (* radius (+ (* (cos turn) (tree-frame-right tf))
+                            (* (sin turn) (tree-frame-forward tf)))))
          (along (if (= vertex-index (uint 0)) top
                     (if (= vertex-index (uint 1)) base waist)))
          (out (if (< vertex-index (uint 2)) (vec3 0.0 0.0 0.0) ring))
-         (point (+ (tree-shape-root tree) (* along (tree-shape-up tree)) out)))
+         (point (+ (tree-frame-root tf) (* along (tree-frame-up tf)) out)))
     (set-output clip-position
                 (clip (* light-view (vec4 point 1.0)) (vec2 0.0 0.0)))))
 
