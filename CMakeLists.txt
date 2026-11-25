@@ -337,6 +337,7 @@ set(MOPPE_RENDER_SOURCES
   moppe/render/ground_detail.cc
   moppe/render/slug.cc
   moppe/render/text.cc
+  moppe/render/tree_archetypes.cc
   moppe/render/truetype.cc
 )
 
@@ -771,7 +772,6 @@ set(MOPPE_NHAL_RENDERER_SOURCES
   moppe/nhal/renderer/nhal_renderer_shadow.cc
   moppe/nhal/renderer/nhal_renderer_terrain.cc
   moppe/nhal/renderer/nhal_renderer_water.cc
-  moppe/nhal/renderer/tree_archetypes.cc
 )
 
 # Adds the NHAL renderer to TARGET, with its world programs embedded in
@@ -940,6 +940,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/render/model_glass_test.cc
     tests/render/slug_test.cc
     tests/render/text_test.cc
+    tests/render/tree_archetypes_test.cc
     tests/render/viewport_test.cc
   )
   moppe_configure_code_target(moppe-tests)

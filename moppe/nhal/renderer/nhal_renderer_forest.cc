@@ -4,7 +4,7 @@
 // the leaves drifting down where the crowns have turned.
 
 #include <moppe/nhal/renderer/nhal_renderer_impl.hh>
-#include <moppe/nhal/renderer/tree_archetypes.hh>
+#include <moppe/render/tree_archetypes.hh>
 #include <moppe/terrain/torus.hh>
 
 namespace moppe::nhal {
@@ -118,14 +118,15 @@ namespace moppe::nhal {
       }
 
       if (!m_forest.indices) {
-        const TreeArchetypeLibrary lib =
-          build_tree_archetypes (forest_species, forest_variants, forest_tiers);
+        static_assert (forest_species == render::forest_species_count);
+        const render::TreeArchetypeLibrary lib =
+          render::build_tree_archetypes (forest_variants, forest_tiers);
         for (std::uint32_t c = 0; c < forest_classes; ++c) {
           m_forest.class_first[c] = lib.slices[c].first_index;
           m_forest.class_count[c] = lib.slices[c].index_count;
         }
         m_forest.vertices = m_device->create_buffer (
-          { .size = lib.vertices.size () * sizeof (TreeArchetypeVertex),
+          { .size = lib.vertices.size () * sizeof (render::TreeArchetypeVertex),
             .label = "forest archetypes" },
           std::as_bytes (std::span (lib.vertices)));
         m_forest.indices = m_device->create_buffer (

@@ -1,5 +1,6 @@
 #include <moppe/correct_math.hh>
 #include <moppe/game/forest.hh>
+#include <moppe/render/tree_archetypes.hh>
 
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
@@ -88,9 +89,8 @@ namespace moppe::game {
                                      : 0.7f)),
         .radius =
           (height *
-           (conifer || snag ? 0.0078f
-            : fell          ? 0.014f
-                            : 0.0085f) *
+           render::tree_species_profile (tree.species)
+             .trunk_radius_ratio.numerical_value_in (one) *
            (0.85f +
             0.3f * forest_hash (tree.seed, 6u).numerical_value_in (one))),
         // The crown's base, as the forest program's grow-tree places it:

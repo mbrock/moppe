@@ -31,7 +31,7 @@
       "typed": 517,
       "raw_float": 35,
       "raw_vector": 33,
-      "escapes": 190
+      "escapes": 191
     },
     "Foundations (math & units)": {
       "share": 60.4,
@@ -74,12 +74,12 @@
       "escapes": 7
     },
     "Renderer & render glue": {
-      "share": 74.5,
-      "files": 62,
-      "typed": 1158,
-      "raw_float": 263,
-      "raw_vector": 134,
-      "escapes": 625
+      "share": 76.7,
+      "files": 64,
+      "typed": 1480,
+      "raw_float": 296,
+      "raw_vector": 154,
+      "escapes": 829
     },
     "Rivers, water & sediment": {
       "share": 98.4,
@@ -106,12 +106,12 @@
       "escapes": 398
     },
     "Tests": {
-      "share": 41.9,
-      "files": 87,
-      "typed": 728,
+      "share": 42.2,
+      "files": 88,
+      "typed": 737,
       "raw_float": 809,
       "raw_vector": 199,
-      "escapes": 1426
+      "escapes": 1427
     },
     "Vehicles & on-foot body": {
       "share": 78.1,
