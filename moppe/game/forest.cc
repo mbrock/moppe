@@ -150,10 +150,10 @@ namespace moppe::game {
   }
 
   namespace {
-    // Autumn comes first to the uplands. Broadleaves in roughly the upper
-    // half of the forest's own elevation range have turned, earlier or later
-    // by grove and by individual, so riding uphill passes from green valleys
-    // into golden birch standing among dark spruce.
+    // Autumn arrives early across the northern woods and deepens uphill.
+    // Even the valley groves around the trailhead and roads show a lively
+    // mosaic of olive, lemon, and golden birch (with fallen leaf carpets
+    // beneath), climbing into full amber and russet on the higher slopes.
     void turn_autumn (std::vector<render::ForestInstance>& instances,
                       spatial_extent_t period) {
       if (instances.empty ())
@@ -172,8 +172,8 @@ namespace moppe::game {
         std::nth_element (heights.begin (), at, heights.end ());
         return *at;
       };
-      const meters_t low = quantile (0.35f * proportion[one]);
-      const meters_t high = quantile (0.70f * proportion[one]);
+      const meters_t low = quantile (0.08f * proportion[one]);
+      const meters_t high = quantile (0.58f * proportion[one]);
       const meters_t span = std::max (high - low, 1.0f * u::m);
       const meters_t width = extent_value (period)[0] * u::m;
       const meters_t depth = extent_value (period)[2] * u::m;
@@ -191,14 +191,17 @@ namespace moppe::game {
         const plan_position_t at = plan (tree.root);
         const noise_signal_t grove = periodic_noise (
           x_of (at) / width, z_of (at) / depth, laps (width), 0xa07ae1u);
-        // How far up the forest's own band of elevation, by grove and by
-        // individual.
+        // How far along autumn turning the tree stands: a warm lowland
+        // floor that varies strongly by grove and individual, rising to full
+        // autumn on the mid-slopes and uplands.
         const proportion_t relative =
           std::clamp (
-            ((standing (tree) - low) / span).numerical_value_in (one) +
-              0.25f *
+            0.28f +
+              0.78f *
+                ((standing (tree) - low) / span).numerical_value_in (one) +
+              0.30f *
                 (forest_hash (tree.seed, 8u).numerical_value_in (one) - 0.5f) +
-              0.45f * (grove.numerical_value_in (one) - 0.5f),
+              0.50f * (grove.numerical_value_in (one) - 0.5f),
             0.0f,
             1.0f) *
           proportion[one];

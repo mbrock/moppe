@@ -819,8 +819,8 @@
   (* (- (* lane 2.0) 1.0) 8.0))
 
 (define-shader-function turf-colour (lush grazed)
-  (mix (mix (vec3 0.46 0.47 0.20) (vec3 0.25 0.42 0.13) lush)
-       (vec3 0.44 0.48 0.21) (* 0.5 grazed)))
+  (mix (mix (vec3 0.50 0.46 0.20) (vec3 0.28 0.41 0.14) lush)
+       (vec3 0.48 0.47 0.21) (* 0.5 grazed)))
 
 (define-shader-function shade-fill (visibility overcast)
   (mix (mix (vec3 0.88 0.95 1.07) (vec3 0.97 0.98 0.99) overcast)
@@ -927,7 +927,7 @@
                        (* 0.85 (smoothstep 0.20 0.50 heather-share))))
          ;; Ruska: the fjäll's bilberry goes crimson and its dwarf birch
          ;; gold, the higher the sooner.
-         (turned (smoothstep 0.45 0.80 (+ rise (* 0.2 (- drift 0.5)))))
+         (turned (smoothstep 0.28 0.68 (+ rise (* 0.25 (- drift 0.5)))))
          ;; Crimson comes leaf by leaf, so it is broken by the grain.
          (bilberry (mix (mix (vec3 0.28 0.37 0.15) (vec3 0.42 0.30 0.15)
                              (* 0.6 turned))
