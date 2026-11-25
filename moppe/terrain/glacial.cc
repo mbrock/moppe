@@ -236,10 +236,12 @@ namespace moppe::terrain {
           current = next;
         }
 
-        // Collect unwrapped alignment points ordered mouth -> highlands.
+        // Collect unwrapped alignment points ordered mouth -> highlands,
+        // capped to a natural coastal-fjord trough reach so valleys grade
+        // smoothly back into the tectonic/fluvial landscape upstream.
         std::vector<TroughSample> raw;
         const meters_t max_trough_length =
-          0.95f * std::min (period_x, period_z);
+          std::min (2800.0f * u::m, 0.45f * std::min (period_x, period_z));
         meters_t raw_dist = 0.0f * u::m;
         for (const RiverReach* reach : course) {
           const auto& pts = reach->alignment.points;
@@ -302,7 +304,9 @@ namespace moppe::terrain {
         if (spine.size () < 4)
           continue;
 
-        for (int pass = 0; pass < 6; ++pass) {
+        // Lightly ease sharp grid kinks while keeping the river's natural
+        // bends instead of straightening it into an artificial canal.
+        for (int pass = 0; pass < 2; ++pass) {
           std::vector<plan_position_t> smoothed (spine.size ());
           smoothed.front () = spine.front ().at;
           smoothed.back () = spine.back ().at;
@@ -326,18 +330,14 @@ namespace moppe::terrain {
           continue;
 
         // Build the gentle, navigable concave long profile from the drowned
-        // fjord mouth inland to the highland trough head, with one subtle
-        // over-deepened glacial ribbon-lake basin (dalsjö) midway up a long
-        // valley.
+        // fjord mouth inland to the highland trough head.
         const meters_t fjord_len =
-          std::min (parameters.fjord_inlet_length, 0.25f * total_length);
+          std::min (parameters.fjord_inlet_length, 0.22f * total_length);
         const meters_t river_len =
           std::max (100.0f * u::m, total_length - fjord_len);
         const meters_t head_fade =
-          std::min (680.0f * u::m, 0.22f * total_length);
-        const bool add_ribbon_lake = total_length >= 2400.0f * u::m;
-        const meters_t basin_center = 0.52f * total_length;
-        const meters_t basin_half_len = 460.0f * u::m;
+          std::min (720.0f * u::m, 0.28f * total_length);
+        constexpr meters_t dry_bench_clearance = 0.90f * u::m;
 
         std::vector<SurfaceElevation> natural_y (spine.size ());
         for (std::size_t i = 0; i < spine.size (); ++i) {
@@ -348,7 +348,7 @@ namespace moppe::terrain {
             const proportion_t u = band (0.0f * u::m, fjord_len, s);
             ideal = sea_level -
                     meters_t ((whole_part - u) * parameters.fjord_mouth_depth) +
-                    meters_t (u * (0.35f * u::m));
+                    meters_t (u * dry_bench_clearance);
           } else {
             const meters_t sr = s - fjord_len;
             const meters_t rise =
@@ -356,14 +356,15 @@ namespace moppe::terrain {
               meters_t (0.5f *
                         (parameters.highland_grade - parameters.coastal_grade) *
                         sr * (sr / river_len).numerical_value_in (one));
-            ideal = sea_level + 0.35f * u::m + rise;
+            ideal = sea_level + dry_bench_clearance + rise;
           }
           // Never raise natural ground above itself, and keep freshwater floor
-          // slightly above sea level beyond the drowned fjord mouth.
+          // cleanly above sea level beyond the drowned fjord mouth so flat
+          // benches do not pond into disconnected coastal puddles.
           SurfaceElevation target = std::min (natural_y[i], ideal);
           if (s > fjord_len)
             target = std::max (
-              target, std::min (natural_y[i], sea_level + 0.35f * u::m));
+              target, std::min (natural_y[i], sea_level + dry_bench_clearance));
           spine[i].floor = target;
 
           // Trough floor half-width scales smoothly with ice flux (catchment).
@@ -396,35 +397,23 @@ namespace moppe::terrain {
         for (std::size_t i = 1; i < spine.size (); ++i) {
           const meters_t seg = spine[i].distance - spine[i - 1].distance;
           const SurfaceElevation minimum_rise =
-            spine[i - 1].floor + meters_t (0.0006f * grade[one] * seg);
+            spine[i - 1].floor + meters_t (0.0012f * grade[one] * seg);
           if (spine[i].floor < minimum_rise)
             spine[i].floor = std::min (natural_y[i], minimum_rise);
         }
 
-        // Optional subtle over-deepened glacial ribbon lake (dalsjö) midway
-        // up a long trough where ice stream flux carved deepest.
-        if (add_ribbon_lake) {
-          for (std::size_t i = 0; i < spine.size (); ++i) {
-            const meters_t away = abs (spine[i].distance - basin_center);
-            if (away >= basin_half_len)
-              continue;
-            const proportion_t u = away / basin_half_len;
-            const proportion_t ring = whole_part - proportion_t (u * u);
-            const proportion_t bell = proportion_t (ring * ring);
-            if (natural_y[i] > spine[i].floor + 12.0f * u::m) {
-              spine[i].floor = spine[i].floor - meters_t (2.4f * u::m * bell);
-              spine[i].floor_half_width =
-                spine[i].floor_half_width *
-                (1.0f + 0.35f * bell.numerical_value_in (one));
-            }
-          }
-        }
-
-        // Stamp the U-shaped trough cross-section using full capsule distance
-        // to each segment (so outer bends never leave uncarved pie-slice fins),
-        // strictly lowering bedrock where the glacier cut through elevated
-        // shelves and varying floor/wall width organically along the valley.
-        constexpr meters_t wall_reach = 360.0f * u::m;
+        // Stamp the U-shaped trough cross-section using the closest point on
+        // the spine (no periodic scalloping or overlapping end-cap ponds),
+        // modulated by domain noise so valley walls merge naturally into the
+        // surrounding ridges.
+        constexpr meters_t wall_reach = 320.0f * u::m;
+        const std::uint32_t trough_seed =
+          peak_hash (static_cast<std::uint32_t> (result.troughs + 1), 0x7a31u);
+        std::vector<meters_t> trough_best_side (count, 1e9f * u::m);
+        std::vector<SurfaceElevation> trough_target = formed;
+        std::vector<proportion_t> trough_weight (count, 0.0f * proportion[one]);
+        std::vector<proportion_t> trough_outwash_share (count,
+                                                        0.0f * proportion[one]);
         for (std::size_t seg = 0; seg + 1 < spine.size (); ++seg) {
           const TroughSample& a = spine[seg];
           const TroughSample& b = spine[seg + 1];
@@ -439,7 +428,7 @@ namespace moppe::terrain {
           const meters_t run_x = x_of (way);
           const meters_t run_z = z_of (way);
           const meters_t max_radius =
-            1.20f * std::max (a.floor_half_width, b.floor_half_width) +
+            1.25f * std::max (a.floor_half_width, b.floor_half_width) +
             wall_reach;
           const int min_x = static_cast<int> (
             std::floor (((std::min (ax_m, bx_m) - max_radius) / spacing_x)
@@ -459,28 +448,25 @@ namespace moppe::terrain {
               const meters_t wz = static_cast<float> (iz) * spacing_z;
               const meters_t along =
                 ((wx - ax_m) * run_x + (wz - az_m) * run_z) / run;
-              // Full capsule distance: clamp t cleanly onto [0, 1] so curved
-              // outer walls join seamlessly around every bend.
               const proportion_t t =
                 std::clamp (proportion_t (along / run), zero_part, whole_part);
               const meters_t cx = moppe::lerp (ax_m, bx_m, t);
               const meters_t cz = moppe::lerp (az_m, bz_m, t);
               const meters_t side =
                 hypot (plan_displacement (wx - cx, wz - cz));
-              const meters_t dist_along =
-                moppe::lerp (a.distance, b.distance, t);
-              const scale_factor_t width_wave =
-                (1.0f +
-                 0.16f *
-                   cr::sin (
-                     (dist_along / (260.0f * u::m)).numerical_value_in (one)) +
-                 0.09f *
-                   cr::cos (
-                     (dist_along / (590.0f * u::m)).numerical_value_in (one))) *
+              const std::size_t cell =
+                static_cast<std::size_t> (wrap_index (iz, height)) * width +
+                wrap_index (ix, width);
+              if (side >= trough_best_side[cell])
+                continue;
+              const proportion_t w_noise =
+                smooth_noise_octave (wx, wz, 220.0f * u::m, trough_seed);
+              const scale_factor_t width_mod =
+                (0.84f + 0.32f * w_noise.numerical_value_in (one)) *
                 scale_factor[one];
               const meters_t floor_hw = meters_t (
                 moppe::lerp (a.floor_half_width, b.floor_half_width, t) *
-                width_wave);
+                width_mod);
               if (side >= floor_hw + wall_reach)
                 continue;
               const proportion_t strength =
@@ -490,51 +476,59 @@ namespace moppe::terrain {
               const SurfaceElevation floor_y =
                 moppe::lerp (a.floor, b.floor, t);
               SurfaceElevation profile_y;
-              bool on_floor = false;
+              proportion_t outwash_share = 0.0f * proportion[one];
               if (side <= floor_hw) {
-                on_floor = true;
                 const proportion_t u = side / floor_hw;
-                // Subtle parabolic center dish keeps the post-glacial river
-                // naturally centered on the wide flat alluvial floor.
+                // Distinct center dish guides the post-glacial river down one
+                // clean thalweg while leaving dry alluvial benches beside it.
                 profile_y =
-                  floor_y + meters_t (0.45f * u::m * proportion_t (u * u));
+                  floor_y + meters_t (0.95f * u::m * proportion_t (u * u));
+                outwash_share = proportion_t (
+                  strength *
+                  (whole_part - band (0.70f * floor_hw, floor_hw, side)));
               } else {
                 const meters_t delta = side - floor_hw;
-                // Parabolic U-valley wall: gentle alluvial footslope rising
-                // smoothly into a glaciated ~32-38 degree canyon wall.
                 const proportion_t steepen =
-                  band (0.0f * u::m, 95.0f * u::m, delta);
-                const scale_factor_t slope_wave =
-                  (1.0f + 0.14f * cr::cos ((dist_along / (310.0f * u::m))
-                                             .numerical_value_in (one))) *
+                  band (0.0f * u::m, 110.0f * u::m, delta);
+                const proportion_t s_noise = smooth_noise_octave (
+                  wx, wz, 180.0f * u::m, trough_seed + 19u);
+                const scale_factor_t slope_mod =
+                  (0.80f + 0.42f * s_noise.numerical_value_in (one)) *
                   scale_factor[one];
                 const slope_t local_slope =
-                  slope_t (parameters.wall_slope * slope_wave) *
-                  (0.34f + 0.72f * steepen.numerical_value_in (one));
+                  slope_t (parameters.wall_slope * slope_mod) *
+                  (0.28f + 0.72f * steepen.numerical_value_in (one));
                 profile_y =
-                  floor_y + 0.45f * u::m + meters_t (local_slope * delta);
+                  floor_y + 0.95f * u::m + meters_t (local_slope * delta);
               }
-              const std::size_t cell =
-                static_cast<std::size_t> (wrap_index (iz, height)) * width +
-                wrap_index (ix, width);
               const SurfaceElevation natural = elevations[cell];
               if (profile_y >= natural)
                 continue;
-              const SurfaceElevation blended =
-                moppe::lerp (natural, profile_y, strength);
-              if (blended < formed[cell]) {
-                formed[cell] = blended;
-                carved_mask[cell] = 1;
-                if (on_floor && !flood.ocean[cell]) {
-                  const proportion_t edge_fade =
-                    whole_part - band (0.70f * floor_hw, floor_hw, side);
-                  const SedimentThickness fill =
-                    quantity_cast<sediment_thickness> (meters_t (
-                      parameters.valley_floor_outwash * edge_fade * strength));
-                  outwash[cell] = std::max (outwash[cell], fill);
-                }
-              }
+              const proportion_t outer_fade =
+                whole_part - band (floor_hw + 0.55f * wall_reach,
+                                   floor_hw + wall_reach,
+                                   side);
+              const proportion_t blend = proportion_t (strength * outer_fade);
+              trough_best_side[cell] = side;
+              trough_target[cell] = moppe::lerp (natural, profile_y, blend);
+              trough_weight[cell] = blend;
+              trough_outwash_share[cell] = outwash_share;
             }
+        }
+        for (std::size_t cell = 0; cell < count; ++cell) {
+          if (trough_weight[cell] <= 0.0f * proportion[one])
+            continue;
+          if (trough_target[cell] < formed[cell]) {
+            formed[cell] = trough_target[cell];
+            carved_mask[cell] = 1;
+            if (trough_outwash_share[cell] > 0.0f * proportion[one] &&
+                !flood.ocean[cell]) {
+              const SedimentThickness fill = quantity_cast<sediment_thickness> (
+                meters_t (parameters.valley_floor_outwash *
+                          trough_outwash_share[cell]));
+              outwash[cell] = std::max (outwash[cell], fill);
+            }
+          }
         }
 
         carved_mouths.push_back (mouth_pos);
@@ -713,10 +707,30 @@ namespace moppe::terrain {
                 wrap_index (ix, width);
               if (flood.ocean[cell] || trough_mask[cell])
                 continue;
-              const meters_t rx =
-                static_cast<float> (ix) * spacing_x - anchor_x;
-              const meters_t rz =
-                static_cast<float> (iz) * spacing_z - anchor_z;
+              const meters_t wx = static_cast<float> (ix) * spacing_x;
+              const meters_t wz = static_cast<float> (iz) * spacing_z;
+              // Domain-warp the massif footprint so the snowfield perimeter
+              // follows natural ridges and spurs instead of a smooth oval.
+              const meters_t warp_x =
+                (smooth_noise_octave (wx, wz, 340.0f * u::m, massif_hash + 5u)
+                   .numerical_value_in (one) -
+                 0.5f) *
+                  210.0f * u::m +
+                (smooth_noise_octave (wx, wz, 145.0f * u::m, massif_hash + 11u)
+                   .numerical_value_in (one) -
+                 0.5f) *
+                  85.0f * u::m;
+              const meters_t warp_z =
+                (smooth_noise_octave (wx, wz, 340.0f * u::m, massif_hash + 17u)
+                   .numerical_value_in (one) -
+                 0.5f) *
+                  210.0f * u::m +
+                (smooth_noise_octave (wx, wz, 145.0f * u::m, massif_hash + 23u)
+                   .numerical_value_in (one) -
+                 0.5f) *
+                  85.0f * u::m;
+              const meters_t rx = wx + warp_x - anchor_x;
+              const meters_t rz = wz + warp_z - anchor_z;
               const meters_t u_along = rx * axis_x + rz * axis_z;
               const meters_t u_across = -rx * axis_z + rz * axis_x;
               const radians_t theta =
@@ -734,16 +748,16 @@ namespace moppe::terrain {
               if (r_norm >= outer_ratio)
                 continue;
 
+              // Gently convex ice-cap crown with subtle fractal snow-drift
+              // undulation (never deep periodic hollows that pond into
+              // artificial summit lakes).
+              const proportion_t drift_a =
+                smooth_noise_octave (wx, wz, 220.0f * u::m, massif_hash + 31u);
+              const proportion_t drift_b =
+                smooth_noise_octave (wx, wz, 95.0f * u::m, massif_hash + 47u);
               const quantity<one, float> swell =
-                (7.2f * cr::sin (meters_value (rx) / 110.0f +
-                                 meters_value (rz) / 185.0f +
-                                 radians_value (phase_a)) +
-                 4.8f * cr::cos (-meters_value (rx) / 155.0f +
-                                 meters_value (rz) / 95.0f +
-                                 radians_value (phase_b)) +
-                 2.5f * cr::sin (meters_value (rx) / 58.0f -
-                                 meters_value (rz) / 72.0f +
-                                 radians_value (phase_c))) *
+                (3.6f * (drift_a.numerical_value_in (one) - 0.5f) +
+                 1.6f * (drift_b.numerical_value_in (one) - 0.5f)) *
                 one;
               const proportion_t crown_share =
                 std::max (0.0f,
@@ -763,8 +777,9 @@ namespace moppe::terrain {
                       std::clamp (r_norm.numerical_value_in (one), 0.0f, 1.0f) *
                         proportion[one]);
               const proportion_t skirt_w =
-                whole_part -
-                band (0.70f * scale_factor[one], outer_ratio, r_norm);
+                whole_part - band (0.76f * scale_factor[one],
+                                   1.42f * scale_factor[one],
+                                   r_norm);
               const SurfaceElevation existing = formed[cell];
               SurfaceElevation target;
               if (existing >= dome_y) {
@@ -772,10 +787,14 @@ namespace moppe::terrain {
                 // the snowfield rim while easing sharp interior crags into
                 // rideable rolling snow swells.
                 const SurfaceElevation softened =
-                  dome_y + 0.25f * (existing - dome_y);
+                  dome_y + 0.30f * (existing - dome_y);
                 target = moppe::lerp (existing, softened, core_w);
               } else {
-                target = moppe::lerp (existing, dome_y, skirt_w);
+                // Preserve natural ridge texture on the outer skirt instead of
+                // stamping smooth concentric contours over the flanks.
+                const proportion_t lift_w = proportion_t (
+                  skirt_w * (0.58f * proportion[one] + 0.42f * core_w));
+                target = moppe::lerp (existing, dome_y, lift_w);
               }
               formed[cell] = target;
               if (core_w > 0.20f * proportion[one])
@@ -917,10 +936,14 @@ namespace moppe::terrain {
                 chute[i].strength = proportion_t (head_in * foot_out);
               }
 
-              // Stamp the descending glacier snow valley using full capsule
-              // distance per segment (zero outer-bend seams).
+              // Stamp the descending glacier snow valley by closest point on
+              // the polyline, domain-warped with organic noise and carving
+              // naturally into the mountain slope (never building a raised
+              // artificial ramp out across lowland lakes).
               constexpr slope_t chute_wall_slope = 0.42f * terrain_slope[one];
               constexpr meters_t chute_wall_reach = 220.0f * u::m;
+              const std::uint32_t chute_seed = massif_hash ^ 0x39b17c4du;
+              std::vector<meters_t> chute_best_side (count, 1e9f * u::m);
               std::vector<SurfaceElevation> chute_target = formed;
               std::vector<proportion_t> chute_weight (count,
                                                       0.0f * proportion[one]);
@@ -940,8 +963,8 @@ namespace moppe::terrain {
                 const meters_t bz_m = z_of (b.at);
                 const meters_t run_x = x_of (way);
                 const meters_t run_z = z_of (way);
-                const meters_t max_r =
-                  std::max (a.half_width, b.half_width) + chute_wall_reach;
+                const meters_t max_r = std::max (a.half_width, b.half_width) +
+                                       chute_wall_reach + 48.0f * u::m;
                 const int smin_x = static_cast<int> (
                   std::floor (((std::min (ax_m, bx_m) - max_r) / spacing_x)
                                 .numerical_value_in (one)));
@@ -962,8 +985,20 @@ namespace moppe::terrain {
                       wrap_index (ix, width);
                     if (flood.ocean[cell] || trough_mask[cell])
                       continue;
-                    const meters_t wx = static_cast<float> (ix) * spacing_x;
-                    const meters_t wz = static_cast<float> (iz) * spacing_z;
+                    const meters_t raw_x = static_cast<float> (ix) * spacing_x;
+                    const meters_t raw_z = static_cast<float> (iz) * spacing_z;
+                    const meters_t wx =
+                      raw_x + (smooth_noise_octave (
+                                 raw_x, raw_z, 150.0f * u::m, chute_seed)
+                                 .numerical_value_in (one) -
+                               0.5f) *
+                                58.0f * u::m;
+                    const meters_t wz =
+                      raw_z + (smooth_noise_octave (
+                                 raw_x, raw_z, 150.0f * u::m, chute_seed + 13u)
+                                 .numerical_value_in (one) -
+                               0.5f) *
+                                58.0f * u::m;
                     const meters_t along =
                       ((wx - ax_m) * run_x + (wz - az_m) * run_z) / run;
                     const proportion_t t =
@@ -973,6 +1008,8 @@ namespace moppe::terrain {
                     const meters_t side = hypot (
                       plan_displacement (wx - moppe::lerp (ax_m, bx_m, t),
                                          wz - moppe::lerp (az_m, bz_m, t)));
+                    if (side >= chute_best_side[cell])
+                      continue;
                     const meters_t hw =
                       moppe::lerp (a.half_width, b.half_width, t);
                     if (side >= hw + chute_wall_reach)
@@ -981,39 +1018,50 @@ namespace moppe::terrain {
                       moppe::lerp (a.strength, b.strength, t);
                     if (strength <= 1e-4f * proportion[one])
                       continue;
+                    const proportion_t tex = smooth_noise_octave (
+                      raw_x, raw_z, 120.0f * u::m, chute_seed + 29u);
+                    const meters_t drift_h =
+                      (tex.numerical_value_in (one) - 0.5f) * 5.0f * u::m;
                     const SurfaceElevation base_y =
-                      moppe::lerp (a.floor, b.floor, t);
+                      moppe::lerp (a.floor, b.floor, t) + drift_h;
+                    // Only carve or softly fill shallow hollows (< 6 m): never
+                    // extrude an elevated viaduct above lowland valleys/lakes.
+                    const SurfaceElevation existing = formed[cell];
+                    const proportion_t support = band (
+                      base_y - 14.0f * u::m, base_y - 2.0f * u::m, existing);
                     const proportion_t w = proportion_t (
-                      strength *
+                      strength * support *
                       (whole_part - band (hw, hw + chute_wall_reach, side)));
-                    if (w <= chute_weight[cell])
+                    if (w <= 1e-4f * proportion[one])
                       continue;
                     SurfaceElevation profile_y;
+                    proportion_t floor_share = 0.0f * proportion[one];
                     if (side <= hw) {
                       const proportion_t frac = side / hw;
                       // Gentle concave dish cradles the snow corridor like a
-                      // natural glacier chute.
+                      // natural glacier chute without damming downstream flow.
                       profile_y =
                         base_y +
-                        meters_t (1.8f * u::m * proportion_t (frac * frac));
-                      chute_floor_share[cell] =
-                        std::max (chute_floor_share[cell],
-                                  proportion_t (strength *
-                                                (whole_part -
-                                                 band (0.65f * hw, hw, side))));
+                        meters_t (1.1f * u::m * proportion_t (frac * frac));
+                      profile_y = std::min (profile_y, existing + 4.0f * u::m);
+                      floor_share = proportion_t (
+                        strength * support *
+                        (whole_part - band (0.65f * hw, hw, side)));
                     } else {
                       const meters_t out = side - hw;
                       const proportion_t wall_u = out / chute_wall_reach;
                       const meters_t rise =
-                        1.8f * u::m +
+                        1.1f * u::m +
                         meters_t (
                           chute_wall_slope * out *
                           (0.30f + 0.70f * wall_u.numerical_value_in (one)));
                       const SurfaceElevation banked = base_y + rise;
-                      profile_y = std::min (formed[cell], banked);
+                      profile_y = std::min (existing, banked);
                     }
+                    chute_best_side[cell] = side;
                     chute_weight[cell] = w;
                     chute_target[cell] = profile_y;
+                    chute_floor_share[cell] = floor_share;
                   }
               }
 

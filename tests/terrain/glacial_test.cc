@@ -181,6 +181,22 @@ MOPPE_TEST (
   // Broad rideable snowfield + descending snow valley must cover a substantial
   // area (> 100 cells = > 0.25 km² on this 3.2 km test grid).
   MOPPE_CHECK (high_covered > 100);
+
+  // Re-analysing standing water after glacial sculpting must not trap a chain
+  // of ponded depressions along the snowfield plateau or descending chute.
+  const ElevationMap post = make_elevation_map (grid, [&] {
+    std::vector<float> h (heights.size ());
+    for (std::size_t i = 0; i < heights.size (); ++i)
+      h[i] = surface_elevation_value (glacial.heights[i]);
+    return h;
+  }());
+  const FloodField post_flood = analyze_standing_water (post, sea);
+  std::size_t ponded_high = 0;
+  for (std::size_t i = 0; i < heights.size (); ++i)
+    if (glacial.heights[i] >= sea + 140.0f * u::m &&
+        post_flood.water_depths ()[i] > 0.25f * u::m)
+      ++ponded_high;
+  MOPPE_CHECK (ponded_high < 15);
 }
 
 MOPPE_TEST (alpine_horns_ring_snowfield_without_skewing_climatic_relief) {

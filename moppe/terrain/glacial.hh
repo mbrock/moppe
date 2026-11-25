@@ -41,14 +41,14 @@ namespace moppe::terrain {
     square_meters_t trough_head_area = 1500000.0f * u::m * u::m;
     // Gentle concave long-profile grades for the graded U-trough floor:
     // near-level fjord grade at the coast, rising softly inland.
-    grade_t coastal_grade = 0.0020f * grade[one];
-    grade_t highland_grade = 0.0072f * grade[one];
+    grade_t coastal_grade = 0.0026f * grade[one];
+    grade_t highland_grade = 0.0078f * grade[one];
     // Flat alluvial trough floor half-width bounds (scales with trunk area).
-    meters_t minimum_floor_half_width = 26.0f * u::m;
-    meters_t maximum_floor_half_width = 58.0f * u::m;
+    meters_t minimum_floor_half_width = 24.0f * u::m;
+    meters_t maximum_floor_half_width = 48.0f * u::m;
     // Characteristic U-valley wall steepness (rise over run): gentle alluvial
-    // footslope rising smoothly into a 32-38 degree glaciated valley wall.
-    slope_t wall_slope = 0.62f * terrain_slope[one];
+    // footslope rising into a glaciated valley wall without vertical trenches.
+    slope_t wall_slope = 0.48f * terrain_slope[one];
     // Drowned fjord depth at the sea mouth, easing above sea level inland.
     meters_t fjord_mouth_depth = 2.6f * u::m;
     meters_t fjord_inlet_length = 260.0f * u::m;

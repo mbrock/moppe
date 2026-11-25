@@ -411,9 +411,11 @@ namespace moppe::terrain {
             return unreachable;
           const auto steep = pitch / (0.06f * grade[one]);
           cost = run * (1.0f + steep * steep);
+          // Shallow water and rivers are crossed cleanly on short bridges,
+          // never followed lengthwise down a channel or lake edge.
           if (lattice.water[b] == Lattice::Shallow)
-            cost *= 20.0f;
-          cost += quantity_cast<isq::length> (run * 4.0f * lattice.river[b]);
+            cost *= 60.0f;
+          cost += quantity_cast<isq::length> (run * 14.0f * lattice.river[b]);
           cost += meters_t (
             run * (1.5f * lattice.forest[b] + 6.0f * lattice.mire[b] +
                    1.0f * lattice.wetness[b] + per_earthwork * earthwork));
@@ -1247,9 +1249,9 @@ namespace moppe::terrain {
                          lattice.mire[node] > impassable_mire
                        ? impassable
                        : quantity_cast<scale_factor> (
-                           (depth > 1e-3f * u::m ? 19.0f : 0.0f) + off * off +
-                           4.0f * quantity_cast<mp_units::dimensionless> (
-                                    lattice.river[node]) +
+                           (depth > 1e-3f * u::m ? 80.0f : 0.0f) + off * off +
+                           14.0f * quantity_cast<mp_units::dimensionless> (
+                                     lattice.river[node]) +
                            1.5f * quantity_cast<mp_units::dimensionless> (
                                     lattice.forest[node]) +
                            6.0f * quantity_cast<mp_units::dimensionless> (
@@ -1361,7 +1363,7 @@ namespace moppe::terrain {
         std::vector<plan_position_t> line = resample (roads[r].points, spacing);
         ease (line, 5, 3, [&] (plan_position_t point) {
           const std::size_t node = node_at (lattice, point);
-          return built ? lattice.water[node] < Lattice::Deep &&
+          return built ? lattice.water[node] == Lattice::Dry &&
                            lattice.mire[node] <= impassable_mire
                        : lattice.water[node] == Lattice::Dry;
         });

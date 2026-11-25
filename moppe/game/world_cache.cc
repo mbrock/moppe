@@ -72,7 +72,8 @@ namespace moppe::game {
     // Version 39 widens the roads, the bus's lane among them.
     // Version 40 cuts roadside ditches along road cuts.
     // Version 41 permits inland bus routes and bakes river beds before trails.
-    constexpr std::uint32_t CACHE_VERSION = 41;
+    // Version 42 penalises lengthwise road routing in rivers and shallow water.
+    constexpr std::uint32_t CACHE_VERSION = 42;
     // A finished world is derived from its land, so a change to what land a
     // recipe makes (LAND_VERSION) retires the finished worlds made from the
     // old land as surely as a change to their own layout does.
