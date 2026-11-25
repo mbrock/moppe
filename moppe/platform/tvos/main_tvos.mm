@@ -179,6 +179,8 @@ namespace moppe::platform {
 
   void set_pointer_captured (bool) {}
 
+  void set_text_input (bool) {}
+
   Insets safe_insets () {
     Insets result;
     if (!g_window)

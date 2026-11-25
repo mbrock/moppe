@@ -68,6 +68,8 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--window-size",
          "--inactive",
          "--seed",
+         "--multiplayer",
+         "--join",
        })
     MOPPE_CHECK (help.find (option) != std::string::npos);
   MOPPE_CHECK (help.find ("-h, --help") != std::string::npos);
@@ -75,13 +77,26 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
 
 MOPPE_TEST (launch_multiplayer_pins_the_shared_world) {
   MOPPE_CHECK (!parsed ({}).multiplayer);
+  const game::LaunchOptions lan = parsed ({ "--multiplayer" });
+  MOPPE_CHECK (lan.multiplayer && lan.multiplayer->empty ());
+  MOPPE_CHECK (lan.seed == 123);
+  const game::LaunchOptions room = parsed ({ "--join", "room:birch-42" });
+  MOPPE_CHECK (room.multiplayer && *room.multiplayer == "room:birch-42");
+  MOPPE_CHECK (room.seed == 123);
+
   moppe::set_environment ("MOPPE_MULTIPLAYER", "1");
   const game::LaunchOptions found = parsed ({});
   MOPPE_CHECK (found.multiplayer && found.multiplayer->empty ());
   MOPPE_CHECK (found.seed == 123);
+  const game::LaunchOptions cli_join =
+    parsed ({ "--join", "ws://relay.example/room/pine" });
+  MOPPE_CHECK (cli_join.multiplayer &&
+               *cli_join.multiplayer == "ws://relay.example/room/pine");
   moppe::set_environment ("MOPPE_MULTIPLAYER", "chapel:27961");
   const game::LaunchOptions named = parsed ({});
   MOPPE_CHECK (named.multiplayer && *named.multiplayer == "chapel:27961");
+  const game::LaunchOptions cli_lan = parsed ({ "--multiplayer" });
+  MOPPE_CHECK (cli_lan.multiplayer && cli_lan.multiplayer->empty ());
   MOPPE_CHECK (parsed ({ "--seed", "7" }).seed == 7);
   moppe::set_environment ("MOPPE_MULTIPLAYER", nullptr);
 }
@@ -124,6 +139,8 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--terrain-resolution", "64" }));
   MOPPE_CHECK (rejects ({ "--screenshot" }));
   MOPPE_CHECK (rejects ({ "--seed" }));
+  MOPPE_CHECK (rejects ({ "--join" }));
+  MOPPE_CHECK (rejects ({ "--join", "" }));
   // An unrecognized argument is not an error; it is simply not a setting.
   MOPPE_CHECK (!rejects ({ "--not-a-flag" }));
 }

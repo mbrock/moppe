@@ -63,6 +63,11 @@ namespace moppe::game {
     // this machine chosen in it.
     bool cheat_open = false;
     Machine cheat_choice = Machine::bike;
+    // J in play opens the multiplayer menu (Hud::draw_multiplayer_menu).
+    bool multiplayer_open = false;
+    int multiplayer_choice = 0;
+    bool multiplayer_editing = false;
+    std::string multiplayer_input;
     // The lists the HUD is drawn into, the loading and game-over screens
     // too.
     render::DrawList dl;
@@ -141,6 +146,8 @@ namespace moppe::game {
                    const HudWorld& w,
                    int width_pts,
                    int height_pts);
+
+    Hud::MultiplayerView multiplayer_view (const HudWorld& w) const;
 
     // What the prompts remember from frame to frame.
     HudPrompts m_prompts;

@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -44,14 +45,18 @@ namespace moppe::game {
     // MOPPE_BOAT=river: the boat lies on the greatest river, as far up
     // from the sea as the water stays deep enough to drive it the whole
     // way down, facing downstream.
-    void park_boat (const ParkingLot& lot, bool outward = false);
+    void park_boat (const ParkingLot& lot,
+                    bool outward = false,
+                    std::span<const position_t> avoid = {});
 
     // The jet ski lies afloat by the boat: at the landing, alongside the
     // jetty's other side; on an open shore or a river, a few metres
     // along from the boat, wherever the water there will float it. Its
     // bow is to the land as the boat's is, or with `outward` to the
     // open water.
-    void park_jet_ski (const ParkingLot& lot, bool outward = false);
+    void park_jet_ski (const ParkingLot& lot,
+                       bool outward = false,
+                       std::span<const position_t> avoid = {});
 
     // The jeep is pulled off onto the verge of the nearest cart road, a
     // few hundred metres out from the trailhead, nose along the road as
@@ -90,7 +95,7 @@ namespace moppe::game {
     // makes a landing site, with no tree within reach of its rotor;
     // clear of `avoid` (the other player's) when given one.
     void park_helicopter (const ParkingLot& lot,
-                          std::optional<position_t> avoid = std::nullopt) const;
+                          std::span<const position_t> avoid = {}) const;
 
     // What the water autopilot steers: how fast it is going, for how
     // far ahead it must mind the shallows; whether it follows the
@@ -116,7 +121,10 @@ namespace moppe::game {
 
   private:
     bool moor_on_river (const ParkingLot& lot);
-    bool moor_boat (const ParkingLot& lot, bool sea_only, bool outward);
+    bool moor_boat (const ParkingLot& lot,
+                    bool sea_only,
+                    bool outward,
+                    std::span<const position_t> avoid = {});
 
     // The trailhead's frame: the bike's heading on the level, and its
     // left.

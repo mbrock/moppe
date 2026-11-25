@@ -1,15 +1,35 @@
 #ifndef MOPPE_GAME_SNOW_HH
 #define MOPPE_GAME_SNOW_HH
 
+#include <moppe/game/doing.hh>
 #include <moppe/gfx/math.hh>
 
 #include <array>
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace moppe::game {
   class GameSession;
+  class SnowPack;
+
+  // Per-player track memory so local and remote actors press snow alike.
+  struct SnowTrail {
+    std::optional<position_t> last;
+    direction_t heading {};
+    Doing mode;
+    meters_t distance {};
+    bool left = false;
+  };
+
   void disturb_snow (GameSession& session, proportion_t cover);
+  void press_snow_tracks (SnowPack& snow,
+                          SnowTrail& trail,
+                          Doing mode,
+                          const position_t& at,
+                          direction_t heading,
+                          bool contact,
+                          proportion_t cover);
 
   // Signed relief relative to untouched powder. Keep only tiles somebody
   // has crossed, independent of the camera. Revisit a tile and the old

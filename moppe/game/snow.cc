@@ -6,6 +6,94 @@
 #include <cmath>
 
 namespace moppe::game {
+  namespace {
+    // Presses one actor's tracks into `snow`, returning the distance stepped
+    // (zero when not yet far enough to stamp).
+    meters_t stamp_snow_step (SnowPack& snow,
+                              SnowTrail& trail,
+                              Doing mode,
+                              const position_t& at,
+                              direction_t heading,
+                              bool contact,
+                              proportion_t cover) {
+      if (!contact || cover < 0.42f * proportion[one]) {
+        trail.last.reset ();
+        return meters_t {};
+      }
+      const auto driven = driven_machine (mode);
+      const bool foot = mode == Doing::on_foot ();
+      const auto distance =
+        trail.last ? length (plan (at) - plan (*trail.last)) : meters_t {};
+      if (!trail.last || trail.mode != mode || distance > 4.0f * u::m) {
+        trail.mode = mode;
+        trail.last = at;
+        trail.heading = heading;
+        return meters_t {};
+      }
+      if (distance < (foot ? 0.65f : 0.06f) * u::m)
+        return meters_t {};
+      const auto offset =
+        [] (position_t p, direction_t way, meters_t side, meters_t front) {
+          const auto f = plan (direction_value (way));
+          return plan (p) + plan_displacement (f * meters_value (front) +
+                                               Vec2 (f.z (), -f.x ()) *
+                                                 meters_value (side));
+        };
+      const auto stamp = [&] (meters_t side,
+                              meters_t front,
+                              meters_t width,
+                              meters_t depth,
+                              bool belt = false) {
+        const auto start = offset (*trail.last, trail.heading, side, front);
+        const auto end = offset (at, heading, side, front);
+        snow.press (foot ? offset (at, heading, side, front - 0.15f * u::m)
+                         : start,
+                    end,
+                    width,
+                    depth * cover.numerical_value_in (one),
+                    belt ? trail.distance : -1.0f * u::m);
+      };
+      const bool sled = driven == Machine::snowmobile;
+      if (foot) {
+        trail.left = !trail.left;
+        stamp ((trail.left ? 0.12f : -0.12f) * u::m,
+               0.12f * u::m,
+               0.085f * u::m,
+               0.075f * u::m);
+      } else if (sled) {
+        for (const int sign : { -1, 1 })
+          stamp (
+            sign * 0.48f * u::m, 0.90f * u::m, 0.085f * u::m, 0.095f * u::m);
+        stamp (meters_t {}, -1.03f * u::m, 0.25f * u::m, 0.165f * u::m, true);
+      } else if (driven &&
+                 (*driven == Machine::caddy || *driven == Machine::jeep ||
+                  *driven == Machine::tractor)) {
+        const meters_t track =
+          *driven == Machine::tractor ? mov::Tractor::rear_track
+          : *driven == Machine::jeep  ? mov::jeep_rig.rear_track
+                                      : mov::caddy_rig.rear_track;
+        for (const int sign : { -1, 1 })
+          stamp (sign * track, -1.0f * u::m, 0.14f * u::m, 0.11f * u::m);
+      } else if (driven) {
+        stamp (meters_t {}, -0.65f * u::m, 0.065f * u::m, 0.09f * u::m);
+      }
+      trail.distance += distance;
+      trail.heading = heading;
+      trail.last = at;
+      return distance;
+    }
+  }
+
+  void press_snow_tracks (SnowPack& snow,
+                          SnowTrail& trail,
+                          Doing mode,
+                          const position_t& at,
+                          direction_t heading,
+                          bool contact,
+                          proportion_t cover) {
+    (void)stamp_snow_step (snow, trail, mode, at, heading, contact, cover);
+  }
+
   void disturb_snow (GameSession& session, proportion_t cover) {
     auto& state = session.logic ();
     const auto mode = state.m_doing;
@@ -21,67 +109,25 @@ namespace moppe::game {
               else
                 return false;
             });
-    if (!contact || cover < 0.42f * proportion[one]) {
-      state.m_snow_last.reset ();
-      return;
-    }
     const auto at = session.subject_position ();
     const auto heading = session.subject_heading ();
-    const auto distance = state.m_snow_last
-                            ? length (plan (at) - plan (*state.m_snow_last))
-                            : meters_t {};
-    if (!state.m_snow_last || state.m_snow_mode != mode ||
-        distance > 4.0f * u::m) {
-      state.m_snow_mode = mode;
-      state.m_snow_last = at;
-      state.m_snow_heading = heading;
-      return;
-    }
-    if (distance < (foot ? 0.65f : 0.06f) * u::m)
-      return;
-    const auto offset =
-      [] (position_t p, direction_t way, meters_t side, meters_t front) {
-        const auto f = plan (direction_value (way));
-        return plan (p) +
-               plan_displacement (f * meters_value (front) +
-                                  Vec2 (f.z (), -f.x ()) * meters_value (side));
-      };
-    const auto stamp = [&] (meters_t side,
-                            meters_t front,
-                            meters_t width,
-                            meters_t depth,
-                            bool belt = false) {
-      const auto start =
-        offset (*state.m_snow_last, state.m_snow_heading, side, front);
-      const auto end = offset (at, heading, side, front);
-      state.m_snow.press (
-        foot ? offset (at, heading, side, front - 0.15f * u::m) : start,
-        end,
-        width,
-        depth * cover.numerical_value_in (one),
-        belt ? state.m_snow_distance : -1.0f * u::m);
+    SnowTrail trail {
+      .last = state.m_snow_last,
+      .heading = state.m_snow_heading,
+      .mode = state.m_snow_mode,
+      .distance = state.m_snow_distance,
+      .left = state.m_snow_left,
     };
+    const meters_t distance =
+      stamp_snow_step (state.m_snow, trail, mode, at, heading, contact, cover);
+    state.m_snow_last = trail.last;
+    state.m_snow_heading = trail.heading;
+    state.m_snow_mode = trail.mode;
+    state.m_snow_distance = trail.distance;
+    state.m_snow_left = trail.left;
+    if (!(distance > meters_t {}))
+      return;
     const bool sled = driven == Machine::snowmobile;
-    if (foot) {
-      state.m_snow_left = !state.m_snow_left;
-      stamp ((state.m_snow_left ? 0.12f : -0.12f) * u::m,
-             0.12f * u::m,
-             0.085f * u::m,
-             0.075f * u::m);
-    } else if (sled) {
-      for (const int sign : { -1, 1 })
-        stamp (sign * 0.48f * u::m, 0.90f * u::m, 0.085f * u::m, 0.095f * u::m);
-      stamp (meters_t {}, -1.03f * u::m, 0.25f * u::m, 0.165f * u::m, true);
-    } else if (*driven == Machine::caddy || *driven == Machine::jeep ||
-               *driven == Machine::tractor) {
-      const meters_t track =
-        *driven == Machine::tractor ? mov::Tractor::rear_track
-        : *driven == Machine::jeep  ? mov::jeep_rig.rear_track
-                                    : mov::caddy_rig.rear_track;
-      for (const int sign : { -1, 1 })
-        stamp (sign * track, -1.0f * u::m, 0.14f * u::m, 0.11f * u::m);
-    } else
-      stamp (meters_t {}, -0.65f * u::m, 0.065f * u::m, 0.09f * u::m);
 
     const speed_t speed = foot ? session.walker ().state ().stride_speed
                                : speed_t (session.subject_speed_kmh ());
@@ -128,9 +174,6 @@ namespace moppe::game {
           source, plume * 1.55f, 6, DisplayColor (1.0f, 1.0f, 1.0f), mist);
       }
     }
-    state.m_snow_distance += distance;
-    state.m_snow_heading = heading;
-    state.m_snow_last = at;
   }
 
   SnowPack::Key SnowPack::tile_at (plan_position_t at) {

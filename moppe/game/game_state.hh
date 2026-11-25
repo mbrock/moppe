@@ -91,8 +91,9 @@ namespace moppe::game {
     seconds_t m_look_idle = 0.0f * u::s;
     // The helmet camera's eye.
     position_t m_fp_eye = position (Vec3 ());
-    // Riding along: the seat in the other player's machine, or in the
-    // bus, how it faces, and how it moves, as last heard.
+    // Riding along: whose machine (player ID) this player sits in, the
+    // seat in that machine or in the bus, how it faces, and how it moves.
+    std::uint64_t m_ride_peer = 0;
     position_t m_seat_position = position (Vec3 ());
     direction_t m_seat_heading = unit_direction (Vec3 (0, 0, 1));
     direction_t m_seat_up = unit_direction (Vec3 (0, 1, 0));

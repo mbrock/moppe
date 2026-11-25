@@ -448,8 +448,7 @@ namespace moppe::game {
   BoatWakes::draw (render::Renderer& r,
                    const BoatPose& boat,
                    const JetSkiPose& jet_ski,
-                   const BoatPose* their_boat,
-                   const JetSkiPose* their_jet_ski,
+                   std::span<const PeerCraft> peers,
                    const std::function<meters_t (const position_t&)>& level,
                    const std::function<meters_t (const position_t&)>& ground,
                    seconds_t time,
@@ -468,12 +467,14 @@ namespace moppe::game {
     m_dl.clear ();
     trail (m_boat, boat);
     trail (m_jet_ski, as_boat (jet_ski));
-    if (their_boat && their_jet_ski) {
-      trail (m_their_boat, *their_boat);
-      trail (m_their_jet_ski, as_boat (*their_jet_ski));
-    } else {
-      m_their_boat.clear ();
-      m_their_jet_ski.clear ();
+    std::erase_if (m_peers, [&] (const auto& entry) {
+      return std::ranges::none_of (
+        peers, [&] (const PeerCraft& p) { return p.player == entry.first; });
+    });
+    for (const PeerCraft& peer : peers) {
+      auto& wakes = m_peers[peer.player];
+      trail (wakes.first, peer.boat);
+      trail (wakes.second, as_boat (peer.jet_ski));
     }
     r.draw_list (m_dl, 0x0002);
   }

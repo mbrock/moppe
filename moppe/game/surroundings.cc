@@ -298,8 +298,13 @@ namespace moppe::game {
       logic.m_beacon_burn.resize (beacons.size ());
       for (std::size_t i = 0; i < beacons.size (); ++i) {
         Beacon& theirs = logic.m_their_beacons[i];
-        const bool lit =
-          around.companion && i < 32 && (around.companion->beacons >> i & 1u);
+        bool lit = false;
+        if (i < 32)
+          for (const CompanionSnapshot& peer : around.companions)
+            if (peer.beacons >> i & 1u) {
+              lit = true;
+              break;
+            }
         if (lit != theirs.burning ()) {
           (lit ? theirs.lit : theirs.out) = now;
           std::cerr << "moppe: places: the other player "
@@ -429,9 +434,10 @@ namespace moppe::game {
     };
     consider (position_value (camp.hearth),
               fire_burn (camp, logic.m_total_time).numerical_value_in (one));
-    if (around.companion && around.companion->hearth_laid)
-      consider (position_value (around.companion->hearth),
-                around.companion->fire_burn.numerical_value_in (one));
+    for (const CompanionSnapshot& peer : around.companions)
+      if (peer.hearth_laid)
+        consider (position_value (peer.hearth),
+                  peer.fire_burn.numerical_value_in (one));
     const PlacesPlan& places = places_of (around);
     for (std::size_t i = 0;
          i < places.sanctuaries.size () && i < logic.m_beacon_burn.size ();
@@ -813,10 +819,21 @@ namespace moppe::game {
       presences.push_back ({ .position = subject,
                              .velocity = moving,
                              .machine = logic.m_doing != Doing::on_foot () });
-      if (around.companion && around.companion->walker)
-        presences.push_back (
-          { .position = around.companion->walker->position,
-            .velocity = around.companion->walker->velocity });
+      for (const CompanionSnapshot& peer : around.companions) {
+        if (peer.walker) {
+          presences.push_back ({ .position = peer.walker->position,
+                                 .velocity = peer.walker->velocity });
+        } else if (const std::optional<Machine> driven =
+                     driven_machine (peer.mode)) {
+          visit (peer.fleet, *driven, [&] (Machine, const auto& pose) {
+            velocity_t vel = velocity (Vec3 ());
+            if constexpr (requires { pose.velocity; })
+              vel = pose.velocity;
+            presences.push_back (
+              { .position = pose.position, .velocity = vel, .machine = true });
+          });
+        }
+      }
       const AnimalGround& ground = *around.animal_ground;
       session.animals ().step (ground,
                                presences,

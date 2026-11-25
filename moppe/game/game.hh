@@ -183,15 +183,21 @@ namespace moppe {
       // -- company -----------------------------------------------------
 
       std::uint32_t this_world () const;
+      WorldSummary this_world_summary () const;
 
-      // Both players begin beside a bike and a jeep parked on the same
-      // spots. Whoever came later moves theirs a few steps aside, and
-      // themselves with them if they have not yet walked off.
-      void make_room (const CompanionSnapshot& theirs);
+      // Players begin beside vehicles parked on the same spots. Latecomers
+      // shift theirs laterally by seniority rank and avoid peers' pads and
+      // berths.
+      void make_room (std::span<const CompanionSnapshot> newly_met);
 
-      // Once a frame: hears the other player (companionship.hh), making
-      // room when first met, and tells them how this one looks.
+      // Once a frame: hears other players (companionship.hh), making room
+      // when newly met, and tells them how this one looks.
       void keep_company (seconds_t interval);
+
+      // Connects or switches multiplayer transport in-game, or disconnects.
+      void connect_multiplayer (const std::string& target);
+      void disconnect_multiplayer ();
+      void close_multiplayer_menu ();
 
       // -- simulation --------------------------------------------------
 
@@ -246,6 +252,8 @@ namespace moppe {
 
       void key (platform::Key k, bool down) override;
 
+      void text_input (const char* utf8) override;
+
     private:
       FrameViewInput frame_view_input (float aspect) const;
 
@@ -285,6 +293,9 @@ namespace moppe {
       // The day and its weather.
       SkyClock m_sky;
       position_t m_spawn_position;
+      // The world's unshifted trailhead spawn, so repeated make_room() calls
+      // for additional peers always place relative to the shared origin.
+      position_t m_initial_spawn;
       // Where the machines were parked, and the boat moored.
       Parking m_parking;
       position_t m_home_base_position;
@@ -313,8 +324,10 @@ namespace moppe {
       MushroomPatch m_mushrooms;
       // Scratch for the basket's contents as drawn.
       std::vector<MushroomSite> m_basket_contents;
-      // The other player, when there is one.
+      // The other players, when connected, and any launch target waiting for
+      // the first world to finish loading.
       Companionship m_company;
+      std::optional<std::string> m_pending_multiplayer;
       // Scratch for a pan's contents as drawn, and the last meal's note.
       std::vector<MushroomSite> m_pan_contents;
       // The boats' wakes, ours and the other player's, and their list.

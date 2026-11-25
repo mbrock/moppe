@@ -47,6 +47,7 @@ namespace moppe {
       E,
       G,
       H,
+      J,
       L,
       M,
       N,
@@ -62,6 +63,8 @@ namespace moppe {
       Six,
       Seven,
       Shift,
+      Enter,
+      Backspace,
       // The key under Esc (`): the cheat menu.
       Cheat
     };
@@ -116,6 +119,9 @@ namespace moppe {
         (void)k;
         (void)down;
       }
+      virtual void text_input (const char* utf8) {
+        (void)utf8;
+      }
       virtual void controls (const ControlState& state) {
         (void)state;
       }
@@ -164,6 +170,10 @@ namespace moppe {
     // movement turns a free camera without a button held. No-op on
     // platforms without a pointer.
     void set_pointer_captured (bool captured);
+
+    // Turns UTF-8 text entry on or off (for typing a multiplayer address or
+    // room). No-op on platforms without a text-input host.
+    void set_text_input (bool active);
 
     // Resolve an asset-relative path ("textures/grass3.tga") to an
     // absolute path: the app bundle on Apple platforms, or the

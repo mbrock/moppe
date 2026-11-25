@@ -10,6 +10,7 @@
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 #include <tuple>
 #include <utility>
 
@@ -17,22 +18,25 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 19;
+    constexpr std::uint8_t wire_version = 20;
 
-    constexpr std::uint8_t has_glider = 1 << 0;
-    constexpr std::uint8_t has_walker = 1 << 1;
-    constexpr std::uint8_t is_hung = 1 << 2;
-    constexpr std::uint8_t has_hearth = 1 << 3;
-    constexpr std::uint8_t glider_carries_bike = 1 << 4;
-    constexpr std::uint8_t walker_grounded = 1 << 5;
-    constexpr std::uint8_t has_pan = 1 << 6;
-    constexpr std::uint8_t walker_swimming = 1 << 7;
+    constexpr std::uint16_t has_glider = 1u << 0;
+    constexpr std::uint16_t has_walker = 1u << 1;
+    constexpr std::uint16_t is_hung = 1u << 2;
+    constexpr std::uint16_t has_hearth = 1u << 3;
+    constexpr std::uint16_t glider_carries_bike = 1u << 4;
+    constexpr std::uint16_t walker_grounded = 1u << 5;
+    constexpr std::uint16_t has_pan = 1u << 6;
+    constexpr std::uint16_t walker_swimming = 1u << 7;
+    constexpr std::uint16_t walker_has_rope = 1u << 8;
+    constexpr std::uint16_t walker_has_rod = 1u << 9;
+    constexpr std::uint16_t has_helm_rod = 1u << 10;
+    constexpr std::uint16_t has_sling = 1u << 11;
+    constexpr std::uint16_t sling_is_taut = 1u << 12;
+    constexpr std::uint16_t pan_has_fish_flag = 1u << 13;
+    constexpr std::uint16_t has_ride_target = 1u << 14;
 
-    // What the player is doing, one byte on the wire: the bike, on
-    // foot, the glider, the jeep, riding along in the jeep, then the
-    // helicopter, the tractor, the Caddy, the mountainbike, the boat,
-    // the Long John, the jet ski, on the bus, and riding along in each
-    // other machine.
+    // What the player is doing, one byte on the wire.
     constexpr Doing doing_bytes[] = {
       Doing::driving (Machine::bike),
       Doing::on_foot (),
@@ -86,9 +90,6 @@ namespace moppe::game {
     constexpr quantity<one / pow<2> (si::second), double> rate_gain =
       0.5 / pow<2> (si::second);
     constexpr duration_t resync_seconds = 0.5 * si::second;
-    // How much of each arrival's reading of the two clocks' difference
-    // is believed, and how fast a long gap between arrivals is
-    // forgotten.
     using ease_t = quantity<blend_weight[one], double>;
     constexpr ease_t offset_ease = 0.1 * blend_weight[one];
     constexpr ease_t gap_ease = 0.01 * blend_weight[one];
@@ -203,6 +204,10 @@ namespace moppe::game {
         return velocity (point ());
       }
 
+      void spoil () {
+        m_good = false;
+      }
+
       bool good () const {
         return m_good;
       }
@@ -230,7 +235,6 @@ namespace moppe::game {
       return length2 (between) > 1e-6f ? normalized (between) : b;
     }
 
-    // The same blends on typed values, through the floats behind them.
     velocity_t
     mix (const velocity_t& a, const velocity_t& b, blend_weight_t t) {
       return velocity (mix (velocity_value (a), velocity_value (b), t));
@@ -282,9 +286,54 @@ namespace moppe::game {
              p2 * (3 * s2 - 2 * s3) + m2 * (s3 - s2);
     }
 
-    // Each machine's pose on the wire, in the fleet's order. A
-    // pedalled bike sends its crank where the motocross sends its lean,
-    // throttle, and jets.
+    void put_fish (Writer& out, const Fish& fish) {
+      out.put (static_cast<std::uint8_t> (fish.kind));
+      out.put (fish.length);
+      out.put (fish.seed);
+    }
+
+    Fish get_fish (Reader& in) {
+      Fish fish;
+      const std::uint8_t kind = in.get<std::uint8_t> ();
+      if (kind >= fish_kind_count)
+        in.spoil ();
+      else
+        fish.kind = static_cast<FishKind> (kind);
+      fish.length = std::clamp (in.number (), 0.05f, 2.0f) * u::m;
+      fish.seed = in.get<std::uint32_t> ();
+      return fish;
+    }
+
+    void put_rod (Writer& out, const RodPose& rod) {
+      out.put (rod.raise);
+      out.put (rod.bend);
+      out.put (rod.water);
+      out.put (rod.out);
+      out.put (rod.arc);
+      out.put (rod.tight);
+      out.put (static_cast<std::uint8_t> (rod.fish_on ? 1 : 0));
+      if (rod.fish_on) {
+        put_fish (out, rod.fish);
+        out.put (rod.wriggle);
+      }
+    }
+
+    RodPose get_rod (Reader& in) {
+      RodPose rod;
+      rod.raise = in.number () * inclination[u::rad];
+      rod.bend = std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
+      rod.water = in.place ();
+      rod.out = std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
+      rod.arc = std::clamp (in.number (), -2.0f, 8.0f) * u::m;
+      rod.tight = std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
+      rod.fish_on = in.get<std::uint8_t> () != 0;
+      if (rod.fish_on) {
+        rod.fish = get_fish (in);
+        rod.wriggle = in.number () * game::wriggle[one];
+      }
+      return rod;
+    }
+
     void put (Writer& out, Machine machine, const VehiclePose& bike) {
       out.put (bike.position);
       out.put (bike.render_orientation);
@@ -441,22 +490,15 @@ namespace moppe::game {
       ski.velocity = in.motion ();
     }
 
-    // When a blend falls, between snapshots `a` and `b` (at `t` from
-    // zero to one), and the snapshots either side of them, if any.
     struct Moments {
       const CompanionSnapshot* before;
       const CompanionSnapshot& a;
       const CompanionSnapshot& b;
       const CompanionSnapshot* after;
       blend_weight_t t;
-      // `t` held between the two.
       blend_weight_t within;
     };
 
-    // Where something is partway from `p1` to `p2`: on the curve that
-    // passes each of them the way its neighbours `p0` and `p3` lie (when
-    // there are any), so that it does not turn a corner at every
-    // snapshot; and beyond them, straight on.
     Vec3 travel (const Moments& w,
                  const Vec3* p0,
                  const Vec3& p1,
@@ -492,9 +534,6 @@ namespace moppe::game {
                                p3 ? &position_value (*p3) : nullptr));
     }
 
-    // A pose blended from `p1` to `p2`, knowing `p0` and `p3` either
-    // side when the moments have them. Only what travels or turns is
-    // carried on past `p2`; the rest holds as last told.
     template <class Pose>
     struct Around {
       const Pose* p0;
@@ -580,14 +619,16 @@ namespace moppe::game {
       out.steer = mix (from.steer, to.steer, w.within);
       out.front_spin = mix_angle (from.front_spin, to.front_spin, w.t);
       out.rear_spin = mix_angle (from.rear_spin, to.rear_spin, w.t);
-      out.trailer_position = by.travel (w, &TractorPose::trailer_position);
-      out.trailer_forward =
-        mix_direction (from.trailer_forward, to.trailer_forward, w.t);
-      out.trailer_up = mix_direction (from.trailer_up, to.trailer_up, w.t);
-      for (std::size_t i = 0; i < out.trailer_wheel_drop.size (); ++i)
-        out.trailer_wheel_drop[i] =
-          mix (from.trailer_wheel_drop[i], to.trailer_wheel_drop[i], w.within);
-      out.trailer_spin = mix_angle (from.trailer_spin, to.trailer_spin, w.t);
+      if (!leapt (from.trailer_position, to.trailer_position)) {
+        out.trailer_position = by.travel (w, &TractorPose::trailer_position);
+        out.trailer_forward =
+          mix_direction (from.trailer_forward, to.trailer_forward, w.t);
+        out.trailer_up = mix_direction (from.trailer_up, to.trailer_up, w.t);
+        for (std::size_t i = 0; i < out.trailer_wheel_drop.size (); ++i)
+          out.trailer_wheel_drop[i] = mix (
+            from.trailer_wheel_drop[i], to.trailer_wheel_drop[i], w.within);
+        out.trailer_spin = mix_angle (from.trailer_spin, to.trailer_spin, w.t);
+      }
     }
 
     void
@@ -618,6 +659,22 @@ namespace moppe::game {
       out.rpm = mix (from.rpm, to.rpm, w.within);
       out.velocity = mix (from.velocity, to.velocity, w.within);
     }
+
+    void mix_rod (RodPose& out,
+                  const RodPose& a,
+                  const RodPose& b,
+                  blend_weight_t within) {
+      out.raise = mix (a.raise, b.raise, within);
+      out.bend = mix (a.bend, b.bend, within);
+      if (!leapt (a.water, b.water))
+        out.water = position (
+          mix (position_value (a.water), position_value (b.water), within));
+      out.out = mix (a.out, b.out, within);
+      out.arc = mix (a.arc, b.arc, within);
+      out.tight = mix (a.tight, b.tight, within);
+      if (a.fish_on && b.fish_on)
+        out.wriggle = mix (a.wriggle, b.wriggle, within);
+    }
   }
 
   std::uint32_t companion_pick_window_start (std::size_t picked,
@@ -627,8 +684,6 @@ namespace moppe::game {
     const std::size_t latest = picked - companion_pick_window;
     if (sequence % 2 == 0)
       return static_cast<std::uint32_t> (latest);
-    // The walking window overlaps its neighbours by half, and ends where
-    // the latest begins.
     const std::size_t stride = companion_pick_window / 2;
     const std::size_t stops = latest / stride + 1;
     return static_cast<std::uint32_t> (
@@ -644,6 +699,85 @@ namespace moppe::game {
     return tag;
   }
 
+  std::string describe_world_mismatch (const WorldSummary& ours,
+                                       const WorldSummary& theirs) {
+    if (theirs.seed == 0 && theirs.resolution == 0)
+      return "Someone is playing in another world";
+    std::ostringstream out;
+    if (theirs.seed != ours.seed) {
+      out << "Someone is playing seed " << theirs.seed << " (you are on seed "
+          << ours.seed << ")";
+      return out.str ();
+    }
+    if (theirs.resolution != ours.resolution) {
+      out << "Someone is on a " << theirs.resolution
+          << "-sample world (yours is " << ours.resolution << ")";
+      return out.str ();
+    }
+    if (theirs.extent_hm != ours.extent_hm) {
+      out << "Someone is on a " << (theirs.extent_hm / 10) << "."
+          << (theirs.extent_hm % 10) << " km world (yours is "
+          << (ours.extent_hm / 10) << "." << (ours.extent_hm % 10) << " km)";
+      return out.str ();
+    }
+    out << "Someone has a different terrain build for seed " << ours.seed
+        << " (use a shared baked land or MOPPE_OROGENY=cpu)";
+    return out.str ();
+  }
+
+  void merge_fleet_poses (FleetPoses& target,
+                          const FleetPoses& incoming,
+                          std::uint16_t mask) {
+    for_each_machine_across (
+      [mask] (Machine m, auto& dst, const auto& src) {
+        if (mask & (1u << static_cast<unsigned> (m)))
+          dst = src;
+      },
+      target,
+      incoming);
+  }
+
+  void rebase_snapshot (CompanionSnapshot& snapshot,
+                        const position_t& near,
+                        plan_extent_t period) {
+    if (!(plan_value (period).x () > 0.0f) ||
+        !(plan_value (period).z () > 0.0f))
+      return;
+    for_each_machine (snapshot.fleet, [&] (Machine, auto& pose) {
+      pose.position = terrain::nearest_image (pose.position, near, period);
+      if constexpr (requires { pose.trailer_position; })
+        pose.trailer_position =
+          terrain::nearest_image (pose.trailer_position, pose.position, period);
+    });
+    if (snapshot.helm_rod)
+      snapshot.helm_rod->water = terrain::nearest_image (
+        snapshot.helm_rod->water, snapshot.fleet.boat.position, period);
+    if (snapshot.glider)
+      snapshot.glider->position =
+        terrain::nearest_image (snapshot.glider->position, near, period);
+    if (snapshot.walker) {
+      snapshot.walker->position =
+        terrain::nearest_image (snapshot.walker->position, near, period);
+      if (snapshot.walker->rope_end)
+        *snapshot.walker->rope_end = terrain::nearest_image (
+          *snapshot.walker->rope_end, snapshot.walker->position, period);
+      if (snapshot.walker->rod)
+        snapshot.walker->rod->water = terrain::nearest_image (
+          snapshot.walker->rod->water, snapshot.walker->position, period);
+    }
+    if (snapshot.hung) {
+      snapshot.hammock.strap[0] =
+        terrain::nearest_image (snapshot.hammock.strap[0], near, period);
+      snapshot.hammock.strap[1] = terrain::nearest_image (
+        snapshot.hammock.strap[1], snapshot.hammock.strap[0], period);
+    }
+    if (snapshot.hearth_laid)
+      snapshot.hearth = terrain::nearest_image (snapshot.hearth, near, period);
+    if (snapshot.pan_on)
+      snapshot.pan_place =
+        terrain::nearest_image (snapshot.pan_place, near, period);
+  }
+
   std::vector<std::uint8_t> encode (const CompanionSnapshot& snapshot) {
     std::vector<std::uint8_t> bytes;
     bytes.reserve (512);
@@ -653,13 +787,19 @@ namespace moppe::game {
     out.put (snapshot.player);
     out.put (snapshot.sequence);
     out.put (seconds_on_link (snapshot.sent));
+    out.put (seconds_into_play (snapshot.play_time));
     out.put (snapshot.world);
+    out.put (snapshot.world_info.seed);
+    out.put (snapshot.world_info.resolution);
+    out.put (snapshot.world_info.extent_hm);
     out.put (hours_since_midnight (snapshot.day_hours));
     out.put (seconds_into_play (snapshot.bus_clock));
     out.put (doing_byte (snapshot.mode));
     out.put (snapshot.bus);
     out.put (snapshot.bus_seat);
-    std::uint8_t flags = 0;
+
+    const std::uint16_t mask = snapshot.fleet_mask & all_machines_mask;
+    std::uint16_t flags = 0;
     if (snapshot.glider)
       flags |= has_glider;
     if (snapshot.glider && snapshot.glider->bike_attached)
@@ -670,17 +810,41 @@ namespace moppe::game {
       flags |= walker_grounded;
     if (snapshot.walker && snapshot.walker->swimming)
       flags |= walker_swimming;
+    if (snapshot.walker && snapshot.walker->rope_end)
+      flags |= walker_has_rope;
+    if (snapshot.walker && snapshot.walker->rod)
+      flags |= walker_has_rod;
+    if (snapshot.helm_rod)
+      flags |= has_helm_rod;
     if (snapshot.hung)
       flags |= is_hung;
     if (snapshot.hearth_laid)
       flags |= has_hearth;
     if (snapshot.pan_on)
       flags |= has_pan;
+    if (snapshot.pan_on && snapshot.pan_has_fish)
+      flags |= pan_has_fish_flag;
+    if (snapshot.sling_hooked)
+      flags |= has_sling;
+    if (snapshot.sling_hooked && snapshot.sling_taut)
+      flags |= sling_is_taut;
+    if (snapshot.ride_target != 0)
+      flags |= has_ride_target;
     out.put (flags);
+    out.put (mask);
+
+    if (flags & has_ride_target)
+      out.put (snapshot.ride_target);
+    if (flags & has_sling)
+      out.put (static_cast<std::uint8_t> (snapshot.sling_load));
 
     for_each_machine (snapshot.fleet, [&] (Machine m, const auto& pose) {
-      put (out, m, pose);
+      if (mask & (1u << static_cast<unsigned> (m)))
+        put (out, m, pose);
     });
+
+    if (snapshot.helm_rod)
+      put_rod (out, *snapshot.helm_rod);
 
     if (snapshot.glider) {
       out.put (snapshot.glider->position);
@@ -701,6 +865,10 @@ namespace moppe::game {
       out.put (walker.look_pitch);
       out.put (walker.look_aside);
       out.put (walker.turn_speed);
+      if (walker.rope_end)
+        out.put (*walker.rope_end);
+      if (walker.rod)
+        put_rod (out, *walker.rod);
     }
     if (snapshot.hung) {
       for (int end = 0; end < 2; ++end) {
@@ -723,8 +891,11 @@ namespace moppe::game {
       out.put (snapshot.pan_yaw.numerical_value_in (si::radian));
       out.put (snapshot.pan_cooked.numerical_value_in (one));
       out.put (snapshot.pan_count);
+      out.put (snapshot.pan_eggs);
       for (const std::uint32_t mushroom : snapshot.pan_mushrooms)
         out.put (mushroom);
+      if (snapshot.pan_has_fish)
+        put_fish (out, snapshot.pan_fish);
     }
 
     const std::size_t carried =
@@ -748,7 +919,12 @@ namespace moppe::game {
     snapshot.player = in.get<std::uint64_t> ();
     snapshot.sequence = in.get<std::uint32_t> ();
     snapshot.sent = link_time (in.long_number ());
+    snapshot.play_time = play_time (in.long_number ());
     snapshot.world = in.get<std::uint32_t> ();
+    snapshot.world_info.tag = snapshot.world;
+    snapshot.world_info.seed = in.get<std::uint32_t> ();
+    snapshot.world_info.resolution = in.get<std::uint16_t> ();
+    snapshot.world_info.extent_hm = in.get<std::uint16_t> ();
     snapshot.day_hours = clock_time (in.long_number ());
     snapshot.bus_clock = play_time (in.long_number ());
     const std::optional<Doing> mode = doing_of (in.get<std::uint8_t> ());
@@ -757,12 +933,31 @@ namespace moppe::game {
     snapshot.mode = *mode;
     snapshot.bus = in.get<std::uint8_t> ();
     snapshot.bus_seat = in.get<std::uint8_t> ();
-    if (snapshot.bus_seat > 1)
+    if (snapshot.bus_seat >= bus_passenger_seats)
       return std::nullopt;
-    const std::uint8_t flags = in.get<std::uint8_t> ();
+    const std::uint16_t flags = in.get<std::uint16_t> ();
+    snapshot.fleet_mask = in.get<std::uint16_t> ();
+    if (snapshot.fleet_mask & ~all_machines_mask)
+      return std::nullopt;
 
-    for_each_machine (snapshot.fleet,
-                      [&] (Machine m, auto& pose) { get (in, m, pose); });
+    if (flags & has_ride_target)
+      snapshot.ride_target = in.get<std::uint64_t> ();
+    if (flags & has_sling) {
+      snapshot.sling_hooked = true;
+      snapshot.sling_taut = (flags & sling_is_taut) != 0;
+      const std::uint8_t load = in.get<std::uint8_t> ();
+      if (load >= machine_count)
+        return std::nullopt;
+      snapshot.sling_load = static_cast<Machine> (load);
+    }
+
+    for_each_machine (snapshot.fleet, [&] (Machine m, auto& pose) {
+      if (snapshot.fleet_mask & (1u << static_cast<unsigned> (m)))
+        get (in, m, pose);
+    });
+
+    if (flags & has_helm_rod)
+      snapshot.helm_rod = get_rod (in);
 
     if (flags & has_glider) {
       GliderPose glider;
@@ -788,6 +983,10 @@ namespace moppe::game {
       walker.turn_speed = in.number () * u::rad / u::s;
       walker.grounded = (flags & walker_grounded) != 0;
       walker.swimming = (flags & walker_swimming) != 0;
+      if (flags & walker_has_rope)
+        walker.rope_end = in.place ();
+      if (flags & walker_has_rod)
+        walker.rod = get_rod (in);
       snapshot.walker = walker;
     }
     if (flags & is_hung) {
@@ -801,7 +1000,6 @@ namespace moppe::game {
       snapshot.swing = in.number () * si::radian;
       snapshot.gaze_yaw = in.number () * si::radian;
       snapshot.gaze_pitch = in.number () * inclination[si::radian];
-      // A hammock is slung between two different trees.
       if (length2 (position_value (snapshot.hammock.strap[1]) -
                    position_value (snapshot.hammock.strap[0])) < 0.25f)
         return std::nullopt;
@@ -821,10 +1019,15 @@ namespace moppe::game {
       snapshot.pan_cooked =
         std::clamp (in.number (), 0.0f, 2.0f) * proportion[one];
       snapshot.pan_count = in.get<std::uint8_t> ();
-      if (snapshot.pan_count > Pan::room)
+      snapshot.pan_eggs = in.get<std::uint8_t> ();
+      if (snapshot.pan_count > Pan::room || snapshot.pan_eggs > Pan::room)
         return std::nullopt;
       for (std::uint32_t& mushroom : snapshot.pan_mushrooms)
         mushroom = in.get<std::uint32_t> ();
+      if (flags & pan_has_fish_flag) {
+        snapshot.pan_has_fish = true;
+        snapshot.pan_fish = get_fish (in);
+      }
     }
 
     snapshot.pick_used = in.get<std::uint32_t> ();
@@ -853,20 +1056,17 @@ namespace moppe::game {
                            const CompanionSnapshot* after,
                            blend_weight_t t) {
     CompanionSnapshot result = b;
-    // The buses' clock runs on evenly, past `b` too.
     result.bus_clock =
       play_time (std::lerp (seconds_into_play (a.bus_clock),
                             seconds_into_play (b.bus_clock),
                             double (t.numerical_value_in (one))));
-    if (leapt (a.fleet.bike.position, b.fleet.bike.position))
-      return result;
     const Moments w {
       before, a,
       b,      after,
       t,      std::clamp (t, 0.0f * blend_weight[one], 1.0f * blend_weight[one])
     };
     const blend_weight_t within = w.within;
-    // Each machine moves on unless it has leapt.
+    // Each machine moves on independently unless it has leapt.
     for_each_machine_across (
       [&] (Machine m,
            auto& out,
@@ -887,6 +1087,8 @@ namespace moppe::game {
       a.fleet,
       b.fleet,
       (after ? *after : b).fleet);
+    if (a.helm_rod && b.helm_rod)
+      mix_rod (*result.helm_rod, *a.helm_rod, *b.helm_rod, within);
     if (a.glider && b.glider &&
         !leapt (a.glider->position, b.glider->position)) {
       GliderPose& glider = *result.glider;
@@ -921,6 +1123,13 @@ namespace moppe::game {
         mix (a.walker->look_aside, b.walker->look_aside, within);
       walker.turn_speed =
         mix (a.walker->turn_speed, b.walker->turn_speed, within);
+      if (a.walker->rope_end && b.walker->rope_end &&
+          !leapt (*a.walker->rope_end, *b.walker->rope_end))
+        *walker.rope_end = position (mix (position_value (*a.walker->rope_end),
+                                          position_value (*b.walker->rope_end),
+                                          within));
+      if (a.walker->rod && b.walker->rod)
+        mix_rod (*walker.rod, *a.walker->rod, *b.walker->rod, within);
     }
     if (a.hung && b.hung) {
       result.hammock_load = mix (a.hammock_load, b.hammock_load, within);
@@ -943,14 +1152,10 @@ namespace moppe::game {
     else if (snapshot.sent <= m_snapshots.back ().sent)
       return;
     else {
-      // Each arrival is early or late by the network's whim and by
-      // where in a frame it was read, so no one of them is believed
-      // much -- unless the clocks have plainly parted.
       if (abs (offset - m_offset) > resync_seconds)
         m_offset = offset;
       else
         m_offset += (offset - m_offset) * offset_ease.numerical_value_in (one);
-      // The longest wait of late is what the delay must cover.
       const duration_t gap = std::min (now - m_heard, longest_gap);
       if (gap > m_gap)
         m_gap = gap;
@@ -991,8 +1196,6 @@ namespace moppe::game {
           ((at - a.sent) / (b.sent - a.sent)).numerical_value_in (one)) *
           blend_weight[one]);
     }
-    // Past the newest: on the way the last two were going, slowing to a
-    // stand rather than stopping dead.
     const CompanionSnapshot& a = m_snapshots[count - 2];
     const CompanionSnapshot& b = m_snapshots[count - 1];
     const duration_t reach =
@@ -1014,9 +1217,6 @@ namespace moppe::game {
       return std::nullopt;
     }
     elapsed = std::clamp (elapsed, 0.0 * si::second, 0.25 * si::second);
-    // The moment to draw moves on with this machine's frames, which are
-    // even, and is only drawn toward what the arrivals say it should
-    // be, which is not.
     const link_time_t target = now + m_offset - delay ();
     m_play += elapsed * m_rate.numerical_value_in (one);
     const duration_t ahead = target - m_play;
@@ -1038,34 +1238,32 @@ namespace moppe::game {
 
     CompanionSnapshot seen = look (m_snapshots.size (), m_play);
     const auto places = [] (CompanionSnapshot& each) {
-      return std::array<position_t*, 4> {
-        &each.fleet.bike.position,
-        &each.fleet.jeep.position,
-        each.walker ? &each.walker->position : nullptr,
-        each.glider ? &each.glider->position : nullptr
-      };
+      std::array<position_t*, slip_count> spots {};
+      for_each_machine (each.fleet, [&] (Machine m, auto& pose) {
+        spots[static_cast<std::size_t> (m)] = &pose.position;
+      });
+      spots[machine_count + 0] = &each.fleet.tractor.trailer_position;
+      spots[machine_count + 1] = each.walker ? &each.walker->position : nullptr;
+      spots[machine_count + 2] = each.glider ? &each.glider->position : nullptr;
+      return spots;
     };
-    // Word that came late shows where they really were while this
-    // machine was guessing. The difference is not jumped but kept as a
-    // slip that dwindles away.
     if (m_fresh > 0 && m_fresh < m_snapshots.size ()) {
       const std::size_t had = m_snapshots.size () - m_fresh;
       if (m_play > m_snapshots[had - 1].sent) {
         CompanionSnapshot guessed = look (had, m_play);
-        const std::array<position_t*, 4> was = places (guessed);
-        const std::array<position_t*, 4> is = places (seen);
+        const std::array<position_t*, slip_count> was = places (guessed);
+        const std::array<position_t*, slip_count> is = places (seen);
         for (std::size_t i = 0; i < m_slip.size (); ++i)
           if (was[i] && is[i])
             m_slip[i] += quantity_cast<isq::displacement> (*was[i] - *is[i]);
       }
     }
     m_fresh = 0;
-    // What of the slip is kept through this frame.
     const proportion_t keep =
       static_cast<float> (
         std::exp ((-elapsed / slip_seconds).numerical_value_in (one))) *
       proportion[one];
-    const std::array<position_t*, 4> shown = places (seen);
+    const std::array<position_t*, slip_count> shown = places (seen);
     for (std::size_t i = 0; i < m_slip.size (); ++i) {
       const square_meters_t slid =
         length2 (displacement_value (m_slip[i])) * (si::metre * si::metre);
@@ -1089,8 +1287,6 @@ namespace moppe::game {
   }
 
   namespace {
-    // How a machine as told lies: its way forward and its up. The bikes
-    // tell theirs as drawn.
     template <class Pose>
     std::pair<direction_t, direction_t> lie_of (const Pose& pose) {
       if constexpr (requires { pose.render_orientation; })
@@ -1129,10 +1325,10 @@ namespace moppe::game {
     });
   }
 
-  std::optional<Machine>
+  std::optional<SeatTarget>
   seat_within_reach (const GameSession& session,
-                     const CompanionSnapshot* companion) {
-    if (!companion || session.logic ().m_doing != Doing::on_foot ())
+                     std::span<const CompanionSnapshot> companions) {
+    if (companions.empty () || session.logic ().m_doing != Doing::on_foot ())
       return std::nullopt;
     const Vec3 feet = position_value (session.walker ().position ());
     // Anything of one's own nearer wins.
@@ -1144,19 +1340,28 @@ namespace moppe::game {
                             square_metre);
     });
     constexpr meters_t reach = 4.0f * si::metre;
-    std::optional<Machine> found;
-    for (int i = 0; i < machine_count; ++i) {
-      const Machine m = static_cast<Machine> (i);
-      const MachineKind& kind = machine_kind (m);
-      if (!kind.passenger_seat || (kind.medium == Medium::water &&
-                                   companion->mode != Doing::driving (m)))
-        continue;
-      const square_meters_t d =
-        length2 (feet - position_value (passenger_seat (*companion, m))) *
-        square_metre;
-      if (d < reach * reach && d < nearest) {
-        nearest = d;
-        found = m;
+    std::optional<SeatTarget> found;
+    for (const CompanionSnapshot& peer : companions) {
+      for (int i = 0; i < machine_count; ++i) {
+        const Machine m = static_cast<Machine> (i);
+        const MachineKind& kind = machine_kind (m);
+        if (!kind.passenger_seat ||
+            (kind.medium == Medium::water && peer.mode != Doing::driving (m)))
+          continue;
+        const bool occupied =
+          std::ranges::any_of (companions, [&] (const CompanionSnapshot& o) {
+            return o.player != peer.player && o.ride_target == peer.player &&
+                   passenger_in (o.mode) == m;
+          });
+        if (occupied)
+          continue;
+        const square_meters_t d =
+          length2 (feet - position_value (passenger_seat (peer, m))) *
+          square_metre;
+        if (d < reach * reach && d < nearest) {
+          nearest = d;
+          found = SeatTarget { .player = peer.player, .machine = m };
+        }
       }
     }
     return found;
@@ -1166,6 +1371,7 @@ namespace moppe::game {
                   const CompanionSnapshot& theirs,
                   Machine machine) {
     session.clear_controls ();
+    session.logic ().m_ride_peer = theirs.player;
     session.set_mode (Doing::riding_along (machine));
     keep_seat (session.logic (), theirs);
   }

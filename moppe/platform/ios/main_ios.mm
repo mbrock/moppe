@@ -408,6 +408,8 @@ namespace moppe {
 
     void set_pointer_captured (bool) {}
 
+    void set_text_input (bool) {}
+
     Insets safe_insets () {
       Insets r;
       if (!g_window)

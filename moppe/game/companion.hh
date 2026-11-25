@@ -1,20 +1,19 @@
 #ifndef MOPPE_GAME_COMPANION_HH
 #define MOPPE_GAME_COMPANION_HH
 
-// Two players in one world. Each machine simulates its own player and
-// tells the other, some thirty times a second, how that player looks: the
+// Multiple players in one world. Each machine simulates its own player and
+// tells the others, some thirty times a second, how that player looks: the
 // poses the renderer already draws from, the camp as it stands, the hour,
-// and which mushrooms have been picked. The other machine draws that as a
-// second hiker, bike, jeep, tractor, Caddy, boat, jet ski, helicopter, or
-// glider -- the
-// companion -- a moment in the past, on a curve through the readings
-// around it. Nothing here touches a
+// and which mushrooms have been picked. Other machines draw each peer --
+// their hiker, machines, camp, sling, rod, and rope -- a moment in the
+// past, on a curve through the readings around it. Nothing here touches a
 // socket (game/companion_link.hh does); these are the values and how they
 // travel.
 
 #include <moppe/game/camp_state.hh>
 #include <moppe/game/frame_view.hh>
 #include <moppe/game/game_clock.hh>
+#include <moppe/terrain/torus.hh>
 
 #include <array>
 #include <cstddef>
@@ -22,14 +21,23 @@
 #include <deque>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
 namespace moppe::game {
+  // Up to seven companions beside this player (eight players in all).
+  inline constexpr std::size_t max_companions = 7;
+  // Front eight seats of the bus (bus_model::seat_01..seat_08).
+  inline constexpr std::size_t bus_passenger_seats = 8;
+  // Bitmask covering every machine in FleetPoses.
+  inline constexpr std::uint16_t all_machines_mask =
+    static_cast<std::uint16_t> ((1u << machine_count) - 1u);
+
   // A link's clock (companion_link.hh): seconds since it opened, in
   // double so long sessions keep their steps. Each machine keeps its
   // own; a snapshot is stamped by its sender's, and the difference
-  // between the two machines' readings is only ever learnt by watching
+  // between two machines' readings is only ever learnt by watching
   // (CompanionTrack).
   inline constexpr struct link_opened final
       : mp_units::absolute_point_origin<mp_units::isq::time> {
@@ -47,30 +55,54 @@ namespace moppe::game {
     return t.delta_from (link_opened).numerical_value_in (mp_units::si::second);
   }
 
-  // How one player looks at one moment, as told to the other.
+  // What a world is made of, enough to explain why two games differ.
+  struct WorldSummary {
+    std::uint32_t tag = 0;
+    std::uint32_t seed = 0;
+    std::uint16_t resolution = 0;
+    // Extent across one side in hectometres (100 m units; 100 = 10.0 km).
+    std::uint16_t extent_hm = 0;
+  };
+
+  // How one player looks at one moment, as told to the others.
   struct CompanionSnapshot {
     // Which player, a number drawn at launch, and which of their
     // snapshots this is.
     std::uint64_t player = 0;
     std::uint32_t sequence = 0;
-    // The sender's clock when the poses were true.
+    // The sender's clock when the poses were true, and how long they have
+    // played in this world (for deterministic spawn seniority).
     link_time_t sent = link_time (0.0);
+    play_time_t play_time = moppe::game::play_time (0.0);
     // Which world they stand in (world_tag): poses mean nothing across
     // two different worlds.
     std::uint32_t world = 0;
+    WorldSummary world_info {};
     // Their hour of the day, counted on from the first midnight; before
     // it (negative) when their day does not turn.
     clock_time_t day_hours = clock_time (0.0);
 
-    // What they are doing; riding along, in which of the other
-    // player's machines (MachineKind::passenger_seat).
+    // What they are doing; riding along, in which of `ride_target`'s
+    // machines (MachineKind::passenger_seat).
     Doing mode = Doing::on_foot ();
+    std::uint64_t ride_target = 0;
+    // Which machines in `fleet` this packet carries; steady-state packets
+    // pack active and round-robin machines to stay well below MTU, and the
+    // link reassembles the full fleet on receipt.
+    std::uint16_t fleet_mask = all_machines_mask;
     // Their machines, wherever they stand, and them on or in the one
     // they drive.
     FleetPoses fleet {};
-    // Their buses' clock (bus.hh's bus_time), which the two games keep
-    // together; and on the bus, which bus and which seat.
-    play_time_t bus_clock = play_time (0.0);
+    // Helicopter slung load state, reconstructed from their helicopter and
+    // load poses when drawing.
+    bool sling_hooked = false;
+    Machine sling_load = Machine::caddy;
+    bool sling_taut = false;
+    // Fishing rod at the boat's helm, when casting from the boat.
+    std::optional<RodPose> helm_rod;
+    // Their buses' clock (bus.hh's bus_time), which the games keep
+    // together; and on the bus, which bus and which seat (0..7).
+    play_time_t bus_clock = moppe::game::play_time (0.0);
     std::uint8_t bus = 0;
     std::uint8_t bus_seat = 0;
     std::optional<GliderPose> glider;
@@ -92,7 +124,7 @@ namespace moppe::game {
     std::uint32_t beacons = 0;
 
     // Their frying pan, if it is on a fire: where, its handle's way,
-    // how done (camp.hh's pan_cooked), and the mushrooms in it.
+    // how done (camp.hh's pan_cooked), and what fries in it.
     bool pan_on = false;
     position_t pan_place = position (Vec3 ());
     heading_t pan_yaw = 0.0f * heading[si::radian];
@@ -100,6 +132,9 @@ namespace moppe::game {
     proportion_t pan_cooked = 0.0f * proportion[one];
     std::uint8_t pan_count = 0;
     std::uint32_t pan_mushrooms[Pan::room] {};
+    bool pan_has_fish = false;
+    Fish pan_fish {};
+    std::uint8_t pan_eggs = 0;
 
     // How many of their picks have left their basket for the pan.
     std::uint32_t pick_used = 0;
@@ -130,6 +165,22 @@ namespace moppe::game {
   // (recipe_cache_identity): the seed, the size, the uplift, and the rest.
   std::uint32_t world_tag (std::string_view identity);
 
+  // Explains why two worlds' tags do not match.
+  std::string describe_world_mismatch (const WorldSummary& ours,
+                                       const WorldSummary& theirs);
+
+  // Copies every machine whose bit is set in `mask` from `incoming` into
+  // `target`.
+  void merge_fleet_poses (FleetPoses& target,
+                          const FleetPoses& incoming,
+                          std::uint16_t mask);
+
+  // Shifts every world position in `snapshot` into the torus copy nearest
+  // `near`, keeping coupled parts (trailer, hammock ends, rope, rod) intact.
+  void rebase_snapshot (CompanionSnapshot& snapshot,
+                        const position_t& near,
+                        plan_extent_t period);
+
   // A snapshot as bytes on the wire, little-endian.
   std::vector<std::uint8_t> encode (const CompanionSnapshot& snapshot);
 
@@ -139,8 +190,7 @@ namespace moppe::game {
 
   // The look partway from `a` (at zero) to `b` (at one); `t` beyond one
   // carries the motion on. What does not blend -- the mode, who rides
-  // what, the picks -- is `b`'s, and so is the whole of it across a leap
-  // too long to have been travelled.
+  // what, the picks -- is `b`'s, and any body that leapt jumps on its own.
   CompanionSnapshot blend (const CompanionSnapshot& a,
                            const CompanionSnapshot& b,
                            blend_weight_t t);
@@ -154,7 +204,7 @@ namespace moppe::game {
                            const CompanionSnapshot* after,
                            blend_weight_t t);
 
-  // The companion's recent snapshots, played back a little behind their
+  // One companion's recent snapshots, played back a little behind their
   // arrival so that there is nearly always one on either side of the
   // moment drawn. Snapshots arrive unevenly; the moment drawn moves on
   // evenly, with the frames, and is only steered by the arrivals.
@@ -185,6 +235,8 @@ namespace moppe::game {
     void clear ();
 
   private:
+    static constexpr std::size_t slip_count = machine_count + 3;
+
     // How they looked at `at` on their clock, going by the first
     // `count` snapshots held.
     CompanionSnapshot look (std::size_t count, link_time_t at) const;
@@ -203,26 +255,33 @@ namespace moppe::game {
     bool m_playing = false;
     link_time_t m_play = link_time (0.0);
     quantity<scale_factor[one], double> m_rate = 1.0 * scale_factor[one];
-    // How far the bike, jeep, walker, and glider are still drawn from
-    // where the snapshots put them.
-    std::array<displacement_t, 4> m_slip {};
+    // How far every machine, the tractor's trailer, the walker, and the
+    // glider are still drawn from where the snapshots put them.
+    std::array<displacement_t, slip_count> m_slip {};
   };
 
   class GameSession;
   struct GameLogicState;
 
-  // The passenger's seat of the other player's `machine`, in the world,
+  // Whose machine a passenger seat belongs to.
+  struct SeatTarget {
+    std::uint64_t player = 0;
+    Machine machine = Machine::jeep;
+  };
+
+  // The passenger's seat of another player's `machine`, in the world,
   // for those that have one (MachineKind::passenger_seat).
   position_t passenger_seat (const CompanionSnapshot& theirs, Machine machine);
 
-  // On foot beside the passenger's seat of one of the other player's
-  // machines -- the one they drive, or one standing on land -- and
-  // nearer it than anything of one's own to ride: which, if any.
-  std::optional<Machine> seat_within_reach (const GameSession& session,
-                                            const CompanionSnapshot* theirs);
+  // On foot beside an unoccupied passenger seat of any companion's
+  // machine -- the one they drive, or one standing on land -- and nearer
+  // it than anything of one's own to ride: which peer and machine, if any.
+  std::optional<SeatTarget>
+  seat_within_reach (const GameSession& session,
+                     std::span<const CompanionSnapshot> companions);
 
-  // Takes the passenger's seat of `machine`, as the mount key does
-  // there (game/affordances.hh).
+  // Takes the passenger's seat of `theirs`'s `machine`, as the mount key
+  // does there (game/affordances.hh).
   void take_seat (GameSession& session,
                   const CompanionSnapshot& theirs,
                   Machine machine);
@@ -230,12 +289,10 @@ namespace moppe::game {
   // The seat moves with the other player's machine.
   void keep_seat (GameLogicState& state, const CompanionSnapshot& theirs);
 
-  // Keeps this game's buses' clock (bus_time) with theirs, which is
-  // drawn `behind` late: the game behind by more than a moment
-  // jumps ahead to the other, so both see the buses of whoever has
-  // played longer; then the player with the smaller number (`player`
-  // is this one's) follows the other's closely and the other keeps
-  // their own, so the two never chase each other on.
+  // Keeps this game's buses' clock (bus_time) with the leading peer's:
+  // a game behind by more than a moment jumps ahead, and otherwise every
+  // player follows the peer with the highest player ID so no two chase
+  // each other on.
   void keep_bus_time (GameLogicState& state,
                       const CompanionSnapshot& theirs,
                       duration_t behind,

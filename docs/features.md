@@ -901,24 +901,32 @@ build, test, and change the code; read this when working on a feature.
   The underlying grain is read at four scales from one generated
   tiling sheet (`moppe/render/ground_detail.hh`: grain, its slope, a
   mosaic of stones), which also tilts the lit normal.
-- Two players (`moppe/game/companion.hh`): `--multiplayer` on two
-  machines of one network (`MOPPE_MULTIPLAYER=1`) puts both players in
-  one world, and `--join <host[:port]>` names the other machine where
-  broadcasts do not carry. Neither serves: each simulates its own player
-  and sends its poses thirty times a second over UDP port 27960
-  (`game/companion_link.*`), and the other draws them a moment behind
-  (some sixty milliseconds on a steady link, more on an uneven one;
-  `CompanionTrack`) as a second hiker, bike, jeep, or glider, with their
-  camp;
-  picked mushrooms and the hour of the day are shared (the clock that
-  is ahead leads), and nothing collides between the two. So that they
-  can be told apart, the player with the greater number wears the green
-  jacket and orange cap (`game/outfit.hh`; the paints are swapped by name
-  in `game/figure.cc`). Both must launch
-  the same world, so without `--seed` multiplayer plays seed 123. Two
-  games on one machine find each other too (the second takes a free
-  port). A firewall must let
-  UDP 27960 in, or each side must `--join` the other.
+- Multiplayer (`moppe/game/companion.hh`, `moppe/game/companion_transport.*`,
+  `moppe/game/companion_link.*`): up to eight players (one local + up to seven
+  companions) share one world. `--multiplayer` (`MOPPE_MULTIPLAYER=1`)
+  discovers players on the local network over UDP port 27960;
+  `--join <host[:port]>` connects directly (with `"MOPP"` peer introductions
+  forming a direct mesh among three or more players); and
+  `--join ws[s]://host/room/<name>` or `--join room:<name>` (expanded via
+  `MOPPE_RELAY_URL`, default `ws://127.0.0.1:27960`) relays over WebSocket for
+  internet and browser play (`bun run tools/relay.ts` runs a lightweight
+  reference relay). In play, `J` opens the multiplayer menu to toggle LAN,
+  create or join a relay room, paste an address, inspect connected players and
+  world mismatches, or disconnect. Neither player serves: each simulates its
+  own body and fleet and sends compact delta-masked snapshots thirty times a
+  second (wire version 20, keeping packets under 1,200 B), while peers render
+  each other a moment behind (`CompanionTrack`, ~60 ms on a steady link) across
+  torus seams — including hikers, all ten machines, tractor trailers, helicopter
+  slings, fishing rods, hauling ropes, campfires, frying pans (with fish and
+  eggs), snow tracks, boat wakes, and vehicle-to-vehicle collisions, plus
+  riding along in any peer's two-seat machine or sharing the eight front seats
+  of the bus. Picked mushrooms, beacons, the day clock, and the bus timetable
+  are synchronized. Players are assigned distinct Nordic jacket colours in
+  sorted player-ID order (`game/outfit.hh`, `game/figure.cc`: blue, green,
+  rust, ochre, plum, teal, pine, berry). All players must share the same world
+  (without `--seed`, multiplayer pins seed 123); mismatched seeds, resolutions,
+  or extents are explained on the HUD and in the `J` menu. Two or more games on
+  one machine find each other too (subsequent launches take any free UDP port).
 - The weather changes (`moppe/game/weather.*`): spells of clear, fair,
   overcast, valley mist, drizzle, rain, and thunderstorm follow one
   another from the seed and the hour (`WeatherTimeline`, a few hours

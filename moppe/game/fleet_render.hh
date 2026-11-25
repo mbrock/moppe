@@ -39,12 +39,13 @@ namespace moppe::game {
                           const Riders& riders,
                           std::uint64_t base);
 
-  // Draws every machine of a fleet with its riders, this player's or
-  // the other's, whose motion is told apart.
+  // Draws every machine of a fleet with its riders; `owner_slot` 0 is
+  // this player's fleet and 1..N are companions', so each fleet keeps its
+  // own renderer motion IDs.
   void draw_fleet (const FleetScene& scene,
                    const FleetPoses& fleet,
                    const FleetRiders& riders,
-                   bool theirs);
+                   std::uint32_t owner_slot = 0);
   // The fleet as it casts shadows.
   void cast_fleet (render::Renderer& r,
                    render::DrawList& dl,

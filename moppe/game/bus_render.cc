@@ -163,8 +163,11 @@ namespace moppe::game {
       }
 
       const CarModel& bus_car (std::size_t seat = 0) {
-        static const CarModel models[2] = { bus_car_for (0), bus_car_for (1) };
-        return models[std::min<std::size_t> (seat, 1)];
+        static const CarModel models[8] = {
+          bus_car_for (0), bus_car_for (1), bus_car_for (2), bus_car_for (3),
+          bus_car_for (4), bus_car_for (5), bus_car_for (6), bus_car_for (7),
+        };
+        return models[std::min<std::size_t> (seat, 7)];
       }
     }
   }
@@ -319,11 +322,12 @@ namespace moppe::game {
       const bool show_riders =
         focal <= 0.0f ||
         dot (at - camera, at - camera) <= rider_reach * rider_reach;
-      // Its riders, by seat.
-      std::array<std::optional<Outfit>, 2> seated;
+      // Its riders, by seat (front eight seats).
+      std::array<std::optional<Outfit>, 8> seated;
       for (const BusRider& rider : riders)
         if (rider.bus == k && rider.seen)
-          seated[std::min<std::size_t> (rider.seat, 1)] = rider.outfit;
+          seated[std::min<std::size_t> (rider.seat, seated.size () - 1)] =
+            rider.outfit;
       m_occupants.clear ();
       render_car (
         renderer,
@@ -336,8 +340,10 @@ namespace moppe::game {
         id,
         bus_car (),
         m_bus);
-      if (show_riders && seated[1])
-        seat_car_passenger (m_occupants, car, bus_car (1), *seated[1]);
+      if (show_riders)
+        for (std::size_t s = 1; s < seated.size (); ++s)
+          if (seated[s])
+            seat_car_passenger (m_occupants, car, bus_car (s), *seated[s]);
       // Each bus owns its occupants' motion history as buses enter or
       // leave view. The walker's vertices keep their own correspondence.
       if (!m_occupants.empty ())

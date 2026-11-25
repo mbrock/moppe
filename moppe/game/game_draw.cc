@@ -138,8 +138,7 @@ namespace moppe {
                       places_period (),
                       0);
       m_signs.cast_shadow (r);
-      if (m_company.companion)
-        cast_fleet (r, m_caster_dl, m_company.companion->fleet);
+      m_company.cast_shadows (r, m_caster_dl);
       r.end_shadow_casters ();
     }
 
@@ -220,11 +219,15 @@ namespace moppe {
         if (!helmet)
           who.driver = m_company.outfit;
       }
-      if (const std::optional<Machine> seat =
-            m_company.companion ? passenger_in (m_company.companion->mode)
-                                : std::nullopt)
-        riders[static_cast<std::size_t> (*seat)].passenger =
-          m_company.their_outfit ();
+      const std::uint64_t my_id =
+        m_company.link ? m_company.link->player () : 0;
+      for (std::size_t i = 0; i < m_company.active.size (); ++i) {
+        const CompanionSnapshot& peer = m_company.active[i];
+        if (const std::optional<Machine> seat = passenger_in (peer.mode);
+            seat && (peer.ride_target == my_id || peer.ride_target == 0))
+          riders[static_cast<std::size_t> (*seat)].passenger =
+            m_company.active_outfits[i];
+      }
       draw_fleet ({ .r = r,
                     .dl = m_world_dl,
                     .time = frame.lighting.time,
@@ -233,7 +236,7 @@ namespace moppe {
                     .surface = &surface () },
                   actors.fleet,
                   riders,
-                  false);
+                  0);
       if (actors.sling)
         render_sling (m_world_dl, *actors.sling);
 
@@ -251,11 +254,13 @@ namespace moppe {
                                 .seat = logic ().m_bus_seat,
                                 .outfit = m_company.outfit,
                                 .seen = !helmet });
-      if (m_company.companion &&
-          m_company.companion->mode == Doing::on_the_bus ())
-        bus_riders.push_back ({ .bus = m_company.companion->bus,
-                                .seat = m_company.companion->bus_seat,
-                                .outfit = m_company.their_outfit () });
+      for (std::size_t i = 0; i < m_company.active.size (); ++i) {
+        const CompanionSnapshot& peer = m_company.active[i];
+        if (peer.mode == Doing::on_the_bus ())
+          bus_riders.push_back ({ .bus = peer.bus,
+                                  .seat = peer.bus_seat,
+                                  .outfit = m_company.active_outfits[i] });
+      }
       m_places.bus_view.draw (r,
                               m_places.bus,
                               bus_time (logic ()),
@@ -499,20 +504,7 @@ namespace moppe {
                    frame.camera.position,
                    fire_burn (logic ().m_camp, logic ().m_total_time),
                    frame.lighting.time);
-      if (m_company.companion) {
-        if (visibility.vehicle_effects)
-          render_vehicle_flames (r,
-                                 m_company.companion->fleet.bike,
-                                 frame.camera.position,
-                                 frame.lighting.time,
-                                 0x3000);
-        if (m_company.companion->hearth_laid)
-          draw_fire (r,
-                     m_company.companion->hearth,
-                     frame.camera.position,
-                     m_company.companion->fire_burn,
-                     frame.lighting.time);
-      }
+      m_company.draw_glows (r, frame, visibility.vehicle_effects);
       if (visibility.star_effects)
         session ().stars ().render (r, frame.environment);
       draw_scan (r, frame);
@@ -555,14 +547,12 @@ namespace moppe {
         return water_surface_at (
           world (), surface (), sheets, at, seconds_value (time));
       };
-      const CompanionSnapshot* theirs =
-        m_company.companion ? &*m_company.companion : nullptr;
+      const std::vector<BoatWakes::PeerCraft> crafts = m_company.peer_crafts ();
       m_wakes.draw (
         r,
         frame.actors.fleet.boat,
         frame.actors.fleet.jet_ski,
-        theirs ? &theirs->fleet.boat : nullptr,
-        theirs ? &theirs->fleet.jet_ski : nullptr,
+        crafts,
         level,
         [&] (const position_t& at) {
           return terrain::surface_elevation_value (

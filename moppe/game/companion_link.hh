@@ -1,16 +1,20 @@
 #ifndef MOPPE_GAME_COMPANION_LINK_HH
 #define MOPPE_GAME_COMPANION_LINK_HH
 
-// The wire between two players (game/companion.hh): one UDP socket that
-// sends this player's snapshots and takes in the other's. Neither side
-// serves the other. Each calls out on the local network until it hears
-// someone, then speaks to them alone; `address` names the other machine
-// outright where a network does not carry broadcasts.
+// The wire between players (game/companion.hh): sits over any
+// PeerTransport (LAN/direct UDP, a WebSocket room relay, or an in-memory
+// test hub), discovers and maintains up to `max_companions` peers in the
+// same world, packs steady-state fleet deltas under MTU, introduces peers
+// to each other into a direct mesh, and filters out-of-order arrivals.
 
 #include <moppe/game/companion.hh>
+#include <moppe/game/companion_transport.hh>
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,21 +22,28 @@ namespace moppe::game {
   class CompanionLink {
   public:
     static constexpr std::uint16_t default_port = 27960;
+    using ClockFn = std::function<link_time_t ()>;
 
     struct Config {
-      // The other machine, as `host` or `host:port`; empty to find
-      // whoever is playing on the local network.
+      // Direct `host[:port]`, WebSocket relay `ws[s]://host[:port]/room`,
+      // `room:<name>` shorthand, or empty to discover on the local network.
       std::string address;
-      // The port to listen on. Taken already (a second game on the same
-      // machine), any free one serves: the other side answers whoever
-      // called.
+      // Local UDP port to listen on (ignored for relay URLs). Taken already,
+      // any free port serves.
       std::uint16_t port = default_port;
     };
 
-    // Nothing, with the reason in `error`, where the socket cannot be
-    // had or the platform has none.
+    // Opens a live UDP or WebSocket relay link. Returns null with `error`
+    // set if the transport cannot be opened.
     static std::unique_ptr<CompanionLink> open (const Config& config,
                                                 std::string& error);
+
+    // Wraps a caller-supplied transport (such as MemoryHub::join for tests)
+    // with an optional deterministic clock and player ID.
+    static std::unique_ptr<CompanionLink>
+    attach (std::unique_ptr<PeerTransport> transport,
+            ClockFn clock = {},
+            std::uint64_t player_override = 0);
 
     ~CompanionLink ();
     CompanionLink (const CompanionLink&) = delete;
@@ -42,34 +53,42 @@ namespace moppe::game {
     std::uint64_t player () const;
     link_time_t now () const;
 
-    // Whether it is time to say something: thirty times a second to a
-    // companion, once a second while calling out for one.
+    // Whether it is time to send: thirty times a second while speaking to
+    // peers, twice a second while calling out for them.
     bool due () const;
+
     // Stamps the snapshot with this player, the next sequence number,
-    // and `taken`, the moment on this link's clock that its poses were
-    // true, and sends it.
+    // world metadata, and `taken`, packs its fleet mask, and sends it.
     void send (CompanionSnapshot snapshot, link_time_t taken);
 
-    // Every snapshot that has arrived from the companion since the last
-    // call, oldest first, each newer than the last taken: one overtaken
-    // on the way is dropped. The first player heard in this world becomes
-    // the companion and stays so until they fall silent.
+    // Every complete snapshot that has arrived from any peer in this world
+    // since the last call, in arrival order, each newer than the last taken
+    // from that peer.
     void receive (std::vector<CompanionSnapshot>& arrived);
 
-    // The world this game stands in (world_tag). Someone playing another
-    // is heard of but never taken for the companion.
+    // The world this game stands in. Changing worlds clears peers and
+    // flushes buffered packets from the previous world.
+    void set_world (const WorldSummary& world);
     void set_world (std::uint32_t world);
-    // Whether someone in another world was heard since the last call.
-    bool heard_elsewhere ();
 
-    // Whom this link is speaking to, for the log; empty while calling.
+    // Whether someone in another world was heard since the last call, and
+    // their world summary if available.
+    bool heard_elsewhere ();
+    std::optional<WorldSummary> elsewhere_world ();
+
+    // Diagnostics for the log and in-game multiplayer menu.
+    std::size_t peer_count () const;
+    std::string address_of (std::uint64_t player_id) const;
     std::string companion_address () const;
     std::uint16_t port () const;
+    bool ready () const;
+    std::string transport_description () const;
+    std::string last_error () const;
 
   private:
-    struct Socket;
-    explicit CompanionLink (std::unique_ptr<Socket> socket);
-    std::unique_ptr<Socket> m_socket;
+    struct State;
+    explicit CompanionLink (std::unique_ptr<State> state);
+    std::unique_ptr<State> m_state;
   };
 }
 

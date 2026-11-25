@@ -76,9 +76,26 @@ namespace moppe::game {
       return terrain::at_elevation (
         at, ground.elevation (at) + ride_height + 0.02f * u::m);
     }
+    // Whether `at` stays clear of every position in `avoid` by `room` on the
+    // level (across torus wraps).
+    bool clear_of_avoid (const WorldGround& ground,
+                         const position_t& at,
+                         std::span<const position_t> avoid,
+                         meters_t room) {
+      const square_meters_t limit = room * room;
+      for (const position_t& other : avoid) {
+        const plan_displacement_t apart =
+          terrain::torus_offset (plan (at), plan (other), ground.period ());
+        if (dot (apart, apart) < limit)
+          return false;
+      }
+      return true;
+    }
   }
 
-  void Parking::park_boat (const ParkingLot& lot, bool outward) {
+  void Parking::park_boat (const ParkingLot& lot,
+                           bool outward,
+                           std::span<const position_t> avoid) {
     static const bool lakes_first = [] {
       const char* water = moppe::environment ("MOPPE_BOAT");
       return water && std::string_view (water) == "lake";
@@ -94,12 +111,39 @@ namespace moppe::game {
     if (river && moor_on_river (lot))
       return;
     if (!lakes_first && lot.places.landing) {
-      // At the end of the road, alongside the landing's jetty.
+      // At the end of the road, alongside the landing's jetty; if another
+      // player's boat already lies there, step out along the jetty or off
+      // to either side into deep water clear of theirs.
       const Landing& landing = *lot.places.landing;
       mov::Boat& boat = lot.session.boat ();
       boat.set_trunks (&lot.trunks);
-      const position_t moored = landing.berth.point_for (
+      position_t moored = landing.berth.point_for (
         terrain::world_origin, lot.spawn, lot.ground.period ());
+      if (!avoid.empty () &&
+          !clear_of_avoid (lot.ground, moored, avoid, 5.5f * u::m)) {
+        const direction_t out = landing.jetty.out;
+        const direction_t side = left_of (out);
+        bool found = false;
+        for (int ring = 1; ring <= 8 && !found; ++ring) {
+          const meters_t span = ring * 6.0f * u::m;
+          for (const std::pair<meters_t, meters_t> off :
+               { std::pair (span, 0.0f * u::m),
+                 std::pair (-span, 0.0f * u::m),
+                 std::pair (0.0f * u::m, span),
+                 std::pair (span, span * 0.5f),
+                 std::pair (-span, span * 0.5f) }) {
+            const position_t candidate = moved (
+              moved (moored, along (side, off.first)), along (out, off.second));
+            if (lot.ground.water_depth (plan (candidate)) > 0.6f * u::m &&
+                clear_of_avoid (lot.ground, candidate, avoid, 5.5f * u::m)) {
+              moored = at_height (plan (candidate),
+                                  afloat_level (lot.ground, plan (candidate)));
+              found = true;
+              break;
+            }
+          }
+        }
+      }
       const Vec3& berth = position_value (moored);
       boat.place (moored,
                   outward ? -landing.berth_forward : landing.berth_forward,
@@ -114,9 +158,9 @@ namespace moppe::game {
                 << std::endl;
       return;
     }
-    if (!lakes_first && moor_boat (lot, true, outward))
+    if (!lakes_first && moor_boat (lot, true, outward, avoid))
       return;
-    if (!moor_boat (lot, false, outward))
+    if (!moor_boat (lot, false, outward, avoid))
       std::cerr << "moppe: boat: no open water near the spawn\n";
   }
 
@@ -270,7 +314,9 @@ namespace moppe::game {
               << std::lround (position_value (at)[2]) << std::endl;
   }
 
-  void Parking::park_jet_ski (const ParkingLot& lot, bool outward) {
+  void Parking::park_jet_ski (const ParkingLot& lot,
+                              bool outward,
+                              std::span<const position_t> avoid) {
     mov::JetSki& ski = lot.session.jet_ski ();
     ski.set_trunks (&lot.trunks);
     // Where the boat was left, not where someone has since taken it.
@@ -304,14 +350,20 @@ namespace moppe::game {
       berths.push_back (
         moved (moved (berth, along (side, -beyond)), along (out, 0.9f * u::m)));
     }
-    for (const meters_t aside :
-         { 3.2f * u::m, -3.2f * u::m, 5.5f * u::m, -5.5f * u::m })
+    for (const meters_t aside : { 3.2f * u::m,
+                                  -3.2f * u::m,
+                                  5.5f * u::m,
+                                  -5.5f * u::m,
+                                  8.5f * u::m,
+                                  -8.5f * u::m })
       berths.push_back (moved (berth, along (beam, aside)));
-    for (const meters_t ahead : { -5.0f * u::m, 5.5f * u::m })
+    for (const meters_t ahead :
+         { -5.0f * u::m, 5.5f * u::m, -9.0f * u::m, 9.5f * u::m })
       berths.push_back (moved (berth, along (bow, ahead)));
     const direction_t facing = outward && m_mooring_out ? *m_mooring_out : bow;
     for (const position_t& at : berths)
-      if (lot.ground.water_depth (plan (at)) > 0.5f * u::m) {
+      if (lot.ground.water_depth (plan (at)) > 0.5f * u::m &&
+          clear_of_avoid (lot.ground, at, avoid, 4.0f * u::m)) {
         ski.place (at, facing, afloat_level (lot.ground, plan (at)));
         std::cerr << "moppe: jet ski afloat "
                   << std::lround (meters_value (from_spawn (lot.spawn, at)))
@@ -486,7 +538,10 @@ namespace moppe::game {
     };
   }
 
-  bool Parking::moor_boat (const ParkingLot& lot, bool sea_only, bool outward) {
+  bool Parking::moor_boat (const ParkingLot& lot,
+                           bool sea_only,
+                           bool outward,
+                           std::span<const position_t> avoid) {
     const auto sheets = lot.ground.generated.water_view ();
     const terrain::SurfaceElevation sea =
       terrain::surface_elevation_point (lot.ground.world.water_level);
@@ -560,6 +615,8 @@ namespace moppe::game {
           const position_t further = moved (shore, along (out, 9.0f * u::m));
           const position_t moor =
             outward && depth_at (further) > 0.7f * u::m ? further : at;
+          if (!clear_of_avoid (lot.ground, moor, avoid, 6.0f * u::m))
+            continue;
           mov::Boat& boat = lot.session.boat ();
           boat.set_trunks (&lot.trunks);
           boat.place (moor,
@@ -959,7 +1016,7 @@ namespace moppe::game {
   }
 
   void Parking::park_helicopter (const ParkingLot& lot,
-                                 std::optional<position_t> avoid) const {
+                                 std::span<const position_t> avoid) const {
     const position_t centre = lot.spawn;
     const terrain::SurfaceElevation water =
       terrain::surface_elevation_point (lot.ground.world.water_level);
@@ -977,11 +1034,9 @@ namespace moppe::game {
         const terrain::SurfaceElevation h = lot.ground.elevation (on);
         if (h < water + 1.0f * u::m)
           continue;
-        if (avoid) {
-          const plan_displacement_t apart = on - plan (*avoid);
-          if (dot (apart, apart) < (15.0f * u::m) * (15.0f * u::m))
-            continue;
-        }
+        if (!clear_of_avoid (
+              lot.ground, at_height (on, 0.0f * u::m), avoid, 15.0f * u::m))
+          continue;
         // Level under the skids and the tail, and not much less so
         // under the rotor's reach.
         terrain::SurfaceElevation low = h, high = h;

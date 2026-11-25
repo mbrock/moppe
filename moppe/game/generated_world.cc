@@ -3,6 +3,7 @@
 #include <moppe/parallel.hh>
 
 #include <moppe/game/disturbance.hh>
+#include <moppe/game/world_cache.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/moisture.hh>
 #include <moppe/terrain/readings.hh>
@@ -402,6 +403,19 @@ namespace moppe::game {
                         plan_extent (m_surface.domain ().period_x (),
                                      m_surface.domain ().period_z ())),
         m_forest (std::move (forest)) {
+    {
+      std::uint32_t tag = 2166136261U;
+      for (const char c : recipe_cache_identity (m_recipe)) {
+        tag ^= static_cast<std::uint8_t> (c);
+        tag *= 16777619U;
+      }
+      const auto& h = spatial::get<terrain::surface_elevation> (m_surface);
+      for (const auto byte : std::as_bytes (std::span (h))) {
+        tag ^= std::to_integer<std::uint8_t> (byte);
+        tag *= 16777619U;
+      }
+      m_world_tag = tag;
+    }
     const auto period = plan_extent (m_surface.domain ().period_x (),
                                      m_surface.domain ().period_z ());
     m_road_surface.place_guardrails (m_roads, [&] (plan_position_t at) {

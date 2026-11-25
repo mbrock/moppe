@@ -133,7 +133,7 @@ pkgs.runCommand "moppe-windows"
     # Refuse a package that would need a DLL Windows does not have.
     objdump -p staging/moppe/moppe.exe | sed -n 's/.*DLL Name: //p' \
       > $out/imports.txt
-    if grep -viE '^(kernel32|user32|gdi32|shell32|ole32|oleaut32|advapi32|winmm|imm32|setupapi|version|api-ms-win-crt-.*)\.dll$' \
+    if grep -viE '^(kernel32|user32|gdi32|shell32|ole32|oleaut32|advapi32|winmm|imm32|setupapi|version|ws2_32|iphlpapi|api-ms-win-crt-.*)\.dll$' \
         $out/imports.txt; then
       echo "moppe.exe imports DLLs Windows does not provide" >&2
       exit 1

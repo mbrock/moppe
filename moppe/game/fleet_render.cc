@@ -13,30 +13,20 @@ namespace moppe::game {
   namespace {
     // Kept in a namespace of its own: the engine is a unity build.
     namespace fleet_drawing {
-      // Each machine's motion is told apart from every other's, this
-      // player's and the other's, by Machine.
-      constexpr std::uint64_t motion_bases[2][machine_count] = {
-        { 0x1000,
-          0x5000,
-          0xA000,
-          0xC000,
-          0x8000,
-          0xD000,
-          0xF000,
-          0xD100,
-          0xD200,
-          0xD300 },
-        { 0x3000,
-          0x6000,
-          0x9000,
-          0xB000,
-          0x7000,
-          0xE000,
-          0xF800,
-          0xE100,
-          0xE200,
-          0xE300 },
+      // Each machine's motion is told apart from every other's by Machine
+      // and owner slot (0 = local, 1..N = companions).
+      constexpr std::uint64_t local_motion_bases[machine_count] = {
+        0x1000, 0x5000, 0xA000, 0xC000, 0x8000,
+        0xD000, 0xF000, 0xD100, 0xD200, 0xD300,
       };
+
+      std::uint64_t motion_base_for (std::uint32_t owner_slot, std::size_t i) {
+        if (owner_slot == 0)
+          return local_motion_bases[i];
+        return 0x10000ULL +
+               static_cast<std::uint64_t> (owner_slot) * 0x1000ULL +
+               static_cast<std::uint64_t> (i) * 0x100ULL;
+      }
 
       // The trailer's shadow, behind the tractor's own.
       constexpr meters_t trailer_shadow_radius = 2.4f * u::m;
@@ -129,7 +119,7 @@ namespace moppe::game {
   void draw_fleet (const FleetScene& scene,
                    const FleetPoses& fleet,
                    const FleetRiders& riders,
-                   bool theirs) {
+                   std::uint32_t owner_slot) {
     for_each_machine (fleet, [&] (Machine m, const auto& pose) {
       // Include the rotor, riders and the blob projected up to 30 m below.
       // A detached trailer can be visible independently of the tractor.
@@ -150,7 +140,7 @@ namespace moppe::game {
                             pose.trailer_position,
                             trailer_shadow_radius);
       }
-      draw (scene, m, pose, riders[i], motion_bases[theirs][i]);
+      draw (scene, m, pose, riders[i], motion_base_for (owner_slot, i));
     });
   }
 

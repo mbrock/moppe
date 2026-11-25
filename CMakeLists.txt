@@ -471,8 +471,15 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/machine_controls.cc
   moppe/game/companion.cc
   moppe/game/companion_link.cc
+  moppe/game/companion_transport.cc
   moppe/game/video.cc
 )
+if(APPLE)
+  list(APPEND MOPPE_SCENE_SOURCES moppe/game/companion_relay_apple.mm)
+  set_source_files_properties(moppe/game/companion_relay_apple.mm PROPERTIES
+    COMPILE_OPTIONS "-fobjc-arc"
+    SKIP_UNITY_BUILD_INCLUSION ON)
+endif()
 
 set(MOPPE_MODEL_SOURCES
   moppe/game/figure_mesh.cc
@@ -542,6 +549,10 @@ add_library(moppe-engine STATIC ${MOPPE_ENGINE_SOURCES} ${MOPPE_LOCAL_EVOLUTION_
 target_link_libraries(moppe-engine PUBLIC moppe-models)
 if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   target_link_libraries(moppe-engine PRIVATE "-framework Metal" "-framework Foundation")
+elseif(APPLE)
+  target_link_libraries(moppe-engine PRIVATE "-framework Foundation")
+elseif(WIN32)
+  target_link_libraries(moppe-engine PRIVATE ws2_32 iphlpapi)
 endif()
 foreach(library moppe-models moppe-engine)
   moppe_configure_code_target(${library})

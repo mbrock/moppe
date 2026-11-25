@@ -7,9 +7,13 @@
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
+#include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <optional>
+#include <span>
+#include <utility>
 
 namespace moppe::game {
   // The boat (models/boat.blend) as baked meshes drawn through the
@@ -65,17 +69,21 @@ namespace moppe::game {
     std::deque<WakeMark> m_marks;
   };
 
-  // The boats' wakes, ours and the other player's (their jet ski's too,
-  // when they have one in the world): each laid behind its boat as it
-  // goes, on the water's `level`, over the `ground`, and drawn over the
-  // water.
+  // The boats' wakes, ours and every companion's (their jet skis' too):
+  // each laid behind its craft as it goes, on the water's `level`, over
+  // the `ground`, and drawn over the water.
   class BoatWakes {
   public:
+    struct PeerCraft {
+      std::uint64_t player = 0;
+      BoatPose boat;
+      JetSkiPose jet_ski;
+    };
+
     void draw (render::Renderer& r,
                const BoatPose& boat,
                const JetSkiPose& jet_ski,
-               const BoatPose* their_boat,
-               const JetSkiPose* their_jet_ski,
+               std::span<const PeerCraft> peers,
                const std::function<meters_t (const position_t&)>& level,
                const std::function<meters_t (const position_t&)>& ground,
                seconds_t time,
@@ -84,8 +92,7 @@ namespace moppe::game {
   private:
     BoatWake m_boat;
     BoatWake m_jet_ski;
-    BoatWake m_their_boat;
-    BoatWake m_their_jet_ski;
+    std::map<std::uint64_t, std::pair<BoatWake, BoatWake>> m_peers;
     render::DrawList m_dl;
   };
 }

@@ -25,6 +25,7 @@ namespace moppe::platform {
   void request_quit () {}
   void set_window_title (const std::string&) {}
   void set_pointer_captured (bool) {}
+  void set_text_input (bool) {}
   Insets safe_insets () {
     return {};
   }

@@ -251,6 +251,7 @@ namespace moppe::platform {
   }
   void set_window_title (const std::string&) {}
   void set_pointer_captured (bool) {}
+  void set_text_input (bool) {}
 }
 
 int __stdcall wWinMain (HINSTANCE, HINSTANCE, PWSTR, int) {

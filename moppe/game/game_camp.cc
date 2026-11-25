@@ -23,7 +23,7 @@ namespace moppe {
         .day_pace = m_sky.day ().pace,
         .day_turning = m_sky.day ().turning,
         .daylight = m_sky.sky ().daylight,
-        .companion = m_company.companion ? &*m_company.companion : nullptr,
+        .companions = m_company.snapshots (),
         .companion_clock = m_company.hours >= clock_time (0.0)
                              ? std::optional (m_company.hours)
                              : std::nullopt,

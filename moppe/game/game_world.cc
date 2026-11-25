@@ -182,6 +182,7 @@ namespace moppe {
                        along (heading, 8.0f * u::m)));
       m_spawn_position = terrain::at_elevation (
         spawn, world_ground ().elevation (spawn) + 1.2f * u::m);
+      m_initial_spawn = m_spawn_position;
       session ().bike ().reset (position_value (m_spawn_position));
       session ().bike ().set_heading (direction_value (heading));
       const char* demo = moppe::environment ("MOPPE_DEMO");
@@ -391,14 +392,9 @@ namespace moppe {
                                     std::unique_ptr<GeneratedWorld> completed) {
       MOPPE_PROFILE_ZONE ("MoppeGame::finish_loading");
       activate_completed_world (std::move (completed));
-      if (m_company.link) {
-        m_company_world_tag = world_tag (recipe_cache_identity (recipe ()));
-        const auto& h = spatial::get<terrain::surface_elevation> (surface ());
-        for (auto byte : std::as_bytes (std::span (h))) {
-          m_company_world_tag ^= std::to_integer<std::uint8_t> (byte);
-          m_company_world_tag *= 16777619u;
-        }
-      }
+      m_company_world_tag = generated_world ().world_tag ();
+      if (m_company.link)
+        m_company.link->set_world (this_world_summary ());
       prepare_world_water ();
       prepare_world_surface ();
       place_stars_and_player ();
@@ -489,6 +485,10 @@ namespace moppe {
       malloc_zone_pressure_relief (nullptr, 0);
 #endif
       m_ready = true;
+      if (m_pending_multiplayer) {
+        connect_multiplayer (*m_pending_multiplayer);
+        m_pending_multiplayer.reset ();
+      }
       // Play's first frame is a cut from the loading screen's sky: its
       // history must not smear in.
       r.reset_temporal_state ();

@@ -64,9 +64,10 @@ namespace moppe::game {
     // Pressing it does nothing but show that it will not do: a
     // poisonous mushroom, a basket full of eggs.
     bool refused = false;
-    // The machine, mushroom, nest box, or beacon it is done to.
+    // The machine, mushroom, nest box, beacon, or peer it is done to.
     Machine machine = Machine::bike;
     std::uint32_t object = 0;
+    std::uint64_t peer = 0;
   };
 
   // What can be done here, most pressing first. `around` is the world

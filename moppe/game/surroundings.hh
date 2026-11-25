@@ -48,8 +48,8 @@ namespace moppe::game {
     bool day_turning = false;
     // How much light there is to see smoke and steam by.
     proportion_t daylight = 1.0f * proportion[one];
-    // The other player as drawn now, and their clock when it is known.
-    const CompanionSnapshot* companion = nullptr;
+    // The other players as drawn now, and the leading clock when known.
+    std::span<const CompanionSnapshot> companions;
     std::optional<clock_time_t> companion_clock;
   };
 

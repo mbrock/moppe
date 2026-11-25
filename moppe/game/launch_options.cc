@@ -241,6 +241,30 @@ namespace moppe::game {
           options.seed = std::atoi (values[0]);
           return true;
         } },
+      { "--multiplayer",
+        "",
+        0,
+        "",
+        "Discover and play with others on the local network.",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.multiplayer = std::string ();
+          return true;
+        } },
+      { "--join",
+        "",
+        1,
+        "<ADDRESS>",
+        "Join multiplayer at host[:port], ws[s]://url, or room:<name>.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          if (!values[0] || !*values[0]) {
+            error = "--join requires a non-empty address";
+            return false;
+          }
+          options.multiplayer = std::string (values[0]);
+          return true;
+        } },
     };
 
     const Flag* find_flag (std::string_view name) {

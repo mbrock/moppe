@@ -171,10 +171,17 @@ namespace moppe::game {
       return m_forest;
     }
 
+    // FNV-1a hash of the recipe identity and finished terrain elevations,
+    // computed on the loading worker so multiplayer can start any time.
+    std::uint32_t world_tag () const noexcept {
+      return m_world_tag;
+    }
+
   private:
     WorldParams m_params;
     terrain::WorldRecipe m_recipe;
     map::SurfaceGeometry m_surface;
+    std::uint32_t m_world_tag = 0;
     struct BuildFields {
       Hydrology hydrology;
       terrain::WaterSheets water;

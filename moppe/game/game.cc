@@ -8,6 +8,9 @@
 #include <moppe/mov/box3d_vec.hh>
 #include <moppe/profile.hh>
 
+#include <chrono>
+#include <random>
+
 namespace moppe {
   namespace game {
     MoppeGame::MoppeGame (const LaunchOptions& options,
@@ -18,8 +21,7 @@ namespace moppe {
           m_graphics (options.graphics), m_sky (m_graphics.sun_height),
           m_spawn_position (this->world ().spawn_position ()), m_renderer (0),
           m_capture (options.screenshot_path), m_ready (false) {
-      if (options.multiplayer)
-        m_company.seek (*options.multiplayer);
+      m_pending_multiplayer = options.multiplayer;
     }
 
     MoppeGame::~MoppeGame () {
@@ -220,6 +222,36 @@ namespace moppe {
         return;
       }
 
+      // While typing an address or room in the multiplayer menu, swallow
+      // regular hotkeys so characters never toggle diagnostics or capture.
+      if (m_heads_up.multiplayer_open && m_heads_up.multiplayer_editing) {
+        if (!down) {
+          m_live_input.key (k, down);
+          return;
+        }
+        if (k == Key::Escape) {
+          m_heads_up.multiplayer_editing = false;
+          platform::set_text_input (false);
+        } else if (k == Key::Backspace) {
+          if (!m_heads_up.multiplayer_input.empty ())
+            m_heads_up.multiplayer_input.pop_back ();
+        } else if (k == Key::Enter) {
+          m_heads_up.multiplayer_editing = false;
+          platform::set_text_input (false);
+          std::string target = m_heads_up.multiplayer_input;
+          while (!target.empty () &&
+                 (target.front () == ' ' || target.front () == '\t'))
+            target.erase (target.begin ());
+          while (!target.empty () &&
+                 (target.back () == ' ' || target.back () == '\t'))
+            target.pop_back ();
+          m_heads_up.multiplayer_input = target;
+          if (!target.empty ())
+            connect_multiplayer (target);
+        }
+        return;
+      }
+
       if (k == Key::Q && down && logic ().m_doing == Doing::on_foot () &&
           !logic ().m_camp.resting) {
         start_scan (duration_t {});
@@ -259,6 +291,63 @@ namespace moppe {
           platform::request_quit ();
         } else
           m_live_input.cinematic_key (k, down);
+        return;
+      }
+
+      // J opens the multiplayer menu: connect on LAN, open/join a relay
+      // room, or disconnect.
+      if (k == Key::J && down) {
+        if (m_heads_up.multiplayer_open) {
+          close_multiplayer_menu ();
+        } else {
+          m_heads_up.cheat_open = false;
+          m_heads_up.map.show (MapSheet::View::Closed);
+          m_heads_up.multiplayer_open = true;
+          if (m_heads_up.multiplayer_input.empty () &&
+              !m_company.target_address.empty ())
+            m_heads_up.multiplayer_input = m_company.target_address;
+          m_live_input.clear ();
+        }
+        return;
+      }
+      if (m_heads_up.multiplayer_open) {
+        if (!down) {
+          m_live_input.key (k, down);
+          return;
+        }
+        const int choice = m_heads_up.multiplayer_choice;
+        if (k == Key::W || k == Key::Up) {
+          m_heads_up.multiplayer_choice = (choice + 3) % 4;
+        } else if (k == Key::S || k == Key::Down) {
+          m_heads_up.multiplayer_choice = (choice + 1) % 4;
+        } else if (k == Key::Escape) {
+          close_multiplayer_menu ();
+        } else if (k == Key::Space || k == Key::Enter || k == Key::Mount) {
+          if (choice == 0) {
+            connect_multiplayer ("");
+          } else if (choice == 1) {
+            static constexpr const char* words[] = {
+              "birch",   "spruce", "pine",  "fjord", "lichen", "moss",
+              "heather", "cairn",  "alder", "rowan", "marsh",  "ridge",
+            };
+            std::uint32_t pick = static_cast<std::uint32_t> (
+              std::chrono::steady_clock::now ().time_since_epoch ().count ());
+            try {
+              std::random_device rd;
+              pick ^= rd ();
+            } catch (...) {}
+            const std::string room = std::string ("room:") +
+                                     words[pick % std::size (words)] + "-" +
+                                     std::to_string (10 + ((pick / 17u) % 90u));
+            m_heads_up.multiplayer_input = room;
+            connect_multiplayer (room);
+          } else if (choice == 2) {
+            m_heads_up.multiplayer_editing = true;
+            platform::set_text_input (true);
+          } else if (choice == 3 && m_company.link) {
+            disconnect_multiplayer ();
+          }
+        }
         return;
       }
 
@@ -329,6 +418,19 @@ namespace moppe {
       }
 
       m_live_input.key (k, down);
+    }
+
+    void MoppeGame::text_input (const char* utf8) {
+      if (!utf8 || !m_heads_up.multiplayer_open ||
+          !m_heads_up.multiplayer_editing)
+        return;
+      for (const unsigned char* p =
+             reinterpret_cast<const unsigned char*> (utf8);
+           *p != '\0' && m_heads_up.multiplayer_input.size () < 128;
+           ++p) {
+        if (*p >= 0x20 && *p < 0x7f)
+          m_heads_up.multiplayer_input.push_back (static_cast<char> (*p));
+      }
     }
 
     FrameViewInput MoppeGame::frame_view_input (float aspect) const {
@@ -417,6 +519,8 @@ namespace moppe {
     }
 
     void MoppeGame::regenerate_world () {
+      close_multiplayer_menu ();
+      m_company.forget ();
       m_way_back.stop ();
       session ().clear_controls ();
       m_live_input.clear ();

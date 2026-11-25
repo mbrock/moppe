@@ -1,9 +1,12 @@
+#include <moppe/environment.hh>
 #include <moppe/game/companion.hh>
 #include <moppe/game/companion_link.hh>
+#include <moppe/game/companion_transport.hh>
 
 #include <tests/test.hh>
 
 #include <chrono>
+#include <map>
 #include <thread>
 #include <vector>
 
@@ -66,14 +69,71 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   sent.fleet.tractor.trailer_forward = unit_direction (Vec3 (0.6f, 0, 0.8f));
   sent.fleet.tractor.trailer_wheel_drop = { 0.02f * u::m, -0.04f * u::m };
   sent.fleet.tractor.trailer_spin = 1.5f * u::rad;
+  sent.play_time = play_time (123.5);
+  sent.world_info = {
+    .tag = sent.world,
+    .seed = 4321,
+    .resolution = 2048,
+    .extent_hm = 100,
+  };
+  sent.ride_target = 0x1122334455667788ULL;
+  sent.sling_hooked = true;
+  sent.sling_load = Machine::jeep;
+  sent.sling_taut = true;
+  sent.helm_rod = RodPose {
+    .raise = 0.7f * inclination[u::rad],
+    .bend = 0.65f * proportion[one],
+    .water = position (Vec3 (55, 0, 12)),
+    .out = 0.9f * proportion[one],
+    .arc = 1.2f * u::m,
+    .tight = 0.8f * proportion[one],
+    .fish_on = true,
+    .fish = { .kind = FishKind::perch, .length = 0.34f * u::m },
+    .wriggle = 0.4f * game::wriggle[one],
+  };
+  sent.walker->rope_end = position (Vec3 (14.5f, 20.5f, 30.2f));
+  sent.walker->rod = RodPose {
+    .raise = 0.6f * inclination[u::rad],
+    .bend = 0.35f * proportion[one],
+    .water = position (Vec3 (22.0f, 19.5f, 31.0f)),
+    .out = 1.0f * proportion[one],
+    .arc = 0.5f * u::m,
+    .tight = 0.5f * proportion[one],
+  };
+  sent.pan_has_fish = true;
+  sent.pan_fish = { .kind = FishKind::pike, .length = 0.62f * u::m };
+  sent.pan_eggs = 2;
+  sent.bus_seat = 7;
 
-  const std::optional<CompanionSnapshot> got = decode (encode (sent));
+  const std::vector<std::uint8_t> full_bytes = encode (sent);
+  // Even a full-fleet packet stays comfortably below a 1200 B safe UDP MTU.
+  MOPPE_CHECK (full_bytes.size () < 1200);
+  const std::optional<CompanionSnapshot> got = decode (full_bytes);
   MOPPE_CHECK (got.has_value ());
   if (!got)
     return;
   MOPPE_CHECK (got->player == 7 && got->sequence == 99);
   MOPPE_CHECK (got->world == sent.world && got->day_hours == clock_time (9.25));
+  MOPPE_CHECK (got->play_time == play_time (123.5));
+  MOPPE_CHECK (got->world_info.seed == 4321 &&
+               got->world_info.resolution == 2048 &&
+               got->world_info.extent_hm == 100);
+  MOPPE_CHECK (got->ride_target == 0x1122334455667788ULL);
+  MOPPE_CHECK (got->sling_hooked && got->sling_load == Machine::jeep &&
+               got->sling_taut);
+  MOPPE_CHECK (got->helm_rod.has_value () && got->helm_rod->fish_on);
+  MOPPE_CHECK_NEAR (got->helm_rod->bend.numerical_value_in (one), 0.65f, 1e-6f);
+  MOPPE_CHECK_NEAR (position_value (got->helm_rod->water)[0], 55.0f, 1e-6f);
+  MOPPE_CHECK (got->helm_rod->fish.kind == FishKind::perch);
   MOPPE_CHECK (got->mode == Doing::on_foot () && !got->glider && got->walker);
+  MOPPE_CHECK (got->walker->rope_end.has_value ());
+  MOPPE_CHECK_NEAR (position_value (*got->walker->rope_end)[0], 14.5f, 1e-6f);
+  MOPPE_CHECK (got->walker->rod.has_value ());
+  MOPPE_CHECK_NEAR (
+    got->walker->rod->bend.numerical_value_in (one), 0.35f, 1e-6f);
+  MOPPE_CHECK (got->pan_has_fish && got->pan_fish.kind == FishKind::pike);
+  MOPPE_CHECK_NEAR (meters_value (got->pan_fish.length), 0.62f, 1e-6f);
+  MOPPE_CHECK (got->pan_eggs == 2);
   MOPPE_CHECK_NEAR (position_value (got->walker->position)[0], 12.5f, 1e-6f);
   MOPPE_CHECK_NEAR (direction_value (got->walker->heading)[0], 1.0f, 1e-6f);
   MOPPE_CHECK (!got->walker->grounded);
@@ -96,7 +156,7 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
   MOPPE_CHECK_NEAR (position_value (got->fleet.boat.position)[0], 40.0f, 1e-6f);
   MOPPE_CHECK_NEAR (velocity_value (got->fleet.boat.velocity)[2], 6.5f, 1e-6f);
   MOPPE_CHECK (got->bus_clock == play_time (4321.25) && got->bus == 1 &&
-               got->bus_seat == 1);
+               got->bus_seat == 7);
   MOPPE_CHECK_NEAR (
     position_value (got->fleet.jet_ski.position)[2], -14.0f, 1e-6f);
   MOPPE_CHECK_NEAR (radians_value (got->fleet.jet_ski.steer), -0.3f, 1e-6f);
@@ -111,6 +171,26 @@ MOPPE_TEST (a_companion_snapshot_survives_the_wire) {
     meters_value (got->fleet.tractor.trailer_wheel_drop[1]), -0.04f, 1e-6f);
   MOPPE_CHECK_NEAR (
     radians_value (got->fleet.tractor.trailer_spin), 1.5f, 1e-6f);
+
+  // Partial fleet delta stays compact and merges cleanly into cached poses.
+  CompanionSnapshot delta = sent;
+  delta.fleet_mask = (1u << static_cast<unsigned> (Machine::boat));
+  delta.fleet.boat.position = position (Vec3 (88, 0, -4));
+  const std::vector<std::uint8_t> delta_bytes = encode (delta);
+  MOPPE_CHECK (delta_bytes.size () < 600);
+  const std::optional<CompanionSnapshot> decoded_delta = decode (delta_bytes);
+  MOPPE_CHECK (decoded_delta.has_value ());
+  if (decoded_delta) {
+    FleetPoses merged = got->fleet;
+    merge_fleet_poses (merged, decoded_delta->fleet, decoded_delta->fleet_mask);
+    MOPPE_CHECK_NEAR (position_value (merged.boat.position)[0], 88.0f, 1e-6f);
+    MOPPE_CHECK_NEAR (position_value (merged.bike.position)[0], 10.0f, 1e-6f);
+  }
+
+  // Bus seat out of 0..7 range is rejected.
+  CompanionSnapshot bad_seat = sent;
+  bad_seat.bus_seat = bus_passenger_seats;
+  MOPPE_CHECK (!decode (encode (bad_seat)));
 
   // Riding along, in which of the other player's machines.
   sent.mode = Doing::riding_along (Machine::helicopter);
@@ -333,4 +413,301 @@ MOPPE_TEST (two_links_on_one_machine_find_each_other) {
   MOPPE_CHECK_NEAR (
     position_value (at_first.front ().walker->position)[0], 2.0f, 1e-6f);
   MOPPE_CHECK (!first->companion_address ().empty ());
+}
+
+MOPPE_TEST (companion_blend_isolates_leaps_and_smooths_all_machines) {
+  // When the bike teleports 500 m, the jeep and walker still blend smoothly.
+  CompanionSnapshot a = companion_test_walker (10.0f, 0.0);
+  a.fleet.bike.position = position (Vec3 (0, 20, 0));
+  a.fleet.jeep.position = position (Vec3 (10, 20, 0));
+  a.walker->rope_end = position (Vec3 (12, 20, 0));
+  a.walker->rod = RodPose {
+    .bend = 0.2f * proportion[one],
+    .water = position (Vec3 (20, 19, 0)),
+  };
+
+  CompanionSnapshot b = a;
+  b.sent = link_time (0.1);
+  b.fleet.bike.position = position (Vec3 (500, 20, 0));
+  b.fleet.jeep.position = position (Vec3 (20, 20, 0));
+  b.walker->position = position (Vec3 (14, 20, 30));
+  b.walker->rope_end = position (Vec3 (16, 20, 0));
+  b.walker->rod->bend = 0.6f * proportion[one];
+  b.walker->rod->water = position (Vec3 (24, 19, 0));
+
+  const CompanionSnapshot mid = blend (a, b, 0.5f * blend_weight[one]);
+  MOPPE_CHECK_NEAR (position_value (mid.fleet.bike.position)[0], 500.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (mid.fleet.jeep.position)[0], 15.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (mid.walker->position)[0], 12.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (*mid.walker->rope_end)[0], 14.0f, 1e-3f);
+  MOPPE_CHECK (mid.walker->rod.has_value ());
+  MOPPE_CHECK_NEAR (
+    mid.walker->rod->bend.numerical_value_in (one), 0.4f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (mid.walker->rod->water)[0], 22.0f, 1e-3f);
+
+  // Slip smoothing covers jeep and snowmobile (not just the first 4 actors).
+  CompanionTrack track;
+  link_time_t now = link_time (50.0);
+  const link_time_t origin = now;
+  const duration_t frame_dt = (1.0 / 60.0) * si::second;
+  int told = 0;
+  std::vector<meters_t> jeep_x;
+  for (int frame = 0; frame < 180; ++frame) {
+    now += frame_dt;
+    const duration_t t = now - origin;
+    const bool silent = t >= 1.5 * si::second && t < 1.8 * si::second;
+    while (!silent && (told / 30.0) * si::second <= t) {
+      CompanionSnapshot s = companion_test_walker (0.0f, told / 30.0);
+      s.mode = Doing::driving (Machine::jeep);
+      s.walker.reset ();
+      s.fleet.jeep.position =
+        position (Vec3 (static_cast<float> (told / 3.0), 10, 0));
+      track.push (std::move (s), now);
+      ++told;
+    }
+    const std::optional<CompanionSnapshot> seen = track.advance (now, frame_dt);
+    MOPPE_CHECK (seen.has_value ());
+    if (seen)
+      jeep_x.push_back (
+        static_cast<float> (position_value (seen->fleet.jeep.position)[0]) *
+        u::m);
+  }
+  const meters_t pace = (10.0f / 60.0f) * u::m;
+  for (std::size_t i = 90; i < jeep_x.size (); ++i) {
+    const meters_t step = jeep_x[i] - jeep_x[i - 1];
+    MOPPE_CHECK (step > -1e-4f * u::m && step < 2.5f * pace);
+  }
+}
+
+MOPPE_TEST (companion_rebase_preserves_coupled_parts_across_torus_seams) {
+  const plan_extent_t period =
+    Vec2 (1000.0f, 1000.0f) * spatial_extent[si::metre];
+  CompanionSnapshot snap = companion_test_walker (4.0f, 1.0);
+  snap.fleet.tractor.position = position (Vec3 (5.0f, 10.0f, 5.0f));
+  snap.fleet.tractor.trailer_position = position (Vec3 (1.0f, 10.0f, 5.0f));
+  snap.hung = true;
+  snap.hammock.strap[0] = position (Vec3 (998.0f, 12.0f, 5.0f));
+  snap.hammock.strap[1] = position (Vec3 (2.0f, 12.0f, 5.0f));
+  snap.walker->position = position (Vec3 (4.0f, 10.0f, 5.0f));
+  snap.walker->rope_end = position (Vec3 (1.0f, 10.0f, 5.0f));
+  snap.walker->rod = RodPose { .water = position (Vec3 (997.0f, 10.0f, 5.0f)) };
+
+  rebase_snapshot (snap, position (Vec3 (995.0f, 10.0f, 5.0f)), period);
+  MOPPE_CHECK_NEAR (
+    position_value (snap.fleet.tractor.position)[0], 1005.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (
+    position_value (snap.fleet.tractor.trailer_position)[0], 1001.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (snap.hammock.strap[0])[0], 998.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (snap.hammock.strap[1])[0], 1002.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (snap.walker->position)[0], 1004.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (*snap.walker->rope_end)[0], 1001.0f, 1e-3f);
+  MOPPE_CHECK_NEAR (position_value (snap.walker->rod->water)[0], 997.0f, 1e-3f);
+}
+
+MOPPE_TEST (world_mismatch_explains_the_difference) {
+  const WorldSummary ours {
+    .tag = 111, .seed = 123, .resolution = 4096, .extent_hm = 100
+  };
+  WorldSummary diff_seed = ours;
+  diff_seed.tag = 222;
+  diff_seed.seed = 999;
+  const std::string seed_msg = describe_world_mismatch (ours, diff_seed);
+  MOPPE_CHECK (seed_msg.find ("999") != std::string::npos);
+  MOPPE_CHECK (seed_msg.find ("123") != std::string::npos);
+
+  WorldSummary diff_res = ours;
+  diff_res.tag = 333;
+  diff_res.resolution = 2048;
+  MOPPE_CHECK (describe_world_mismatch (ours, diff_res).find ("2048") !=
+               std::string::npos);
+
+  WorldSummary diff_ext = ours;
+  diff_ext.tag = 444;
+  diff_ext.extent_hm = 50;
+  MOPPE_CHECK (describe_world_mismatch (ours, diff_ext).find ("5.0 km") !=
+               std::string::npos);
+
+  WorldSummary diff_build = ours;
+  diff_build.tag = 555;
+  MOPPE_CHECK (describe_world_mismatch (ours, diff_build).find ("terrain") !=
+               std::string::npos);
+}
+
+MOPPE_TEST (relay_url_parsing_and_room_shorthand) {
+  std::string err;
+  const std::optional<RelayUrl> plain =
+    parse_relay_url ("ws://127.0.0.1:27960/room/birch", err);
+  MOPPE_CHECK (plain.has_value ());
+  if (plain) {
+    MOPPE_CHECK (!plain->secure);
+    MOPPE_CHECK (plain->host == "127.0.0.1");
+    MOPPE_CHECK (plain->port == 27960);
+    MOPPE_CHECK (plain->path == "/room/birch");
+  }
+  const std::optional<RelayUrl> tls =
+    parse_relay_url ("wss://relay.moppe.example/room/fjord-42", err);
+  MOPPE_CHECK (tls.has_value ());
+  if (tls) {
+    MOPPE_CHECK (tls->secure);
+    MOPPE_CHECK (tls->port == 443);
+    MOPPE_CHECK (tls->path == "/room/fjord-42");
+  }
+  MOPPE_CHECK (!parse_relay_url ("http://example.com/room/x", err));
+  MOPPE_CHECK (!parse_relay_url ("127.0.0.1:27960", err));
+
+  moppe::set_environment ("MOPPE_RELAY_URL", "wss://play.example/moppe");
+  MOPPE_CHECK (expand_multiplayer_target ("room:pine-12") ==
+               "wss://play.example/moppe/room/pine-12");
+  moppe::set_environment ("MOPPE_RELAY_URL", nullptr);
+  MOPPE_CHECK (expand_multiplayer_target ("room:pine-12") ==
+               "ws://127.0.0.1:27960/room/pine-12");
+
+  std::uint32_t ip = 0;
+  std::uint16_t port = 0;
+  MOPPE_CHECK (parse_ipv4_endpoint ({ "192.168.1.42:27965" }, ip, port));
+  MOPPE_CHECK (port == 27965);
+  MOPPE_CHECK (format_ipv4_endpoint (ip, port).key == "192.168.1.42:27965");
+}
+
+MOPPE_TEST (memory_hub_n_peers_with_loss_jitter_and_world_switch) {
+  MemoryHub::Profile profile;
+  profile.latency = 0.035 * si::second;
+  profile.jitter = 0.012 * si::second;
+  profile.loss = 0.15f * proportion[one];
+  profile.seed = 42;
+  MemoryHub hub (profile);
+
+  const WorldSummary world { .tag = world_tag ("hub-test-123"),
+                             .seed = 123,
+                             .resolution = 2048,
+                             .extent_hm = 100 };
+  std::vector<std::unique_ptr<CompanionLink>> links;
+  for (int i = 0; i < 4; ++i) {
+    auto link = CompanionLink::attach (
+      hub.join ("peer-" + std::to_string (i)),
+      [&hub] () { return hub.now (); },
+      static_cast<std::uint64_t> (100 + i));
+    link->set_world (world);
+    links.push_back (std::move (link));
+  }
+
+  std::vector<std::map<std::uint64_t, CompanionSnapshot>> latest (4);
+  for (int step = 0; step < 180; ++step) {
+    hub.advance (1.0 / 60.0 * si::second);
+    for (int i = 0; i < 4; ++i) {
+      if (links[i]->due ()) {
+        CompanionSnapshot s =
+          companion_test_walker (static_cast<float> (i * 10 + step * 0.1f), 0);
+        s.fleet.boat.position =
+          position (Vec3 (static_cast<float> (200 + i * 25), 0, 10));
+        links[i]->send (std::move (s), hub.now ());
+      }
+      std::vector<CompanionSnapshot> got;
+      links[i]->receive (got);
+      for (const CompanionSnapshot& s : got)
+        latest[i][s.player] = s;
+    }
+  }
+
+  for (int i = 0; i < 4; ++i) {
+    MOPPE_CHECK (links[i]->peer_count () == 3);
+    MOPPE_CHECK (latest[i].size () == 3);
+    for (int j = 0; j < 4; ++j) {
+      if (i == j)
+        continue;
+      const auto it = latest[i].find (static_cast<std::uint64_t> (100 + j));
+      MOPPE_CHECK (it != latest[i].end ());
+      if (it != latest[i].end ())
+        MOPPE_CHECK_NEAR (position_value (it->second.fleet.boat.position)[0],
+                          static_cast<float> (200 + j * 25),
+                          1e-3f);
+    }
+  }
+
+  // Fast reconnect: peer 3 restarts from the same endpoint with a new ID;
+  // peers immediately evict old ID 103 instead of duplicating it.
+  links[3].reset ();
+  links[3] = CompanionLink::attach (
+    hub.join ("peer-3"), [&hub] () { return hub.now (); }, 203);
+  links[3]->set_world (world);
+  for (int step = 0; step < 90; ++step) {
+    hub.advance ((1.0 / 60.0) * si::second);
+    for (int i = 0; i < 4; ++i) {
+      if (links[i]->due ())
+        links[i]->send (companion_test_walker (static_cast<float> (i), 0),
+                        hub.now ());
+      std::vector<CompanionSnapshot> got;
+      links[i]->receive (got);
+    }
+  }
+  MOPPE_CHECK (links[0]->peer_count () == 3);
+  MOPPE_CHECK (!links[0]->address_of (203).empty ());
+  MOPPE_CHECK (links[0]->address_of (103).empty ());
+
+  // Switching world clears peers and reports the others as elsewhere.
+  WorldSummary other_world = world;
+  other_world.tag = world_tag ("hub-test-999");
+  other_world.seed = 999;
+  links[0]->set_world (other_world);
+  MOPPE_CHECK (links[0]->peer_count () == 0);
+  bool heard_elsewhere = false;
+  for (int step = 0; step < 60 && !heard_elsewhere; ++step) {
+    hub.advance (1.0 / 60.0 * si::second);
+    for (int i = 1; i < 4; ++i)
+      if (links[i]->due ())
+        links[i]->send (companion_test_walker (5.0f, 0), hub.now ());
+    std::vector<CompanionSnapshot> got;
+    links[0]->receive (got);
+    MOPPE_CHECK (got.empty ());
+    heard_elsewhere = links[0]->heard_elsewhere ();
+  }
+  MOPPE_CHECK (heard_elsewhere);
+  const std::optional<WorldSummary> other = links[0]->elsewhere_world ();
+  MOPPE_CHECK (other && other->seed == 123);
+}
+
+MOPPE_TEST (udp_three_peers_form_a_direct_mesh) {
+  std::string error;
+  const std::unique_ptr<CompanionLink> a =
+    CompanionLink::open ({ .port = 47970 }, error);
+  if (!a)
+    return;
+  const std::string addr_a = "127.0.0.1:" + std::to_string (a->port ());
+  const std::unique_ptr<CompanionLink> b =
+    CompanionLink::open ({ .address = addr_a, .port = 47971 }, error);
+  const std::unique_ptr<CompanionLink> c =
+    CompanionLink::open ({ .address = addr_a, .port = 47972 }, error);
+  MOPPE_CHECK (b != nullptr && c != nullptr);
+  if (!b || !c)
+    return;
+
+  const WorldSummary world { .tag = world_tag ("mesh-test-123"),
+                             .seed = 123,
+                             .resolution = 2048,
+                             .extent_hm = 100 };
+  a->set_world (world);
+  b->set_world (world);
+  c->set_world (world);
+
+  bool b_saw_c = false;
+  bool c_saw_b = false;
+  for (int round = 0; round < 160 && !(b_saw_c && c_saw_b); ++round) {
+    a->send (companion_test_walker (1.0f, 0.0), a->now ());
+    b->send (companion_test_walker (2.0f, 0.0), b->now ());
+    c->send (companion_test_walker (3.0f, 0.0), c->now ());
+    std::vector<CompanionSnapshot> got_a, got_b, got_c;
+    a->receive (got_a);
+    b->receive (got_b);
+    c->receive (got_c);
+    for (const CompanionSnapshot& s : got_b)
+      if (s.player == c->player ())
+        b_saw_c = true;
+    for (const CompanionSnapshot& s : got_c)
+      if (s.player == b->player ())
+        c_saw_b = true;
+    std::this_thread::sleep_for (std::chrono::milliseconds (5));
+  }
+  MOPPE_CHECK (b_saw_c);
+  MOPPE_CHECK (c_saw_b);
+  MOPPE_CHECK (a->peer_count () == 2);
 }

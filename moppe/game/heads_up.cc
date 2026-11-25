@@ -36,6 +36,26 @@ namespace moppe::game {
              Vec3 (0, meters_value (machine_kind (machine).driver_mark), 0);
     }
 
+    DisplayColor jacket_colour (Outfit outfit, const DisplayColor& fallback) {
+      for (std::size_t c = 0; c < figure::colours.size (); ++c)
+        if (std::string_view (figure::colour_names[c]) == "jacket")
+          return figure::outfit_colour (c, outfit);
+      return fallback;
+    }
+
+    bool sharing_ride_with (const GameLogicState& logic,
+                            std::uint64_t my_id,
+                            const RemotePeer& peer,
+                            const CompanionSnapshot& theirs) {
+      if (passenger_in (logic.m_doing) &&
+          (logic.m_ride_peer == 0 || logic.m_ride_peer == peer.player))
+        return true;
+      if (passenger_in (theirs.mode) &&
+          (theirs.ride_target == 0 || theirs.ride_target == my_id))
+        return true;
+      return false;
+    }
+
     // The bus the player rides, as it is now.
     std::optional<BusPose> ridden_bus (const HudWorld& w) {
       const std::vector<BusPose> buses =
@@ -553,26 +573,27 @@ namespace moppe::game {
                               const FrameView& frame,
                               points_t width,
                               points_t height) const {
-    const Doing mode = w.session.logic ().m_doing;
+    const GameLogicState& logic = w.session.logic ();
+    const Doing mode = logic.m_doing;
     const DisplayColor pale (0.96f, 0.96f, 0.96f);
-    if (w.company.companion && !passenger_in (mode) &&
-        !passenger_in (w.company.companion->mode)) {
-      const CompanionSnapshot& theirs = *w.company.companion;
+    const std::uint64_t my_id = w.company.link ? w.company.link->player () : 0;
+    const bool single_peer = w.company.peers.size () <= 1;
+    for (std::size_t i = 0; i < w.company.peers.size (); ++i) {
+      const RemotePeer& peer = w.company.peers[i];
+      if (!peer.snapshot ||
+          sharing_ride_with (logic, my_id, peer, *peer.snapshot))
+        continue;
+      const CompanionSnapshot& theirs = *peer.snapshot;
       const Vec3 at = whereabouts (theirs, true);
       // In the colour of the jacket they wear.
-      DisplayColor jacket = pale;
-      for (std::size_t c = 0; c < figure::colours.size (); ++c)
-        if (std::string_view (figure::colour_names[c]) == "jacket")
-          jacket =
-            mix_display (figure::outfit_colour (c, w.company.their_outfit ()),
-                         pale,
-                         0.35f * blend_weight[one]);
+      const DisplayColor jacket = mix_display (
+        jacket_colour (peer.outfit, pale), pale, 0.35f * blend_weight[one]);
       add_waymark (state,
                    frame,
                    width,
                    height,
-                   "companion",
-                   HudState::Waymark::Companion,
+                   single_peer ? "companion" : outfit_name (peer.outfit),
+                   HudState::Waymark::companion (i),
                    position (at + Vec3 (0, 2.0f, 0)),
                    12.0f * u::m,
                    24.0f * u::m,
@@ -708,25 +729,27 @@ namespace moppe::game {
       return at.point_for (terrain::torus_origin, w.places.period);
     };
     std::vector<Mark> marks;
-    const Doing mode = w.session.logic ().m_doing;
+    const GameLogicState& logic = w.session.logic ();
+    const Doing mode = logic.m_doing;
     marks.push_back ({ .kind = Mark::Kind::Walker,
                        .position = on_map (w.session.subject_position ()),
                        .heading = w.session.subject_heading (),
                        .colour = dark,
                        .name = "" });
-    if (w.company.companion && !passenger_in (mode) &&
-        !passenger_in (w.company.companion->mode)) {
-      const CompanionSnapshot& theirs = *w.company.companion;
+    const std::uint64_t my_id = w.company.link ? w.company.link->player () : 0;
+    const bool single_peer = w.company.peers.size () <= 1;
+    for (const RemotePeer& peer : w.company.peers) {
+      if (!peer.snapshot ||
+          sharing_ride_with (logic, my_id, peer, *peer.snapshot))
+        continue;
+      const CompanionSnapshot& theirs = *peer.snapshot;
       const Vec3 at = whereabouts (theirs, false);
-      DisplayColor jacket = dark;
-      for (std::size_t c = 0; c < figure::colours.size (); ++c)
-        if (std::string_view (figure::colour_names[c]) == "jacket")
-          jacket = figure::outfit_colour (c, w.company.their_outfit ());
-      marks.push_back ({ .kind = Mark::Kind::Companion,
-                         .position = on_map (position (at)),
-                         .heading = unit_direction (Vec3 (0, 0, -1)),
-                         .colour = jacket,
-                         .name = "companion" });
+      marks.push_back (
+        { .kind = Mark::Kind::Companion,
+          .position = on_map (position (at)),
+          .heading = unit_direction (Vec3 (0, 0, -1)),
+          .colour = jacket_colour (peer.outfit, dark),
+          .name = single_peer ? "companion" : outfit_name (peer.outfit) });
     }
     if (mode != Doing::driving (Machine::bike) && !w.session.can_drop_bike ())
       marks.push_back ({ .kind = Mark::Kind::Bike,
@@ -896,6 +919,54 @@ namespace moppe::game {
               static_cast<float> (height_pts) * u::pt);
   }
 
+  Hud::MultiplayerView HeadsUp::multiplayer_view (const HudWorld& w) const {
+    Hud::MultiplayerView view;
+    view.active = w.company.link != nullptr;
+    view.editing = multiplayer_editing;
+    view.chosen = multiplayer_choice;
+    view.input = multiplayer_input;
+    const DisplayColor pale (0.85f, 0.85f, 0.85f);
+    view.self_jacket = jacket_colour (w.company.outfit, pale);
+    view.self_name = outfit_name (w.company.outfit);
+
+    const terrain::WorldRecipe& recipe = w.world.recipe ();
+    char world_buf[96];
+    std::snprintf (world_buf,
+                   sizeof world_buf,
+                   "Seed %u  \u00b7  %d samples  \u00b7  %.1f km",
+                   static_cast<unsigned> (recipe.seed ().value),
+                   recipe.resolution (),
+                   extent_value (recipe.extent ())[0] / 1000.0f);
+    view.world_line = world_buf;
+
+    if (!w.company.link) {
+      view.status_line = "Offline";
+    } else {
+      view.status_line = w.company.link->transport_description ();
+      if (!w.company.link->ready ())
+        view.status_line += "  (connecting...)";
+    }
+
+    if (!w.company.last_error.empty ())
+      view.error_line = w.company.last_error;
+    else if (w.company.link && !w.company.link->last_error ().empty ())
+      view.error_line = w.company.link->last_error ();
+    else if (w.company.elsewhere && !w.company.elsewhere_note.empty ())
+      view.error_line = w.company.elsewhere_note;
+
+    for (const RemotePeer& peer : w.company.peers) {
+      Hud::MultiplayerView::PeerLine line;
+      line.jacket = jacket_colour (peer.outfit, pale);
+      line.name = outfit_name (peer.outfit);
+      line.address = peer.address;
+      line.delay_ms = static_cast<int> (std::lround (
+        peer.track.delay ().numerical_value_in (mp_units::si::second) *
+        1000.0));
+      view.peers.push_back (std::move (line));
+    }
+    return view;
+  }
+
   void HeadsUp::add_bus_board (const HudWorld& w,
                                const FrameView& frame,
                                points_t width,
@@ -999,6 +1070,8 @@ namespace moppe::game {
             opacity[one],
           width,
           height);
+    } else if (visibility.game_hud && multiplayer_open) {
+      hud.draw_multiplayer_menu (dl, text, width, height, multiplayer_view (w));
     } else if (visibility.game_hud && cheat_open) {
       // The cheat menu stands alone over the view, play's HUD put away.
       hud.draw_cheat_menu (dl, text, width, height, cheat_choice);

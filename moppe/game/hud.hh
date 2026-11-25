@@ -3,6 +3,7 @@
 
 #include <moppe/color.hh>
 #include <moppe/game/affordances.hh>
+#include <moppe/game/companion.hh>
 #include <moppe/game/doing.hh>
 #include <moppe/game/game_clock.hh>
 #include <moppe/game/place_kind.hh>
@@ -151,12 +152,19 @@ namespace moppe {
           JetSki = 1u << static_cast<unsigned> (Machine::jet_ski),
           Snowmobile = 1u << static_cast<unsigned> (Machine::snowmobile),
           Vehicles = (1u << machine_count) - 1,
-          Companion = 1u << machine_count,
-          Place = 1u << (machine_count + 1),
+          CompanionBase = 1u << machine_count,
+          CompanionMask = ((1u << max_companions) - 1u) << machine_count,
+          Companion = CompanionBase,
+          Place = 1u << (machine_count + max_companions),
         };
         // The bit a machine's mark is.
         static constexpr unsigned of (Machine machine) noexcept {
           return 1u << static_cast<unsigned> (machine);
+        }
+        // The bit the `slot`-th companion's mark is.
+        static constexpr unsigned companion (std::size_t slot) noexcept {
+          return CompanionBase
+                 << (slot < max_companions ? slot : max_companions - 1);
         }
         unsigned who = 0;
         // The machine's silhouette, if it is one.
@@ -175,7 +183,7 @@ namespace moppe {
         opacity_t alpha = 0.0f * opacity[one];
         DisplayColor colour { 1.0f, 1.0f, 1.0f };
       };
-      std::array<Waymark, 12> waymarks {};
+      std::array<Waymark, 20> waymarks {};
       int waymark_count = 0;
       // The chart in the corner: the map sheet's picture (map_sheet.hh)
       // turned so that the way the camera looks is up, round the
@@ -286,6 +294,34 @@ namespace moppe {
                             points_t width,
                             points_t height,
                             Machine chosen) const;
+
+      // What the multiplayer menu (J in play) shows: current world, transport
+      // status, inline address/room field, any error or mismatch notice, and
+      // the connected players with their jacket colours.
+      struct MultiplayerView {
+        struct PeerLine {
+          DisplayColor jacket { 0.85f, 0.85f, 0.85f };
+          std::string name;
+          std::string address;
+          int delay_ms = 0;
+        };
+        bool active = false;
+        bool editing = false;
+        int chosen = 0;
+        DisplayColor self_jacket { 0.22f, 0.45f, 0.78f };
+        std::string self_name;
+        std::string world_line;
+        std::string status_line;
+        std::string input;
+        std::string error_line;
+        std::vector<PeerLine> peers;
+      };
+
+      void draw_multiplayer_menu (render::DrawList& dl,
+                                  render::TextList& text,
+                                  points_t width,
+                                  points_t height,
+                                  const MultiplayerView& view) const;
 
       // Notes that `key` (by its name; none offers nothing) does `action`
       // just now.

@@ -41,6 +41,7 @@ namespace {
 
   std::atomic<bool> quitting = false;
   SDL_Window* active_window = nullptr;
+  bool text_input_active = false;
 
   // The game the page's touch controls drive (below), once it is set up,
   // and whether a thumb is on their stick, which then outranks a gamepad.
@@ -82,6 +83,11 @@ namespace {
     case SDL_SCANCODE_LSHIFT:
     case SDL_SCANCODE_RSHIFT:
       return Key::Shift;
+    case SDL_SCANCODE_RETURN:
+    case SDL_SCANCODE_KP_ENTER:
+      return Key::Enter;
+    case SDL_SCANCODE_BACKSPACE:
+      return Key::Backspace;
     case SDL_SCANCODE_GRAVE:
       return Key::Cheat;
     default:
@@ -96,6 +102,8 @@ namespace {
       return Key::G;
     case SDLK_H:
       return Key::H;
+    case SDLK_J:
+      return Key::J;
     case SDLK_L:
       return Key::L;
     case SDLK_M:
@@ -470,13 +478,31 @@ namespace moppe::platform {
         case SDL_EVENT_WINDOW_FOCUS_LOST:
           m_held.release (m_game, m_pointer_x, m_pointer_y);
           break;
+        case SDL_EVENT_TEXT_INPUT:
+          if (text_input_active && event.text.text)
+            m_game.text_input (event.text.text);
+          break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP: {
           const bool down = event.type == SDL_EVENT_KEY_DOWN;
-          if (down && event.key.repeat)
+          if (down && text_input_active &&
+              (event.key.mod & (SDL_KMOD_GUI | SDL_KMOD_CTRL)) &&
+              event.key.key == SDLK_V) {
+            if (char* clip = SDL_GetClipboardText ()) {
+              m_game.text_input (clip);
+              SDL_free (clip);
+            }
+            break;
+          }
+          const bool backspace_repeat =
+            text_input_active && event.key.scancode == SDL_SCANCODE_BACKSPACE;
+          if (down && event.key.repeat && !backspace_repeat)
             break;
           const Key k = map_key (event.key);
           if (k == Key::Unknown)
+            break;
+          if (text_input_active && down && k != Key::Enter &&
+              k != Key::Escape && k != Key::Backspace)
             break;
           if (down)
             m_held.keys.insert (k);
@@ -618,5 +644,15 @@ namespace moppe::platform {
   void set_pointer_captured (bool captured) {
     if (active_window)
       SDL_SetWindowRelativeMouseMode (active_window, captured);
+  }
+
+  void set_text_input (bool active) {
+    text_input_active = active;
+    if (!active_window)
+      return;
+    if (active)
+      SDL_StartTextInput (active_window);
+    else
+      SDL_StopTextInput (active_window);
   }
 }

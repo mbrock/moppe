@@ -597,7 +597,13 @@ namespace moppe::game {
   }
 
   displacement_t bus_seat_in_model (std::size_t seat) {
-    return displacement (seat == 0 ? bus_model::seat_01 : bus_model::seat_02);
+    static const std::array<displacement_t, 8> seats {
+      displacement (bus_model::seat_01), displacement (bus_model::seat_02),
+      displacement (bus_model::seat_03), displacement (bus_model::seat_04),
+      displacement (bus_model::seat_05), displacement (bus_model::seat_06),
+      displacement (bus_model::seat_07), displacement (bus_model::seat_08),
+    };
+    return seats[std::min<std::size_t> (seat, 7)];
   }
 
   position_t bus_seat (const BusPose& pose, std::size_t seat) {

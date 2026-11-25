@@ -182,12 +182,13 @@ namespace moppe::game {
               { .verb = Verb::leave_bus, .button = Button::mount });
         }
         if (doing == Doing::on_foot ()) {
-          if (const std::optional<Machine> seat =
-                around ? seat_within_reach (session, around->companion)
+          if (const std::optional<SeatTarget> seat =
+                around ? seat_within_reach (session, around->companions)
                        : std::nullopt)
             list.push_back ({ .verb = Verb::ride_along,
                               .button = Button::mount,
-                              .machine = *seat });
+                              .machine = seat->machine,
+                              .peer = seat->player });
           if (const std::optional<Machine> stuck = session.haul_within_reach ())
             list.push_back ({ .verb = Verb::haul,
                               .button = Button::mount,
@@ -303,7 +304,12 @@ namespace moppe::game {
       take_rope (session, a.machine);
       return;
     case Verb::ride_along:
-      take_seat (session, *around->companion, a.machine);
+      if (around)
+        for (const CompanionSnapshot& peer : around->companions)
+          if (peer.player == a.peer) {
+            take_seat (session, peer, a.machine);
+            break;
+          }
       return;
     case Verb::take:
       get_in (session, a.machine);
@@ -312,15 +318,19 @@ namespace moppe::game {
       step_out (session, a.machine);
       return;
     case Verb::board_bus: {
-      // The front seat by the door, or beside it when the other player
-      // sits there.
-      const CompanionSnapshot* theirs = around->companion;
-      const bool taken = theirs && theirs->mode == Doing::on_the_bus () &&
-                         theirs->bus == a.object && theirs->bus_seat == 0;
-      board_bus (session, *around->bus, a.object, taken ? 1 : 0);
+      // Pick the lowest free seat among the front eight seats on this bus.
+      std::array<bool, bus_passenger_seats> taken {};
+      if (around)
+        for (const CompanionSnapshot& peer : around->companions)
+          if (peer.mode == Doing::on_the_bus () && peer.bus == a.object &&
+              peer.bus_seat < taken.size ())
+            taken[peer.bus_seat] = true;
+      std::size_t seat = 0;
+      while (seat + 1 < taken.size () && taken[seat])
+        ++seat;
+      board_bus (session, *around->bus, a.object, seat);
       return;
     }
-      return;
     case Verb::leave_bus:
       leave_bus (session, *around->bus);
       return;

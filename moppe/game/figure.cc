@@ -133,29 +133,113 @@ namespace moppe::game::figure {
   }
 
   namespace {
-    // The green outfit repaints the clothes and leaves the rest -- skin,
-    // sandals, buttons, buckles -- as modelled.
+    // Each companion outfit repaints the clothes and leaves the rest --
+    // skin, sandals, buttons, buckles -- as modelled.
     struct Repaint {
       std::string_view name;
       DisplayColor colour;
     };
-    const Repaint green_outfit[] = {
-      { "jacket", { 0.30f, 0.46f, 0.24f } },
-      { "jacket_dark", { 0.20f, 0.32f, 0.17f } },
-      { "cap", { 0.93f, 0.52f, 0.12f } },
-      { "cap_dark", { 0.76f, 0.38f, 0.08f } },
-      { "denim", { 0.55f, 0.50f, 0.38f } },
-      { "denim_dark", { 0.44f, 0.40f, 0.30f } },
-      { "pack", { 0.50f, 0.40f, 0.27f } },
-      { "pack_dark", { 0.38f, 0.30f, 0.20f } },
-      { "bedroll", { 0.24f, 0.38f, 0.56f } },
-      { "hair", { 0.80f, 0.62f, 0.30f } },
-    };
+
+    const std::array<std::array<Repaint, 10>, outfit_count - 1>
+      repainted_outfits = { {
+        // green_jacket: forest green jacket, orange cap, khaki trousers
+        { {
+          { "jacket", { 0.30f, 0.46f, 0.24f } },
+          { "jacket_dark", { 0.20f, 0.32f, 0.17f } },
+          { "cap", { 0.93f, 0.52f, 0.12f } },
+          { "cap_dark", { 0.76f, 0.38f, 0.08f } },
+          { "denim", { 0.55f, 0.50f, 0.38f } },
+          { "denim_dark", { 0.44f, 0.40f, 0.30f } },
+          { "pack", { 0.50f, 0.40f, 0.27f } },
+          { "pack_dark", { 0.38f, 0.30f, 0.20f } },
+          { "bedroll", { 0.24f, 0.38f, 0.56f } },
+          { "hair", { 0.80f, 0.62f, 0.30f } },
+        } },
+        // rust_jacket: falu-rust jacket, cream cap, dark charcoal trousers
+        { {
+          { "jacket", { 0.68f, 0.26f, 0.18f } },
+          { "jacket_dark", { 0.50f, 0.18f, 0.12f } },
+          { "cap", { 0.90f, 0.85f, 0.72f } },
+          { "cap_dark", { 0.72f, 0.67f, 0.55f } },
+          { "denim", { 0.28f, 0.30f, 0.34f } },
+          { "denim_dark", { 0.20f, 0.22f, 0.25f } },
+          { "pack", { 0.36f, 0.42f, 0.30f } },
+          { "pack_dark", { 0.26f, 0.31f, 0.22f } },
+          { "bedroll", { 0.78f, 0.64f, 0.26f } },
+          { "hair", { 0.28f, 0.20f, 0.14f } },
+        } },
+        // ochre_jacket: mustard-ochre jacket, navy cap, slate trousers
+        { {
+          { "jacket", { 0.82f, 0.62f, 0.18f } },
+          { "jacket_dark", { 0.62f, 0.45f, 0.12f } },
+          { "cap", { 0.18f, 0.28f, 0.46f } },
+          { "cap_dark", { 0.12f, 0.19f, 0.34f } },
+          { "denim", { 0.35f, 0.40f, 0.44f } },
+          { "denim_dark", { 0.26f, 0.30f, 0.34f } },
+          { "pack", { 0.46f, 0.32f, 0.24f } },
+          { "pack_dark", { 0.34f, 0.22f, 0.16f } },
+          { "bedroll", { 0.56f, 0.24f, 0.22f } },
+          { "hair", { 0.52f, 0.34f, 0.18f } },
+        } },
+        // plum_jacket: heather-plum jacket, sage cap, warm grey trousers
+        { {
+          { "jacket", { 0.48f, 0.28f, 0.46f } },
+          { "jacket_dark", { 0.34f, 0.19f, 0.33f } },
+          { "cap", { 0.58f, 0.68f, 0.54f } },
+          { "cap_dark", { 0.44f, 0.52f, 0.40f } },
+          { "denim", { 0.46f, 0.44f, 0.42f } },
+          { "denim_dark", { 0.34f, 0.33f, 0.31f } },
+          { "pack", { 0.60f, 0.48f, 0.32f } },
+          { "pack_dark", { 0.46f, 0.36f, 0.23f } },
+          { "bedroll", { 0.30f, 0.48f, 0.42f } },
+          { "hair", { 0.20f, 0.16f, 0.14f } },
+        } },
+        // teal_jacket: fjord-teal jacket, yellow cap, olive trousers
+        { {
+          { "jacket", { 0.16f, 0.50f, 0.52f } },
+          { "jacket_dark", { 0.10f, 0.36f, 0.38f } },
+          { "cap", { 0.90f, 0.74f, 0.22f } },
+          { "cap_dark", { 0.72f, 0.56f, 0.14f } },
+          { "denim", { 0.40f, 0.42f, 0.32f } },
+          { "denim_dark", { 0.30f, 0.32f, 0.24f } },
+          { "pack", { 0.56f, 0.34f, 0.24f } },
+          { "pack_dark", { 0.42f, 0.24f, 0.17f } },
+          { "bedroll", { 0.82f, 0.42f, 0.22f } },
+          { "hair", { 0.72f, 0.54f, 0.26f } },
+        } },
+        // pine_jacket: dark pine jacket, rust cap, sand trousers
+        { {
+          { "jacket", { 0.18f, 0.34f, 0.28f } },
+          { "jacket_dark", { 0.11f, 0.24f, 0.19f } },
+          { "cap", { 0.76f, 0.32f, 0.20f } },
+          { "cap_dark", { 0.58f, 0.22f, 0.13f } },
+          { "denim", { 0.62f, 0.56f, 0.44f } },
+          { "denim_dark", { 0.48f, 0.43f, 0.33f } },
+          { "pack", { 0.34f, 0.32f, 0.38f } },
+          { "pack_dark", { 0.24f, 0.22f, 0.28f } },
+          { "bedroll", { 0.76f, 0.68f, 0.36f } },
+          { "hair", { 0.42f, 0.28f, 0.16f } },
+        } },
+        // berry_jacket: lingonberry jacket, slate cap, dark denim trousers
+        { {
+          { "jacket", { 0.68f, 0.22f, 0.34f } },
+          { "jacket_dark", { 0.48f, 0.14f, 0.24f } },
+          { "cap", { 0.34f, 0.42f, 0.48f } },
+          { "cap_dark", { 0.24f, 0.30f, 0.36f } },
+          { "denim", { 0.24f, 0.30f, 0.40f } },
+          { "denim_dark", { 0.17f, 0.22f, 0.30f } },
+          { "pack", { 0.54f, 0.46f, 0.34f } },
+          { "pack_dark", { 0.40f, 0.34f, 0.24f } },
+          { "bedroll", { 0.38f, 0.52f, 0.30f } },
+          { "hair", { 0.86f, 0.72f, 0.44f } },
+        } },
+      } };
   }
 
   DisplayColor outfit_colour (std::size_t colour, Outfit outfit) {
-    if (outfit == Outfit::green_jacket)
-      for (const Repaint& repaint : green_outfit)
+    const std::size_t index = static_cast<std::size_t> (outfit);
+    if (index > 0 && index < outfit_count)
+      for (const Repaint& repaint : repainted_outfits[index - 1])
         if (repaint.name == colour_names[colour])
           return repaint.colour;
     return colours[colour];
@@ -163,15 +247,16 @@ namespace moppe::game::figure {
 
   void draw (render::DrawList& dl, const AvatarSkeleton& k, Outfit outfit) {
     // Each outfit's paints, looked up by name once.
-    static const std::array<std::vector<DisplayColor>, 2> wardrobe = [] {
-      std::array<std::vector<DisplayColor>, 2> outfits;
-      for (std::size_t o = 0; o < outfits.size (); ++o)
-        for (std::size_t c = 0; c < colours.size (); ++c)
-          outfits[o].push_back (outfit_colour (c, static_cast<Outfit> (o)));
-      return outfits;
-    }();
+    static const std::array<std::vector<DisplayColor>, outfit_count> wardrobe =
+      [] {
+        std::array<std::vector<DisplayColor>, outfit_count> outfits;
+        for (std::size_t o = 0; o < outfits.size (); ++o)
+          for (std::size_t c = 0; c < colours.size (); ++c)
+            outfits[o].push_back (outfit_colour (c, static_cast<Outfit> (o)));
+        return outfits;
+      }();
     const std::vector<DisplayColor>& paints =
-      wardrobe[static_cast<std::size_t> (outfit)];
+      wardrobe[static_cast<std::size_t> (outfit) % outfit_count];
 
     static thread_local std::vector<Vec3> points, normals;
     skin (k, points, normals);

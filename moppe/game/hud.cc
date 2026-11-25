@@ -1255,7 +1255,9 @@ namespace moppe {
           // The pointer takes the colour of the one that matters most:
           // the other player, then the place, then the machines.
           const auto rank = [] (const Mark& m) {
-            return m.who & Mark::Companion ? 0 : m.who & Mark::Place ? 1 : 2;
+            return m.who & Mark::CompanionMask ? 0
+                   : m.who & Mark::Place       ? 1
+                                               : 2;
           };
           if (!first || rank (mark) < rank (*first))
             first = &mark;
@@ -1263,7 +1265,7 @@ namespace moppe {
         if (!members)
           return a;
         std::ranges::stable_sort (a.names, {}, [] (const Mark* m) {
-          return m->who & Mark::Companion ? 0 : 1;
+          return m->who & Mark::CompanionMask ? 0 : 1;
         });
         a.x /= static_cast<float> (members);
         a.y /= static_cast<float> (members);
@@ -2276,6 +2278,187 @@ namespace moppe {
                   "Close",
                   words,
                   clear);
+    }
+
+    void Hud::draw_multiplayer_menu (render::DrawList& dl,
+                                     render::TextList& text,
+                                     points_t width,
+                                     points_t height,
+                                     const MultiplayerView& view) const {
+      const float w = points_value (width);
+      const float h = points_value (height);
+      hud_state (dl);
+      dl.color (0.02f, 0.02f, 0.025f, 0.54f);
+      dl.begin (render::Prim::Quads);
+      dl.vertex (0, 0);
+      dl.vertex (w, 0);
+      dl.vertex (w, h);
+      dl.vertex (0, h);
+      dl.end ();
+      dl.state (render::DrawState ());
+      dl.lit (true);
+      dl.fogged (true);
+      dl.color (1, 1, 1, 1);
+      if (!m_font)
+        return;
+
+      const int peer_rows =
+        std::max (1, static_cast<int> (view.peers.size ()) + 1);
+      constexpr points_t row_step = 28.0f * u::pt;
+      constexpr points_t peer_step = 22.0f * u::pt;
+      const points_t total_height =
+        120.0f * u::pt + 4.0f * row_step +
+        static_cast<float> (peer_rows) * peer_step +
+        (view.error_line.empty () ? 0.0f * u::pt : 22.0f * u::pt);
+      points_t y = std::max (56.0f * u::pt, 0.5f * (height - total_height));
+      const points_t center = 0.5f * width;
+
+      TextStyle title = prompt_words (opaque);
+      title.size = 26.0f;
+      draw_shaded (text, center, y, "Multiplayer", title, TextAlign::Center);
+      y += 22.0f * u::pt;
+
+      TextStyle sub = prompt_words (0.70f * opacity[one]);
+      sub.size = 12.0f;
+      sub.tracking = 0.04f;
+      sub.tabular_figures = true;
+      draw_shaded (text, center, y, view.world_line, sub, TextAlign::Center);
+      y += 20.0f * u::pt;
+
+      TextStyle status = prompt_words (0.90f * opacity[one]);
+      status.size = 13.5f;
+      status.tracking = 0.02f;
+      draw_shaded (
+        text, center, y, view.status_line, status, TextAlign::Center);
+      y += 22.0f * u::pt;
+
+      if (!view.error_line.empty ()) {
+        TextStyle warn = status;
+        tint (warn, DisplayColor (1.0f, 0.60f, 0.44f));
+        draw_shaded (text, center, y, view.error_line, warn, TextAlign::Center);
+        y += 22.0f * u::pt;
+      }
+
+      y += 10.0f * u::pt;
+      const std::string join_field =
+        view.editing ? "Join: [ " + view.input + "_ ]"
+                     : (view.input.empty () ? "Join address or room..."
+                                            : "Join: " + view.input);
+      const std::array<std::string, 4> labels {
+        view.active ? "Switch to local network (LAN)" : "Local network (LAN)",
+        "Create relay room",
+        join_field,
+        "Disconnect",
+      };
+      const points_t col_x = center - 165.0f * u::pt;
+      for (int i = 0; i < 4; ++i) {
+        const bool on = view.chosen == i;
+        const bool disabled = i == 3 && !view.active;
+        const opacity_t shown = (disabled ? 0.28f
+                                 : on     ? 1.0f
+                                          : 0.58f) *
+                                opacity[one];
+        TextStyle words = prompt_words (shown);
+        words.size = on ? 18.5f : 16.5f;
+        if (on) {
+          place_shape (text,
+                       m_shape->arrow,
+                       col_x - 14.0f * u::pt,
+                       y - 6.0f * u::pt,
+                       5.5f * u::pt,
+                       0.0f * u::rad,
+                       ink,
+                       shown);
+        }
+        draw_shaded (text, col_x, y, labels[i], words, TextAlign::Left);
+        y += row_step;
+      }
+
+      y += 14.0f * u::pt;
+      const auto draw_dot =
+        [&] (points_t dx, points_t dy, const DisplayColor& colour) {
+          place_shape (text,
+                       m_shape->shade,
+                       dx,
+                       dy,
+                       5.6f * u::pt,
+                       0.0f * u::rad,
+                       white,
+                       0.90f * opacity[one]);
+          place_shape (text,
+                       m_shape->shade,
+                       dx,
+                       dy,
+                       4.3f * u::pt,
+                       0.0f * u::rad,
+                       colour,
+                       opaque);
+        };
+
+      TextStyle roster = prompt_words (0.86f * opacity[one]);
+      roster.size = 13.0f;
+      roster.tabular_figures = true;
+      draw_dot (col_x + 5.0f * u::pt, y - 4.5f * u::pt, view.self_jacket);
+      draw_shaded (text,
+                   col_x + 18.0f * u::pt,
+                   y,
+                   "You  \u00b7  " + view.self_name + " jacket",
+                   roster,
+                   TextAlign::Left);
+      y += peer_step;
+
+      if (view.peers.empty ()) {
+        TextStyle quiet = prompt_words (0.52f * opacity[one]);
+        quiet.size = 12.5f;
+        draw_shaded (text,
+                     col_x + 18.0f * u::pt,
+                     y,
+                     view.active ? "Waiting for others in the same world..."
+                                 : "Not connected",
+                     quiet,
+                     TextAlign::Left);
+        y += peer_step;
+      } else {
+        for (const MultiplayerView::PeerLine& peer : view.peers) {
+          draw_dot (col_x + 5.0f * u::pt, y - 4.5f * u::pt, peer.jacket);
+          std::string line = peer.name + " jacket";
+          if (!peer.address.empty ())
+            line += "  \u00b7  " + peer.address;
+          if (peer.delay_ms > 0)
+            line += "  \u00b7  " + std::to_string (peer.delay_ms) + " ms";
+          draw_shaded (
+            text, col_x + 18.0f * u::pt, y, line, roster, TextAlign::Left);
+          y += peer_step;
+        }
+      }
+
+      y += 22.0f * u::pt;
+      constexpr opacity_t clear = 0.9f * opacity[one];
+      const TextStyle legend = prompt_words (clear);
+      const points_t space = 2.0f * legend.size * u::pt;
+      if (view.editing) {
+        const points_t go = keyed_width ("Enter", "Connect", legend);
+        const points_t cancel = keyed_width ("Esc", "Cancel", legend);
+        const points_t x = 0.5f * (width - go - cancel - space);
+        draw_keyed (text, x, y, "Enter", "Connect", legend, clear);
+        draw_keyed (text, x + go + space, y, "Esc", "Cancel", legend, clear);
+      } else {
+        const points_t choose = keyed_width ("W/S", "Choose", legend);
+        const points_t select = keyed_width ("Space", "Select", legend);
+        const points_t close = keyed_width ("Esc", "Close", legend);
+        const points_t x =
+          0.5f * (width - choose - select - close - 2.0f * space);
+        draw_keyed (text, x, y, "W/S", "Choose", legend, clear);
+        draw_keyed (
+          text, x + choose + space, y, "Space", "Select", legend, clear);
+        draw_keyed (text,
+                    x + choose + select + 2.0f * space,
+                    y,
+                    "Esc",
+                    "Close",
+                    legend,
+                    clear);
+      }
     }
 
     void Hud::draw_title_card (render::TextList& text,
