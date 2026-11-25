@@ -116,7 +116,7 @@ namespace moppe::nhal {
       m_clear = m_device->create_texture (
         { 1, 1, Format::rgba8_unorm, usage_sampled, 1, "clear" });
       m_device->write_texture (m_clear, std::as_bytes (std::span (clear)));
-      const std::uint8_t gi_open[4] = { 128, 128, 255, 0 };
+      const std::uint8_t gi_open[4] = { 128, 128, 255, 255 };
       m_gi_open = m_device->create_texture (
         { 1, 1, Format::rgba8_unorm, usage_sampled, 1, "open sky gi" });
       m_device->write_texture (m_gi_open, std::as_bytes (std::span (gi_open)));

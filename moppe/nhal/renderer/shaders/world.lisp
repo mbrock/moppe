@@ -134,15 +134,22 @@
          (lit (smoothstep (- h 0.022) (+ h 0.036) (swizzle dir :y))))
     (mix 1.0 lit have-gi)))
 
-;;; Combined sky openness from terrain relief (weighted toward the bright
-;;; horizon band under clear sky) and overhead forest canopy.
-(define-shader-function world-sky-open (gi-sample closure have-gi have-closure
-                                        overcast)
-  (let* ((tv (mix 1.0 (swizzle gi-sample :z) have-gi))
-         (mh (* (swizzle gi-sample :w) have-gi))
-         (tv-clear (clamp (* tv (- 1.0 (* 0.65 mh))) 0.0 1.0))
-         (tv-eff (mix tv-clear tv overcast)))
-    (* tv-eff (mix 1.0 0.32 (* closure have-closure)))))
+;;; Combined sky openness from the baked terrain+canopy sky visibility
+;;; (weighted toward the bright horizon band under clear sky), lifted toward
+;;; pure terrain sky visibility for elevated treetops (CROWN-LIFT).
+(define-shader-function world-sky-open (gi-sample canopy-density have-gi
+                                        have-closure overcast crown-lift)
+  (let* ((total-vis (mix 1.0 (swizzle gi-sample :z) have-gi))
+         (terr-vis (mix 1.0 (swizzle gi-sample :w) have-gi))
+         (active-vis (mix total-vis terr-vis crown-lift))
+         (rms-sin (sqrt (max (- 1.0 active-vis) 0.0)))
+         (vis-clear (clamp (* active-vis (- 1.0 (* 0.55 rms-sin))) 0.0 1.0))
+         (vis-eff (mix vis-clear active-vis overcast))
+         ;; Subtle local sub-texel crown darkening where trees stand directly
+         ;; overhead, faded out for exposed upper crowns.
+         (local (mix 1.0 (- 1.0 (* 0.25 canopy-density have-closure))
+                     (- 1.0 crown-lift))))
+    (* vis-eff local)))
 
 ;;; Broad ground linear albedo estimate by altitude, for shaders that do
 ;;; not bind the terrain material cache.
@@ -152,33 +159,35 @@
          (snow (smoothstep 0.54 0.78 rise)))
     (mix (srgb (vec3 0.44 0.44 0.28)) (srgb (vec3 0.88 0.91 0.96)) snow)))
 
-;;; Unified indirect illumination: directional sky light bent toward the
-;;; open hemisphere (with horizon-weighted clear-sky occlusion), sunlit
-;;; bounce off opposite valley walls (using both the bent normal and the
-;;; ridge opposite the sun), local ground-to-underside bounce, and sunlit
-;;; canopy bounce.  SHADE-FILL tints only the sky lobe so warm sunlight
-;;; bounce stays warm inside cool sky shadows.
+;;; Unified indirect illumination: directional sky light bent away from
+;;; terrain ridges and forest walls, sunlit bounce off opposite valley walls,
+;;; local ground-to-underside bounce, and directional species/autumn-tinted
+;;; canopy bounce (golden birch vs cool spruce).  SHADE-FILL tints only the
+;;; sky lobe so warm sunlight bounce stays warm inside cool sky shadows.
 (define-shader-function world-sky-indirect (ambient sun-diffuse sun sky-sun
                                             overcast world-normal gi-sample
-                                            closure have-gi have-closure
-                                            horizon-lit opp-horizon
-                                            bounce-albedo direct)
+                                            canopy-density canopy-warmth
+                                            have-gi have-closure horizon-lit
+                                            opp-horizon bounce-albedo direct
+                                            crown-lift)
   (let* ((bx (* (decode-signed-gi (swizzle gi-sample :x)) have-gi))
          (bz (* (decode-signed-gi (swizzle gi-sample :y)) have-gi))
          (by (sqrt (max (- 1.0 (+ (* bx bx) (* bz bz))) 0.0)))
          (bent (normalize (vec3 bx by bz)))
-         (terrain-vis (mix 1.0 (swizzle gi-sample :z) have-gi))
-         (mean-horizon (* (swizzle gi-sample :w) have-gi))
-         ;; Clear sky luminance concentrates near the horizon, so ridges block
-         ;; more sky light on clear days than under zenith-bright overcast.
-         (tv-clear (clamp (* terrain-vis (- 1.0 (* 0.65 mean-horizon)))
-                          0.0 1.0))
-         (tv-eff (mix tv-clear terrain-vis overcast))
-         (canopy (* closure have-closure))
-         (canopy-vis (mix 1.0 0.32 canopy))
-         (sky-open (* tv-eff canopy-vis))
+         (total-vis (mix 1.0 (swizzle gi-sample :z) have-gi))
+         (terr-vis (mix 1.0 (swizzle gi-sample :w) have-gi))
+         (active-vis (mix total-vis terr-vis crown-lift))
+         ;; Clear sky luminance concentrates near the horizon, so ridges and
+         ;; tall tree lines block more sky light on clear days than under
+         ;; zenith-bright overcast.
+         (rms-sin (sqrt (max (- 1.0 active-vis) 0.0)))
+         (vis-clear (clamp (* active-vis (- 1.0 (* 0.55 rms-sin))) 0.0 1.0))
+         (sky-base (mix vis-clear active-vis overcast))
+         (canopy (* canopy-density have-closure))
+         (local-canopy (mix 1.0 (- 1.0 (* 0.25 canopy)) (- 1.0 crown-lift)))
+         (sky-open (* sky-base local-canopy))
          (sky-dir (normalize (mix world-normal bent
-                                  (clamp (- 1.0 tv-eff) 0.0 0.82))))
+                                  (clamp (- 1.0 sky-open) 0.0 0.84))))
          ;; Warmer open sky toward the sun's half of the dome, cooler cobalt
          ;; opposite; flattens to neutral grey under cloud.
          (solar (clamp (+ 0.5 (* 0.5 (dot sky-dir sky-sun))) 0.0 1.0))
@@ -187,11 +196,14 @@
          (fill (mix (mix (vec3 0.88 0.95 1.07) (vec3 0.97 0.98 0.99) overcast)
                     (vec3 1.0 1.0 1.0) direct))
          (sky-fill (* (hemisphere-lobes ambient sky-dir overcast)
-                      sky-tint fill (mix 0.22 1.0 sky-open)))
-         ;; Single-bounce sunlight off surrounding valley walls: vertical and
-         ;; tilted opposite slopes catch full sun even at golden hour.
+                      sky-tint fill (mix 0.18 1.0 sky-open)))
+         ;; Single-bounce sunlight off surrounding valley walls (pure terrain
+         ;; occlusion plus opposite-ridge horizon).
          (daylight (smoothstep -0.04 0.14 (swizzle sun :y)))
-         (terrain-occ (clamp (- 1.0 tv-eff) 0.0 1.0))
+         (terr-rms (sqrt (max (- 1.0 terr-vis) 0.0)))
+         (terr-eff (mix (clamp (* terr-vis (- 1.0 (* 0.55 terr-rms))) 0.0 1.0)
+                        terr-vis overcast))
+         (terrain-occ (clamp (- 1.0 terr-eff) 0.0 1.0))
          (wall-n (normalize (vec3 (swizzle bent :x) 0.42 (swizzle bent :z))))
          (wall-lit (clamp (+ (* 0.85 (max (dot wall-n sun) 0.0))
                              (* 0.15 daylight))
@@ -208,11 +220,40 @@
                            (* downward (smoothstep 0.0 0.45 (swizzle sun :y))
                               horizon-lit (mix 0.22 1.0 direct)
                               (mix 1.0 0.35 canopy) clear 0.36)))
-         ;; Sunlit crowns filter and bounce a warm olive-gold glow into the
-         ;; sheltered forest floor and trunks even at low golden-hour sun.
-         (canopy-bounce (* sun-diffuse (vec3 0.26 0.28 0.12)
-                           (* canopy horizon-lit daylight clear 0.46))))
+         ;; Directional canopy bounce: combines lateral forest-edge occlusion
+         ;; (TERR-VIS - ACTIVE-VIS) with overhead canopy density, tinted from
+         ;; deep pine-olive under spruce to warm amber-gold beside turned
+         ;; birch groves.  Porous crowns transmit ~30% light even backlit.
+         (canopy-occ (clamp (- terr-vis active-vis) 0.0 1.0))
+         (canopy-share (clamp (+ (* canopy-occ 1.45)
+                                 (* canopy (- 1.0 crown-lift) 0.32))
+                              0.0 1.0))
+         (tree-wall-n (normalize (vec3 (swizzle bent :x) 0.35
+                                       (swizzle bent :z))))
+         (tree-sun (+ 0.30 (* 0.70 (max (dot tree-wall-n sun) 0.0))))
+         (foliage-albedo (mix (vec3 0.18 0.28 0.11) (vec3 0.62 0.40 0.10)
+                              canopy-warmth))
+         (canopy-bounce (* sun-diffuse foliage-albedo
+                           (* canopy-share tree-sun horizon-lit daylight
+                              clear 0.62))))
     (+ sky-fill valley-bounce ground-bounce canopy-bounce)))
+
+;;; Samples the RGBA8 canopy sheet at UV and 20 m into the blocking forest
+;;; wall (-BENT), returning (closure, optical-density, autumn-warmth).
+(define-shader-abstraction read-canopy-wall (canopy sampler uv gi-sample
+                                             world-gi)
+  `(let* ((cw-here (sample-level ,canopy ,sampler ,uv 0.0))
+          (cw-bx (* (decode-signed-gi (swizzle ,gi-sample :x))
+                    (swizzle ,world-gi :z)))
+          (cw-bz (* (decode-signed-gi (swizzle ,gi-sample :y))
+                    (swizzle ,world-gi :z)))
+          (cw-wall (sample-level ,canopy ,sampler
+                                 (- ,uv (* (vec2 cw-bx cw-bz) 20.0
+                                           (swizzle ,world-gi :xy)))
+                                 0.0)))
+     (vec3 (swizzle cw-here :x)
+           (swizzle cw-here :z)
+           (max (swizzle cw-here :w) (swizzle cw-wall :w)))))
 
 ;;; A fire's light on a surface: falling off with the square of the
 ;;; distance and gone at its reach, wrapped a little round the form so a
@@ -2280,7 +2321,9 @@
   (wet-darkening :float)
   (puddle-pot :float)
   (grain-strength :float)
-  (closure :float))
+  (closure :float)
+  (canopy-density :float)
+  (canopy-warmth :float))
 
 ;;; Evaluate the complete static ground and road surface at WORLD-XZ / FIELD-UV
 ;;; over FOOTPRINT metres.  When SNAP-HEIGHT is true (the world-space bake
@@ -2357,6 +2400,9 @@
           (stand (read-stand closure litter linear-repeat ,world-xz
                              (swizzle fields :y) (swizzle fields :zw)
                              (swizzle land :w)))
+          (canopy-raw (* (sample-level closure linear-repeat
+                                       (* ,world-xz (swizzle fields :zw)) 0.0)
+                         (swizzle fields :y)))
           (metres (* (swizzle scale :x) (swizzle extent :x)))
           (micro (read-detail detail linear-repeat ,field-uv *detail-micro*
                               metres ,footprint))
@@ -2442,13 +2488,15 @@
       :wet-darkening wet-darkening
       :puddle-pot puddle-pot
       :grain-strength grain-strength
-      :closure (swizzle stand :x))))
+      :closure (swizzle stand :x)
+      :canopy-density (swizzle canopy-raw :z)
+      :canopy-warmth (swizzle canopy-raw :w))))
 
 ;;; Apply live fine grain, weather wetness, coastal swash, vehicle snow tracks,
 ;;; sun shadows, PBR lighting, and atmospheric haze to a DRY-GROUND surface.
 (define-shader-abstraction shade-ground-dynamic (dry footprint gi-sample
                                                  horizon-lit opp-horizon
-                                                 bounce-albedo)
+                                                 wall-warmth bounce-albedo)
   `(let* ((extent (swizzle size :xy))
           (eye (swizzle camera-position :xyz))
           (distance (sqrt (dot (- world eye) (- world eye))))
@@ -2563,14 +2611,18 @@
           (indirect (world-sky-indirect (swizzle ambient :xyz)
                                         (swizzle sun-diffuse :xyz) sun
                                         (swizzle sky-sun :xyz) overcast shaded
-                                        ,gi-sample closure-here
+                                        ,gi-sample
+                                        (dry-ground-canopy-density ,dry)
+                                        (max (dry-ground-canopy-warmth ,dry)
+                                             ,wall-warmth)
                                         (swizzle world-gi :z)
                                         (swizzle world-gi :w)
                                         ,horizon-lit ,opp-horizon
-                                        ,bounce-albedo direct))
-          (sky-open (world-sky-open ,gi-sample closure-here
+                                        ,bounce-albedo direct 0.0))
+          (sky-open (world-sky-open ,gi-sample
+                                    (dry-ground-canopy-density ,dry)
                                     (swizzle world-gi :z)
-                                    (swizzle world-gi :w) overcast))
+                                    (swizzle world-gi :w) overcast 0.0))
           (diffuse-light (+ (* indirect (swizzle response :xyz))
                             (* (swizzle sun-diffuse :xyz)
                                (swizzle response :w))
@@ -2666,7 +2718,9 @@
                 :wet-darkening (swizzle m2 :z)
                 :puddle-pot (swizzle m2 :w)
                 :grain-strength (* 0.25 (swizzle m3 :x))
-                :closure (swizzle m3 :y)))
+                :closure (swizzle m3 :y)
+                :canopy-density (swizzle m3 :z)
+                :canopy-warmth (swizzle m3 :w)))
           (gi-uv (* xz (swizzle world-gi :xy)))
           (gi-sample (sample-level sky-gi linear-repeat gi-uv 0.0))
           (ha (sample-level horizon-a linear-repeat gi-uv 0.0))
@@ -2678,14 +2732,19 @@
                             (decode-signed-byte (swizzle gi-sample :y)))
                       (swizzle world-gi :z)))
           ;; Opposite slope's colour from the global world tile in cache-albedo,
-          ;; so snowy cirques bounce crisp white and birch hillsides bounce gold.
+          ;; and blocking forest wall's autumn warmth 20 m into -BENT.
           (opp-uv (cache-world-uv (- xz (* bent-xz 160.0)) period))
+          (wall-uv (cache-world-uv (- xz (* bent-xz 20.0)) period))
+          (wall-warmth (swizzle (sample-level cache-grain linear-clamp wall-uv
+                                              0.0)
+                                :w))
           (bounce-albedo
             (srgb (max (swizzle (sample-level cache-albedo linear-clamp opp-uv
                                               0.0)
                                 :xyz)
                        (vec3 0.0 0.0 0.0)))))
-     (shade-ground-dynamic dry footprint gi-sample h-lit opp-h bounce-albedo)))
+     (shade-ground-dynamic dry footprint gi-sample h-lit opp-h wall-warmth
+                           bounce-albedo)))
 
 ;;; Live evaluation of the full ground and road material (for MOPPE_TERRAIN_CACHE=0).
 (define-shader-abstraction shade-ground-live ()
@@ -2698,11 +2757,17 @@
                                 footprint
                                 (- 1.0 (smoothstep 450.0 650.0 distance))
                                 nil))
-          (gi-sample (sample-level sky-gi linear-repeat
-                                   (* (swizzle world :xz)
-                                      (swizzle world-gi :xy))
-                                   0.0)))
-     (shade-ground-dynamic dry footprint gi-sample 1.0 0.0
+          (gi-uv (* (swizzle world :xz) (swizzle world-gi :xy)))
+          (gi-sample (sample-level sky-gi linear-repeat gi-uv 0.0))
+          (bent-xz (* (vec2 (decode-signed-byte (swizzle gi-sample :x))
+                            (decode-signed-byte (swizzle gi-sample :y)))
+                      (swizzle world-gi :z)))
+          (wall-warmth (swizzle (sample-level closure linear-repeat
+                                              (- gi-uv (* bent-xz 20.0
+                                                          (swizzle world-gi :xy)))
+                                              0.0)
+                                :w)))
+     (shade-ground-dynamic dry footprint gi-sample 1.0 0.0 wall-warmth
                            (default-bounce-albedo world relief))))
 
 ;;; Instanced strip quads into the 1024x2048 ground material cache atlas.
@@ -2790,7 +2855,9 @@
     (set-output grain-strength (vec4 (clamp (* (dry-ground-grain-strength dry)
                                                4.0)
                                             0.0 1.0)
-                                     (dry-ground-closure dry) 0.0 1.0))))
+                                     (dry-ground-closure dry)
+                                     (dry-ground-canopy-density dry)
+                                     (dry-ground-canopy-warmth dry)))))
 
 (define-shader-program terrain-bake
   :vertex terrain-bake-vertex
@@ -2798,32 +2865,61 @@
 
 ;;; -- terrain GI and horizon bake ------------------------------------------
 ;;;
-;;; Runs once per world load over the periodic heightfield, marching 48
-;;; geometric steps along eight azimuths (0..315 deg) to bake sky visibility,
-;;; open-sky bent normal, mean horizon sine, and the 8-direction horizon
-;;; elevation sines into three 1024x1024 RGBA8 textures.
+;;; Runs once per world load (and when the forest updates) over the periodic
+;;; heightfield and RGBA8 canopy raster, marching 48 geometric steps along
+;;; eight azimuths (0..315 deg) to bake:
+;;;   sky-gi:    RG bent normal xz (terrain + porous canopy),
+;;;              B  total sky visibility (terrain + porous canopy),
+;;;              A  pure bare-earth sky visibility (for upper tree crowns)
+;;;   horizon-a: bare-earth horizon sines for azimuths 0..3 (0..135 deg)
+;;;   horizon-b: bare-earth horizon sines for azimuths 4..7 (180..315 deg)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *gi-bake*
     '((dims :vec4)                 ; extent x, extent z, scale x, scale z
-      (params :vec4))))            ; height scale, r start, r ratio, gi size
+      (params :vec4)               ; height scale, r start, r ratio, gi size
+      (canopy :vec4))))            ; max canopy height m, have canopy, 0, 0
 
 (define-shader-function bent-weight-h (s)
   (let* ((c (sqrt (max (- 1.0 (* s s)) 0.0))))
     (* 0.5 (- (acos-unit s) (* s c)))))
 
-(define-shader-abstraction horizon-sweep (heights grid extent inv-scale h0
-                                          height-scale dir-xz r-start r-ratio)
-  `(swizzle
-    (counted-fold (k (uint 48) state (vec2 0.0 ,r-start))
-      (let* ((dist (swizzle state :y))
-             (at (floor (+ ,grid (* ,dir-xz (* dist ,inv-scale))
-                           (vec2 0.5 0.5))))
-             (h (* (height-at ,heights at ,extent) ,height-scale))
-             (dh (- h ,h0))
-             (s (clamp (/ dh (sqrt (+ (* dh dh) (* dist dist)))) 0.0 1.0)))
-        (vec2 (max (swizzle state :x) s) (* dist ,r-ratio))))
-    :x))
+;;; Dual bare-earth + porous-canopy sweep along one azimuth DIR-XZ, returning
+;;; (terr-sin, eff-sin, final-dist).  TERR-SIN is opaque bare earth; EFF-SIN
+;;; adds Beer-Lambert angular canopy attenuation from tree heights and
+;;; species optical densities so forest walls bend sky light and cast soft
+;;; lateral shade without turning individual trees into solid rock cliffs.
+(define-shader-abstraction horizon-sweep (heights canopy-tex sampler uv grid
+                                          extent inv-scale inv-period h0
+                                          height-scale max-canopy have-canopy
+                                          dir-xz r-start r-ratio)
+  `(counted-fold (k (uint 48) state (vec3 0.0 0.0 ,r-start))
+     (let* ((terr-sin (swizzle state :x))
+            (eff-sin (swizzle state :y))
+            (dist (swizzle state :z))
+            (at (floor (+ ,grid (* ,dir-xz (* dist ,inv-scale))
+                          (vec2 0.5 0.5))))
+            (h-terr (* (height-at ,heights at ,extent) ,height-scale))
+            (dh-terr (- h-terr ,h0))
+            (s-terr (clamp (/ dh-terr
+                              (sqrt (+ (* dh-terr dh-terr) (* dist dist))))
+                           0.0 1.0))
+            (next-terr (max terr-sin s-terr))
+            (c-uv (+ ,uv (* ,dir-xz (* dist ,inv-period))))
+            (c-tex (sample-level ,canopy-tex ,sampler c-uv 0.0))
+            (c-h (* (swizzle c-tex :y) ,max-canopy ,have-canopy))
+            (c-dens (* (swizzle c-tex :z) ,have-canopy))
+            (dh-top (- (+ h-terr c-h) ,h0))
+            (s-top (clamp (/ dh-top
+                             (sqrt (+ (* dh-top dh-top) (* dist dist))))
+                          0.0 1.0))
+            (step-len (min (* dist (- ,r-ratio 1.0)) 24.0))
+            (alpha (- 1.0 (exp (* -1.0 (* c-dens (/ step-len 14.0))))))
+            (base-eff (max eff-sin next-terr))
+            (next-eff (if (> s-top base-eff)
+                          (mix base-eff s-top alpha)
+                          base-eff)))
+       (vec3 next-terr next-eff (* dist ,r-ratio)))))
 
 (define-shader terrain-gi-bake-vertex
     (:stage :vertex
@@ -2840,54 +2936,75 @@
                (horizon-a :vec4 :location 1)
                (horizon-b :vec4 :location 2))
      :resources ((gi-bake :uniform-block :binding 0 :members #.*gi-bake*)
-                 (heights :texture-2d :binding 0)))
+                 (heights :texture-2d :binding 0)
+                 (canopy-tex :texture-2d :binding 1)
+                 (linear-repeat :sampler :binding 1)))
   (let* ((extent (swizzle dims :xy))
          (inv-scale (/ (vec2 1.0 1.0) (swizzle dims :zw)))
+         (inv-period (/ (vec2 1.0 1.0) (* extent (swizzle dims :zw))))
          (height-scale (swizzle params :x))
          (r-start (swizzle params :y))
          (r-ratio (swizzle params :z))
+         (max-canopy (swizzle canopy :x))
+         (have-canopy (swizzle canopy :y))
          (uv (/ (swizzle pixel :xy) (swizzle params :w)))
          (grid (* uv extent))
          (h0 (* (height-between heights grid extent) height-scale))
          (c 0.70710678)
-         (s0 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 1.0 0.0) r-start r-ratio))
-         (s1 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 c c) r-start r-ratio))
-         (s2 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 0.0 1.0) r-start r-ratio))
-         (s3 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 (* -1.0 c) c) r-start r-ratio))
-         (s4 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 -1.0 0.0) r-start r-ratio))
-         (s5 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 (* -1.0 c) (* -1.0 c)) r-start r-ratio))
-         (s6 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 0.0 -1.0) r-start r-ratio))
-         (s7 (horizon-sweep heights grid extent inv-scale h0 height-scale
-                            (vec2 c (* -1.0 c)) r-start r-ratio))
-         (sky-vis (* 0.125 (+ (- 1.0 (* s0 s0)) (- 1.0 (* s1 s1))
-                              (- 1.0 (* s2 s2)) (- 1.0 (* s3 s3))
-                              (- 1.0 (* s4 s4)) (- 1.0 (* s5 s5))
-                              (- 1.0 (* s6 s6)) (- 1.0 (* s7 s7)))))
-         (mean-sin (* 0.125 (+ s0 s1 s2 s3 s4 s5 s6 s7)))
-         (w0 (bent-weight-h s0))
-         (w1 (bent-weight-h s1))
-         (w2 (bent-weight-h s2))
-         (w3 (bent-weight-h s3))
-         (w4 (bent-weight-h s4))
-         (w5 (bent-weight-h s5))
-         (w6 (bent-weight-h s6))
-         (w7 (bent-weight-h s7))
+         (r0 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 1.0 0.0) r-start r-ratio))
+         (r1 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 c c) r-start r-ratio))
+         (r2 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 0.0 1.0) r-start r-ratio))
+         (r3 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 (* -1.0 c) c) r-start r-ratio))
+         (r4 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 -1.0 0.0) r-start r-ratio))
+         (r5 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 (* -1.0 c) (* -1.0 c))
+                            r-start r-ratio))
+         (r6 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 0.0 -1.0) r-start r-ratio))
+         (r7 (horizon-sweep heights canopy-tex linear-repeat uv grid extent
+                            inv-scale inv-period h0 height-scale max-canopy
+                            have-canopy (vec2 c (* -1.0 c)) r-start r-ratio))
+         (t0 (swizzle r0 :x)) (t1 (swizzle r1 :x))
+         (t2 (swizzle r2 :x)) (t3 (swizzle r3 :x))
+         (t4 (swizzle r4 :x)) (t5 (swizzle r5 :x))
+         (t6 (swizzle r6 :x)) (t7 (swizzle r7 :x))
+         (e0 (swizzle r0 :y)) (e1 (swizzle r1 :y))
+         (e2 (swizzle r2 :y)) (e3 (swizzle r3 :y))
+         (e4 (swizzle r4 :y)) (e5 (swizzle r5 :y))
+         (e6 (swizzle r6 :y)) (e7 (swizzle r7 :y))
+         (terr-vis (* 0.125 (+ (- 1.0 (* t0 t0)) (- 1.0 (* t1 t1))
+                               (- 1.0 (* t2 t2)) (- 1.0 (* t3 t3))
+                               (- 1.0 (* t4 t4)) (- 1.0 (* t5 t5))
+                               (- 1.0 (* t6 t6)) (- 1.0 (* t7 t7)))))
+         (total-vis (* 0.125 (+ (- 1.0 (* e0 e0)) (- 1.0 (* e1 e1))
+                                (- 1.0 (* e2 e2)) (- 1.0 (* e3 e3))
+                                (- 1.0 (* e4 e4)) (- 1.0 (* e5 e5))
+                                (- 1.0 (* e6 e6)) (- 1.0 (* e7 e7)))))
+         (w0 (bent-weight-h e0)) (w1 (bent-weight-h e1))
+         (w2 (bent-weight-h e2)) (w3 (bent-weight-h e3))
+         (w4 (bent-weight-h e4)) (w5 (bent-weight-h e5))
+         (w6 (bent-weight-h e6)) (w7 (bent-weight-h e7))
          (bx (+ (- w0 w4) (* c (+ (- w1 w3) (- w7 w5)))))
          (bz (+ (- w2 w6) (* c (- (+ w1 w3) (+ w5 w7)))))
-         (by (max (* 4.0 sky-vis) 0.001))
+         (by (max (* 4.0 total-vis) 0.001))
          (bent (normalize (vec3 bx by bz))))
     (set-output sky-gi (vec4 (encode-signed-byte (swizzle bent :x))
                              (encode-signed-byte (swizzle bent :z))
-                             sky-vis mean-sin))
-    (set-output horizon-a (vec4 s0 s1 s2 s3))
-    (set-output horizon-b (vec4 s4 s5 s6 s7))))
+                             total-vis terr-vis))
+    (set-output horizon-a (vec4 t0 t1 t2 t3))
+    (set-output horizon-b (vec4 t4 t5 t6 t7))))
 
 (define-shader-program terrain-gi-bake
   :vertex terrain-gi-bake-vertex
@@ -3265,8 +3382,8 @@
          (hb (sample-level horizon-b linear-repeat gi-uv 0.0))
          (h-lit (horizon-sun-visibility ha hb sun (swizzle world-gi :z) 0.015))
          (opp-h (horizon-at ha hb (* -1.0 sun)))
-         (closure-here (swizzle (sample-level closure linear-repeat gi-uv 0.0)
-                                :x))
+         (canopy-info (read-canopy-wall closure linear-repeat gi-uv gi-sample
+                                        world-gi))
          (direct (* (sun-lit shadow-map shadow-compare world
                              (mix 0.18 0.045 lambert) 0.5)
                     h-lit))
@@ -3275,14 +3392,15 @@
          (indirect (world-sky-indirect (swizzle ambient :xyz)
                                        (swizzle sun-diffuse :xyz) sun
                                        (swizzle sky-sun :xyz) overcast n
-                                       gi-sample closure-here
+                                       gi-sample (swizzle canopy-info :y)
+                                       (swizzle canopy-info :z)
                                        (swizzle world-gi :z)
                                        (swizzle world-gi :w) h-lit opp-h
                                        (default-bounce-albedo world relief)
-                                       direct))
-         (sky-open (world-sky-open gi-sample closure-here
+                                       direct 0.0))
+         (sky-open (world-sky-open gi-sample (swizzle canopy-info :y)
                                    (swizzle world-gi :z)
-                                   (swizzle world-gi :w) overcast))
+                                   (swizzle world-gi :w) overcast 0.0))
          (diffuse-light (+ indirect
                            (* sun-light lambert)
                            (lamp-light lamp lamp-color world n)))
@@ -4107,14 +4225,11 @@
          (h-lit (horizon-sun-visibility ha hb light (swizzle world-gi :z)
                                         (if (> foliage 0.5) 0.045 0.015)))
          (opp-h (horizon-at ha hb (* -1.0 light)))
-         (stand-closure (swizzle (sample-level closure linear-repeat gi-uv 0.0)
-                                 :x))
-         ;; Upper crowns rise above the stand's closure; trunks and lower
-         ;; boughs sit inside it.
-         (local-closure (* stand-closure
-                           (if (> foliage 0.5)
-                               (* 0.65 (- 1.0 (* 0.75 ao)))
-                               0.90)))
+         (canopy-info (read-canopy-wall closure linear-repeat gi-uv gi-sample
+                                        world-gi))
+         ;; Upper crowns rise above the forest floor's canopy horizon; trunks
+         ;; and shaded lower boughs sit inside the stand's full canopy shade.
+         (crown-lift (* foliage ao 0.85))
          (lit (* (sun-lit shadow-map shadow-compare world-position
                           (if (> foliage 0.5) 1.5 0.35) 0.5)
                  h-lit))
@@ -4130,12 +4245,13 @@
          (indirect (world-sky-indirect (swizzle ambient :xyz)
                                        (swizzle sun-diffuse :xyz) light
                                        (swizzle sky-sun :xyz) overcast n
-                                       gi-sample local-closure
+                                       gi-sample (swizzle canopy-info :y)
+                                       (swizzle canopy-info :z)
                                        (swizzle world-gi :z)
                                        (swizzle world-gi :w) h-lit opp-h
                                        (default-bounce-albedo world-position
                                                               relief)
-                                       lit))
+                                       lit crown-lift))
          (sun-light (swizzle sun-diffuse :xyz))
          (shaded (* surface (+ (* sun-light (* sun visibility 0.98))
                                (* indirect occlusion)
@@ -5081,13 +5197,13 @@
          (hb (sample-level horizon-b linear-repeat gi-uv 0.0))
          (h-lit (horizon-sun-visibility ha hb l (swizzle world-gi :z) 0.0))
          (opp-h (horizon-at ha hb (* -1.0 l)))
-         (closure-here (swizzle (sample-level closure linear-repeat gi-uv 0.0)
-                                :x))
+         (canopy-info (read-canopy-wall closure linear-repeat gi-uv gi-sample
+                                        world-gi))
          (shadow-sample (sun-lit-with-trust shadow-map shadow-compare
                                             world-position 1.86 0.5))
          (taps (swizzle shadow-sample :x))
          (shadow-trust (swizzle shadow-sample :y))
-         (canopy-far (mix 1.0 (- 1.0 (* 0.62 closure-here))
+         (canopy-far (mix 1.0 (- 1.0 (* 0.62 (swizzle canopy-info :x)))
                           (* (- 1.0 shadow-trust) (swizzle world-gi :w))))
          (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
                            (swizzle world-position :y) (swizzle relief :x)
@@ -5112,16 +5228,20 @@
          (sky (world-sky-indirect (swizzle ambient :xyz)
                                   (swizzle sun-diffuse :xyz) l
                                   (swizzle sky-sun :xyz) overcast n gi-sample
-                                  closure-here (swizzle world-gi :z)
+                                  (swizzle canopy-info :y)
+                                  (swizzle canopy-info :z)
+                                  (swizzle world-gi :z)
                                   (swizzle world-gi :w) h-lit opp-h
-                                  bounce-albedo cast))
+                                  bounce-albedo cast 0.0))
          (back-sky (world-sky-indirect (swizzle ambient :xyz)
                                        (swizzle sun-diffuse :xyz) l
                                        (swizzle sky-sun :xyz) overcast
-                                       (* -1.0 n) gi-sample closure-here
+                                       (* -1.0 n) gi-sample
+                                       (swizzle canopy-info :y)
+                                       (swizzle canopy-info :z)
                                        (swizzle world-gi :z)
                                        (swizzle world-gi :w) h-lit opp-h
-                                       bounce-albedo cast))
+                                       bounce-albedo cast 0.0))
          (ensemble-sky (* 0.5 (+ sky back-sky)))
          (sun-light (swizzle sun-diffuse :xyz))
          (lit (* albedo (+ (mix ensemble-sky sky resolved)
@@ -5544,14 +5664,13 @@
              (hb (sample-level horizon-b linear-repeat gi-uv 0.0))
              (h-lit (horizon-sun-visibility ha hb l (swizzle world-gi :z) 0.0))
              (opp-h (horizon-at ha hb (* -1.0 l)))
-             (closure-here (swizzle (sample-level closure linear-repeat gi-uv
-                                                  0.0)
-                                    :x))
+             (canopy-info (read-canopy-wall closure linear-repeat gi-uv
+                                            gi-sample world-gi))
              (shadow-sample (sun-lit-with-trust shadow-map shadow-compare
                                                 world-position 1.86 0.5))
              (taps (swizzle shadow-sample :x))
              (shadow-trust (swizzle shadow-sample :y))
-             (canopy-far (mix 1.0 (- 1.0 (* 0.62 closure-here))
+             (canopy-far (mix 1.0 (- 1.0 (* 0.62 (swizzle canopy-info :x)))
                               (* (- 1.0 shadow-trust) (swizzle world-gi :w))))
              (cast (* (mix 1.0 taps (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0))
                       h-lit canopy-far))
@@ -5560,16 +5679,19 @@
              (bounce-albedo (default-bounce-albedo world-position relief))
              (sky-up (world-sky-indirect (swizzle ambient :xyz) sun-light l
                                          (swizzle sky-sun :xyz) overcast axis
-                                         gi-sample closure-here
+                                         gi-sample (swizzle canopy-info :y)
+                                         (swizzle canopy-info :z)
                                          (swizzle world-gi :z)
                                          (swizzle world-gi :w) h-lit opp-h
-                                         bounce-albedo cast))
+                                         bounce-albedo cast 0.0))
              (sky-dn (world-sky-indirect (swizzle ambient :xyz) sun-light l
                                          (swizzle sky-sun :xyz) overcast
-                                         (* -1.0 axis) gi-sample closure-here
+                                         (* -1.0 axis) gi-sample
+                                         (swizzle canopy-info :y)
+                                         (swizzle canopy-info :z)
                                          (swizzle world-gi :z)
                                          (swizzle world-gi :w) h-lit opp-h
-                                         bounce-albedo cast))
+                                         bounce-albedo cast 0.0))
              (sky-indirect (* 0.5 (+ sky-up sky-dn)))
              (sun-mean (mix 0.92 1.0 (mean-transmission
                                       (* extinction (sward-path axis l clump)))))
@@ -5913,8 +6035,8 @@
          (hb (sample-level horizon-b linear-repeat gi-uv 0.0))
          (h-lit (horizon-sun-visibility ha hb light (swizzle world-gi :z) 0.0))
          (opp-h (horizon-at ha hb (* -1.0 light)))
-         (closure-here (swizzle (sample-level closure linear-repeat gi-uv 0.0)
-                                :x))
+         (canopy-info (read-canopy-wall closure linear-repeat gi-uv gi-sample
+                                        world-gi))
          (lit (* (sun-lit shadow-map shadow-compare world-position 0.5 0.5)
                  h-lit))
          (visibility (mix 0.05 1.0 lit))
@@ -5922,12 +6044,13 @@
          (sun-light (swizzle sun-diffuse :xyz))
          (indirect (world-sky-indirect (swizzle ambient :xyz) sun-light light
                                        (swizzle sky-sun :xyz) overcast n
-                                       gi-sample closure-here
+                                       gi-sample (swizzle canopy-info :y)
+                                       (swizzle canopy-info :z)
                                        (swizzle world-gi :z)
                                        (swizzle world-gi :w) h-lit opp-h
                                        (default-bounce-albedo world-position
                                                               relief)
-                                       lit))
+                                       lit 0.0))
          (shaded (* surface
                     (+ (* sun-light (* (clamp (dot n light) 0.0 1.0)
                                        visibility 0.95))
@@ -6596,13 +6719,13 @@
          (ha (sample-level horizon-a linear-repeat gi-uv 0.0))
          (hb (sample-level horizon-b linear-repeat gi-uv 0.0))
          (h-lit (horizon-sun-visibility ha hb light (swizzle world-gi :z) 0.0))
-         (closure-here (* (swizzle (sample-level closure linear-repeat gi-uv 0.0)
-                                   :x)
-                          (swizzle world-gi :w)))
+         (canopy-here (* (sample-level closure linear-repeat gi-uv 0.0)
+                         (swizzle world-gi :w)))
+         (closure-here (swizzle canopy-here :z))
          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
          (sky-open (world-sky-open gi-sample closure-here
                                    (swizzle world-gi :z)
-                                   (swizzle world-gi :w) overcast))
+                                   (swizzle world-gi :w) overcast 0.0))
          (lit (* (sun-lit-once shadow-map shadow-compare world 1.0) h-lit))
          (visibility (mix 0.08 1.0 lit))
          (sun-light (* (swizzle sun-diffuse :xyz) visibility))
@@ -6631,27 +6754,61 @@
                                (swizzle reflected :z))
                          reflected)))
          ;; Off screen, the sky above the terrain horizon, and surrounding
-         ;; mountains, forested slopes, or stream banks below it.
+         ;; mountains, shore tree lines, or stream banks below it.
          (sky (water-sky mirrored (swizzle sky-sun :xyz)
                          (swizzle fog-color :xyz)
                          (swizzle sun-direction :w) (swizzle relief :w)))
          (ref-horizon (* (horizon-at ha hb mirrored) (swizzle world-gi :z)))
+         (ref-xz (vec2 (swizzle mirrored :x) (swizzle mirrored :z)))
+         (ref-hl (max (sqrt (dot ref-xz ref-xz)) 0.0001))
+         (ref-dir (/ ref-xz ref-hl))
+         (tc-near (* (sample-level closure linear-repeat
+                                   (+ gi-uv (* ref-dir 28.0
+                                               (swizzle world-gi :xy)))
+                                   0.0)
+                     (swizzle world-gi :w)))
+         (tc-far (* (sample-level closure linear-repeat
+                                  (+ gi-uv (* ref-dir 85.0
+                                              (swizzle world-gi :xy)))
+                                  0.0)
+                    (swizzle world-gi :w)))
+         (th-near (* (swizzle tc-near :y) 48.0))
+         (th-far (* (swizzle tc-far :y) 48.0))
+         (ts-near (* (/ th-near (sqrt (+ (* th-near th-near) 784.0)))
+                     (swizzle tc-near :z)))
+         (ts-far (* (/ th-far (sqrt (+ (* th-far th-far) 7225.0)))
+                    (swizzle tc-far :z)))
+         (tree-sin (max ts-near ts-far))
+         (tree-warmth (if (>= ts-near ts-far) (swizzle tc-near :w)
+                          (swizzle tc-far :w)))
+         (tree-horizon (min (+ ref-horizon tree-sin) 0.98))
          (hill-hit (* (- 1.0 (smoothstep (- ref-horizon 0.03)
                                          (+ ref-horizon 0.04)
                                          (swizzle mirrored :y)))
                       (smoothstep 0.015 0.06 ref-horizon)))
-         (hill-facing (clamp (+ 0.35 (* -0.65 (dot (vec2 (swizzle mirrored :x)
-                                                         (swizzle mirrored :z))
+         (tree-hit (* (- 1.0 (smoothstep (- tree-horizon 0.04)
+                                         (+ tree-horizon 0.05)
+                                         (swizzle mirrored :y)))
+                      (smoothstep 0.04 0.18 tree-sin)))
+         (hill-facing (clamp (+ 0.35 (* -0.65 (dot ref-dir
                                                    (vec2 (swizzle light :x)
                                                          (swizzle light :z)))))
                              0.0 1.0))
          (hill-albedo (mix (srgb (vec3 0.14 0.19 0.11))
                            (srgb (vec3 0.26 0.29 0.22))
                            (smoothstep 0.08 0.35 ref-horizon)))
+         (tree-albedo (mix (srgb (vec3 0.09 0.16 0.07))
+                           (srgb (vec3 0.42 0.27 0.08))
+                           tree-warmth))
          (hill-radiance (* hill-albedo
                            (+ sky-light
                               (* (swizzle sun-diffuse :xyz) hill-facing
                                  (max (swizzle light :y) 0.0) 0.55))))
+         (tree-radiance (* tree-albedo
+                           (+ sky-light
+                              (* (swizzle sun-diffuse :xyz) hill-facing
+                                 (smoothstep -0.02 0.25 (swizzle light :y))
+                                 0.65))))
          (bank (* (srgb (vec3 0.13 0.17 0.09))
                   (+ sky-light (* sun-light
                                   (* 0.6 (max (swizzle light :y) 0.0))))))
@@ -6660,7 +6817,9 @@
                          (mix 0.22 0.60 running))
                       (* 0.70 closure-here
                          (- 1.0 (smoothstep 0.0 0.45 (swizzle mirrored :y))))))
-         (beyond (mix (mix sky hill-radiance hill-hit) bank banked))
+         (beyond (mix (mix (mix sky hill-radiance hill-hit)
+                           tree-radiance tree-hit)
+                      bank banked))
          ;; On screen: march the mirrored ray out in strides that double,
          ;; from a stride as fine as the water's distance allows out past
          ;; three kilometres, until it passes behind the scene,
@@ -7336,8 +7495,8 @@
          (hb (sample-level horizon-b linear-repeat gi-uv 0.0))
          (h-lit (horizon-sun-visibility ha hb light (swizzle world-gi :z) 0.02))
          (opp-h (horizon-at ha hb (* -1.0 light)))
-         (closure-here (swizzle (sample-level closure linear-repeat gi-uv 0.0)
-                                :x))
+         (canopy-info (read-canopy-wall closure linear-repeat gi-uv gi-sample
+                                        world-gi))
          (lit (* (sun-lit-once shadow-map shadow-compare world-position 2.0)
                  h-lit))
          (visibility (mix 0.08 1.0 lit))
@@ -7345,12 +7504,13 @@
          (sun-light (swizzle sun-diffuse :xyz))
          (indirect (world-sky-indirect (swizzle ambient :xyz) sun-light light
                                        (swizzle sky-sun :xyz) overcast n
-                                       gi-sample closure-here
+                                       gi-sample (swizzle canopy-info :y)
+                                       (swizzle canopy-info :z)
                                        (swizzle world-gi :z)
                                        (swizzle world-gi :w) h-lit opp-h
                                        (default-bounce-albedo world-position
                                                               relief)
-                                       lit))
+                                       lit 0.35))
          ;; A thin leaf is lit from either side and glows against the sun.
          (sun (abs (dot n light)))
          (shaded (+ (* albedo (+ (* sun-light (* sun visibility 0.95))
@@ -7659,18 +7819,19 @@
          (hb (sample-level horizon-b linear-repeat gi-uv 0.0))
          (h-lit (horizon-sun-visibility ha hb sun (swizzle world-gi :z) 0.015))
          (opp-h (horizon-at ha hb (* -1.0 sun)))
-         (closure-here (swizzle (sample-level closure linear-repeat gi-uv 0.0)
-                                :x))
+         (canopy-info (read-canopy-wall closure linear-repeat gi-uv gi-sample
+                                        world-gi))
          (direct (* (sun-lit shadow-map shadow-compare world 0.15 0.5) h-lit))
          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
          (indirect (world-sky-indirect (swizzle ambient :xyz)
                                        (swizzle sun-diffuse :xyz) sun
                                        (swizzle sky-sun :xyz) overcast n
-                                       gi-sample closure-here
+                                       gi-sample (swizzle canopy-info :y)
+                                       (swizzle canopy-info :z)
                                        (swizzle world-gi :z)
                                        (swizzle world-gi :w) h-lit opp-h
                                        (default-bounce-albedo world relief)
-                                       direct))
+                                       direct 0.0))
          (light (+ indirect
                    (* (swizzle sun-diffuse :xyz) direct
                       (clamp (dot n sun) 0.0 1.0))

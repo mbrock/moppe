@@ -233,14 +233,15 @@ namespace moppe::nhal {
       render::TerrainParams params {};
       bool have = false;
       Texture heights, normals, detail;
-      // Periodic 1024x1024 GPU-baked terrain GI:
-      // sky_gi: RG bent normal xz (signed byte), B sky visibility, A mean
-      // horizon sine; horizon_a/b: 8 azimuth horizon sines (0..315 deg).
+      // Periodic 1024x1024 GPU-baked terrain + porous-canopy GI:
+      // sky_gi: RG bent normal xz (signed byte), B total sky visibility
+      // (terrain + canopy), A bare-earth sky visibility; horizon_a/b: 8
+      // bare-earth azimuth horizon sines (0..315 deg).
       Texture sky_gi, horizon_a, horizon_b;
       bool gi_dirty = false;
       // Four-attachment 1024x2048 world-space dry ground+road material cache:
       // [0] RGBA8 albedo+rough, [1] RGBA8 dry slope+snow/flute,
-      // [2] RGBA8 macro normal+wet/puddle, [3] RGBA8 fine-grain+closure.
+      // [2] RGBA8 macro normal+wet/puddle, [3] RGBA8 grain+canopy.
       std::array<Texture, 4> cache_atlas {};
       std::array<CacheLevel, 4> cache_levels {};
       bool cache_global_valid = false;

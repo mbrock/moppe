@@ -334,6 +334,7 @@ namespace moppe::nhal {
       shaders::terrain_gi_bake::GiBake bake {};
       bake.dims = { float (p.width), float (p.height), p.scale[0], p.scale[2] };
       bake.params = { p.scale[1], r_start, r_ratio, float (terrain_gi_size) };
+      bake.canopy = { 48.0f, m_forest.closure ? 1.0f : 0.0f, 0.0f, 0.0f };
       RenderPassDesc pass;
       pass.label = "terrain gi bake";
       pass.color_count = 3;
@@ -346,6 +347,7 @@ namespace moppe::nhal {
       m_device->set_pipeline (m_terrain.gi_bake);
       m_device->set_uniforms (0, bake);
       m_device->set_texture (0, m_terrain.heights);
+      m_device->set_texture (1, m_forest.closure ? m_forest.closure : m_clear);
       m_device->draw (3);
       m_device->end_render_pass ();
       m_terrain.gi_dirty = false;

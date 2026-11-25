@@ -165,9 +165,41 @@ namespace moppe::nhal {
         return v < 0 ? v + int (size) : v;
       };
       std::vector<float> depth (std::size_t (size) * size, 0.0f);
+      std::vector<float> opt_depth (depth.size (), 0.0f);
+      std::vector<float> height_sum (depth.size (), 0.0f);
+      std::vector<float> warmth_sum (depth.size (), 0.0f);
       for (const render::ForestInstance& tree : instances) {
         const Vec3 root = position_value (tree.root);
         const float radius = tree.crown_radius.numerical_value_in (u::m);
+        const float height = tree.height.numerical_value_in (u::m);
+        float species_opacity = 0.68f;
+        float top_share = 0.90f;
+        float warmth = 0.0f;
+        switch (tree.species) {
+        case render::ForestSpecies::Conifer:
+          species_opacity = 0.92f;
+          top_share = 0.86f;
+          break;
+        case render::ForestSpecies::Broadleaf:
+          species_opacity = 0.68f;
+          top_share = 0.90f;
+          warmth = tree.autumn.numerical_value_in (one);
+          break;
+        case render::ForestSpecies::Pine:
+          species_opacity = 0.52f;
+          top_share = 0.92f;
+          break;
+        case render::ForestSpecies::FellBirch:
+          species_opacity = 0.45f;
+          top_share = 0.82f;
+          warmth = tree.autumn.numerical_value_in (one);
+          break;
+        case render::ForestSpecies::Snag:
+          species_opacity = 0.06f;
+          top_share = 0.0f;
+          break;
+        }
+        const float crown_top = height * top_share;
         const float sigma =
           std::max (0.49f * radius, 0.45f * std::max (step_x, step_z));
         const int reach = std::max (
@@ -188,9 +220,15 @@ namespace moppe::nhal {
         const float scale = 0.70f * 3.14159265f * radius * radius /
                             (step_x * step_z * std::max (sum, 0.0001f));
         for (int z = cz - reach; z <= cz + reach; ++z)
-          for (int x = cx - reach; x <= cx + reach; ++x)
-            depth[std::size_t (wrap (z)) * size + wrap (x)] +=
-              scale * weight (wrap (x), wrap (z));
+          for (int x = cx - reach; x <= cx + reach; ++x) {
+            const std::size_t idx = std::size_t (wrap (z)) * size + wrap (x);
+            const float area_w = scale * weight (wrap (x), wrap (z));
+            const float opt_w = area_w * species_opacity;
+            depth[idx] += area_w;
+            opt_depth[idx] += opt_w;
+            height_sum[idx] += opt_w * crown_top;
+            warmth_sum[idx] += opt_w * warmth;
+          }
       }
       std::vector<float> closure (depth.size ());
       for (std::size_t i = 0; i < depth.size (); ++i)
@@ -229,12 +267,30 @@ namespace moppe::nhal {
             for (int b = 0; b < int (size); ++b)
               at (b) = line[b];
           }
-      std::vector<std::uint8_t> bytes (blurred.size ());
-      for (std::size_t i = 0; i < blurred.size (); ++i)
-        bytes[i] = std::uint8_t (
-          std::lround (255.0f * std::clamp (blurred[i], 0.0f, 1.0f)));
-      m_forest.closure = m_device->create_texture (
-        { size, size, Format::r8_unorm, usage_sampled, 1, "canopy closure" });
+      // RGBA8 canopy sheet: R blurred stand closure, G crown-top height
+      // (0..48 m), B species-weighted optical density, A autumn warmth.
+      constexpr float max_canopy_height = 48.0f;
+      std::vector<std::uint8_t> bytes (blurred.size () * 4);
+      auto pack = [] (float v) {
+        return std::uint8_t (std::lround (255.0f * std::clamp (v, 0.0f, 1.0f)));
+      };
+      for (std::size_t i = 0; i < blurred.size (); ++i) {
+        const float od = opt_depth[i];
+        const float h =
+          od > 1e-4f ? (height_sum[i] / od) / max_canopy_height : 0.0f;
+        const float dens = 1.0f - std::exp (-od);
+        const float warm = od > 1e-4f ? warmth_sum[i] / od : 0.0f;
+        bytes[i * 4 + 0] = pack (blurred[i]);
+        bytes[i * 4 + 1] = pack (h);
+        bytes[i * 4 + 2] = pack (dens);
+        bytes[i * 4 + 3] = pack (warm);
+      }
+      m_forest.closure = m_device->create_texture ({ size,
+                                                     size,
+                                                     Format::rgba8_unorm,
+                                                     usage_sampled,
+                                                     1,
+                                                     "canopy closure" });
       m_device->write_texture (m_forest.closure,
                                std::as_bytes (std::span (bytes)));
       if (setup.litter_size && !setup.litter.empty ()) {
@@ -247,12 +303,13 @@ namespace moppe::nhal {
         m_device->write_texture (m_forest.litter, std::as_bytes (setup.litter));
       }
       m_forest.stand_inverse_period = { 1.0f / period[0], 1.0f / period[2] };
+      m_terrain.gi_dirty = true;
       m_terrain.cache_dirty = true;
       return stands;
     }
 
     void NhalRenderer::bind_stand () {
-      m_device->set_texture (9, m_forest.closure ? m_forest.closure : m_white);
+      m_device->set_texture (9, m_forest.closure ? m_forest.closure : m_clear);
       m_device->set_texture (10, m_forest.litter ? m_forest.litter : m_black);
     }
 
