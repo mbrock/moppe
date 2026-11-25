@@ -31,8 +31,9 @@ namespace moppe::nhal {
     constexpr std::uint32_t frames_in_flight = 3;
     constexpr std::uint64_t arena_capacity = 16u << 20;
     constexpr NSUInteger max_buffers = 16;
-    // Sampled textures at 0-15, storage textures at 16-31.
-    constexpr NSUInteger max_textures = 32;
+    // The moving material probe also binds four groups of five sampled
+    // levels from 16 in the terrain fragment, which has no storage textures.
+    constexpr NSUInteger max_textures = 36;
     constexpr NSUInteger storage_texture_base = 16;
     constexpr NSUInteger max_samplers = 4;
     constexpr NSUInteger max_timestamps = 128;
@@ -950,6 +951,10 @@ namespace moppe::nhal {
                 bake += pass.milliseconds;
               total += pass.milliseconds;
             }
+            if (scene && environment ("MOPPE_PROBE_PASSES"))
+              for (const auto& pass : m_pass_timings)
+                std::fprintf (stderr, "PASS %s %.5f %s\n", route.c_str (),
+                              pass.milliseconds, pass.label.c_str ());
             if (route == "1" || route == "245") {
               for (const auto& pass : m_pass_timings)
                 if (pass.label.starts_with ("material bake"))

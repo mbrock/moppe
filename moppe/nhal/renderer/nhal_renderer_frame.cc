@@ -38,6 +38,20 @@ namespace moppe::nhal {
       present.program = &shaders::present::program;
       present.vertex = m_shaders.present[0];
       present.fragment = m_shaders.present[1];
+      std::string footprint;
+      if (environment ("MOPPE_PROBE_FOOTPRINT")) {
+        footprint = present.fragment.msl;
+        constexpr std::string_view end = "  return result;";
+        footprint.replace (footprint.find (end), end.size (), R"(
+  uint2 dims = uint2(image.get_width(),image.get_height());
+  float2 tag = image.read(min(uint2(stage_in.uv*float2(dims)),dims-1)).xy;
+  float3 bytes = tag.x < 256 ? float3(0) : float3(32*floor(tag.x/256),
+                        fmod(tag.x,256.f), min(255.f,round(tag.y*4)));
+  float3 raw = bytes/255.f;
+  result.color = float4(mix(pow(raw,float3(2.2f)),raw,present.grade.y),1);
+  return result;)");
+        present.fragment.msl = footprint;
+      }
       present.color_formats[0] = m_device->surface_format ();
       m_present = m_device->create_render_pipeline (present);
 
@@ -553,7 +567,7 @@ namespace moppe::nhal {
       m_device->set_pipeline (m_present);
       m_device->set_uniforms (0, present);
       m_device->set_buffer (1, m_exposure_value);
-      m_device->set_texture (0, m_image);
+      m_device->set_texture (0, environment ("MOPPE_PROBE_FOOTPRINT") ? m_scene_motion : m_image);
       m_device->set_texture (1, m_post.bloom[0]);
       m_device->draw (3);
       m_presented = true;

@@ -32,7 +32,15 @@ namespace moppe::nhal {
       const char* mode = environment ("MOPPE_MATERIAL_MODE");
       if (root && mode && std::string_view (mode) != "live") {
         const bool roads = std::string_view (mode) == "roads";
-        m_probe_channels = roads ? 3 : 2;
+        const bool grain = roads && environment ("MOPPE_PROBE_GRAIN");
+        m_probe_channels = roads ? (grain ? 4 : 3) : 2;
+        m_probe_formats.fill (Format::rgba16_float);
+        m_probe_formats[3] = Format::r8_unorm;
+        if (const char* packed = environment ("MOPPE_PROBE_PACK")) {
+          m_probe_formats[0] = m_probe_formats[1] = Format::rgba8_unorm;
+          if (std::string_view (packed) == "24")
+            m_probe_formats[2] = Format::rgba8_unorm;
+        }
         auto read = [&] (std::string name) {
           std::ifstream in (std::filesystem::path (root) / name);
           if (!in) throw std::runtime_error ("Missing shader " + name);
@@ -53,7 +61,7 @@ namespace moppe::nhal {
         bake.vertex.msl = vertex;
         bake.fragment.msl = fragment;
         bake.color_count = m_probe_channels;
-        bake.color_formats.fill (Format::rgba16_float);
+        std::copy_n (m_probe_formats.begin (), m_probe_channels, bake.color_formats.begin ());
         bake.label = "terrain material tile bake";
         m_bake_material = m_device->create_render_pipeline (bake);
       }
@@ -265,7 +273,7 @@ namespace moppe::nhal {
         for (unsigned i = 0; i < m_probe_channels; ++i) {
           auto& t = m_tiles[level][i];
           if (fresh) t = m_device->create_texture ({
-            unsigned (side), unsigned (side), Format::rgba16_float,
+            unsigned (side), unsigned (side), m_probe_formats[i],
             usage_render_target | usage_sampled, 1, "material tile" });
           pass.colors[i] = { t, full ? Load::discard : Load::load, Store::store };
         }

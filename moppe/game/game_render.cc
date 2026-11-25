@@ -36,9 +36,11 @@ namespace moppe {
           if (index >= 160 && index < 176)
             r.request_screenshot (std::string (dir) + "/" + std::to_string (index) + ".png");
         }
-        input.selected_camera.position = position (eye);
-        input.selected_camera.forward = unit_direction (normalized (target - eye));
-        input.selected_camera.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
+        if (!environment ("MOPPE_PROBE_POSE")) {
+          input.selected_camera.position = position (eye);
+          input.selected_camera.forward = unit_direction (normalized (target - eye));
+          input.selected_camera.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
+        }
       }
       FrameView frame = compose_frame_view (input);
       m_company.light_fire (frame);

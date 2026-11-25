@@ -716,7 +716,8 @@ namespace moppe::nhal {
 
       TerrainState m_terrain;
       Pipeline m_bake_material, m_probe_terrain, m_probe_ribbon;
-      std::array<std::array<Texture, 3>, 5> m_tiles {};
+      std::array<Format, 4> m_probe_formats {};
+      std::array<std::array<Texture, 4>, 5> m_tiles {};
       std::array<std::array<int, 2>, 4> m_origins {};
       std::array<std::array<float, 4>, 5> m_windows {};
       unsigned m_probe_channels = 0;

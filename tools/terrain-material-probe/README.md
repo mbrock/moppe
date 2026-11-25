@@ -63,3 +63,43 @@ wetness to moving.py restores those calculations to the screen shader in
 roads mode. Use a separate shader directory for each version. The wetness
 setting restores puddle coverage, dry roughness and wet albedo response;
 the normals setting restores the macro normal and dry detail slope.
+
+For the footprint follow-up, --live-channel macro and detail restore the
+macro normal and detail slope separately. --filter crown integrates the
+road camber over the cache texel (a one-dimensional box along its
+projection onto the road's lateral axis). --filter axis4 takes four
+bilinear samples of both slope fields along the longer screen derivative,
+out to eight texels. They can be combined with --filter both.
+
+With --grain the producer subtracts the fine tiling slope from the dry
+slope and bakes its strength into an R8 attachment. The screen shader
+samples that same detail sheet with the original screen footprint and
+adds it back. Set MOPPE_PROBE_GRAIN=1 when running this variant. With
+--packed 24 or 32 also set MOPPE_PROBE_PACK to the same number. Both
+use RGBA8 for albedo/roughness and residual slope/powder. The signed
+slope uses a saturating rational encoding centred on byte 128 and the
+powder tilt is scaled by its 0.045 amplitude. The 24 MiB version also
+puts the macro normal and wet-response masks into RGBA8; 32 MiB keeps
+that attachment RGBA16F. Fine-grain strength adds 2 MiB to either.
+
+The following compares the grain version with live shading in rain.
+Repeat the capture for other switches using a fresh shader directory.
+MOPPE_PROBE_PASSES=1 logs each pass for the exact completed route frame.
+
+```sh
+mkdir -p "$d/live" "$d/road"
+python3 tools/terrain-material-probe/moving.py "$d/road" --grain --packed 24
+MOPPE_WEATHER=rain MOPPE_PROBE_STILLS="$d/live" \
+  tools/terrain-material-probe/ride "$d" live 0.75 185 "$d/live/end.png"
+MOPPE_WEATHER=rain MOPPE_PROBE_STILLS="$d/road" \
+  MOPPE_PROBE_GRAIN=1 MOPPE_PROBE_PACK=24 \
+  tools/terrain-material-probe/ride "$d/road" roads 0.75 185 "$d/road/end.png"
+python3 tools/terrain-material-probe/road-crop.py "$d/live" "$d/road"
+```
+
+For a diagnostic capture choose --footprint and MOPPE_PROBE_FOOTPRINT=1.
+In unobscured terrain/road pixels red divided by 32 gives the sampled fine
+level plus one, green the horizontal camera range rounded to metres, and blue four
+times the ratio of major to minor axes of the XZ screen-pixel footprint,
+clamped to 255. MOPPE_PROBE_POSE=1 retains the selected gameplay or demo
+camera for fixed-view checks elsewhere.
