@@ -334,10 +334,12 @@ namespace moppe::nhal {
     // occlusion's and the bloom's targets, the smeared image, and what lies
     // under the water's surface.
     struct PostState {
-      Pipeline gtao, gtao_blur, gtao_apply, shafts;
+      Pipeline gtao, gtao_apply, shafts, shafts_apply;
       Pipeline bloom_bright, bloom_blur, motion_blur, underwater;
       shaders::gtao::Post block {};
-      Texture ao[2];
+      Texture ao;
+      Texture shafts_half;
+      std::uint32_t half_width = 1, half_height = 1;
       Texture bloom[2];
       std::uint32_t bloom_width = 1, bloom_height = 1;
       // The resolved image, smeared (apply_motion_blur).
@@ -456,8 +458,7 @@ namespace moppe::nhal {
 
       // The lent meshes' opaque runs: what is blended or glows lets the
       // sun through.
-      void draw_mesh_casters (const Transient& caster_block,
-                              const Mat4& light);
+      void draw_mesh_casters (const Transient& caster_block, const Mat4& light);
 
       void draw_terrain (const ChunkDraw* chunks, int count) override;
 

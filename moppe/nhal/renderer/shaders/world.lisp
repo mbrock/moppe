@@ -7429,9 +7429,9 @@
 ;;; Alchemy-style obscurance over a jittered spiral of depth taps: crevices,
 ;;; trunk bases, and the floor of the sward darken by how much nearby
 ;;; geometry leans over them.
-(define-shader-abstraction depth-tangent (step)
-  `(let* ((minus-uv (- uv ,step))
-          (plus-uv (+ uv ,step))
+(define-shader-abstraction depth-tangent (at-uv step)
+  `(let* ((minus-uv (- ,at-uv ,step))
+          (plus-uv (+ ,at-uv ,step))
           (zm (swizzle (sample scene-depth nearest-clamp minus-uv) :x))
           (zp (swizzle (sample scene-depth nearest-clamp plus-uv) :x))
           (dm (abs (- (view-depth zm near far) depth)))
@@ -7456,100 +7456,145 @@
          (camera (swizzle eye :xyz))
          (near (swizzle occlusion :z))
          (far (swizzle occlusion :w))
-         (z (swizzle (sample scene-depth nearest-clamp uv) :x))
-         (position (depth-position uv z camera forward right up near far))
+         ;; Snap to the exact centre of full-res texel (2*hx, 2*hy): the half-res
+         ;; texel centre falls directly on the boundary between two full-res
+         ;; depth texels, which otherwise makes depth-tangent collapse to zero.
+         (sample-uv (* (+ (* (floor (swizzle pixel :xy)) 2.0)
+                          (vec2 0.5 0.5))
+                       (swizzle blur :xy)))
+         (z (swizzle (sample scene-depth nearest-clamp sample-uv) :x))
          (depth (view-depth z near far))
-         ;; Close to the eye the radius would span most of the frame, its
-         ;; taps each a cache miss of their own; it shrinks there to a
-         ;; twelfth of the frame's height, and the obscurance with it.
-         (reach-up (/ (swizzle occlusion :x)
-                      (* 2.0 depth (sqrt (dot up up)))))
-         (radius (* (swizzle occlusion :x) (min 1.0 (/ 0.083 reach-up))))
-         (dx (depth-tangent (vec2 (swizzle blur :x) 0.0)))
-         (dy (depth-tangent (vec2 0.0 (swizzle blur :y))))
-         (face (cross3 dx dy))
-         (normal (normalize (if (> (dot face forward) 0.0) (* -1.0 face) face)))
-         (uv-radius (* (/ radius (* 2.0 depth))
-                       (vec2 (/ 1.0 (sqrt (dot right right)))
-                             (/ 1.0 (sqrt (dot up up))))))
-         (jitter (interleaved-noise (swizzle pixel :xy)))
-         (bias (+ 0.02 (* 0.002 depth)))
-         (obscurance
-           (counted-fold (i (uint 10) total 0.0)
-             (let* ((angle (* 6.2831853 (+ jitter (* (float i) 0.618034))))
-                    (reach (expt (/ (+ (float i) 0.5 jitter) 10.0) 0.7))
-                    (tap-uv (+ uv (* (vec2 (cos angle) (sin angle))
-                                     (* uv-radius reach))))
-                    (tap-z (swizzle (sample scene-depth nearest-clamp tap-uv)
-                                    :x))
-                    (tap (depth-position tap-uv tap-z camera forward right up
-                                         near far))
-                    (to-tap (- tap position))
-                    (lean (/ (* (max 0.0 (- (dot to-tap normal) bias)) radius)
-                             (max (dot to-tap to-tap) 0.01))))
-               (+ total (if (> tap-z 0.000001)
-                            (* lean (- 1.0 (smoothstep (* 0.25 radius radius)
-                                                      (* radius radius)
-                                                      (dot to-tap to-tap))))
-                            0.0)))))
-         (ao (clamp (- 1.0 (/ (* (swizzle occlusion :y) obscurance) 10.0))
-                    0.0 1.0)))
-    (set-output color (vec4 (if (> z 0.000001) ao 1.0) 0.0 0.0 1.0))))
+         ;; Skip the sky completely; every horizon pixel otherwise runs the
+         ;; tangent reconstruction and all ten spiral taps for nothing.
+         (ao
+           (only-where (> z 0.000001) 1.0
+             (let* ((position (depth-position sample-uv z camera forward right
+                                              up near far))
+                    ;; Close to the eye the radius would span most of the frame,
+                    ;; its taps each a cache miss of their own; it shrinks there
+                    ;; to a twelfth of the frame's height, and the obscurance
+                    ;; with it.
+                    (reach-up (/ (swizzle occlusion :x)
+                                 (* 2.0 depth (sqrt (dot up up)))))
+                    (radius (* (swizzle occlusion :x)
+                               (min 1.0 (/ 0.083 reach-up))))
+                    (dx (depth-tangent sample-uv (vec2 (swizzle blur :x) 0.0)))
+                    (dy (depth-tangent sample-uv (vec2 0.0 (swizzle blur :y))))
+                    (face (cross3 dx dy))
+                    (normal (normalize (if (> (dot face forward) 0.0)
+                                           (* -1.0 face) face)))
+                    (uv-radius (* (/ radius (* 2.0 depth))
+                                  (vec2 (/ 1.0 (sqrt (dot right right)))
+                                        (/ 1.0 (sqrt (dot up up))))))
+                    (jitter (interleaved-noise (swizzle pixel :xy)))
+                    (bias (+ 0.02 (* 0.002 depth)))
+                    (obscurance
+                      (counted-fold (i (uint 10) total 0.0)
+                        (let* ((angle (* 6.2831853
+                                         (+ jitter (* (float i) 0.618034))))
+                               (r-jitter (fract (+ jitter
+                                                   (* (float i) 0.7548776))))
+                               (reach (expt (/ (+ (float i) 0.25
+                                                  (* 0.75 r-jitter))
+                                               10.0)
+                                            0.7))
+                               (tap-uv (+ sample-uv
+                                          (* (vec2 (cos angle) (sin angle))
+                                             (* uv-radius reach))))
+                               (tap-z (swizzle (sample scene-depth nearest-clamp
+                                                       tap-uv)
+                                               :x))
+                               (tap (depth-position tap-uv tap-z camera forward
+                                                    right up near far))
+                               (to-tap (- tap position))
+                               (lean (/ (* (max 0.0 (- (dot to-tap normal)
+                                                       bias))
+                                           radius)
+                                        (max (dot to-tap to-tap) 0.01))))
+                          (+ total (if (> tap-z 0.000001)
+                                       (* lean (- 1.0 (smoothstep
+                                                       (* 0.25 radius radius)
+                                                       (* radius radius)
+                                                       (dot to-tap to-tap))))
+                                       0.0))))))
+               (clamp (- 1.0 (/ (* (swizzle occlusion :y) obscurance) 10.0))
+                      0.0 1.0)))))
+    ;; Carry linear depth in the green channel so the full-res bilateral
+    ;; upsample reads depth alongside occlusion in one tap.
+    (set-output color (vec4 ao depth 0.0 1.0))))
 
 (define-shader-program gtao
   :vertex present-vertex
   :fragment gtao-fragment)
 
-;;; A separable depth-aware blur: neighbours vote only when they lie on the
-;;; same surface, so occlusion never bleeds across a silhouette.
-(define-shader gtao-blur-fragment
+;;; Depth-aware 3x3 joint-bilateral blur and upsample of half-resolution
+;;; occlusion directly into the full-resolution scene colour (premultiplied
+;;; darkening).  Merging the bilateral filter into the apply pass avoids two
+;;; extra half-res render passes and full-pipeline barriers.
+(define-shader gtao-apply-fragment
     (:stage :fragment
-     :inputs ((uv :vec2 :location 0))
+     :inputs ((uv :vec2 :location 0)
+              (pixel :vec4 :built-in :frag-coord))
      :outputs ((color :vec4 :location 0))
      :resources ((post :uniform-block :binding 0 :members #.*post*)
                  (occluded :texture-2d :binding 0)
                  (scene-depth :depth-texture-2d :binding 1)
-                 (linear-clamp :sampler :binding 0)
                  (nearest-clamp :sampler :binding 2)))
-  (let* ((near (swizzle occlusion :z))
-         (far (swizzle occlusion :w))
-         (step (swizzle blur :xy))
-         (centre (view-depth (swizzle (sample scene-depth nearest-clamp uv) :x)
-                             near far))
-         (sum (counted-fold (i (uint 5) acc (vec2 0.0 0.0))
-                (let* ((k (- (float i) 2.0))
-                       (at (+ uv (* step k)))
-                       (d (view-depth (swizzle (sample scene-depth
-                                                       nearest-clamp at)
-                                               :x)
-                                      near far))
-                       (same (clamp (- 1.0 (/ (* 8.0 (abs (- d centre)))
-                                              centre))
-                                    0.0 1.0))
-                       (w (* same (if (= (abs k) 2.0) 0.153388
-                                      (if (= (abs k) 1.0) 0.221461
-                                          0.250301)))))
-                  (+ acc (vec2 (* w (swizzle (sample occluded linear-clamp at)
-                                             :x))
-                               w)))))
-         (ao (if (> (swizzle sum :y) 0.0)
-                 (/ (swizzle sum :x) (swizzle sum :y)) 1.0)))
-    ;; The last pass darkens the scene itself, blending premultiplied:
-    ;; nothing added, the scene kept by the occlusion.
-    (set-output color (if (> (swizzle blur :z) 0.5)
-                          (vec4 0.0 0.0 0.0 (- 1.0 ao))
-                          (vec4 ao 0.0 0.0 1.0)))))
+  (let* ((z (swizzle (sample-level scene-depth nearest-clamp uv 0.0) :x))
+         (ao
+           (only-where (> z 0.000001) 1.0
+             (let* ((near (swizzle occlusion :z))
+                    (far (swizzle occlusion :w))
+                    (centre (view-depth z near far))
+                    (inv-c (/ 1.0 (max centre 0.001)))
+                    (inv-half (swizzle blur :xy))
+                    ;; Each half-res texel (hx, hy) sits at full-res pixel
+                    ;; (2*hx, 2*hy), so full-res pixel (fx, fy) maps to
+                    ;; (fx / 2, fy / 2) in half-res index space.
+                    (pos (* (- (swizzle pixel :xy) (vec2 0.5 0.5)) 0.5))
+                    (cell (floor (+ pos (vec2 0.5 0.5))))
+                    (off (- pos cell))
+                    ;; Carry (weighted ao, weight sum, closest rel depth,
+                    ;; closest ao) across the 3x3 half-res neighbourhood.
+                    (acc
+                      (counted-fold (k (uint 9) state
+                                     (vec4 0.0 0.0 1.0e9 1.0))
+                        (let* ((dx (- (float (mod k (uint 3))) 1.0))
+                               (dy (- (float (/ k (uint 3))) 1.0))
+                               (at (* (+ cell (vec2 (+ dx 0.5) (+ dy 0.5)))
+                                      inv-half))
+                               (tap (swizzle (sample-level occluded
+                                                           nearest-clamp at 0.0)
+                                             :xy))
+                               (delta (- (vec2 dx dy) off))
+                               (spatial (/ 1.0 (+ 1.0 (* 1.5
+                                                         (dot delta delta)))))
+                               (rel (* (abs (- (swizzle tap :y) centre)) inv-c))
+                               (same (clamp (- 1.0 (* 8.0 rel)) 0.0 1.0))
+                               (w (* spatial same))
+                               (closer (< rel (swizzle state :z))))
+                          (vec4 (+ (swizzle state :x) (* w (swizzle tap :x)))
+                                (+ (swizzle state :y) w)
+                                (if closer rel (swizzle state :z))
+                                (if closer (swizzle tap :x)
+                                    (swizzle state :w)))))))
+               (if (> (swizzle acc :y) 0.001)
+                   (/ (swizzle acc :x) (swizzle acc :y))
+                   (swizzle acc :w))))))
+    (set-output color (vec4 0.0 0.0 0.0 (- 1.0 ao)))))
 
-(define-shader-program gtao-blur
+(define-shader-program gtao-apply
   :vertex present-vertex
-  :fragment gtao-blur-fragment)
+  :fragment gtao-apply-fragment)
 
 ;;; Sun shafts: march each view ray through the sun's shadow map and gather
 ;;; forward-scattered sunlight over its lit spans, stopping at the first
 ;;; surface; a Henyey-Greenstein lobe keeps the beams about the sun.  A
 ;;; step's clip position and its places in the sun's maps lie along lines
 ;;; from the eye, so the matrices are applied once a pixel, not once a step,
-;;; and the light's extinction is a product carried along the march.
+;;; and the light's extinction is a product carried along the march.  Runs at
+;;; half scene resolution and carries linear depth in alpha for a bilateral
+;;; upsample into the scene colour.
 (define-shader shafts-fragment
     (:stage :fragment
      :inputs ((uv :vec2 :location 0)
@@ -7561,10 +7606,14 @@
                  (shadow-map :depth-texture-2d :binding 8)
                  (nearest-clamp :sampler :binding 2)
                  (shadow-compare :sampler :binding 3)))
-  (let* ((ray (view-ray uv (swizzle ray-forward :xyz) (swizzle ray-right :xyz)
-                        (swizzle ray-up :xyz)))
+  (let* ((sample-uv (* (+ (* (floor (swizzle pixel :xy)) 2.0) (vec2 0.5 0.5))
+                       (swizzle blur :xy)))
+         (ray (view-ray sample-uv (swizzle ray-forward :xyz)
+                        (swizzle ray-right :xyz) (swizzle ray-up :xyz)))
          (camera (swizzle eye :xyz))
-         (surface (swizzle (sample scene-depth nearest-clamp uv) :x))
+         (surface (swizzle (sample scene-depth nearest-clamp sample-uv) :x))
+         (depth (view-depth surface (swizzle occlusion :z)
+                            (swizzle occlusion :w)))
          (jitter (interleaved-noise (swizzle pixel :xy)))
          (steps (swizzle shafts :z))
          (dt (/ (swizzle shafts :x) steps))
@@ -7600,11 +7649,64 @@
                    (* 4.0 3.14159265
                       (expt (- (+ 1.0 (* g g)) (* 2.0 g mu)) 1.5)))))
     (set-output color (vec4 (* (swizzle shaft-color :xyz) (* phase scatter))
-                            1.0))))
+                            depth))))
 
 (define-shader-program shafts
   :vertex present-vertex
   :fragment shafts-fragment)
+
+;;; Depth-aware 2x2 joint-bilateral upsample of half-resolution sun shafts into
+;;; the full-resolution scene colour (additive).
+(define-shader shafts-apply-fragment
+    (:stage :fragment
+     :inputs ((uv :vec2 :location 0)
+              (pixel :vec4 :built-in :frag-coord))
+     :outputs ((color :vec4 :location 0))
+     :resources ((post :uniform-block :binding 0 :members #.*post*)
+                 (scattered :texture-2d :binding 0)
+                 (scene-depth :depth-texture-2d :binding 1)
+                 (nearest-clamp :sampler :binding 2)))
+  (let* ((near (swizzle occlusion :z))
+         (far (swizzle occlusion :w))
+         (z (swizzle (sample-level scene-depth nearest-clamp uv 0.0) :x))
+         (centre (view-depth z near far))
+         (inv-half (swizzle blur :xy))
+         (pos (* (- (swizzle pixel :xy) (vec2 0.5 0.5)) 0.5))
+         (base (floor pos))
+         (f (- pos base))
+         (fx (swizzle f :x))
+         (fy (swizzle f :y))
+         (t00 (sample-level scattered nearest-clamp
+                            (* (+ base (vec2 0.5 0.5)) inv-half) 0.0))
+         (t10 (sample-level scattered nearest-clamp
+                            (* (+ base (vec2 1.5 0.5)) inv-half) 0.0))
+         (t01 (sample-level scattered nearest-clamp
+                            (* (+ base (vec2 0.5 1.5)) inv-half) 0.0))
+         (t11 (sample-level scattered nearest-clamp
+                            (* (+ base (vec2 1.5 1.5)) inv-half) 0.0))
+         (inv-c (/ 1.0 (max centre 0.001)))
+         (r00 (* (abs (- (swizzle t00 :w) centre)) inv-c))
+         (r10 (* (abs (- (swizzle t10 :w) centre)) inv-c))
+         (r01 (* (abs (- (swizzle t01 :w) centre)) inv-c))
+         (r11 (* (abs (- (swizzle t11 :w) centre)) inv-c))
+         (w00 (* (- 1.0 fx) (- 1.0 fy) (clamp (- 1.0 (* 8.0 r00)) 0.0 1.0)))
+         (w10 (* fx (- 1.0 fy) (clamp (- 1.0 (* 8.0 r10)) 0.0 1.0)))
+         (w01 (* (- 1.0 fx) fy (clamp (- 1.0 (* 8.0 r01)) 0.0 1.0)))
+         (w11 (* fx fy (clamp (- 1.0 (* 8.0 r11)) 0.0 1.0)))
+         (wsum (+ (+ w00 w10) (+ w01 w11)))
+         (vsum (+ (+ (* w00 (swizzle t00 :xyz)) (* w10 (swizzle t10 :xyz)))
+                  (+ (* w01 (swizzle t01 :xyz)) (* w11 (swizzle t11 :xyz)))))
+         (best-r0 (if (<= r00 r10) r00 r10))
+         (best-v0 (if (<= r00 r10) (swizzle t00 :xyz) (swizzle t10 :xyz)))
+         (best-r1 (if (<= r01 r11) r01 r11))
+         (best-v1 (if (<= r01 r11) (swizzle t01 :xyz) (swizzle t11 :xyz)))
+         (fallback (if (<= best-r0 best-r1) best-v0 best-v1))
+         (light (if (> wsum 0.001) (/ vsum wsum) fallback)))
+    (set-output color (vec4 light 1.0))))
+
+(define-shader-program shafts-apply
+  :vertex present-vertex
+  :fragment shafts-apply-fragment)
 
 ;;; -- motion blur -------------------------------------------------------------
 ;;;

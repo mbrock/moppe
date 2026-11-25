@@ -35,14 +35,12 @@ namespace moppe::nhal {
       occlusion.program = &shaders::gtao::program;
       occlusion.vertex = m_shaders.gtao[0];
       occlusion.fragment = m_shaders.gtao[1];
-      occlusion.color_formats[0] = Format::r16_float;
+      occlusion.color_formats[0] = Format::rg16_float;
       m_post.gtao = m_device->create_render_pipeline (occlusion);
-      RenderPipelineDesc occlusion_blur = occlusion;
-      occlusion_blur.program = &shaders::gtao_blur::program;
-      occlusion_blur.vertex = m_shaders.gtao_blur[0];
-      occlusion_blur.fragment = m_shaders.gtao_blur[1];
-      m_post.gtao_blur = m_device->create_render_pipeline (occlusion_blur);
-      RenderPipelineDesc occlusion_apply = occlusion_blur;
+      RenderPipelineDesc occlusion_apply;
+      occlusion_apply.program = &shaders::gtao_apply::program;
+      occlusion_apply.vertex = m_shaders.gtao_apply[0];
+      occlusion_apply.fragment = m_shaders.gtao_apply[1];
       occlusion_apply.color_formats[0] = Format::rgba16_float;
       occlusion_apply.blend[0] = Blend::premultiplied;
       m_post.gtao_apply = m_device->create_render_pipeline (occlusion_apply);
@@ -51,8 +49,13 @@ namespace moppe::nhal {
       shafts.vertex = m_shaders.shafts[0];
       shafts.fragment = m_shaders.shafts[1];
       shafts.color_formats[0] = Format::rgba16_float;
-      shafts.blend[0] = Blend::additive;
       m_post.shafts = m_device->create_render_pipeline (shafts);
+      RenderPipelineDesc shafts_apply = shafts;
+      shafts_apply.program = &shaders::shafts_apply::program;
+      shafts_apply.vertex = m_shaders.shafts_apply[0];
+      shafts_apply.fragment = m_shaders.shafts_apply[1];
+      shafts_apply.blend[0] = Blend::additive;
+      m_post.shafts_apply = m_device->create_render_pipeline (shafts_apply);
     }
 
     shaders::gtao::Post NhalRenderer::post_block (const position_t& eye,
@@ -65,6 +68,10 @@ namespace moppe::nhal {
       post.ray_right = lanes (right);
       post.ray_up = lanes (up);
       post.occlusion = m_post.block.occlusion;
+      if (post.occlusion[2] <= 0.0f || post.occlusion[3] <= 0.0f) {
+        post.occlusion[2] = render::camera_near_m;
+        post.occlusion[3] = render::camera_far_m;
+      }
       return post;
     }
 
@@ -96,28 +103,24 @@ namespace moppe::nhal {
                            Store::store };
         m_device->begin_render_pass (desc);
       };
-      pass (m_post.ao[0], "occlusion");
+      pass (m_post.ao, "occlusion");
       m_device->set_pipeline (m_post.gtao);
       m_device->set_uniforms (0, post);
       m_device->set_texture (0, m_scene_depth);
       m_device->draw (3);
       m_device->end_render_pass ();
-      const std::array<float, 2> steps[2] = {
-        { 1.0f / float (m_scene_width), 0.0f },
-        { 0.0f, 1.0f / float (m_scene_height) },
-      };
-      // Across into the other target, then down into the scene.
-      for (int i = 0; i < 2; ++i) {
-        pass (i ? m_scene_color : m_post.ao[1], "occlusion blur");
-        m_device->set_pipeline (i ? m_post.gtao_apply : m_post.gtao_blur);
-        shaders::gtao::Post blurred = post;
-        blurred.blur = { steps[i][0], steps[i][1], float (i), 0 };
-        m_device->set_uniforms (0, blurred);
-        m_device->set_texture (0, m_post.ao[i]);
-        m_device->set_texture (1, m_scene_depth);
-        m_device->draw (3);
-        m_device->end_render_pass ();
-      }
+      pass (m_scene_color, "occlusion apply");
+      m_device->set_pipeline (m_post.gtao_apply);
+      shaders::gtao::Post applied = post;
+      applied.blur = { 1.0f / float (m_post.half_width),
+                       1.0f / float (m_post.half_height),
+                       float (m_post.half_width),
+                       float (m_post.half_height) };
+      m_device->set_uniforms (0, applied);
+      m_device->set_texture (0, m_post.ao);
+      m_device->set_texture (1, m_scene_depth);
+      m_device->draw (3);
+      m_device->end_render_pass ();
     }
 
     void
@@ -130,21 +133,41 @@ namespace moppe::nhal {
       post.shafts = {
         params.max_distance.numerical_value_in (u::m), 0.011f, 24.0f, 0
       };
+      post.blur = {
+        1.0f / float (m_scene_width), 1.0f / float (m_scene_height), 0, 0
+      };
       post.shaft_color = linear (
         params.sun_color, params.strength.numerical_value_in (mp_units::one));
       const float strength = post.shaft_color[3];
       for (int c = 0; c < 3; ++c)
         post.shaft_color[c] *= strength;
-      RenderPassDesc desc;
-      desc.label = "sun shafts";
-      desc.color_count = 1;
-      desc.colors[0] = { m_scene_color, Load::load, Store::store };
-      m_device->begin_render_pass (desc);
+      RenderPassDesc march;
+      march.label = "sun shafts";
+      march.color_count = 1;
+      march.colors[0] = { m_post.shafts_half, Load::discard, Store::store };
+      m_device->begin_render_pass (march);
       m_device->set_pipeline (m_post.shafts);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, post);
       m_device->set_texture (0, m_scene_depth);
       m_device->set_texture (8, m_sun_shadow.map);
+      m_device->draw (3);
+      m_device->end_render_pass ();
+
+      shaders::gtao::Post applied = post;
+      applied.blur = { 1.0f / float (m_post.half_width),
+                       1.0f / float (m_post.half_height),
+                       float (m_post.half_width),
+                       float (m_post.half_height) };
+      RenderPassDesc desc;
+      desc.label = "sun shafts apply";
+      desc.color_count = 1;
+      desc.colors[0] = { m_scene_color, Load::load, Store::store };
+      m_device->begin_render_pass (desc);
+      m_device->set_pipeline (m_post.shafts_apply);
+      m_device->set_uniforms (0, applied);
+      m_device->set_texture (0, m_post.shafts_half);
+      m_device->set_texture (1, m_scene_depth);
       m_device->draw (3);
       m_device->end_render_pass ();
     }

@@ -216,10 +216,12 @@ separable nine-tap Gaussian, added before the tonemap.
 
 Boulders are boulders.metal's cleaved icosahedra, culled on the GPU into
 coarse and fine classes. Ambient occlusion and sun shafts (post.metal's)
-are worked out from the scene's depth once the scene is drawn and blended
-into its colour (the occlusion's last blur premultiplied, the shafts
-added) before the temporal resolve, which accumulates them with the
-jittered samples they came from; the present draws Metal's veil around
+are evaluated at half scene resolution from snapped full-resolution depth
+texels, carrying linear depth alongside their values, and blended into the
+scene's colour through depth-aware bilateral upsamples (3x3 for occlusion
+premultiplied before translucents, 2x2 for shafts added before the
+temporal resolve), which accumulates them with the jittered samples they
+came from; the present draws Metal's veil around
 the sun. The stand's rasters -- canopy
 closure splatted from the crowns, and the game's fallen leaves -- shade
 the forest floor and thin and dry the grass beneath them. Trunks root into

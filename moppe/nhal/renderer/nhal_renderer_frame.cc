@@ -441,8 +441,8 @@ namespace moppe::nhal {
                          m_water.beneath_depth,
                          m_bounds[0],
                          m_bounds[1],
-                         m_post.ao[0],
-                         m_post.ao[1],
+                         m_post.ao,
+                         m_post.shafts_half,
                          m_post.submerged })
         if (t)
           m_device->destroy (t);
@@ -450,6 +450,8 @@ namespace moppe::nhal {
       // The scene at its share of the drawable, upscaled temporally.
       m_scene_width = scene_width;
       m_scene_height = scene_height;
+      m_post.half_width = std::max (1u, (m_scene_width + 1u) / 2u);
+      m_post.half_height = std::max (1u, (m_scene_height + 1u) / 2u);
       m_scene_color =
         m_device->create_texture ({ m_scene_width,
                                     m_scene_height,
@@ -491,13 +493,20 @@ namespace moppe::nhal {
                                         usage_render_target | usage_sampled,
                                         1,
                                         "temporal neighbourhood" });
-      for (Texture& t : m_post.ao)
-        t = m_device->create_texture ({ m_scene_width,
-                                        m_scene_height,
-                                        Format::r16_float,
-                                        usage_render_target | usage_sampled,
-                                        1,
-                                        "occlusion" });
+      m_post.ao =
+        m_device->create_texture ({ m_post.half_width,
+                                    m_post.half_height,
+                                    Format::rg16_float,
+                                    usage_render_target | usage_sampled,
+                                    1,
+                                    "occlusion" });
+      m_post.shafts_half =
+        m_device->create_texture ({ m_post.half_width,
+                                    m_post.half_height,
+                                    Format::rgba16_float,
+                                    usage_render_target | usage_sampled,
+                                    1,
+                                    "sun shafts" });
     }
 
     void NhalRenderer::open_scene () {
