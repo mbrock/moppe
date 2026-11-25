@@ -121,12 +121,13 @@ namespace moppe::nhal {
       }
     }
 
-    void NhalRenderer::cull_rocks (const Mat4& view,
-                                   const Vec3& eye,
-                                   float height,
-                                   bool shadow) {
+    NhalRenderer::RockCullJob NhalRenderer::prepare_rock_cull (const Mat4& view,
+                                                               const Vec3& eye,
+                                                               float height,
+                                                               bool shadow) {
+      RockCullJob job {};
       if (!m_boulders.count)
-        return;
+        return job;
       auto row = [&] (int r) {
         return std::sqrt (view.element (r) * view.element (r) +
                           view.element (4 + r) * view.element (4 + r) +
@@ -148,20 +149,28 @@ namespace moppe::nhal {
                                                  { 240, 0, 60, 0, 0 } };
       const Buffer arguments =
         shadow ? m_boulders.shadow_arguments : m_boulders.arguments;
+      constexpr Stage cull_wait = Stage::vertex | Stage::compute | Stage::copy;
       m_device->copy_to_buffer (
         arguments,
         0,
-        m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)));
-      m_device->begin_compute_pass (shadow ? "shadow boulder culling"
-                                           : "boulder culling");
+        m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)),
+        cull_wait);
+      job.uniforms = uniforms;
+      job.candidates =
+        shadow ? m_boulders.shadow_candidates : m_boulders.candidates;
+      job.arguments = arguments;
+      job.groups = (m_boulders.count + 63) / 64;
+      job.active = true;
+      return job;
+    }
+
+    void NhalRenderer::dispatch_rock_cull (const RockCullJob& job) {
       m_device->set_pipeline (m_boulders.cull);
-      m_device->set_buffer (1, uniforms);
+      m_device->set_buffer (1, job.uniforms);
       m_device->set_buffer (2, m_boulders.records);
-      m_device->set_buffer (
-        3, shadow ? m_boulders.shadow_candidates : m_boulders.candidates);
-      m_device->set_buffer (4, arguments);
-      m_device->dispatch ((m_boulders.count + 63) / 64);
-      m_device->end_compute_pass ();
+      m_device->set_buffer (3, job.candidates);
+      m_device->set_buffer (4, job.arguments);
+      m_device->dispatch (job.groups);
     }
 
     void NhalRenderer::draw_boulders () {

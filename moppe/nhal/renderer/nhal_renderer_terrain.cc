@@ -473,6 +473,8 @@ namespace moppe::nhal {
       pass.color_count = 4;
       for (std::size_t i = 0; i < 4; ++i)
         pass.colors[i] = { m_terrain.cache_atlas[i], load, Store::store };
+      pass.waits[0] = { Stage::fragment, Stage::fragment };
+      pass.wait_count = 1;
       m_device->begin_render_pass (pass);
       m_device->set_pipeline (m_terrain.cache_bake);
       m_device->set_buffer (0, m_frame_block);

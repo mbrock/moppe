@@ -482,6 +482,7 @@ namespace moppe::nhal {
       }
 
       void begin_render_pass (const RenderPassDesc& desc) override {
+        flush_copies ();
         MTL4RenderPassDescriptor* pass =
           [[MTL4RenderPassDescriptor alloc] init];
         std::uint32_t width = 0, height = 0;
@@ -523,19 +524,39 @@ namespace moppe::nhal {
         if (desc.label)
           m_encoder.label = @(desc.label);
         if (m_fx_wait_pending) {
-          [m_encoder waitForFence:m_fx_fence
-              beforeEncoderStages:MTLStageVertex | MTLStageFragment];
+          MTLStages fx_before = MTLStageVertex | MTLStageFragment;
+          if (desc.wait_count > 0) {
+            fx_before = 0;
+            for (std::uint32_t i = 0; i < desc.wait_count; ++i)
+              fx_before |= mtl_stages (desc.waits[i].before);
+          }
+          if (fx_before)
+            [m_encoder waitForFence:m_fx_fence beforeEncoderStages:fx_before];
           m_fx_wait_pending = false;
         }
-        // Coarse ordering: whatever earlier passes wrote is visible here.
-        [m_encoder barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
-                                           MTLStageBlit | MTLStageDispatch
-                              beforeStages:MTLStageVertex | MTLStageFragment
-                         visibilityOptions:MTL4VisibilityOptionDevice];
+        if (desc.wait_count > 0) {
+          for (std::uint32_t i = 0; i < desc.wait_count; ++i) {
+            const MTLStages after = mtl_stages (desc.waits[i].after);
+            const MTLStages before = mtl_stages (desc.waits[i].before);
+            if (after && before)
+              [m_encoder barrierAfterQueueStages:after
+                                    beforeStages:before
+                               visibilityOptions:MTL4VisibilityOptionDevice];
+          }
+        } else {
+          // Coarse ordering: whatever earlier passes wrote is visible here.
+          [m_encoder barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
+                                             MTLStageBlit | MTLStageDispatch
+                                beforeStages:MTLStageVertex | MTLStageFragment
+                           visibilityOptions:MTL4VisibilityOptionDevice];
+        }
         set_viewport (0, 0, float (width), float (height));
       }
 
-      void begin_compute_pass (const char* label) override {
+      void begin_compute_pass (const char* label,
+                               Stage wait_after,
+                               bool concurrent) override {
+        flush_copies ();
         timestamp_pass (label ? label : "compute");
         m_compute = [m_commands computeCommandEncoder];
         if (label)
@@ -545,38 +566,56 @@ namespace moppe::nhal {
               beforeEncoderStages:MTLStageDispatch | MTLStageBlit];
           m_fx_wait_pending = false;
         }
-        [m_compute barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
-                                           MTLStageBlit | MTLStageDispatch
-                              beforeStages:MTLStageDispatch | MTLStageBlit
-                         visibilityOptions:MTL4VisibilityOptionDevice];
+        if (const MTLStages after = mtl_stages (wait_after))
+          [m_compute barrierAfterQueueStages:after
+                                beforeStages:MTLStageDispatch | MTLStageBlit
+                           visibilityOptions:MTL4VisibilityOptionDevice];
+        m_dispatched = false;
+        m_compute_concurrent = concurrent;
+      }
+
+      void compute_barrier () override {
+        if (!m_compute || !m_dispatched)
+          return;
+        [m_compute barrierAfterEncoderStages:MTLStageDispatch
+                         beforeEncoderStages:MTLStageDispatch
+                           visibilityOptions:MTL4VisibilityOptionDevice];
         m_dispatched = false;
       }
 
       void end_compute_pass () override {
         [m_compute endEncoding];
         m_compute = nil;
+        m_compute_concurrent = false;
         timestamp ();
       }
 
       void copy_to_buffer (Buffer target,
                            std::uint64_t offset,
-                           const Transient& source) override {
-        id<MTL4ComputeCommandEncoder> copy = [m_commands computeCommandEncoder];
-        if (m_fx_wait_pending) {
-          [copy waitForFence:m_fx_fence beforeEncoderStages:MTLStageBlit];
-          m_fx_wait_pending = false;
+                           const Transient& source,
+                           Stage wait_after) override {
+        if (!m_copy) {
+          m_copy = [m_commands computeCommandEncoder];
+          m_copy.label = @"buffer copies";
+          if (m_fx_wait_pending) {
+            [m_copy waitForFence:m_fx_fence beforeEncoderStages:MTLStageBlit];
+            m_fx_wait_pending = false;
+          }
+          m_copy_waited = Stage::none;
         }
-        [copy barrierAfterQueueStages:MTLStageVertex | MTLStageFragment |
-                                      MTLStageBlit | MTLStageDispatch
-                         beforeStages:MTLStageBlit
-                    visibilityOptions:MTL4VisibilityOptionDevice];
+        const Stage missing = wait_after & ~m_copy_waited;
+        if (const MTLStages after = mtl_stages (missing)) {
+          [m_copy barrierAfterQueueStages:after
+                             beforeStages:MTLStageBlit
+                        visibilityOptions:MTL4VisibilityOptionDevice];
+          m_copy_waited = m_copy_waited | missing;
+        }
         id<MTLBuffer> arena = m_arena_buffers[m_slot];
-        [copy copyFromBuffer:arena
-                sourceOffset:source.gpu_address - arena.gpuAddress
-                    toBuffer:m_buffers[target].buffer
-           destinationOffset:offset
-                        size:source.size];
-        [copy endEncoding];
+        [m_copy copyFromBuffer:arena
+                  sourceOffset:source.gpu_address - arena.gpuAddress
+                      toBuffer:m_buffers[target].buffer
+             destinationOffset:offset
+                          size:source.size];
       }
 
       void
@@ -634,6 +673,7 @@ namespace moppe::nhal {
 
       bool temporal_scale (const TemporalScaleDesc& desc) override {
 #if !TARGET_OS_SIMULATOR
+        flush_copies ();
         if (!m_supports_temporal_scale || m_encoder || m_compute ||
             !m_fx_fence_signaled || !desc.color || !desc.depth ||
             !desc.motion || !desc.output)
@@ -839,6 +879,7 @@ namespace moppe::nhal {
       }
 
       void end_frame () override {
+        flush_copies ();
         if (m_encoder)
           end_render_pass ();
         if (m_compute)
@@ -1089,9 +1130,31 @@ namespace moppe::nhal {
         [m_compute_table setTexture:id atIndex:index];
       }
 
-      // Dispatches in one pass may read what earlier ones wrote.
+      static MTLStages mtl_stages (Stage s) {
+        MTLStages out = 0;
+        if (any (s & Stage::vertex))
+          out |= MTLStageVertex;
+        if (any (s & Stage::fragment))
+          out |= MTLStageFragment;
+        if (any (s & Stage::compute))
+          out |= MTLStageDispatch;
+        if (any (s & Stage::copy))
+          out |= MTLStageBlit;
+        return out;
+      }
+
+      void flush_copies () {
+        if (!m_copy)
+          return;
+        [m_copy endEncoding];
+        m_copy = nil;
+        m_copy_waited = Stage::none;
+      }
+
+      // Dispatches in one pass may read what earlier ones wrote unless the
+      // pass declared concurrent dispatches and uses `compute_barrier()`.
       void before_dispatch () {
-        if (m_dispatched)
+        if (m_dispatched && !m_compute_concurrent)
           [m_compute barrierAfterEncoderStages:MTLStageDispatch
                            beforeEncoderStages:MTLStageDispatch
                              visibilityOptions:MTL4VisibilityOptionDevice];
@@ -1188,7 +1251,10 @@ namespace moppe::nhal {
       id<MTL4CommandBuffer> m_commands = nil;
       id<MTL4RenderCommandEncoder> m_encoder = nil;
       id<MTL4ComputeCommandEncoder> m_compute = nil;
+      id<MTL4ComputeCommandEncoder> m_copy = nil;
+      Stage m_copy_waited = Stage::none;
       bool m_dispatched = false;
+      bool m_compute_concurrent = false;
       std::uint32_t m_slot = 0;
       MetalPipeline m_pipeline;
       std::function<void (const Capture&)> m_capture_request;

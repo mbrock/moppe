@@ -893,7 +893,11 @@ namespace moppe::nhal {
                                  0);
       }
 
-      void begin_compute_pass (const char* label) override {
+      void begin_compute_pass (const char* label,
+                               Stage wait_after,
+                               bool concurrent) override {
+        (void)wait_after;
+        (void)concurrent;
         timestamp_pass (label ? label : "compute");
       }
 
@@ -925,7 +929,9 @@ namespace moppe::nhal {
 
       void copy_to_buffer (Buffer target,
                            std::uint64_t offset,
-                           const Transient& source) override {
+                           const Transient& source,
+                           Stage wait_after) override {
+        (void)wait_after;
         D3DBuffer& b = m_buffers[target];
         buffer_state (b, D3D12_RESOURCE_STATE_COPY_DEST);
         m_list->CopyBufferRegion (

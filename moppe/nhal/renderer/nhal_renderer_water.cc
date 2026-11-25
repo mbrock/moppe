@@ -131,6 +131,8 @@ namespace moppe::nhal {
       pass.color_count = 2;
       pass.colors[0] = { m_water.beneath, Load::discard, Store::store };
       pass.colors[1] = { m_water.beneath_depth, Load::discard, Store::store };
+      pass.waits[0] = { Stage::fragment, Stage::fragment };
+      pass.wait_count = 1;
       m_device->begin_render_pass (pass);
       m_device->set_pipeline (m_water.scene_copy);
       m_device->set_texture (0, m_scene_color);

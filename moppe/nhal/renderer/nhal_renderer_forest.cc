@@ -337,13 +337,15 @@ namespace moppe::nhal {
                0 };
     }
 
-    void NhalRenderer::cull_trees (const Mat4& view,
-                                   const Vec3& eye,
-                                   float height,
-                                   bool shadow,
-                                   std::size_t cascade) {
+    NhalRenderer::ForestCullJob
+    NhalRenderer::prepare_tree_cull (const Mat4& view,
+                                     const Vec3& eye,
+                                     float height,
+                                     bool shadow,
+                                     std::size_t cascade) {
+      ForestCullJob job {};
       if (!m_forest.count)
-        return;
+        return job;
       shaders::forest_cull::Forest forest {};
       forest.view = matrix (view);
       forest.eye = lanes (eye);
@@ -376,10 +378,12 @@ namespace moppe::nhal {
       }
       const Buffer arguments =
         shadow ? m_forest.shadow_arguments[cascade] : m_forest.arguments;
+      constexpr Stage cull_wait = Stage::vertex | Stage::compute | Stage::copy;
       m_device->copy_to_buffer (
         arguments,
         0,
-        m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)));
+        m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)),
+        cull_wait);
 
       const auto blocks = m_forest.grid.visible_blocks (
         view,
@@ -411,26 +415,33 @@ namespace moppe::nhal {
       reserve (
         candidates, m_forest.capacity[v], 4 * forest_classes, "visible trees");
       if (blocks.empty ())
-        return;
+        return job;
       reserve (m_forest.classified,
                m_forest.scratch_capacity,
                0,
                "tree classification");
-      const Transient ranges = m_device->upload (
+      job.forest = forest;
+      job.ranges = m_device->upload (
         std::span<const std::array<std::uint32_t, 2>> (blocks));
-      for (int pass = 0; pass != 3; ++pass) {
-        m_device->begin_compute_pass ("forest classification and compaction");
-        m_device->set_pipeline (m_forest.cull);
-        forest.mode[1] = float (pass);
-        m_device->set_uniforms (1, forest);
-        m_device->set_buffer (2, m_forest.records);
-        m_device->set_buffer (3, candidates);
-        m_device->set_buffer (4, arguments);
-        m_device->set_buffer (5, ranges);
-        m_device->set_buffer (6, m_forest.classified);
-        m_device->dispatch (pass == 1 ? 1 : std::uint32_t (blocks.size ()));
-        m_device->end_compute_pass ();
-      }
+      job.candidates = candidates;
+      job.arguments = arguments;
+      job.groups = std::uint32_t (blocks.size ());
+      job.active = true;
+      return job;
+    }
+
+    void NhalRenderer::dispatch_tree_cull_pass (const ForestCullJob& job,
+                                                int pass) {
+      shaders::forest_cull::Forest forest = job.forest;
+      forest.mode[1] = float (pass);
+      m_device->set_pipeline (m_forest.cull);
+      m_device->set_uniforms (1, forest);
+      m_device->set_buffer (2, m_forest.records);
+      m_device->set_buffer (3, job.candidates);
+      m_device->set_buffer (4, job.arguments);
+      m_device->set_buffer (5, job.ranges);
+      m_device->set_buffer (6, m_forest.classified);
+      m_device->dispatch (pass == 1 ? 1 : job.groups);
     }
 
     void NhalRenderer::draw_forest () {

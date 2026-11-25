@@ -622,10 +622,36 @@ namespace moppe::nhal {
       // asked for to its file or sink.
       void end_device_frame ();
 
+      struct ForestCullJob {
+        shaders::forest_cull::Forest forest {};
+        Transient ranges {};
+        Buffer candidates {};
+        Buffer arguments {};
+        std::uint32_t groups = 0;
+        bool active = false;
+      };
+
+      struct GrassCullJob {
+        std::uint32_t tile_groups = 0;
+        std::uint32_t sward_groups = 0;
+        bool active = false;
+      };
+
+      struct RockCullJob {
+        Transient uniforms {};
+        Buffer candidates {};
+        Buffer arguments {};
+        std::uint32_t groups = 0;
+        bool active = false;
+      };
+
       // The ground tiles around the camera that carry blades, counted into
       // the sward's indirect draw: a window of 0.6-metre cells anchored to
       // the world lattice, so a blade keeps its identity as the rider moves.
-      void cull_grass (const Mat4& view_proj, const FrameParams& params);
+      GrassCullJob prepare_grass_cull (const Mat4& view_proj,
+                                       const FrameParams& params);
+      void dispatch_grass_wave0 (const GrassCullJob& job);
+      void dispatch_grass_wave1 (const GrassCullJob& job);
 
       shaders::gtao::Post post_block (const position_t& eye,
                                       const direction_t& forward,
@@ -642,18 +668,22 @@ namespace moppe::nhal {
 
       // Every boulder tested against a view, coarse or fine for the camera
       // and coarse for the sun, counted into its class's indirect draw.
-      void
-      cull_rocks (const Mat4& view, const Vec3& eye, float height, bool shadow);
+      RockCullJob prepare_rock_cull (const Mat4& view,
+                                     const Vec3& eye,
+                                     float height,
+                                     bool shadow);
+      void dispatch_rock_cull (const RockCullJob& job);
 
       // Every tree tested against a view, appended to its class's list and
       // counted into the class's indirect draw: eighteen classes for the
       // camera, three (a species each, coarsest tier) for the sun's shadow.
       // Runs outside render passes, which compute passes may not overlap.
-      void cull_trees (const Mat4& view,
-                       const Vec3& eye,
-                       float height,
-                       bool shadow,
-                       std::size_t cascade = 0);
+      ForestCullJob prepare_tree_cull (const Mat4& view,
+                                       const Vec3& eye,
+                                       float height,
+                                       bool shadow,
+                                       std::size_t cascade = 0);
+      void dispatch_tree_cull_pass (const ForestCullJob& job, int pass);
 
       // The draw-list pipeline for a run's fixed-function state.
       Pipeline uber (const DrawState& state);

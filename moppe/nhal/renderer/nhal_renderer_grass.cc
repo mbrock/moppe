@@ -40,12 +40,13 @@ namespace moppe::nhal {
       m_grass.grain = grain;
     }
 
-    void NhalRenderer::cull_grass (const Mat4& view_proj,
-                                   const FrameParams& params) {
+    NhalRenderer::GrassCullJob
+    NhalRenderer::prepare_grass_cull (const Mat4& view_proj,
+                                      const FrameParams& params) {
       m_grass.culled = false;
       if (!m_grass.wanted || !m_terrain.have || !m_terrain.landscape ||
           !m_terrain.ground)
-        return;
+        return {};
       constexpr float tile = 0.60f;
       constexpr std::uint32_t shoots = 32, indices_per_shoot = 18;
       const float reach =
@@ -170,14 +171,27 @@ namespace moppe::nhal {
       std::array<DrawIndexedIndirectArgs, grass_classes> reset {};
       for (std::uint32_t c = 0; c < grass_classes; ++c)
         reset[c] = { (1u << c) * indices_per_shoot, 0, 0, 0, 0 };
+      constexpr Stage cull_wait = Stage::vertex | Stage::compute | Stage::copy;
       m_device->copy_to_buffer (
         m_grass.arguments,
         0,
-        m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)));
-      m_device->begin_compute_pass ("grass tiles");
+        m_device->upload (std::span<const DrawIndexedIndirectArgs> (reset)),
+        cull_wait);
+      const DrawIndexedIndirectArgs sward_reset { 96, 0, 0, 0, 0 };
+      m_device->copy_to_buffer (
+        m_grass.sward_arguments,
+        0,
+        m_device->upload (
+          std::span<const DrawIndexedIndirectArgs> (&sward_reset, 1)),
+        cull_wait);
+      m_grass.culled = true;
+      return { (side * side + 63) / 64, (patches * patches + 63) / 64, true };
+    }
+
+    void NhalRenderer::dispatch_grass_wave0 (const GrassCullJob& job) {
       m_device->set_pipeline (m_grass.tiles_pipeline);
       m_device->set_buffer (0, m_frame_block);
-      m_device->set_uniforms (1, grass);
+      m_device->set_uniforms (1, m_grass.block);
       m_device->set_buffer (2, m_grass.tiles);
       m_device->set_buffer (3, m_grass.arguments);
       m_device->set_uniforms (4, terrain_block ());
@@ -193,32 +207,23 @@ namespace moppe::nhal {
       m_device->set_texture (12,
                              m_terrain.bedrock ? m_terrain.bedrock : m_clear);
       bind_stand ();
-      m_device->dispatch ((side * side + 63) / 64);
-      m_device->end_compute_pass ();
+      m_device->dispatch (job.tile_groups);
 
-      const DrawIndexedIndirectArgs sward_reset { 96, 0, 0, 0, 0 };
-      m_device->copy_to_buffer (
-        m_grass.sward_arguments,
-        0,
-        m_device->upload (
-          std::span<const DrawIndexedIndirectArgs> (&sward_reset, 1)));
-      m_device->begin_compute_pass ("sward cells");
       m_device->set_pipeline (m_grass.sward_cells_pipeline);
       m_device->set_buffer (0, m_frame_block);
-      m_device->set_uniforms (1, sward);
+      m_device->set_uniforms (1, m_grass.sward_block);
       m_device->set_buffer (2, m_grass.sward_marks);
       m_device->set_buffer (3, m_grass.sward_arguments);
       m_device->set_texture (0, m_terrain.heights);
-      m_device->dispatch ((patches * patches + 63) / 64);
-      m_device->end_compute_pass ();
-      m_device->begin_compute_pass ("sward patches");
+      m_device->dispatch (job.sward_groups);
+    }
+
+    void NhalRenderer::dispatch_grass_wave1 (const GrassCullJob& job) {
       m_device->set_pipeline (m_grass.sward_patches_pipeline);
-      m_device->set_uniforms (1, sward);
+      m_device->set_uniforms (1, m_grass.sward_block);
       m_device->set_buffer (2, m_grass.sward_marks);
       m_device->set_buffer (3, m_grass.sward_patches);
-      m_device->dispatch ((patches * patches + 63) / 64);
-      m_device->end_compute_pass ();
-      m_grass.culled = true;
+      m_device->dispatch (job.sward_groups);
     }
 
     void

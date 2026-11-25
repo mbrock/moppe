@@ -689,7 +689,11 @@ namespace moppe::nhal {
         reset_bindings ();
       }
 
-      void begin_compute_pass (const char* label) override {
+      void begin_compute_pass (const char* label,
+                               Stage wait_after,
+                               bool concurrent) override {
+        (void)wait_after;
+        (void)concurrent;
         WGPUComputePassDescriptor info = WGPU_COMPUTE_PASS_DESCRIPTOR_INIT;
         info.label = view (label);
         WGPUPassTimestampWrites timing = WGPU_PASS_TIMESTAMP_WRITES_INIT;
@@ -708,7 +712,9 @@ namespace moppe::nhal {
 
       void copy_to_buffer (Buffer target,
                            std::uint64_t offset,
-                           const Transient& source) override {
+                           const Transient& source,
+                           Stage wait_after) override {
+        (void)wait_after;
         // The arena's bytes reach its buffer before the frame's commands
         // run, so this copies what the slice holds by then.
         wgpuCommandEncoderCopyBufferToBuffer (m_encoder,

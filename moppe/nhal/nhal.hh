@@ -223,11 +223,45 @@ namespace moppe::nhal {
     float clear = 0.0f; // reversed-Z: far is zero
   };
 
+  enum class Stage : std::uint8_t {
+    none = 0,
+    vertex = 1 << 0,
+    fragment = 1 << 1,
+    compute = 1 << 2,
+    copy = 1 << 3,
+    all = vertex | fragment | compute | copy,
+  };
+
+  constexpr Stage operator| (Stage a, Stage b) {
+    return Stage (std::uint8_t (a) | std::uint8_t (b));
+  }
+
+  constexpr Stage operator& (Stage a, Stage b) {
+    return Stage (std::uint8_t (a) & std::uint8_t (b));
+  }
+
+  constexpr Stage operator~(Stage a) {
+    return Stage (~std::uint8_t (a) & std::uint8_t (Stage::all));
+  }
+
+  constexpr bool any (Stage s) {
+    return std::uint8_t (s) != 0;
+  }
+
+  struct StageWait {
+    Stage after = Stage::none;
+    Stage before = Stage::none;
+  };
+
   struct RenderPassDesc {
     std::array<ColorAttachment, 8> colors {};
     std::uint32_t color_count = 0;
     DepthAttachment depth {};
     const char* label = nullptr;
+    // Optional stage dependencies before this pass. Zero waits means the
+    // device orders the pass conservatively after all earlier work.
+    std::array<StageWait, 2> waits {};
+    std::uint32_t wait_count = 0;
   };
 
   enum class IndexType : std::uint8_t { uint16, uint32 };
@@ -345,13 +379,20 @@ namespace moppe::nhal {
     virtual void begin_render_pass (const RenderPassDesc& desc) = 0;
     virtual void end_render_pass () = 0;
     // Compute passes hold dispatches; they may not overlap render passes.
-    virtual void begin_compute_pass (const char* label = nullptr) = 0;
+    // `wait_after` narrows which earlier pipeline stages must finish before
+    // the pass begins. When `concurrent` is true, dispatches in the pass
+    // may overlap until ordered by `compute_barrier()`.
+    virtual void begin_compute_pass (const char* label = nullptr,
+                                     Stage wait_after = Stage::all,
+                                     bool concurrent = false) = 0;
+    virtual void compute_barrier () {}
     virtual void end_compute_pass () = 0;
     // Outside any pass: copies bytes from the frame arena into a buffer,
-    // ordered before the work that follows.
+    // ordered after `wait_after` and before the work that follows.
     virtual void copy_to_buffer (Buffer target,
                                  std::uint64_t offset,
-                                 const Transient& source) = 0;
+                                 const Transient& source,
+                                 Stage wait_after = Stage::all) = 0;
     virtual void set_pipeline (Pipeline pipeline) = 0;
     // WebGPU binds buffers only from multiples of 256 bytes.
     virtual void set_buffer (std::uint32_t binding,

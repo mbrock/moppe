@@ -64,25 +64,55 @@ namespace moppe::nhal {
         length2 (direction_value (m_params.sun_dir) -
                  direction_value (m_sun_shadow.cached_sun)) > 1e-6f;
       const std::size_t cascades = refresh ? 2 : 1;
+      std::array<ForestCullJob, 2> tree_jobs {};
       for (std::size_t c = 0; c < cascades; ++c) {
         const render::ShadowCascade& cascade = params.cascades[c];
         if (trees)
-          cull_trees (cascade.light_view_proj,
-                      position_value (cascade.focus),
-                      1.0f,
-                      true,
-                      c);
+          tree_jobs[c] = prepare_tree_cull (cascade.light_view_proj,
+                                            position_value (cascade.focus),
+                                            1.0f,
+                                            true,
+                                            c);
       }
       const render::ShadowCascade& near = params.cascades[Shadow::near];
-      if (rocks)
-        cull_rocks (
-          near.light_view_proj, position_value (near.focus), 1.0f, true);
+      const RockCullJob rock_job =
+        rocks ? prepare_rock_cull (
+                  near.light_view_proj, position_value (near.focus), 1.0f, true)
+              : RockCullJob {};
+      if (tree_jobs[0].active || tree_jobs[1].active || rock_job.active) {
+        constexpr Stage cull_wait =
+          Stage::vertex | Stage::compute | Stage::copy;
+        m_device->begin_compute_pass ("shadow culling", cull_wait, true);
+        if (tree_jobs[0].active)
+          dispatch_tree_cull_pass (tree_jobs[0], 0);
+        if (rock_job.active)
+          dispatch_rock_cull (rock_job);
+        if (tree_jobs[0].active) {
+          m_device->compute_barrier ();
+          dispatch_tree_cull_pass (tree_jobs[0], 1);
+          m_device->compute_barrier ();
+          dispatch_tree_cull_pass (tree_jobs[0], 2);
+        }
+        if (tree_jobs[1].active) {
+          if (tree_jobs[0].active)
+            m_device->compute_barrier ();
+          dispatch_tree_cull_pass (tree_jobs[1], 0);
+          m_device->compute_barrier ();
+          dispatch_tree_cull_pass (tree_jobs[1], 1);
+          m_device->compute_barrier ();
+          dispatch_tree_cull_pass (tree_jobs[1], 2);
+        }
+        m_device->end_compute_pass ();
+      }
 
       RenderPassDesc pass;
       pass.label = "sun shadow";
       pass.depth = {
         m_sun_shadow.map, refresh ? Load::clear : Load::load, Store::store, 1.0f
       };
+      pass.waits[0] = { Stage::compute | Stage::copy, Stage::vertex };
+      pass.waits[1] = { Stage::fragment, Stage::fragment };
+      pass.wait_count = 2;
       m_device->begin_render_pass (pass);
       for (std::size_t c = 0; c < cascades; ++c) {
         m_device->set_viewport (

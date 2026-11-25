@@ -101,6 +101,8 @@ namespace moppe::nhal {
         desc.colors[0] = { target,
                            target == m_scene_color ? Load::load : Load::discard,
                            Store::store };
+        desc.waits[0] = { Stage::fragment, Stage::fragment };
+        desc.wait_count = 1;
         m_device->begin_render_pass (desc);
       };
       pass (m_post.ao, "occlusion");
@@ -145,6 +147,8 @@ namespace moppe::nhal {
       march.label = "sun shafts";
       march.color_count = 1;
       march.colors[0] = { m_post.shafts_half, Load::discard, Store::store };
+      march.waits[0] = { Stage::fragment, Stage::fragment };
+      march.wait_count = 1;
       m_device->begin_render_pass (march);
       m_device->set_pipeline (m_post.shafts);
       m_device->set_buffer (0, m_frame_block);
@@ -163,6 +167,8 @@ namespace moppe::nhal {
       desc.label = "sun shafts apply";
       desc.color_count = 1;
       desc.colors[0] = { m_scene_color, Load::load, Store::store };
+      desc.waits[0] = { Stage::fragment, Stage::fragment };
+      desc.wait_count = 1;
       m_device->begin_render_pass (desc);
       m_device->set_pipeline (m_post.shafts_apply);
       m_device->set_uniforms (0, applied);
@@ -194,6 +200,8 @@ namespace moppe::nhal {
       pass.label = "underwater";
       pass.color_count = 1;
       pass.colors[0] = { m_post.submerged, Load::discard, Store::store };
+      pass.waits[0] = { Stage::fragment, Stage::fragment };
+      pass.wait_count = 1;
       m_device->begin_render_pass (pass);
       m_device->set_pipeline (m_post.underwater);
       m_device->set_buffer (0, m_frame_block);
@@ -235,6 +243,8 @@ namespace moppe::nhal {
       desc.label = "motion blur";
       desc.color_count = 1;
       desc.colors[0] = { m_post.blurred, Load::discard, Store::store };
+      desc.waits[0] = { Stage::fragment, Stage::fragment };
+      desc.wait_count = 1;
       m_device->begin_render_pass (desc);
       m_device->set_pipeline (m_post.motion_blur);
       m_device->set_buffer (0, m_frame_block);
@@ -274,14 +284,17 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::bloom (const shaders::present::Present& present) {
-      auto pass = [&] (Texture target, const char* label) {
+      auto pass = [&] (Texture target, const char* label, Stage wait_after) {
         RenderPassDesc desc;
         desc.label = label;
         desc.color_count = 1;
         desc.colors[0] = { target, Load::discard, Store::store };
+        desc.waits[0] = { wait_after, Stage::fragment };
+        desc.wait_count = 1;
         m_device->begin_render_pass (desc);
       };
-      pass (m_post.bloom[0], "bloom bright pass");
+      pass (
+        m_post.bloom[0], "bloom bright pass", Stage::fragment | Stage::compute);
       m_device->set_pipeline (m_post.bloom_bright);
       m_device->set_uniforms (0, present);
       m_device->set_buffer (1, m_exposure_value);
@@ -293,7 +306,7 @@ namespace moppe::nhal {
         { 0.0f, 1.0f / float (m_post.bloom_height) },
       };
       for (int i = 0; i < 2; ++i) {
-        pass (m_post.bloom[1 - i], "bloom blur");
+        pass (m_post.bloom[1 - i], "bloom blur", Stage::fragment);
         m_device->set_pipeline (m_post.bloom_blur);
         shaders::bloom_blur::Blur blur {};
         blur.direction = { steps[i][0], steps[i][1], 0, 0 };

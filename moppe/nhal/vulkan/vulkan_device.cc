@@ -801,7 +801,11 @@ namespace moppe::nhal {
         reset_bindings ();
       }
 
-      void begin_compute_pass (const char* label) override {
+      void begin_compute_pass (const char* label,
+                               Stage wait_after,
+                               bool concurrent) override {
+        (void)wait_after;
+        (void)concurrent;
         timestamp_begin (label ? label : "compute");
         reset_bindings ();
       }
@@ -812,7 +816,9 @@ namespace moppe::nhal {
 
       void copy_to_buffer (Buffer target,
                            std::uint64_t offset,
-                           const Transient& source) override {
+                           const Transient& source,
+                           Stage wait_after) override {
+        (void)wait_after;
         barrier (m_cb);
         const VkBufferCopy region { source.gpu_address - arena_tag,
                                     offset,

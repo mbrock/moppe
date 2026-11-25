@@ -129,9 +129,34 @@ namespace moppe::nhal {
       upload_frame ();
       if (m_terrain.have && use_terrain_cache ())
         update_terrain_cache ();
-      cull_trees (view_proj, camera, float (m_scene_height), false);
-      cull_grass (view_proj, params);
-      cull_rocks (view_proj, camera, float (m_scene_height), false);
+      const ForestCullJob trees =
+        prepare_tree_cull (view_proj, camera, float (m_scene_height), false);
+      const GrassCullJob grass = prepare_grass_cull (view_proj, params);
+      const RockCullJob rocks =
+        prepare_rock_cull (view_proj, camera, float (m_scene_height), false);
+      if (trees.active || grass.active || rocks.active) {
+        constexpr Stage cull_wait =
+          Stage::vertex | Stage::compute | Stage::copy;
+        m_device->begin_compute_pass ("visibility culling", cull_wait, true);
+        if (trees.active)
+          dispatch_tree_cull_pass (trees, 0);
+        if (grass.active)
+          dispatch_grass_wave0 (grass);
+        if (rocks.active)
+          dispatch_rock_cull (rocks);
+        if (trees.active || grass.active) {
+          m_device->compute_barrier ();
+          if (trees.active)
+            dispatch_tree_cull_pass (trees, 1);
+          if (grass.active)
+            dispatch_grass_wave1 (grass);
+        }
+        if (trees.active) {
+          m_device->compute_barrier ();
+          dispatch_tree_cull_pass (trees, 2);
+        }
+        m_device->end_compute_pass ();
+      }
 
       m_previous_view_proj = view_proj;
       m_previous_time = time;
@@ -210,6 +235,8 @@ namespace moppe::nhal {
         gather.color_count = 2;
         gather.colors[0] = { m_bounds[0], Load::discard, Store::store };
         gather.colors[1] = { m_bounds[1], Load::discard, Store::store };
+        gather.waits[0] = { Stage::fragment, Stage::fragment };
+        gather.wait_count = 1;
         m_device->begin_render_pass (gather);
         m_device->set_pipeline (m_neighbourhood);
         m_device->set_buffer (0, m_frame_block);
@@ -222,6 +249,8 @@ namespace moppe::nhal {
         pass.label = "temporal resolve";
         pass.color_count = 1;
         pass.colors[0] = { next, Load::discard, Store::store };
+        pass.waits[0] = { Stage::fragment, Stage::fragment };
+        pass.wait_count = 1;
         m_device->begin_render_pass (pass);
         m_device->set_pipeline (m_resolve);
         m_device->set_buffer (0, m_frame_block);
@@ -528,6 +557,16 @@ namespace moppe::nhal {
       };
       pass.colors[1] = { m_scene_motion, load, Store::store, { 0, 0, 0, 0 } };
       pass.depth = { m_scene_depth, load, Store::store, 0.0f };
+      if (!m_scene_begun) {
+        // Vertex reads compute-culled draws; fragment reads sun shadow and
+        // material cache, so scene vertices can overlap the shadow pass.
+        pass.waits[0] = { Stage::compute | Stage::copy, Stage::vertex };
+        pass.waits[1] = { Stage::fragment, Stage::fragment };
+        pass.wait_count = 2;
+      } else {
+        pass.waits[0] = { Stage::fragment, Stage::fragment };
+        pass.wait_count = 1;
+      }
       m_device->begin_render_pass (pass);
       m_scene_open = m_scene_begun = true;
     }
@@ -552,6 +591,8 @@ namespace moppe::nhal {
       pass.colors[0] = {
         m_device->backbuffer (), Load::clear, Store::store, { 0, 0, 0, 1 }
       };
+      pass.waits[0] = { Stage::fragment | Stage::compute, Stage::fragment };
+      pass.wait_count = 1;
       m_device->begin_render_pass (pass);
       const render::Viewport view = viewport_pixels ();
       m_device->set_viewport (float (view.x),
