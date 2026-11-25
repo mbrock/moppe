@@ -253,3 +253,111 @@ and approximates road elevation with heightfield elevation during the
 bake. It demonstrates reuse on a fixed view. Moving windows, refresh
 cost under travel, transitions between levels and edits to the ground
 remain to be measured before choosing a production layout.
+
+## Scrolling ground and road materials on the M5
+
+The [moving Metal probe](https://github.com/mbrock/moppe/tree/437be228/tools/terrain-material-probe)
+runs a camera along the generated paved bus loop at 20 m/s. It begins 95 m
+along the road, 2.2 m above its centre, and looks toward the tread 10 m
+ahead. The geometry and visible scene layers are the game's. The
+simulation holds after 80 fixed steps so that the camera, shadows and
+actors match across runs. The measurement window covers 128 m of road.
+
+The live mode uses the original terrain and road ribbon programs. The
+ground mode caches GroundSurface, then shades roads live on both
+meshes. The combined mode adds the dry road colour, roughness, detail
+slope, macro normal, wet darkening and puddle potential to the bake.
+Both meshes read the same dry material. Rain, swash, snow tracks,
+lighting and shadows are applied on screen.
+
+Four local 512² levels span 16, 64, 256 and 1,024 m. A periodic 1024²
+level covers the world. Moving the origin by eight texels opens one
+load/store pass for that level. Its horizontal and vertical strips
+cover only the newly exposed area, wrapping at the physical texture
+edges. Blending starts at 80% of each local level's half-width. Ground
+uses two RGBA16F outputs (32 MiB combined) and ground with roads uses
+three (48 MiB). The probe edits the generated MSL for measurement.
+The original Lisp remains the source for the material formulas.
+
+Each of the six settings ran three times in separate launches. The
+order rotated across rounds, with the scale order reversed in the
+second. Resolution was fixed, the drawable was 1920×1080, and Moppe
+used its shader temporal resolve. The table takes the median across
+three runs for each statistic over frames 97–480 (384 matched frames
+per run). GPU total sums the timestamps from every pass in the same
+resolved frame, including refresh. The slowest column is the median of
+the three run maxima. Initial fills and screenshot readbacks are
+outside the measurement window.
+
+| Internal resolution | Material | Scene, ms | Refresh, ms | GPU total, ms | GPU p95, ms | Slowest, ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 960×540 | Live | 5.39 | 0.000 | 9.00 | 10.59 | 10.83 |
+| 960×540 | Cached ground | 4.22 | 0.042 | 7.77 | 9.37 | 9.59 |
+| 960×540 | Cached ground and road | 3.13 | 0.075 | 6.74 | 8.36 | 8.64 |
+| 1440×810 | Live | 8.41 | 0.000 | 13.24 | 14.90 | 15.31 |
+| 1440×810 | Cached ground | 6.33 | 0.034 | 11.10 | 12.71 | 13.12 |
+| 1440×810 | Cached ground and road | 4.28 | 0.074 | 9.08 | 10.68 | 10.97 |
+
+At 0.75× the combined shader drew 2.25 times the internal pixels at about
+the same GPU cost as the original at 0.5×. At 0.75× alone the road bake
+saved another 2.02 ms of total GPU time over the ground-only bake.
+
+A separate M5 replay reported 2,647 instructions, 71 temporary registers
+and zero spilled bytes for the combined terrain fragment (originally
+8,152, 126 and 304). The road ribbon took 2,667 instructions, 71 registers
+and zero spill. The producer itself still used 126 registers and spilled
+304 bytes; it ran on four strip draws in the captured frame.
+
+The combined cache took 14.3 ms of GPU time to fill from empty. In a
+separate run, a camera cut 2 km along the road cost 1.98 ms for refreshing
+the four local levels, while the global level stayed resident. The next
+frame's refresh cost 0.14 ms. Initial allocation and first use differ from
+a warm camera cut; a whole-world bake is also much larger than a typical
+strip update. A production path could prepare the global level during
+loading and use it while finer levels fill.
+
+As a correctness control, an alternative producer repainted an entire local
+level whenever it moved. Across 16 consecutive 1920×1080 output frames
+at 0.5× scale, the strip and whole-level versions differed by more than
+eight 8-bit levels in any channel at 7 of 33,177,600 pixel comparisons.
+Over the 55 frames before readbacks, updating strips took 0.078 ms per
+frame versus 0.88 ms for whole-level updates. Both drew the same road
+surface in a 3.14 ms mean scene pass.
+
+Compared with live shading, the combined cache crossed that eight-level
+threshold at 1.52% of presented pixels in the same sequence. Ground-only
+caching crossed it at 1.38%. On the combined cache the foreground asphalt
+crop (x 690–1139, y 770–899 from top left) crossed it at 0.02% of pixels;
+the more distant crop (x 910–1009, y 555–589) at 0.28%. Over 15 adjacent
+frame pairs, the difference between the live and cached frame-to-frame
+colour changes exceeded eight levels at 0.05% and 0.60% of the two
+crops respectively. This measures a temporal difference at fixed screen
+coordinates, including the apparent motion of the road.
+
+At 0.75× the same distant-road crop was more sensitive in rain. Restoring
+groups of live calculations during the same wet sequence isolates where
+to work on filtering. Each entry is a percentage of pixel comparisons
+above the same eight-level threshold.
+
+| 1440×810 version compared with live, in rain | Whole output | Distant asphalt crop | Adjacent-frame change in crop |
+| --- | ---: | ---: | ---: |
+| Combined cache | 0.740% | 3.009% | 3.705% |
+| Restore live base road/ground colour | 0.145% | 2.861% | 3.423% |
+| Restore live macro normal and detail slope | 0.679% | 0.189% | 0.270% |
+| Restore live roughness, puddles and wet darkening | 0.634% | 2.712% | 3.499% |
+| Repeat live rendering | <0.001% | 0.000% | 0.000% |
+
+In fair weather at the same resolution the combined cache differed at
+2.332% of the whole output and 0.732% of the distant-road crop. Live
+normals and slope restored most of the wet road's appearance in that
+crop; these experiments do not isolate the individual contributions of
+the macro normal, detail slope and specular filtering.
+
+The production candidate is a shared world-space dry material for
+terrain and road ribbons, with strip refresh and a coarse level available
+during cache fills. For image quality the next decision is how to filter
+the road's normal and slope over a grazing pixel footprint. The
+prototype uses extra Metal texture bindings and generated-MSL
+substitutions; a portable implementation needs a Luv material producer
+and a texture layout that fits NHAL's other backends. These timings
+describe one M5 route, with weather comparisons on a short part of it.
