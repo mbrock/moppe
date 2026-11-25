@@ -258,7 +258,9 @@ namespace moppe::nhal {
         const bool full = fresh || std::abs (dx) >= side || std::abs (dy) >= side
                           || environment ("MOPPE_PROBE_REFILL");
         RenderPassDesc pass;
-        pass.label = "material bake";
+        constexpr const char* labels[] = { "material bake 16m", "material bake 64m",
+            "material bake 256m", "material bake 1024m", "material bake world" };
+        pass.label = labels[level];
         pass.color_count = m_probe_channels;
         for (unsigned i = 0; i < m_probe_channels; ++i) {
           auto& t = m_tiles[level][i];

@@ -25,7 +25,9 @@ namespace moppe {
       auto input = frame_view_input (aspect);
       if (environment ("MOPPE_MATERIAL_PROBE")) {
         static unsigned index = 0;
-        const float along = 95.0f + float (index++) / 3.0f;
+        const float jump = index >= 244 && environment ("MOPPE_PROBE_JUMP")
+                             ? 2000.0f : 0.0f;
+        const float along = 95.0f + jump + float (index++) / 3.0f;
         const auto& road = m_places.bus;
         if (road.empty ()) throw std::runtime_error ("Probe requires paved loop");
         const auto eye = position_value (road.point (along * u::m)) + Vec3 (0, 2.2f, 0);

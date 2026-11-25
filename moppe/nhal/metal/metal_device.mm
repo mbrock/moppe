@@ -946,8 +946,15 @@ namespace moppe::nhal {
               if (pass.label.starts_with ("route-")) {
                 route = pass.label.substr (6); scene = pass.milliseconds;
               }
-              if (pass.label == "material bake") bake += pass.milliseconds;
+              if (pass.label.starts_with ("material bake"))
+                bake += pass.milliseconds;
               total += pass.milliseconds;
+            }
+            if (route == "1" || route == "245") {
+              for (const auto& pass : m_pass_timings)
+                if (pass.label.starts_with ("material bake"))
+                  std::fprintf (stderr, "FILL %s %s %.5f\n", route.c_str (),
+                                pass.label.c_str (), pass.milliseconds);
             }
             if (scene) std::fprintf (stderr, "RIDE %s %.5f %.5f %.5f\n",
                                 route.c_str (), scene, bake, total);

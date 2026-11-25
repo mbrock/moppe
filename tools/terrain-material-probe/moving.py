@@ -5,6 +5,8 @@ import re
 
 parser = argparse.ArgumentParser()
 parser.add_argument('output', type=Path)
+parser.add_argument('--live-channel', choices=('colour', 'normals', 'wetness'),
+                    help='restore a group of live calculations for image diagnosis')
 args = parser.parse_args()
 out = args.output
 out.mkdir(parents=True, exist_ok=True)
@@ -64,7 +66,11 @@ for group in ('ground', 'roads'):
                 'slope':'m1.xy * (1.0f-puddle)',
                 'dry_rough':'mix(m0.w, 0.28f, packed)',
                 'albedo':'pow(max(path_ground,float3(0)),float3(2.2f)) * mix(float3(1),float3(0.55f,0.74f,0.94f),packed) * (1-wet_2*m2.z) * (1-0.45f*puddle)',
-            }.items(): src = assign(src,name,expr)
+            }.items():
+                restored = {'colour': ('path_ground',), 'normals': ('normal', 'slope'),
+                            'wetness': ('puddle', 'dry_rough', 'albedo')}
+                if name not in restored.get(args.live_channel, ()):
+                    src = assign(src, name, expr)
         else:
             src = assign(src,'surface','GroundSurface{m0.rgb, m1.xy, m1.z, m0.w}')
         (out / f'{program}-{group}.metal').write_text(src)

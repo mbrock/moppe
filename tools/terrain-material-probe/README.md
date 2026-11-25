@@ -55,3 +55,11 @@ Set MOPPE_PROBE_STILLS to an existing directory to capture frames 160–175.
 Set MOPPE_PROBE_REFILL=1 to repaint each entire level whenever its origin
 moves, for a check on the incremental strip updates. The fixed-camera
 experiment with two packed atlas layouts is preserved at 4a0712c4.
+
+MOPPE_PROBE_JUMP=1 moves the camera 2 km farther down the loop on frame
+245. FILL rows report GPU time for each refreshed level on frames 1 and
+245. For a visual diagnosis, passing --live-channel colour, normals or
+wetness to moving.py restores those calculations to the screen shader in
+roads mode. Use a separate shader directory for each version. The wetness
+setting restores puddle coverage, dry roughness and wet albedo response;
+the normals setting restores the macro normal and dry detail slope.
