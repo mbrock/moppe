@@ -205,12 +205,12 @@ namespace moppe::nhal {
                                   m_terrain.chunk_index_count[lod]);
         }
 
-      if (trees) {
+      if (trees && m_forest.shadow_visible[index]) {
         const bool far = index == render::LocalShadowParams::far;
         m_device->set_pipeline (far ? m_forest.far_shadow : m_forest.shadow);
         m_device->set_buffer (0, caster_block);
         m_device->set_buffer (1, m_forest.shadow_block[index]);
-        m_device->set_buffer (3, m_forest.records);
+        m_device->set_buffer (3, m_forest.shadow_visible[index]);
         m_device->set_buffer (4, m_forest.shadow_candidates[index]);
         if (!far)
           m_device->set_buffer (5, m_forest.vertices);

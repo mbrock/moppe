@@ -272,13 +272,13 @@ namespace moppe::nhal {
 
       Pipeline draw, cull, shadow, far_shadow, leaves;
       Buffer far_indices;
-      Buffer records, candidates, arguments, vertices, indices;
+      Buffer records, candidates, visible, arguments, vertices, indices;
       std::uint32_t count = 0;
       std::uint32_t class_first[forest_classes] {};
       std::uint32_t class_count[forest_classes] {};
       Transient block;
       // Per cascade of the sun's map, culled before its pass begins.
-      std::array<Buffer, 2> shadow_candidates, shadow_arguments;
+      std::array<Buffer, 2> shadow_candidates, shadow_visible, shadow_arguments;
       std::array<Transient, 2> shadow_block;
       Texture closure, litter;
       std::array<float, 2> stand_inverse_period {};
@@ -628,6 +628,7 @@ namespace moppe::nhal {
         shaders::forest_cull::Forest forest {};
         Transient ranges {};
         Buffer candidates {};
+        Buffer visible {};
         Buffer arguments {};
         std::uint32_t groups = 0;
         bool active = false;

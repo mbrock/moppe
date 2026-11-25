@@ -63,10 +63,13 @@ namespace moppe::nhal {
       for (Buffer* b : { &m_forest.records,
                          &m_forest.classified,
                          &m_forest.candidates,
+                         &m_forest.visible,
                          &m_forest.arguments,
                          &m_forest.shadow_candidates[0],
+                         &m_forest.shadow_visible[0],
                          &m_forest.shadow_arguments[0],
                          &m_forest.shadow_candidates[1],
+                         &m_forest.shadow_visible[1],
                          &m_forest.shadow_arguments[1] })
         if (*b)
           m_device->destroy (*b), *b = {};
@@ -106,11 +109,19 @@ namespace moppe::nhal {
       m_forest.records = m_device->create_buffer (
         { .size = rows.size () * 16, .label = "forest records" },
         std::as_bytes (std::span (rows)));
+      m_forest.candidates =
+        m_device->create_buffer ({ .size = 4 * forest_classes,
+                                   .usage = buffer_storage_write,
+                                   .label = "forest class starts" });
       m_forest.arguments = m_device->create_buffer (
         { .size = forest_classes * sizeof (DrawIndexedIndirectArgs),
           .usage = buffer_storage_write | buffer_indirect,
           .label = "forest draws" });
       for (std::size_t cascade = 0; cascade < 2; ++cascade) {
+        m_forest.shadow_candidates[cascade] =
+          m_device->create_buffer ({ .size = 4 * forest_classes,
+                                     .usage = buffer_storage_write,
+                                     .label = "shadow tree class starts" });
         m_forest.shadow_arguments[cascade] = m_device->create_buffer (
           { .size = forest_classes * sizeof (DrawIndexedIndirectArgs),
             .usage = buffer_storage_write | buffer_indirect,
@@ -272,7 +283,13 @@ namespace moppe::nhal {
                       ForestGrid::row_length (view, 1),
                       ForestGrid::row_length (view, 3),
                       height };
-      forest.mode = { shadow ? 1.0f + float (cascade) : 0.0f, 0, 0, 0 };
+      const Vec3 view_up (m_frame_values.view_up[0],
+                          m_frame_values.view_up[1],
+                          m_frame_values.view_up[2]);
+      const float pixel =
+        shadow ? 0.0f
+               : (2.0f * moppe::length (view_up)) / std::max (height, 1.0f);
+      forest.mode = { shadow ? 1.0f + float (cascade) : 0.0f, 0, pixel, 0 };
       Transient& block =
         shadow ? m_forest.shadow_block[cascade] : m_forest.block;
       block = m_device->allocate (sizeof forest);
@@ -314,31 +331,34 @@ namespace moppe::nhal {
         4096, ((m_forest.lanes[v] + 4095) / 4096) * 4096);
       auto reserve = [&] (Buffer& buffer,
                           std::size_t& allocated,
-                          std::size_t header,
+                          std::size_t stride,
                           const char* label) {
         if (capacity <= allocated)
           return;
         if (buffer)
           m_device->destroy (buffer);
         allocated = capacity;
-        buffer = m_device->create_buffer ({ .size = header + capacity * 8,
+        buffer = m_device->create_buffer ({ .size = capacity * stride,
                                             .usage = buffer_storage_write,
                                             .label = label });
       };
-      Buffer& candidates =
+      const Buffer candidates =
         shadow ? m_forest.shadow_candidates[cascade] : m_forest.candidates;
-      reserve (
-        candidates, m_forest.capacity[v], 4 * forest_classes, "visible trees");
+      Buffer& visible =
+        shadow ? m_forest.shadow_visible[cascade] : m_forest.visible;
+      // Six vec4s (96 bytes) per compacted visible tree instance.
+      reserve (visible, m_forest.capacity[v], 96, "visible trees");
       if (blocks.empty ())
         return job;
       reserve (m_forest.classified,
                m_forest.scratch_capacity,
-               0,
+               4,
                "tree classification");
       job.forest = forest;
       job.ranges = m_device->upload (
         std::span<const std::array<std::uint32_t, 2>> (blocks));
       job.candidates = candidates;
+      job.visible = visible;
       job.arguments = arguments;
       job.groups = std::uint32_t (blocks.size ());
       job.active = true;
@@ -356,17 +376,18 @@ namespace moppe::nhal {
       m_device->set_buffer (4, job.arguments);
       m_device->set_buffer (5, job.ranges);
       m_device->set_buffer (6, m_forest.classified);
+      m_device->set_buffer (7, job.visible);
       m_device->dispatch (pass == 1 ? 1 : job.groups);
     }
 
     void NhalRenderer::draw_forest () {
-      if (!m_forest.count)
+      if (!m_forest.count || !m_forest.visible)
         return;
       open_scene ();
       m_device->set_pipeline (m_forest.draw);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_buffer (1, m_forest.block);
-      m_device->set_buffer (3, m_forest.records);
+      m_device->set_buffer (3, m_forest.visible);
       m_device->set_buffer (4, m_forest.candidates);
       m_device->set_buffer (5, m_forest.vertices);
       m_device->set_texture (8, m_sun_shadow.map);
