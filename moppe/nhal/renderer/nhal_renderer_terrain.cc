@@ -21,42 +21,42 @@ namespace moppe::nhal {
       terrain.topology = Topology::triangle_strip;
       m_terrain.draw = m_device->create_render_pipeline (terrain);
 
-      if (const char* directory = environment ("MOPPE_MATERIAL_PROBE")) {
-        auto read = [&] (const char* file) {
-          std::ifstream in (std::filesystem::path (directory) / file);
-          if (!in)
-            throw std::runtime_error (std::string ("Missing shader ") + file);
-          return std::string (std::istreambuf_iterator<char> (in), {});
-        };
-        m_material_probes[0] = m_terrain.draw;
-        const char* names[] = { "colour.metal", "surface.metal",
-                                "roadless.metal", "flat.metal" };
-        for (unsigned i = 0; i < 4; ++i) {
-          auto variant = terrain;
-          const auto source = read (names[i]);
-          variant.fragment.msl = source;
-          variant.label = names[i];
-          m_material_probes[i + 1] = m_device->create_render_pipeline (variant);
-        }
-        m_material_probes[5] = m_terrain.draw;
-        const auto vertex = read ("triangle.metal");
-        const auto fragment = read ("bake.metal");
-        RenderPipelineDesc bake;
-        bake.program = terrain.program;
-        bake.vertex.msl = vertex;
-        bake.fragment.msl = fragment;
-        bake.color_count = 3;
-        bake.color_formats = { Format::rgba8_unorm, Format::rgba16_float,
-                               Format::rgba16_float };
-        bake.label = "terrain material tile bake";
-        m_bake_material = m_device->create_render_pipeline (bake);
-      }
       RenderPipelineDesc ribbon = terrain;
       ribbon.program = &shaders::road_ribbon::program;
       ribbon.vertex = m_shaders.road_ribbon[0];
       ribbon.fragment = m_shaders.road_ribbon[1];
       ribbon.label = "road ribbon";
       m_terrain.ribbon = m_device->create_render_pipeline (ribbon);
+
+      const char* root = environment ("MOPPE_MATERIAL_PROBE");
+      const char* mode = environment ("MOPPE_MATERIAL_MODE");
+      if (root && mode && std::string_view (mode) != "live") {
+        const bool roads = std::string_view (mode) == "roads";
+        m_probe_channels = roads ? 3 : 2;
+        auto read = [&] (std::string name) {
+          std::ifstream in (std::filesystem::path (root) / name);
+          if (!in) throw std::runtime_error ("Missing shader " + name);
+          return std::string (std::istreambuf_iterator<char> (in), {});
+        };
+        const std::string suffix = roads ? "-roads.metal" : "-ground.metal";
+        auto variant = [&] (RenderPipelineDesc desc, const char* prefix) {
+          const auto src = read (prefix + suffix);
+          desc.fragment.msl = src;
+          return m_device->create_render_pipeline (desc);
+        };
+        m_probe_terrain = variant (terrain, "terrain");
+        m_probe_ribbon = variant (ribbon, "road_ribbon");
+        RenderPipelineDesc bake;
+        bake.program = terrain.program;
+        const auto vertex = read ("triangle.metal");
+        const auto fragment = read ("bake" + suffix);
+        bake.vertex.msl = vertex;
+        bake.fragment.msl = fragment;
+        bake.color_count = m_probe_channels;
+        bake.color_formats.fill (Format::rgba16_float);
+        bake.label = "terrain material tile bake";
+        m_bake_material = m_device->create_render_pipeline (bake);
+      }
 
       RenderPipelineDesc terrain_caster = caster;
       terrain_caster.program = &shaders::terrain_shadow::program;
@@ -231,47 +231,85 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::bake_material_probe () {
-      if (!m_bake_material || !m_terrain.have || !m_terrain.ground ||
-          m_frame < 96 || m_material_tiles[0])
+      if (!m_bake_material || !m_terrain.have || !m_terrain.ground)
         return;
-      constexpr unsigned side = 1024;
       const auto camera = position_value (m_params.camera_pos);
-      m_material_window = { camera[0], camera[2], 128, float (side) };
-      RenderPassDesc pass;
-      pass.label = "material bake";
-      pass.color_count = 3;
-      for (unsigned i = 0; i < 3; ++i) {
-        m_material_tiles[i] = m_device->create_texture ({
-          side, side * 2, i ? Format::rgba16_float : Format::rgba8_unorm,
-          usage_render_target | usage_sampled, 1, "material tile" });
-        pass.colors[i] = { m_material_tiles[i], Load::discard, Store::store };
+      const int spans[] = { 16, 64, 256, 1024, 0 };
+      for (int level = 0; level < 5; ++level) {
+        const bool fresh = !m_tiles[level][0];
+        const int side = level == 4 ? 1024 : 512;
+        const int span = spans[level];
+        int x = 0, y = 0, dx = 0, dy = 0;
+        if (span) {
+          // Align to 8 texels so a small move needn't open every level.
+          auto corner = [&] (float v) {
+            return int (std::floor (v * side / (8 * span))) * 8 - side/2;
+          };
+          x = corner (camera[0]);
+          y = corner (camera[2]);
+          dx = x - m_origins[level][0];
+          dy = y - m_origins[level][1];
+          m_origins[level] = {x, y};
+        }
+        if (!fresh && !dx && !dy) continue;
+        auto& win = m_windows[level];
+        win = { float (x) * span / side, float (y) * span / side,
+                float (span), float (side) };
+        const bool full = fresh || std::abs (dx) >= side || std::abs (dy) >= side
+                          || environment ("MOPPE_PROBE_REFILL");
+        RenderPassDesc pass;
+        pass.label = "material bake";
+        pass.color_count = m_probe_channels;
+        for (unsigned i = 0; i < m_probe_channels; ++i) {
+          auto& t = m_tiles[level][i];
+          if (fresh) t = m_device->create_texture ({
+            unsigned (side), unsigned (side), Format::rgba16_float,
+            usage_render_target | usage_sampled, 1, "material tile" });
+          pass.colors[i] = { t, full ? Load::discard : Load::load, Store::store };
+        }
+        m_device->begin_render_pass (pass);
+        m_device->set_pipeline (m_bake_material);
+        bind_ground ();
+        m_device->set_uniforms (5, win);
+        // Split each logical rectangle at both toroidal seams.
+        auto rect = [&] (int left, int top, int w, int h) {
+          int py = (top % side + side) % side;
+          while (h > 0) {
+            int rows = std::min (h, side - py);
+            int px = (left % side + side) % side;
+            for (int width = w; width > 0; px = 0) {
+              int cols = std::min (width, side - px);
+              m_device->set_viewport (px, py, cols, rows);
+              m_device->draw (3);
+              width -= cols;
+            }
+            py = 0;
+            h -= rows;
+          }
+        };
+        if (full) rect (0, 0, side, side);
+        else {
+          rect (dx > 0 ? x + side - dx : x, y, std::abs (dx), side);
+          rect (x + std::max (-dx, 0), dy > 0 ? y + side - dy : y,
+                side - std::abs (dx), std::abs (dy));
+        }
+        m_device->end_render_pass ();
       }
-      m_device->begin_render_pass (pass);
-      m_device->set_pipeline (m_bake_material);
-      bind_ground ();
-      m_device->set_uniforms (5, m_material_window);
-      m_device->draw (3);
-      m_device->end_render_pass ();
+    }
+
+    void NhalRenderer::bind_material_probe () {
+      m_device->set_uniforms (5, m_windows);
+      for (unsigned i = 0; i < m_probe_channels; ++i)
+        for (unsigned level = 0; level < 5; ++level)
+          m_device->set_texture (16 + 5*i + level, m_tiles[level][i]);
     }
 
     void NhalRenderer::draw_terrain (const ChunkDraw* chunks, int count) {
       if (!m_terrain.have || count <= 0)
         return;
       open_scene ();
-      m_material_mode = 0;
-      if (m_material_tiles[0]) {
-        const unsigned block = (m_frame - 1) / 32;
-        const unsigned slot = block % 12;
-        m_material_mode = ((slot < 6 ? slot : 11 - slot) + block / 12) % 6;
-        if (const char* mode = environment ("MOPPE_MATERIAL_MODE"))
-          m_material_mode = unsigned (std::clamp (std::atoi (mode), 0, 5));
-        for (unsigned i = 0; i < 3; ++i)
-          m_device->set_texture (16 + i, m_material_tiles[i]);
-        m_device->set_uniforms (5, m_material_window);
-      }
-      m_device->set_pipeline (m_material_tiles[0]
-                                ? m_material_probes[m_material_mode]
-                                : m_terrain.draw);
+      if (m_tiles[0][0]) bind_material_probe ();
+      m_device->set_pipeline (m_tiles[0][0] ? m_probe_terrain : m_terrain.draw);
       bind_ground ();
       m_terrain.chunks.assign (chunks, chunks + count);
       draw_chunks ();
@@ -352,7 +390,7 @@ namespace moppe::nhal {
             reach + half)
           continue;
         if (!bound) {
-          m_device->set_pipeline (m_terrain.ribbon);
+          m_device->set_pipeline (m_tiles[0][0] ? m_probe_ribbon : m_terrain.ribbon);
           bind_ground ();
           bound = true;
         }
@@ -371,12 +409,7 @@ namespace moppe::nhal {
     }
 
     void NhalRenderer::draw_chunks () {
-      // Exercise all pipelines in one capture for compiler statistics only.
-      const bool all = m_material_tiles[0] && environment ("MOPPE_MATERIAL_ALL");
-      unsigned chunk_index = 0;
       for (const ChunkDraw& c : m_terrain.chunks) {
-        if (all)
-          m_device->set_pipeline (m_material_probes[chunk_index++ % 5]);
         const int lod = std::clamp (int (c.lod), 0, lod_count - 1);
         const bool patch = c.cells == render::terrain_patch_cells;
         shaders::terrain::Chunk chunk {};

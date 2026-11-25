@@ -35,7 +35,7 @@ namespace moppe::nhal {
     constexpr NSUInteger max_textures = 32;
     constexpr NSUInteger storage_texture_base = 16;
     constexpr NSUInteger max_samplers = 4;
-    constexpr NSUInteger max_timestamps = 64;
+    constexpr NSUInteger max_timestamps = 128;
 
     std::string describe (NSError* error) {
       return error ? error.localizedDescription.UTF8String : "unknown error";
@@ -939,6 +939,19 @@ namespace moppe::nhal {
               { timing.labels[i / 2],
                 double (ticks[i + 1].timestamp - ticks[i].timestamp) /
                   m_ticks_per_ms });
+          if (environment ("MOPPE_MATERIAL_PROBE")) {
+            double scene = 0, bake = 0, total = 0;
+            std::string route;
+            for (const auto& pass : m_pass_timings) {
+              if (pass.label.starts_with ("route-")) {
+                route = pass.label.substr (6); scene = pass.milliseconds;
+              }
+              if (pass.label == "material bake") bake += pass.milliseconds;
+              total += pass.milliseconds;
+            }
+            if (scene) std::fprintf (stderr, "RIDE %s %.5f %.5f %.5f\n",
+                                route.c_str (), scene, bake, total);
+          }
         }
       }
 

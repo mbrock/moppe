@@ -315,20 +315,6 @@ namespace moppe::nhal {
       }();
       if (!wanted)
         return;
-      if (m_bake_material) {
-        const auto index = m_frame - 1;
-        double scene = 0, total = 0;
-        for (const auto& pass : m_device->pass_timings ()) {
-          if (pass.label == "material bake")
-            std::cerr << "TILE " << pass.milliseconds << std::endl;
-          if (pass.label == "scene")
-            scene += pass.milliseconds;
-          total += pass.milliseconds;
-        }
-        if (scene && index >= 384 && index % 32 >= 12 && index % 32 < 28)
-          std::cerr << "MATERIAL " << index / 384 << ' ' << m_material_mode
-                    << ' ' << scene << ' ' << total << std::endl;
-      }
       for (const PassTiming& pass : m_device->pass_timings ())
         m_timing_sums[pass.label] += pass.milliseconds;
       if (++m_timing_frames < 120)
@@ -519,7 +505,9 @@ namespace moppe::nhal {
       if (m_scene_open || m_scene_closed)
         return;
       RenderPassDesc pass;
-      pass.label = m_scene_begun ? "scene, resumed" : "scene";
+      const auto sample = "route-" + std::to_string (m_frame);
+      pass.label = m_scene_begun ? "scene, resumed" :
+        environment ("MOPPE_MATERIAL_PROBE") ? sample.c_str () : "scene";
       pass.color_count = 2;
       const Load load = m_scene_begun ? Load::load : Load::clear;
       const auto& fog = m_params.clear_color;

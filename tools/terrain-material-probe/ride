@@ -1,0 +1,8 @@
+#!/bin/bash
+# ride SHADER_DIR MODE SCALE FRAMES OUTPUT_PNG
+set -eu
+export MOPPE_MATERIAL_PROBE=$1 MOPPE_MATERIAL_MODE=$2
+export MOPPE_OPENING=none MOPPE_CLOCK=12 MOPPE_SCREENSHOT_FRAMES=$4
+export MOPPE_TEMPORAL_RESOLVE=shader MOPPE_NHAL_TIMINGS=1
+exec ./build/moppe.app/Contents/MacOS/moppe --inactive --windowed \
+  --window-size 960x540 --render-scale "$3" --screenshot "$5"

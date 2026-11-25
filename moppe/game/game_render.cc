@@ -3,6 +3,7 @@
 // frame_capture.hh's.
 
 #include <moppe/game/game.hh>
+#include <moppe/environment.hh>
 #include <moppe/profile.hh>
 
 namespace moppe {
@@ -21,7 +22,23 @@ namespace moppe {
 
       const float aspect =
         (float)r.width_pts () / std::max (1, r.height_pts ());
-      FrameView frame = compose_frame_view (frame_view_input (aspect));
+      auto input = frame_view_input (aspect);
+      if (environment ("MOPPE_MATERIAL_PROBE")) {
+        static unsigned index = 0;
+        const float along = 95.0f + float (index++) / 3.0f;
+        const auto& road = m_places.bus;
+        if (road.empty ()) throw std::runtime_error ("Probe requires paved loop");
+        const auto eye = position_value (road.point (along * u::m)) + Vec3 (0, 2.2f, 0);
+        const auto target = position_value (road.point ((along + 10) * u::m)) + Vec3 (0, 0.7f, 0);
+        if (const char* dir = environment ("MOPPE_PROBE_STILLS")) {
+          if (index >= 160 && index < 176)
+            r.request_screenshot (std::string (dir) + "/" + std::to_string (index) + ".png");
+        }
+        input.selected_camera.position = position (eye);
+        input.selected_camera.forward = unit_direction (normalized (target - eye));
+        input.selected_camera.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
+      }
+      FrameView frame = compose_frame_view (input);
       m_company.light_fire (frame);
       m_places.light_beacons (frame, logic ().m_beacon_burn);
       m_places.light_barn (frame);
