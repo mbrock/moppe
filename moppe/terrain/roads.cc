@@ -259,14 +259,35 @@ namespace moppe::terrain {
           const std::size_t node = lattice.node (x, y);
           const std::size_t cell = source_cell (x, y);
           lattice.elevation[node] = elevations[cell];
-          const StandingWaterDepth depth = flood.water_depths ()[cell];
-          // The sea is the water standing at its level, as the map reads it.
-          lattice.water[node] =
-            depth <= 1e-3f * u::m ? Lattice::Dry
-            : flood.water_levels ()[cell] < sea_level + 0.35f * u::m
-              ? Lattice::Sea
-            : depth > 1.5f * u::m ? Lattice::Deep
-                                  : Lattice::Shallow;
+          // Aggregate standing water across every source cell in this
+          // lattice footprint so coarse sampling never misses a cove, pond,
+          // or narrow lake bay.
+          const int cx0 = x * source_width / lattice.width;
+          const int cx1 =
+            std::max (cx0 + 1, (x + 1) * source_width / lattice.width);
+          const int cy0 = y * source_height / lattice.height;
+          const int cy1 =
+            std::max (cy0 + 1, (y + 1) * source_height / lattice.height);
+          Lattice::Water water = Lattice::Dry;
+          for (int cy = cy0; cy < cy1 && water != Lattice::Sea; ++cy)
+            for (int cx = cx0; cx < cx1; ++cx) {
+              const std::size_t sample =
+                static_cast<std::size_t> (cy) * source_width + cx;
+              const StandingWaterDepth depth = flood.water_depths ()[sample];
+              if (depth <= 1e-3f * u::m)
+                continue;
+              const Lattice::Water kind =
+                flood.water_levels ()[sample] < sea_level + 0.35f * u::m
+                  ? Lattice::Sea
+                : depth > 0.5f * u::m ? Lattice::Deep
+                                      : Lattice::Shallow;
+              if (kind > water) {
+                water = kind;
+                if (water == Lattice::Sea)
+                  break;
+              }
+            }
+          lattice.water[node] = water;
           lattice.catchment[node] = drainage.contributing_area_at (cell);
           const auto read =
             [cell]<typename Cover> (std::span<const Cover> field) {
@@ -1245,11 +1266,11 @@ namespace moppe::terrain {
           const auto off = target.empty ()
                              ? 0.0f * one
                              : rise (target[i], elevation[k]) / (2.0f * u::m);
-          place[k] = j < lowest[i] || j > highest[i] || depth > 1.5f * u::m ||
+          place[k] = j < lowest[i] || j > highest[i] || depth > 0.5f * u::m ||
                          lattice.mire[node] > impassable_mire
                        ? impassable
                        : quantity_cast<scale_factor> (
-                           (depth > 1e-3f * u::m ? 80.0f : 0.0f) + off * off +
+                           (depth > 1e-3f * u::m ? 200.0f : 0.0f) + off * off +
                            14.0f * quantity_cast<mp_units::dimensionless> (
                                      lattice.river[node]) +
                            1.5f * quantity_cast<mp_units::dimensionless> (
@@ -1422,7 +1443,7 @@ namespace moppe::terrain {
           line = resample (laid, spacing);
           ease (line, 3, 2, [&] (plan_position_t point) {
             const std::size_t node = node_at (lattice, point);
-            return ground.depth (point) <= 1.5f * u::m &&
+            return ground.depth (point) <= 1e-3f * u::m &&
                    lattice.mire[node] <= impassable_mire;
           });
           // Easing draws the points together round the bends; the profile

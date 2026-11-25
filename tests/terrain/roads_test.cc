@@ -692,3 +692,112 @@ MOPPE_TEST (a_road_cut_into_a_hillside_carves_a_roadside_ditch) {
     std::min (built.heights[52 * side + 50], built.heights[53 * side + 50]);
   MOPPE_CHECK (centre - ditch > 0.35f * mp_units::si::metre);
 }
+
+// A road crossing a shallow drainage swale whose embankment or cut would
+// dam runoff into a closed depression must lift above the ponded level
+// instead of leaving the carriageway submerged.
+MOPPE_TEST (a_formed_road_does_not_submerge_itself_in_a_dammed_swale) {
+  constexpr std::size_t side = 100;
+  constexpr moppe::meters_t step = 4.0f * u::m;
+  std::vector<float> heights (side * side, 0.0f);
+  for (std::size_t z = 0; z < side; ++z)
+    for (std::size_t x = 0; x < side; ++x) {
+      const moppe::meters_t fx = static_cast<float> (x) * step;
+      const moppe::meters_t fz = static_cast<float> (z) * step;
+      const moppe::meters_t dx = fx - 200.0f * u::m;
+      const moppe::meters_t r_west = fx - 130.0f * u::m;
+      const moppe::meters_t r_east = fx - 270.0f * u::m;
+      const moppe::meters_t swale =
+        3.0f * u::m *
+        std::exp (-(meters_value (dx) * meters_value (dx)) / 400.0f);
+      const moppe::meters_t north_slope =
+        0.015f * std::max (0.0f * u::m, 220.0f * u::m - fz);
+      const moppe::meters_t south_basin =
+        fz > 320.0f * u::m ? -10.0f * u::m : 0.0f * u::m;
+      const moppe::meters_t ridges =
+        5.0f * u::m *
+          std::exp (-(meters_value (r_west) * meters_value (r_west)) / 900.0f) +
+        5.0f * u::m *
+          std::exp (-(meters_value (r_east) * meters_value (r_east)) / 900.0f);
+      heights[z * side + x] = meters_value (60.0f * u::m + north_slope +
+                                            ridges - swale + south_basin);
+    }
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (side, side, step, step), heights);
+  const FloodField flood = analyze_standing_water (
+    terrain, surface_elevation_point (sea_level * u::m));
+  const DrainageGraph drainage = analyze_drainage (terrain);
+  RoadNetwork network;
+  Road road { .kind = Road::Kind::Road };
+  for (moppe::meters_t x = 40.0f * u::m; x <= 360.0f * u::m; x += step)
+    road.points.push_back (plan_position (x, 200.0f * u::m));
+  network.roads = { road };
+  RoadFormation parameters;
+  parameters.culvert_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
+  parameters.bridge_area = 1.0e12f * mp_units::si::metre * mp_units::si::metre;
+  const RoadFormationResult built = form_roads (terrain.domain (),
+                                                elevations (terrain),
+                                                network,
+                                                flood,
+                                                drainage,
+                                                parameters);
+  const FloodField after = moppe::terrain::detail::analyze_standing_water (
+    terrain.domain (),
+    built.heights,
+    surface_elevation_point (sea_level * u::m));
+  const Road& formed = network.roads[0];
+  for (std::size_t i = 0; i < formed.points.size (); ++i) {
+    const std::size_t cx =
+      static_cast<std::size_t> (std::lround (
+        (moppe::x_of (formed.points[i]) / step).numerical_value_in (one))) %
+      side;
+    const std::size_t cz =
+      static_cast<std::size_t> (std::lround (
+        (moppe::z_of (formed.points[i]) / step).numerical_value_in (one))) %
+      side;
+    const std::size_t cell = cz * side + cx;
+    const moppe::meters_t sub = quantity_cast<mp_units::isq::length> (
+      after.water_level (cell) - formed.heights[i]);
+    MOPPE_CHECK (after.water_depth (cell) <= 0.05f * u::m ||
+                 sub <= 0.05f * u::m);
+  }
+}
+
+// Painted river water deeper than a cart road's unbridged tread gets
+// spanned by a bridge deck clear of the water, with smooth approaches.
+MOPPE_TEST (bridge_wet_roads_spans_flooded_river_stretches) {
+  constexpr std::size_t side = 64;
+  constexpr moppe::meters_t step = 4.0f * u::m;
+  const TerrainDomain domain (side, side, step, step);
+  std::vector<SurfaceElevation> ground (domain.size (), elevation (50.0f));
+  std::vector<SurfaceElevation> water = ground;
+  for (std::size_t z = 0; z < side; ++z)
+    for (std::size_t x = 28; x <= 34; ++x) {
+      ground[z * side + x] = elevation (48.0f);
+      water[z * side + x] = elevation (51.0f);
+    }
+  RoadNetwork network;
+  Road road { .kind = Road::Kind::Road };
+  for (moppe::meters_t x = 20.0f * u::m; x <= 220.0f * u::m; x += step) {
+    road.points.push_back (plan_position (x, 128.0f * u::m));
+    road.heights.push_back (elevation (50.0f));
+  }
+  network.roads = { road };
+  const std::size_t added = bridge_wet_roads (domain, ground, water, network);
+  MOPPE_CHECK (added == 1);
+  const Road& bridged = network.roads[0];
+  MOPPE_CHECK (bridged.bridges.size () == 1);
+  for (std::size_t i = 0; i < bridged.points.size (); ++i) {
+    const std::size_t cx =
+      static_cast<std::size_t> (std::lround (
+        (moppe::x_of (bridged.points[i]) / step).numerical_value_in (one))) %
+      side;
+    const std::size_t cz =
+      static_cast<std::size_t> (std::lround (
+        (moppe::z_of (bridged.points[i]) / step).numerical_value_in (one))) %
+      side;
+    const std::size_t cell = cz * side + cx;
+    if (water[cell] - ground[cell] > 0.05f * u::m)
+      MOPPE_CHECK (bridged.heights[i] > water[cell] + 0.5f * u::m);
+  }
+}

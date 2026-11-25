@@ -92,6 +92,10 @@ int main (int argc, char** argv) {
     game::Hydrology hydrology = game::analyze_hydrology (surface, recipe);
     auto [water, readings] =
       game::analyze_surface (surface, recipe, hydrology, use);
+    bridge_wet_roads (surface.domain (),
+                      spatial::get<surface_elevation> (surface),
+                      spatial::get<surface_elevation> (water),
+                      roads);
     game::disturb_surface (surface, recipe, water, roads, readings);
     const std::uint32_t forest_seed = seed ^ 0xa34c91e5U;
     game::ForestPlan forest =

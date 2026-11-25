@@ -203,6 +203,16 @@ namespace moppe::terrain {
               const DrainageGraph& drainage,
               const RoadFormation& parameters = {});
 
+  // Raises or bridges any unbridged cart-road stretch that still lies below
+  // the final painted water sheet (e.g. river backwater behind a sill or
+  // bank-side river stage), keeping every deck and approach within the
+  // road's grade. Returns the number of bridges added.
+  std::size_t bridge_wet_roads (const TerrainDomain& domain,
+                                std::span<const SurfaceElevation> ground,
+                                std::span<const SurfaceElevation> water,
+                                RoadNetwork& network,
+                                const RoadFormation& parameters = {});
+
   // Where a cart road ends without joining another it ends in a turning
   // place, so that it reads as a road's end and a cart can come about: a
   // round pad some ten metres across, the tread carried once round a

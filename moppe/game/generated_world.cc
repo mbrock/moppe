@@ -428,5 +428,42 @@ namespace moppe::game {
                 << " facing out " << out.x () << ' ' << out.z ();
     }
     std::cerr << '\n';
+    if (m_build) {
+      std::size_t flooded_pts = 0;
+      meters_t deepest = 0.0f * u::m;
+      for (std::size_t r = 0; r < m_roads.roads.size (); ++r) {
+        const terrain::Road& road = m_roads.roads[r];
+        if (road.kind != terrain::Road::Kind::Road ||
+            road.heights.size () != road.points.size ())
+          continue;
+        std::vector<bool> bridged (road.points.size (), false);
+        for (const terrain::RoadBridge& b : road.bridges)
+          for (std::size_t k = b.first; k <= b.last && k < bridged.size (); ++k)
+            bridged[k] = true;
+        for (std::size_t i = 0; i < road.points.size (); ++i) {
+          if (bridged[i])
+            continue;
+          const plan_position_t wp = terrain::wrap (road.points[i], period);
+          const position_t at = at_height (wp, 0.0f * u::m);
+          const terrain::SurfaceElevation field =
+            spatial::sample<terrain::surface_elevation> (m_surface, at);
+          const terrain::SurfaceElevation road_y =
+            m_road_surface.ground (wp, field);
+          const terrain::SurfaceElevation water_y =
+            spatial::sample<terrain::surface_elevation> (m_build->water, at);
+          const meters_t sub = quantity_cast<isq::length> (water_y - road_y);
+          const meters_t over_ground =
+            quantity_cast<isq::length> (water_y - field);
+          if (over_ground > 0.05f * u::m && sub > 0.05f * u::m) {
+            ++flooded_pts;
+            deepest = std::max (deepest, sub);
+          }
+        }
+      }
+      if (flooded_pts > 0)
+        std::cerr << "moppe: road-water audit: " << flooded_pts
+                  << " flooded points, deepest=" << meters_value (deepest)
+                  << " m\n";
+    }
   }
 }

@@ -386,6 +386,11 @@ namespace moppe::game {
                     "Painting water, moisture and materials");
       auto [water, readings] =
         analyze_surface (surface, recipe, hydrology, use);
+      terrain::bridge_wet_roads (
+        surface.domain (),
+        spatial::get<terrain::surface_elevation> (surface),
+        spatial::get<terrain::surface_elevation> (water),
+        roads);
       state.report ("Reading the ground's history",
                     "Burning, grazing, and letting the forest back in");
       disturb_surface (surface, recipe, water, roads, readings);
