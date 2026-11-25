@@ -136,8 +136,8 @@ namespace moppe::nhal {
 
     bool NhalRenderer::in_scene (position_t centre, meters_t radius) const {
       const float r = meters_value (radius);
-      return MeshBounds { centre, displacement (Vec3 (r, r, r)) }
-        .visible (m_previous_view_proj);
+      return MeshBounds { centre, displacement (Vec3 (r, r, r)) }.visible (
+        m_previous_view_proj);
     }
 
     void NhalRenderer::draw_mesh (const render::Mesh& mesh,

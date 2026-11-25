@@ -484,7 +484,9 @@ namespace moppe {
 
       // A conservative world-space box test for skipping whole actors
       // before building their poses and immediate geometry.
-      virtual bool in_scene (position_t, meters_t) const { return true; }
+      virtual bool in_scene (position_t, meters_t) const {
+        return true;
+      }
 
       // How many of the scene's pixels a metre spans a metre ahead of the
       // camera of the frame begun last (its focal length in those pixels),

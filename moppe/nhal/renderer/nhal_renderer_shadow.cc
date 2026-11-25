@@ -57,8 +57,7 @@ namespace moppe::nhal {
       // movements keep sampling the map with the matrix that drew it.
       constexpr meters_t focus_limit = 32.0f * u::m;
       const bool refresh =
-        !cached || m_frame_reset ||
-        m_frame - m_sun_shadow.far_frame >= 4 ||
+        !cached || m_frame_reset || m_frame - m_sun_shadow.far_frame >= 4 ||
         cached->radius != far.radius ||
         dot (far.focus - cached->focus, far.focus - cached->focus) >
           focus_limit * focus_limit ||
@@ -81,8 +80,9 @@ namespace moppe::nhal {
 
       RenderPassDesc pass;
       pass.label = "sun shadow";
-      pass.depth = { m_sun_shadow.map, refresh ? Load::clear : Load::load,
-                     Store::store, 1.0f };
+      pass.depth = {
+        m_sun_shadow.map, refresh ? Load::clear : Load::load, Store::store, 1.0f
+      };
       m_device->begin_render_pass (pass);
       for (std::size_t c = 0; c < cascades; ++c) {
         m_device->set_viewport (
@@ -109,8 +109,7 @@ namespace moppe::nhal {
         return 1.0f / (7.75f * cascade.radius.numerical_value_in (u::m));
       };
       m_frame_values.sun_view = matrix (near.light_view_proj);
-      m_frame_values.sun_view_far =
-        matrix (cached->light_view_proj);
+      m_frame_values.sun_view_far = matrix (cached->light_view_proj);
       m_frame_values.shadow = { m_terrain.params.shadow_strength,
                                 1.0f / shadow_size,
                                 per_metre (near),

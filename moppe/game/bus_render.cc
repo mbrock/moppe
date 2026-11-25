@@ -325,7 +325,8 @@ namespace moppe::game {
       // three scene pixels behind the glass, omit the skinned occupants.
       const float focal = renderer.scene_focal_pixels ();
       const meters_t rider_reach = (focal / 3.0f) * u::m;
-      const bool show_riders = focal <= 0.0f ||
+      const bool show_riders =
+        focal <= 0.0f ||
         dot (at - camera, at - camera) <= rider_reach * rider_reach;
       // Its riders, by seat.
       std::array<std::optional<Outfit>, 2> seated;
