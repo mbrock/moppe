@@ -321,6 +321,7 @@ namespace moppe::nhal {
         m_device->write_texture (m_forest.litter, std::as_bytes (setup.litter));
       }
       m_forest.stand_inverse_period = { 1.0f / period[0], 1.0f / period[2] };
+      m_terrain.cache_dirty = true;
       return stands;
     }
 

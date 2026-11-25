@@ -82,6 +82,21 @@ still applies its cliff, shore and tread masks in the usual material order.
 The snow-free pipeline experiment and its M5 measurements are recorded in
 [Metal shader profiling](metal-shader-profiling.md#snow-free-terrain-experiment).
 
+Both the terrain and the near road ribbons read their static dry surface
+(biomes, geology, road surfacing, earthwork batters, macro normals, snow
+coverage, wetness darkening, pothole potential and fine-grain slope
+strength) from a shared world-space material cache (`terrain-bake` in
+`world.lisp`). Four 1024×2048 attachments — three RGBA8 and one R8, 26 MiB
+total — pack four scrolling 512×512 toroidal rings (spanning 16, 64, 256
+and 1024 m, each with 510 active texels and a 1-texel wrap border) above
+one periodic 1024×1024 global world tile (1022 active texels plus border).
+Moving rings repaint only newly exposed edge strips in one instanced pass
+each time the camera crosses an eight-texel step, while the screen shader
+evaluates fine micro-detail slope at the live pixel footprint and applies
+rain, coastal swash, vehicle snow tracks, shadows, lighting and haze. Set
+`MOPPE_TERRAIN_CACHE=0` to run the full live material shader for
+comparisons.
+
 Everything finer than the terrain's samples comes from one 512-texel tiling
 sheet made at start-up (`render/ground_detail.hh`): grain, that grain's
 slope, and a cellular mosaic of stones. A fragment reads it at four scales,

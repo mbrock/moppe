@@ -8,6 +8,37 @@
 
 namespace moppe::nhal {
   namespace detail {
+    namespace {
+      constexpr std::uint32_t cache_atlas_width = 1024;
+      constexpr std::uint32_t cache_atlas_height = 2048;
+      constexpr std::int64_t cache_ring_side = 510;
+      constexpr std::int64_t cache_scroll_step = 8;
+      constexpr float cache_world_side = 1022.0f;
+      constexpr std::array<float, 4> cache_level_spans {
+        16.0f, 64.0f, 256.0f, 1024.0f
+      };
+      constexpr std::array<std::array<int, 2>, 4> cache_level_slots { {
+        { 0, 0 },
+        { 512, 0 },
+        { 0, 512 },
+        { 512, 512 },
+      } };
+
+      std::int64_t floor_div (std::int64_t a, std::int64_t b) {
+        const std::int64_t q = a / b;
+        const std::int64_t r = a % b;
+        return r < 0 ? q - 1 : q;
+      }
+    }
+
+    bool NhalRenderer::use_terrain_cache () const {
+      static const bool disabled = [] {
+        const char* v = moppe::environment ("MOPPE_TERRAIN_CACHE");
+        return v && std::string_view (v) == "0";
+      }();
+      return !disabled;
+    }
+
     void NhalRenderer::make_terrain_pipelines () {
       const RenderPipelineDesc scene = scene_target ();
       const RenderPipelineDesc caster = shadow_caster ();
@@ -18,12 +49,40 @@ namespace moppe::nhal {
       terrain.topology = Topology::triangle_strip;
       m_terrain.draw = m_device->create_render_pipeline (terrain);
 
+      RenderPipelineDesc terrain_live = terrain;
+      terrain_live.program = &shaders::terrain_live::program;
+      terrain_live.vertex = m_shaders.terrain_live[0];
+      terrain_live.fragment = m_shaders.terrain_live[1];
+      terrain_live.label = "terrain live";
+      m_terrain.draw_live = m_device->create_render_pipeline (terrain_live);
+
       RenderPipelineDesc ribbon = terrain;
       ribbon.program = &shaders::road_ribbon::program;
       ribbon.vertex = m_shaders.road_ribbon[0];
       ribbon.fragment = m_shaders.road_ribbon[1];
       ribbon.label = "road ribbon";
       m_terrain.ribbon = m_device->create_render_pipeline (ribbon);
+
+      RenderPipelineDesc ribbon_live = ribbon;
+      ribbon_live.program = &shaders::road_ribbon_live::program;
+      ribbon_live.vertex = m_shaders.road_ribbon_live[0];
+      ribbon_live.fragment = m_shaders.road_ribbon_live[1];
+      ribbon_live.label = "road ribbon live";
+      m_terrain.ribbon_live = m_device->create_render_pipeline (ribbon_live);
+
+      RenderPipelineDesc bake;
+      bake.program = &shaders::terrain_bake::program;
+      bake.vertex = m_shaders.terrain_bake[0];
+      bake.fragment = m_shaders.terrain_bake[1];
+      bake.color_count = 4;
+      bake.color_formats[0] = Format::rgba8_unorm;
+      bake.color_formats[1] = Format::rgba8_unorm;
+      bake.color_formats[2] = Format::rgba8_unorm;
+      bake.color_formats[3] = Format::r8_unorm;
+      bake.cull = Cull::none;
+      bake.depth_write = false;
+      bake.label = "terrain material bake";
+      m_terrain.cache_bake = m_device->create_render_pipeline (bake);
 
       RenderPipelineDesc terrain_caster = caster;
       terrain_caster.program = &shaders::terrain_shadow::program;
@@ -89,6 +148,7 @@ namespace moppe::nhal {
         }
       }
       m_terrain.have = true;
+      m_terrain.cache_dirty = true;
     }
 
     void NhalRenderer::set_terrain_materials (
@@ -122,6 +182,7 @@ namespace moppe::nhal {
       sheet (m_terrain.more_plants, more_plants, "more plants");
       sheet (m_terrain.scars, scars, "scars");
       sheet (m_terrain.bedrock, bedrock, "bedrock");
+      m_terrain.cache_dirty = true;
     }
 
     void NhalRenderer::set_snow_relief (plan_position_t origin,
@@ -181,6 +242,7 @@ namespace moppe::nhal {
       m_terrain.road_index = m_device->create_buffer (
         { .size = setup.index.size_bytes (), .label = "road buckets" },
         std::as_bytes (setup.index));
+      m_terrain.cache_dirty = true;
     }
 
     void NhalRenderer::bind_roads (int first) {
@@ -197,15 +259,283 @@ namespace moppe::nhal {
                                                  : m_terrain.no_roads);
     }
 
+    void NhalRenderer::ensure_terrain_cache () {
+      if (m_terrain.cache_atlas[0])
+        return;
+      const std::array<Format, 4> formats {
+        Format::rgba8_unorm,
+        Format::rgba8_unorm,
+        Format::rgba8_unorm,
+        Format::r8_unorm,
+      };
+      const std::array<const char*, 4> labels {
+        "terrain cache albedo",
+        "terrain cache slope",
+        "terrain cache normal",
+        "terrain cache grain",
+      };
+      for (std::size_t i = 0; i < formats.size (); ++i)
+        m_terrain.cache_atlas[i] =
+          m_device->create_texture ({ cache_atlas_width,
+                                      cache_atlas_height,
+                                      formats[i],
+                                      usage_render_target | usage_sampled,
+                                      1,
+                                      labels[i] });
+    }
+
+    void NhalRenderer::update_terrain_cache () {
+      if (!m_terrain.have)
+        return;
+      ensure_terrain_cache ();
+      if (m_terrain.cache_dirty) {
+        m_terrain.cache_global_valid = false;
+        for (auto& lvl : m_terrain.cache_levels)
+          lvl.valid = false;
+        m_terrain.cache_dirty = false;
+      }
+
+      const Vec3 camera = position_value (m_params.camera_pos);
+      const auto& p = m_terrain.params;
+      const float period_x = float (p.width) * p.scale[0];
+      const float period_z = float (p.height) * p.scale[2];
+      std::vector<std::array<float, 4>> strips;
+      auto push_strip = [&] (float x0,
+                             float y0,
+                             float x1,
+                             float y1,
+                             float slot_x,
+                             float slot_y,
+                             float active,
+                             float footprint,
+                             float origin_x,
+                             float origin_z,
+                             float span,
+                             float road_reach) {
+        strips.push_back ({ x0, y0, x1, y1 });
+        strips.push_back ({ slot_x, slot_y, active, footprint });
+        strips.push_back ({ origin_x, origin_z, span, road_reach });
+      };
+
+      const bool cold_fill = !m_terrain.cache_global_valid;
+      if (!m_terrain.cache_global_valid) {
+        const float global_footprint =
+          std::max (period_x, period_z) / cache_world_side;
+        push_strip (0.0f,
+                    1024.0f,
+                    1024.0f,
+                    2048.0f,
+                    0.0f,
+                    1024.0f,
+                    cache_world_side,
+                    global_footprint,
+                    0.0f,
+                    0.0f,
+                    0.0f,
+                    0.0f);
+        m_terrain.cache_global_valid = true;
+      }
+
+      struct Span1D {
+        int a, b;
+      };
+      auto wrap_axis = [] (std::int64_t a0, std::int64_t a1) {
+        std::array<Span1D, 4> out {};
+        int count = 0;
+        const std::int64_t len = a1 - a0;
+        if (len >= cache_ring_side) {
+          out[count++] = { 0, int (cache_ring_side) + 2 };
+          return std::pair (out, count);
+        }
+        auto mod = [] (std::int64_t v) -> int {
+          const std::int64_t r = v % cache_ring_side;
+          return int (r < 0 ? r + cache_ring_side : r);
+        };
+        const int start = mod (a0);
+        const int end = start + int (len);
+        bool touches_zero = false, touches_last = false;
+        if (end <= int (cache_ring_side)) {
+          out[count++] = { start + 1, end + 1 };
+          touches_zero = (start == 0);
+          touches_last = (end == int (cache_ring_side));
+        } else {
+          out[count++] = { start + 1, int (cache_ring_side) + 1 };
+          out[count++] = { 1, end - int (cache_ring_side) + 1 };
+          touches_zero = true;
+          touches_last = true;
+        }
+        // Mirror ring texel 509 to slot pixel 0 and ring texel 0 to pixel 511.
+        if (touches_last)
+          out[count++] = { 0, 1 };
+        if (touches_zero)
+          out[count++] = { int (cache_ring_side) + 1,
+                           int (cache_ring_side) + 2 };
+        return std::pair (out, count);
+      };
+
+      for (std::size_t i = 0; i < m_terrain.cache_levels.size (); ++i) {
+        auto& lvl = m_terrain.cache_levels[i];
+        const float span = cache_level_spans[i];
+        const float texel = span / float (cache_ring_side);
+        const auto desired_ix = std::int64_t (
+          std::floor (double (camera[0]) / texel - 0.5 * cache_ring_side));
+        const auto desired_iz = std::int64_t (
+          std::floor (double (camera[2]) / texel - 0.5 * cache_ring_side));
+        std::int64_t next_ix = lvl.ix;
+        std::int64_t next_iz = lvl.iz;
+        if (!lvl.valid || std::abs (desired_ix - lvl.ix) >= cache_scroll_step)
+          next_ix =
+            floor_div (desired_ix, cache_scroll_step) * cache_scroll_step;
+        if (!lvl.valid || std::abs (desired_iz - lvl.iz) >= cache_scroll_step)
+          next_iz =
+            floor_div (desired_iz, cache_scroll_step) * cache_scroll_step;
+        if (lvl.valid && next_ix == lvl.ix && next_iz == lvl.iz)
+          continue;
+
+        const float origin_x = float (double (next_ix) * texel);
+        const float origin_z = float (double (next_iz) * texel);
+        const float slot_x = float (cache_level_slots[i][0]);
+        const float slot_y = float (cache_level_slots[i][1]);
+        auto emit_rect = [&] (std::int64_t rx0,
+                              std::int64_t rz0,
+                              std::int64_t rx1,
+                              std::int64_t rz1) {
+          if (rx1 <= rx0 || rz1 <= rz0)
+            return;
+          const auto [xs, xn] = wrap_axis (rx0, rx1);
+          const auto [ys, yn] = wrap_axis (rz0, rz1);
+          for (int yi = 0; yi < yn; ++yi)
+            for (int xi = 0; xi < xn; ++xi)
+              push_strip (slot_x + float (xs[xi].a),
+                          slot_y + float (ys[yi].a),
+                          slot_x + float (xs[xi].b),
+                          slot_y + float (ys[yi].b),
+                          slot_x,
+                          slot_y,
+                          float (cache_ring_side),
+                          texel,
+                          origin_x,
+                          origin_z,
+                          span,
+                          1.0f);
+        };
+
+        const std::int64_t dx = next_ix - lvl.ix;
+        const std::int64_t dz = next_iz - lvl.iz;
+        if (!lvl.valid || std::abs (dx) >= cache_ring_side ||
+            std::abs (dz) >= cache_ring_side) {
+          push_strip (slot_x,
+                      slot_y,
+                      slot_x + 512.0f,
+                      slot_y + 512.0f,
+                      slot_x,
+                      slot_y,
+                      float (cache_ring_side),
+                      texel,
+                      origin_x,
+                      origin_z,
+                      span,
+                      1.0f);
+        } else {
+          if (dx > 0)
+            emit_rect (lvl.ix + cache_ring_side,
+                       next_iz,
+                       next_ix + cache_ring_side,
+                       next_iz + cache_ring_side);
+          else if (dx < 0)
+            emit_rect (next_ix, next_iz, lvl.ix, next_iz + cache_ring_side);
+
+          const std::int64_t rem_x0 = dx < 0 ? lvl.ix : next_ix;
+          const std::int64_t rem_x1 =
+            dx > 0 ? lvl.ix + cache_ring_side : next_ix + cache_ring_side;
+          if (dz > 0)
+            emit_rect (rem_x0,
+                       lvl.iz + cache_ring_side,
+                       rem_x1,
+                       next_iz + cache_ring_side);
+          else if (dz < 0)
+            emit_rect (rem_x0, next_iz, rem_x1, lvl.iz);
+        }
+
+        lvl.ix = next_ix;
+        lvl.iz = next_iz;
+        lvl.origin_x = origin_x;
+        lvl.origin_z = origin_z;
+        lvl.valid = true;
+      }
+
+      if (strips.empty ())
+        return;
+
+      const Load load = cold_fill ? Load::discard : Load::load;
+      RenderPassDesc pass;
+      pass.label = "terrain material cache";
+      pass.color_count = 4;
+      for (std::size_t i = 0; i < 4; ++i)
+        pass.colors[i] = { m_terrain.cache_atlas[i], load, Store::store };
+      m_device->begin_render_pass (pass);
+      m_device->set_pipeline (m_terrain.cache_bake);
+      m_device->set_buffer (0, m_frame_block);
+      m_device->set_uniforms (1, terrain_block ());
+      bind_ground_textures ();
+      bind_roads ();
+      m_device->set_buffer (
+        5, m_device->upload (std::span<const std::array<float, 4>> (strips)));
+      m_device->draw (6, std::uint32_t (strips.size () / 3));
+      m_device->end_render_pass ();
+    }
+
+    shaders::terrain::Cache NhalRenderer::terrain_cache_block () const {
+      shaders::terrain::Cache cache {};
+      auto fill = [&] (std::size_t i) -> std::array<float, 4> {
+        const auto& lvl = m_terrain.cache_levels[i];
+        const float span = cache_level_spans[i];
+        return { lvl.origin_x, lvl.origin_z, span, 1.0f / span };
+      };
+      cache.level0 = fill (0);
+      cache.level1 = fill (1);
+      cache.level2 = fill (2);
+      cache.level3 = fill (3);
+      return cache;
+    }
+
     void NhalRenderer::draw_terrain (const ChunkDraw* chunks, int count) {
       if (!m_terrain.have || count <= 0)
         return;
       open_scene ();
-      m_device->set_pipeline (m_terrain.draw);
-      bind_ground ();
+      if (use_terrain_cache ()) {
+        m_device->set_pipeline (m_terrain.draw);
+        bind_ground_cached ();
+      } else {
+        m_device->set_pipeline (m_terrain.draw_live);
+        bind_ground ();
+      }
       m_terrain.chunks.assign (chunks, chunks + count);
       draw_chunks ();
       draw_road_ribbons ();
+    }
+
+    void NhalRenderer::bind_ground_cached () {
+      m_device->set_buffer (0, m_frame_block);
+      m_device->set_uniforms (1, terrain_block ());
+      m_device->set_uniforms (5, terrain_cache_block ());
+      m_device->set_texture (0, m_terrain.heights);
+      m_device->set_texture (1, m_terrain.normals);
+      m_device->set_texture (3, m_terrain.detail);
+      m_device->set_texture (4, m_terrain.cache_atlas[0]);
+      m_device->set_texture (5, m_terrain.cache_atlas[1]);
+      m_device->set_texture (6, m_terrain.cache_atlas[2]);
+      m_device->set_texture (7, m_terrain.ground ? m_terrain.ground : m_white);
+      m_device->set_texture (8, m_sun_shadow.map);
+      m_device->set_texture (9, m_terrain.cache_atlas[3]);
+      m_device->set_texture (13,
+                             m_terrain.snow.empty ()
+                               ? m_clear
+                               : m_terrain.snow[m_terrain.snow_slot]);
+      m_device->set_texture (14, m_water.levels ? m_water.levels : m_black);
+      m_device->set_texture (
+        15, m_water.shore_surf ? m_water.shore_surf : m_water.still);
+      bind_roads ();
     }
 
     void NhalRenderer::bind_ground () {
@@ -282,8 +612,13 @@ namespace moppe::nhal {
             reach + half)
           continue;
         if (!bound) {
-          m_device->set_pipeline (m_terrain.ribbon);
-          bind_ground ();
+          if (use_terrain_cache ()) {
+            m_device->set_pipeline (m_terrain.ribbon);
+            bind_ground_cached ();
+          } else {
+            m_device->set_pipeline (m_terrain.ribbon_live);
+            bind_ground ();
+          }
           bound = true;
         }
         shaders::road_ribbon::Ribbon ribbon {};

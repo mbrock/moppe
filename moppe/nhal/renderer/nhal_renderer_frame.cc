@@ -127,6 +127,8 @@ namespace moppe::nhal {
       frame.lamp_color = linear (params.lamp_color);
       m_frame_values = frame;
       upload_frame ();
+      if (m_terrain.have && use_terrain_cache ())
+        update_terrain_cache ();
       cull_trees (view_proj, camera, float (m_scene_height), false);
       cull_grass (view_proj, params);
       cull_rocks (view_proj, camera, float (m_scene_height), false);

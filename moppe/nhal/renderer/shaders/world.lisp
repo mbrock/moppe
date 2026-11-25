@@ -2078,284 +2078,570 @@
   (let* ((phase (* 1.208305 (+ time travel))))
     (vec2 (cos phase) (smoothstep -0.65 0.35 (cos (- phase 0.65))))))
 
-;;; The ground's colour and light at a fragment: the terrain's own, and the
-;;; road ribbon's, which lies on it and must match it.
-(define-shader-abstraction shade-ground ()
+;;; -- ground material cache --------------------------------------------------
+;;;
+;;; Static ground and road material properties (biomes, geology, roads,
+;;; earthwork, asphalt, macro normals, snow coverage, wet darkening, puddle
+;;; potential, and fine-grain slope strength) are baked into a four-attachment
+;;; 1024x2048 atlas:
+;;;
+;;;   Local rings 0..3: four 512x512 tiles in the top half (y 0..1024), each
+;;;   holding 510x510 toroidal texels plus a 1-texel wrap border on all four
+;;;   sides so hardware bilinear filtering wraps cleanly with zero bleed.
+;;;   Global ring 4: one 1024x1024 periodic world tile in the bottom half
+;;;   (y 1024..2048), holding 1022x1022 texels plus a 1-texel wrap border.
+;;;
+;;; Both terrain and road-ribbon fragments read the same cached dry surface,
+;;; add fine micro-detail slope at the live camera pixel's footprint, and then
+;;; apply rain, coastal swash, vehicle snow tracks, shadows, lighting, and haze.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *ground-cache*
+    '((level0 :vec4)               ; origin x, origin z, span, 1 / span
+      (level1 :vec4)
+      (level2 :vec4)
+      (level3 :vec4))))
+
+(define-shader-function encode-signed-byte (v)
+  (/ (+ 128.0 (* 127.0 (clamp v -1.0 1.0))) 255.0))
+
+(define-shader-function decode-signed-byte (m)
+  (/ (- (* 255.0 m) 128.0) 127.0))
+
+(define-shader-function encode-slope (s)
+  (vec2 (encode-signed-byte (/ (swizzle s :x) (+ 0.25 (abs (swizzle s :x)))))
+        (encode-signed-byte (/ (swizzle s :y) (+ 0.25 (abs (swizzle s :y)))))))
+
+(define-shader-function decode-slope (m)
+  (let* ((e (clamp (vec2 (decode-signed-byte (swizzle m :x))
+                         (decode-signed-byte (swizzle m :y)))
+                   (vec2 -0.9999 -0.9999) (vec2 0.9999 0.9999))))
+    (* 0.25 (/ e (- (vec2 1.0 1.0) (abs e))))))
+
+(define-shader-function cache-radius (xz level)
+  (let* ((off (abs (- (* (- xz (swizzle level :xy)) (swizzle level :w))
+                      (vec2 0.5 0.5)))))
+    (max (swizzle off :x) (swizzle off :y))))
+
+(define-shader-function cache-ring-uv (xz slot-xy inv-span)
+  (let* ((ring (* (fract (* xz inv-span)) 510.0)))
+    (/ (+ slot-xy ring (vec2 1.0 1.0)) (vec2 1024.0 2048.0))))
+
+(define-shader-function cache-world-uv (xz period)
+  (let* ((ring (* (fract (/ xz period)) 1022.0)))
+    (/ (+ (vec2 0.0 1024.0) ring (vec2 1.0 1.0)) (vec2 1024.0 2048.0))))
+
+(define-shader-struct dry-ground
+  (path-ground :vec3)
+  (base-rough :float)
+  (dry-slope :vec2)
+  (powder :vec2)
+  (normal :vec3)
+  (wet-darkening :float)
+  (puddle-pot :float)
+  (grain-strength :float))
+
+;;; Evaluate the complete static ground and road surface at WORLD-XZ / FIELD-UV
+;;; over FOOTPRINT metres.  When SNAP-HEIGHT is true (the world-space bake
+;;; pass), WORLD-Y is sampled from the height field and lifted onto crowned
+;;; built roads so earthwork batters and strata match the live terrain.
+(define-shader-abstraction eval-dry-ground (world-xz world-y field-uv footprint
+                                            road-reach-expr snap-height)
   `(let* ((extent (swizzle size :xy))
-         (eye (swizzle camera-position :xyz))
-         (distance (sqrt (dot (- world eye) (- world eye))))
-         ;; The roads exactly at every distance, their edges filtered to a
-         ;; pixel's width; only near is the ground shaped by the tread
-         ;; itself, where the vertices take its height.
-         (road-reach (- 1.0 (smoothstep 450.0 650.0 distance)))
-         (road-found (road-nearest road-segments road-index
-                                   (swizzle world :xz) (>= distance 0.0)))
-         (road (road-point road-segments road-index (swizzle world :xz)
-                           road-found))
-         (road-across (road-point-across road))
-         (road-built (* (road-point-found road)
-                        (- 1.0 (road-point-footpath road))))
-         (road-tread (+ (swizzle road-shape :x) (swizzle road-shape :y)))
-         ;; Where a road is drawn exactly, the coarse lane's soft fringe
-         ;; beside it gives way to what grows there.
-         (road-owns (* (road-point-found road)
-                       (- 1.0 (smoothstep (+ road-tread 3.0)
-                                          (+ road-tread 6.0)
-                                          (abs road-across)))))
-         (road-slope (road-point-slope road))
-         (road-normal (normalize (vec3 (* -1.0 (swizzle road-slope :x)) 1.0
-                                       (* -1.0 (swizzle road-slope :y)))))
-         ;; Lit and classified from the full-resolution normal, never the
-         ;; lattice's, which changes with the level of detail; over a
-         ;; road's tread, the road's own.
-         (field-normal (normalize
-                        (unpack-normal
-                         (swizzle (sample normals linear-repeat
-                                          (+ field-uv
-                                             (/ (vec2 0.5 0.5) extent)))
-                                  :xy))))
-         (road-flat (* road-reach
-                       (road-hold road-built 0.0 road-across road-shape)))
-         (normal (normalize (mix field-normal road-normal road-flat)))
-         (have-fields (swizzle fields :x))
-         (field-at (+ field-uv (/ (vec2 0.5 0.5) extent)))
-         (land (mix (vec4 0.5 0.0 0.0 0.0)
-                    (sample landscape linear-repeat field-at) have-fields))
-         (floor-sheet (mix (vec4 1.0 (swizzle normal :y) 0.0 0.0)
-                           (sample ground linear-repeat field-at)
-                           have-fields))
-         (floor-fields (vec4 (swizzle floor-sheet :xy)
-                             (* (swizzle floor-sheet :z) (- 1.0 road-owns))
-                             (swizzle floor-sheet :w)))
-         (plants-here (* (sample plants linear-repeat field-at) have-fields))
-         (more-here (* (sample more-plants linear-repeat field-at)
-                       have-fields))
-         (scars-here (* (sample scars linear-repeat field-at) have-fields))
-         (bedrock-here (* (sample bedrock linear-repeat field-at) have-fields))
-         ;; Beside a road, its mown verge: the field layer and fireweed give
-         ;; way to cropped turf.
-         (mown
-           (only-where (> road-built 0.0) 0.0
-             (swizzle (road-verge road-segments road-index
-                                   (swizzle world :xz) road-found)
+          (road-reach ,road-reach-expr)
+          (road-found (road-nearest road-segments road-index ,world-xz
+                                    (>= road-reach 0.0)))
+          (road (road-point road-segments road-index ,world-xz road-found))
+          (road-across (road-point-across road))
+          (road-built (* (road-point-found road)
+                         (- 1.0 (road-point-footpath road))))
+          (road-tread (+ (swizzle road-shape :x) (swizzle road-shape :y)))
+          ;; Where a road is drawn exactly, the coarse lane's soft fringe
+          ;; beside it gives way to what grows there.
+          (road-owns (* (road-point-found road)
+                        (- 1.0 (smoothstep (+ road-tread 3.0)
+                                           (+ road-tread 6.0)
+                                           (abs road-across)))))
+          (road-slope (road-point-slope road))
+          (road-normal (normalize (vec3 (* -1.0 (swizzle road-slope :x)) 1.0
+                                        (* -1.0 (swizzle road-slope :y)))))
+          (road-flat (* road-reach
+                        (road-hold road-built 0.0 road-across road-shape)))
+          (eval-y ,(if snap-height
+                       `(mix ,world-y
+                             (road-tread-height (road-point-centre road)
+                                                road-across road-shape)
+                             road-flat)
+                       world-y))
+          (eval-world (vec3 (swizzle ,world-xz :x) eval-y
+                            (swizzle ,world-xz :y)))
+          (field-at (+ ,field-uv (/ (vec2 0.5 0.5) extent)))
+          ;; Lit and classified from the full-resolution normal, never the
+          ;; lattice's, which changes with the level of detail; over a
+          ;; road's tread, the road's own.
+          (field-normal (normalize
+                         (unpack-normal
+                          (swizzle (sample normals linear-repeat field-at)
+                                   :xy))))
+          (normal (normalize (mix field-normal road-normal road-flat)))
+          (have-fields (swizzle fields :x))
+          (land (mix (vec4 0.5 0.0 0.0 0.0)
+                     (sample landscape linear-repeat field-at) have-fields))
+          (floor-sheet (mix (vec4 1.0 (swizzle normal :y) 0.0 0.0)
+                            (sample ground linear-repeat field-at)
+                            have-fields))
+          (floor-fields (vec4 (swizzle floor-sheet :xy)
+                              (* (swizzle floor-sheet :z) (- 1.0 road-owns))
+                              (swizzle floor-sheet :w)))
+          (plants-here (* (sample plants linear-repeat field-at) have-fields))
+          (more-here (* (sample more-plants linear-repeat field-at)
+                        have-fields))
+          (scars-here (* (sample scars linear-repeat field-at) have-fields))
+          (bedrock-here (* (sample bedrock linear-repeat field-at) have-fields))
+          ;; Beside a road, its mown verge: the field layer and fireweed give
+          ;; way to cropped turf.
+          (mown
+            (only-where (> road-built 0.0) 0.0
+              (swizzle (road-verge road-segments road-index ,world-xz
+                                   road-found)
                        :y)))
-         (plants-here (* plants-here (- 1.0 mown)))
-         (more-here (vec4 (* (swizzle more-here :xyz) (- 1.0 mown))
-                          (swizzle more-here :w)))
-         (scars-here (vec4 (* (swizzle scars-here :x) (- 1.0 mown))
-                           (max (swizzle scars-here :y) (* 0.8 mown))
-                           (swizzle scars-here :zw)))
-         (above-sea (- (swizzle world :y) (swizzle relief :x)))
-         (rise (/ above-sea (max (swizzle relief :y) 1.0)))
-         (stand (read-stand closure litter linear-repeat (swizzle world :xz)
-                            (swizzle fields :y) (swizzle fields :zw)
-                            (swizzle land :w)))
-         ;; A pixel's width on the ground: the mean of its two axes, so
-         ;; ground seen at a grazing angle keeps the detail its width
-         ;; still resolves.
-         (across (derivative-x world))
-         (along (derivative-y world))
-         (footprint (expt (* (dot across across) (dot along along)) 0.25))
-         (metres (* (swizzle scale :x) (swizzle extent :x)))
-         (micro (read-detail detail linear-repeat field-uv *detail-micro*
-                             metres footprint))
-         (meso (read-detail detail linear-repeat field-uv *detail-meso*
-                            metres footprint))
-         (macro (read-detail detail linear-repeat field-uv *detail-macro*
-                             metres footprint))
-         (region (read-detail detail linear-repeat field-uv *detail-region*
-                              metres footprint))
-         (surface (ground-surface world normal land floor-fields rise
-                                  above-sea stand plants-here more-here
-                                  scars-here bedrock-here micro meso macro
-                                  region))
-         ;; An edge as sharp as a pixel's width on the ground allows.
-         (road-edge (max (* 0.75 footprint) 0.04))
-         ;; A paved lane's own surface, over its tread.
-         (asphalt-here
-           ;; IF accepts scalar and vector results. This fold also carries
-           ;; the asphalt structure across its conditional.
-           (counted-fold (once (if (> (* (road-point-paved road) road-built) 0.0)
-                                   (uint 1) (uint 0)) unused
-             (make-asphalt :slope (vec2 0.0 0.0)
-                           :look (vec4 0.0 0.0 0.0 0.0)
-                           :rough 0.9 :grit 0.0))
-             (asphalt (road-point-along road) road-across
-                       (swizzle road-shape :x) footprint)))
-         (paved-tread (* (road-point-paved road) road-built
-                         (road-hold road-built 0.0 road-across road-shape)))
-         (look (asphalt-look asphalt-here))
-         ;; Rain stands in the potholes.
-         (wet (swizzle road-batter :z))
-         (puddle (* wet paved-tread (smoothstep 0.3 0.7 (swizzle look :w))))
-         ;; The sea leaves a dark film on its low shore. Its footprint is
-         ;; coarse, so actual elevation confines it to the last half metre
-         ;; above water, and the original sheet excludes nearby freshwater.
-         ;; This is not flooding: neither the bed nor the water is moved.
-         ;; Outside its maximum reach the wetting is exactly zero. Do not
-         ;; make all the inland ground pay for the coastal texture queries.
-         (swash
-           (only-where (and (> above-sea -0.12) (< above-sea 0.62)) 0.0
-             (let* ((coast (shore-field (swizzle world :xz)))
-                    (coast-mask (sqrt (dot (swizzle coast :zw)
-                                           (swizzle coast :zw))))
-                    (wash (swizzle (shore-cycle
-                                     (swizzle coast :x)
-                                     (swizzle camera-position :w)) :y))
-                    (water-here (swizzle (sample-level water-levels
-                                                        linear-repeat
-                                                        field-at 0.0) :xy))
-                    (freshwater
-                      (and (> (* (swizzle water-here :x) (swizzle scale :y))
-                              (+ (swizzle world :y) 0.005))
-                           (< (swizzle water-here :y) 0.9)))
-                    (wash-height (+ 0.12 (* 0.42 wash))))
-               (* coast-mask
-                  (if freshwater 0.0 1.0)
-                  (- 1.0 (smoothstep 4.0 10.0 (- 0.0 (swizzle coast :y))))
-                  (- 1.0 (smoothstep (- wash-height 0.12)
-                                     (+ wash-height 0.08) above-sea))
-                  (smoothstep -0.12 0.0 above-sea)))))
-         (wet (max wet (* 0.9 swash)))
-         ;; Beside a built road, its batters.
-         (worked-ground
-           (only-where (> road-built 0.0) (ground-surface-albedo surface)
-             (earthwork-albedo (ground-surface-albedo surface)
-                               (road-faces road-segments road-index
-                                           (swizzle world :xz)
-                                           (swizzle world :y) road-found)
-                               micro meso)))
-         (road-ground
-           (only-where (> road-built 0.0) worked-ground
-             (road-albedo worked-ground road-across
+          (plants-here (* plants-here (- 1.0 mown)))
+          (more-here (vec4 (* (swizzle more-here :xyz) (- 1.0 mown))
+                           (swizzle more-here :w)))
+          (scars-here (vec4 (* (swizzle scars-here :x) (- 1.0 mown))
+                            (max (swizzle scars-here :y) (* 0.8 mown))
+                            (swizzle scars-here :zw)))
+          (above-sea (- eval-y (swizzle relief :x)))
+          (rise (/ above-sea (max (swizzle relief :y) 1.0)))
+          (stand (read-stand closure litter linear-repeat ,world-xz
+                             (swizzle fields :y) (swizzle fields :zw)
+                             (swizzle land :w)))
+          (metres (* (swizzle scale :x) (swizzle extent :x)))
+          (micro (read-detail detail linear-repeat ,field-uv *detail-micro*
+                              metres ,footprint))
+          (meso (read-detail detail linear-repeat ,field-uv *detail-meso*
+                             metres ,footprint))
+          (macro (read-detail detail linear-repeat ,field-uv *detail-macro*
+                              metres ,footprint))
+          (region (read-detail detail linear-repeat ,field-uv *detail-region*
+                               metres ,footprint))
+          (surface (ground-surface eval-world normal land floor-fields rise
+                                   above-sea stand plants-here more-here
+                                   scars-here bedrock-here micro meso macro
+                                   region))
+          ;; An edge as sharp as a pixel's width on the ground allows.
+          (road-edge (max (* 0.75 ,footprint) 0.04))
+          ;; A paved lane's own surface, over its tread.
+          (asphalt-here
+            ;; IF accepts scalar and vector results. This fold also carries
+            ;; the asphalt structure across its conditional.
+            (counted-fold (once (if (> (* (road-point-paved road) road-built)
+                                       0.0)
+                                    (uint 1) (uint 0)) unused
+              (make-asphalt :slope (vec2 0.0 0.0)
+                            :look (vec4 0.0 0.0 0.0 0.0)
+                            :rough 0.9 :grit 0.0))
+              (asphalt (road-point-along road) road-across
+                       (swizzle road-shape :x) ,footprint)))
+          (paved-tread (* (road-point-paved road) road-built
+                          (road-hold road-built 0.0 road-across road-shape)))
+          (look (asphalt-look asphalt-here))
+          ;; Beside a built road, its batters.
+          (worked-ground
+            (only-where (> road-built 0.0) (ground-surface-albedo surface)
+              (earthwork-albedo (ground-surface-albedo surface)
+                                (road-faces road-segments road-index
+                                            ,world-xz eval-y road-found)
+                                micro meso)))
+          (road-ground
+            (only-where (> road-built 0.0) worked-ground
+              (road-albedo worked-ground road-across
                            (road-point-along road) (swizzle road-shape :x)
                            (swizzle road-shape :y) (road-point-paved road)
                            look micro meso road-edge)))
-         (path-ground
-           (mix road-ground
-                (footpath-albedo road-ground road-across micro meso
-                                 road-edge)
-                (* (road-point-found road) (road-point-footpath road))))
-         ;; Rain darkens what soaks it up, and still water more.
-         (tread-share (road-hold road-built 0.0 road-across road-shape))
-         (xz (swizzle world :xz))
-         (press (powder-height xz))
-         (powder (* (- 1.0 road-flat) (ground-surface-powder surface)))
-         (packed (* (swizzle powder :x) (smoothstep 0.0 0.13 (- 0.0 press))))
-         (albedo (* (srgb path-ground)
-                    (mix (vec3 1.0 1.0 1.0) (vec3 0.55 0.74 0.94) packed)
-                    ;; Wet ground darkens, rock and bare earth most: the
-                    ;; water fills their pores and leaves no air to scatter.
-                    (- 1.0 (* wet (mix (mix 0.25 0.55
-                                            (smoothstep 0.92 0.6
-                                                        (ground-surface-rough
-                                                         surface)))
-                                       0.4 tread-share)))
-                    (- 1.0 (* 0.45 puddle))))
-         ;; The relief tilts the normal within the surface: only the part
-         ;; of its slope that lies along the ground counts.  A road's
-         ;; packed tread has less of it.
-         (grain-slope (+ (* 0.65 (detail-slope meso *detail-meso*))
-                         (* 0.35 (detail-slope micro *detail-micro*))))
-         (road-dir (road-point-dir road))
-         (road-left (vec2 (* -1.0 (swizzle road-dir :y)) (swizzle road-dir :x)))
-         (asphalt-slope (+ (* (swizzle (asphalt-slope asphalt-here) :x)
-                              road-dir)
-                           (* (swizzle (asphalt-slope asphalt-here) :y)
-                              road-left)
-                           (* 0.07 (asphalt-grit asphalt-here)
-                              (detail-slope micro *detail-micro*))))
-         ;; Still water lies flat.
-         (slope (* (mix (* grain-slope (ground-surface-relief surface)
-                           (- 1.0 (* 0.6 road-flat)))
-                        asphalt-slope paved-tread)
-                   (- 1.0 puddle)))
-         (snow-share (swizzle powder :x))
-         (near-slope
-           (snow-detail-slope xz footprint snow-share powder packed))
-         (tilt (vec3 (+ (swizzle slope :x) (swizzle near-slope :x)) 0.0
-                     (+ (swizzle slope :y) (swizzle near-slope :y))))
-         (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
-         (sun (swizzle sun-direction :xyz))
-         ;; The relief brightens and dims the sun the ground itself
-         ;; catches, more where that is little, and never puts it out:
-         ;; one tilted normal stands for a pixel's worth of facets.
-         (facing (clamp (/ (+ (dot normal sun) 0.08) 1.08) 0.0 1.0))
-         (lambert-base (* facing
-                          (+ 1.0 (clamp (/ (- (dot shaded sun) (dot normal sun))
-                                           (+ facing 0.35))
-                                        -0.75 0.90))))
-         (sastrugi-lit (snow-self-shadow xz footprint snow-share sun packed))
-         ;; The sun's shadow: a slope-scaled bias against acne on raking
-         ;; ground, faded out into the haze.
-         (taps (sun-lit shadow-map shadow-compare world
-                        (+ 0.75 (* 3.1 (- 1.0 (max (dot normal sun) 0.0))))
-                        1.0))
-         (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
-                           (swizzle world :y) (swizzle relief :x)
-                           (swizzle relief :y)))
-         (direct (* (mix 1.0 (expt taps 1.3)
-                         (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0))
-                    sastrugi-lit))
-         ;; Shade is lit by the sky alone: bluer than the sun's light
-         ;; under a clear sky, but only grey under cloud.
-         (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
-         (fill (shade-fill direct overcast))
-         (to-eye (/ (- eye world) (max distance 0.0001)))
-         (flash (snow-flash xz footprint snow-share packed direct
-                            overcast shaded sun to-eye))
-         ;; The ground's roughness: its own, a road's tread where it holds
-         ;; the ground (asphalt smoother than gravel, and polished in the
-         ;; wheel paths), smoother where skis/tracks compact snow, and wet.
-         (road-rough (mix 0.88 (asphalt-rough asphalt-here)
-                          (road-point-paved road)))
-         ;; Rain films what does not soak it up -- the tread, rock -- and
-         ;; leaves turf and litter as rough as ever.
-         (dry-rough (mix (mix (ground-surface-rough surface) 0.28 packed)
-                         road-rough tread-share))
-         (rough (mix (* dry-rough
-                        (- 1.0 (* 0.35 wet (smoothstep 0.95 0.70 dry-rough))))
-                     0.03 puddle))
-         (bend (+ (dot (derivative-x shaded) (derivative-x shaded))
-                  (dot (derivative-y shaded) (derivative-y shaded))))
-         (alpha (* rough rough))
-         (rough-seen (sqrt (sqrt (+ (* alpha alpha) (min (* 0.5 bend) 0.18)))))
-         ;; How far above the horizon the mirror direction rises.
-         (mirror-rise (- (* 2.0 (max (dot shaded to-eye) 0.0)
-                            (swizzle shaded :y))
-                         (swizzle to-eye :y)))
-         (response (snow-light snow-share packed press shaded sun to-eye
-                               lambert-base direct overcast))
-         (diffuse-light (+ (* (hemisphere-lobes (swizzle ambient :xyz) shaded
-                                                overcast)
-                              fill (swizzle response :xyz))
-                           (* (swizzle sun-diffuse :xyz)
-                              (swizzle response :w))
-                           (lamp-light lamp lamp-color world shaded)))
-         (lit (swizzle (material-light albedo (vec4 0.0 rough-seen 0.0 0.0)
-                                       shaded to-eye sun diffuse-light
-                                       (* (swizzle sun-specular :xyz) direct)
-                                       (swizzle ambient :xyz)
-                                       (swizzle sky-sun :xyz)
-                                       (swizzle fog-color :xyz)
-                                       (swizzle sun-direction :w)
-                                       (swizzle relief :w)
-                                       (* (mix 0.4 1.0 direct)
-                                          (- 1.0 (* 0.75 (smoothstep
-                                                          0.35 0.9 rough)))
-                                          (mix 1.0 (smoothstep 0.0 0.3
-                                                               mirror-rise)
-                                               (smoothstep 0.15 0.5
-                                                           rough))) 1.0 0.0)
-                       :xyz)))
-    (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz)
-                                             (vec3 0.92 0.97 1.06) flash 3.2))
-                                   world eye fog-color
-                                   (swizzle sky-sun :xyz) relief)
-                            1.0))
-    (set-output motion (- (clip-uv then) (clip-uv here)))))
+          (path-ground
+            (mix road-ground
+                 (footpath-albedo road-ground road-across micro meso
+                                  road-edge)
+                 (* (road-point-found road) (road-point-footpath road))))
+          (tread-share (road-hold road-built 0.0 road-across road-shape))
+          (powder (* (- 1.0 road-flat) (ground-surface-powder surface)))
+          (wet-darkening (mix (mix 0.25 0.55
+                                   (smoothstep 0.92 0.6
+                                               (ground-surface-rough surface)))
+                              0.4 tread-share))
+          (puddle-pot (* paved-tread (smoothstep 0.3 0.7 (swizzle look :w))))
+          ;; Separate the fine micro-detail slope strength from the macro/meso
+          ;; relief and asphalt cracks so screen fragments can evaluate micro
+          ;; grain at the live camera pixel's anisotropic footprint.
+          (grain-strength (mix (* 0.35 (ground-surface-relief surface)
+                                  (- 1.0 (* 0.6 road-flat)))
+                               (* 0.07 (asphalt-grit asphalt-here))
+                               paved-tread))
+          (road-dir (road-point-dir road))
+          (road-left (vec2 (* -1.0 (swizzle road-dir :y)) (swizzle road-dir :x)))
+          (asphalt-base-slope (+ (* (swizzle (asphalt-slope asphalt-here) :x)
+                                    road-dir)
+                                 (* (swizzle (asphalt-slope asphalt-here) :y)
+                                    road-left)))
+          (meso-slope (* 0.65 (detail-slope meso *detail-meso*)
+                         (ground-surface-relief surface)
+                         (- 1.0 (* 0.6 road-flat))))
+          (dry-slope (mix meso-slope asphalt-base-slope paved-tread))
+          (road-rough (mix 0.88 (asphalt-rough asphalt-here)
+                           (road-point-paved road)))
+          (base-rough (mix (ground-surface-rough surface) road-rough
+                           tread-share)))
+     (make-dry-ground
+      :path-ground path-ground
+      :base-rough base-rough
+      :dry-slope dry-slope
+      :powder powder
+      :normal normal
+      :wet-darkening wet-darkening
+      :puddle-pot puddle-pot
+      :grain-strength grain-strength)))
+
+;;; Apply live fine grain, weather wetness, coastal swash, vehicle snow tracks,
+;;; sun shadows, PBR lighting, and atmospheric haze to a DRY-GROUND surface.
+(define-shader-abstraction shade-ground-dynamic (dry footprint)
+  `(let* ((extent (swizzle size :xy))
+          (eye (swizzle camera-position :xyz))
+          (distance (sqrt (dot (- world eye) (- world eye))))
+          (xz (swizzle world :xz))
+          (above-sea (- (swizzle world :y) (swizzle relief :x)))
+          (field-at (+ field-uv (/ (vec2 0.5 0.5) extent)))
+          (metres (* (swizzle scale :x) (swizzle extent :x)))
+          (micro (read-detail detail linear-repeat field-uv *detail-micro*
+                              metres ,footprint))
+          (rain (swizzle road-batter :z))
+          (puddle (* rain (dry-ground-puddle-pot ,dry)))
+          ;; The sea leaves a dark film on its low shore. Its footprint is
+          ;; coarse, so actual elevation confines it to the last half metre
+          ;; above water, and the original sheet excludes nearby freshwater.
+          ;; This is not flooding: neither the bed nor the water is moved.
+          ;; Outside its maximum reach the wetting is exactly zero. Do not
+          ;; make all the inland ground pay for the coastal texture queries.
+          (swash
+            (only-where (and (> above-sea -0.12) (< above-sea 0.62)) 0.0
+              (let* ((coast (shore-field xz))
+                     (coast-mask (sqrt (dot (swizzle coast :zw)
+                                            (swizzle coast :zw))))
+                     (wash (swizzle (shore-cycle
+                                      (swizzle coast :x)
+                                      (swizzle camera-position :w)) :y))
+                     (water-here (swizzle (sample-level water-levels
+                                                         linear-repeat
+                                                         field-at 0.0) :xy))
+                     (freshwater
+                       (and (> (* (swizzle water-here :x) (swizzle scale :y))
+                               (+ (swizzle world :y) 0.005))
+                            (< (swizzle water-here :y) 0.9)))
+                     (wash-height (+ 0.12 (* 0.42 wash))))
+                (* coast-mask
+                   (if freshwater 0.0 1.0)
+                   (- 1.0 (smoothstep 4.0 10.0 (- 0.0 (swizzle coast :y))))
+                   (- 1.0 (smoothstep (- wash-height 0.12)
+                                      (+ wash-height 0.08) above-sea))
+                   (smoothstep -0.12 0.0 above-sea)))))
+          (wet (max rain (* 0.9 swash)))
+          (press (powder-height xz))
+          (powder (dry-ground-powder ,dry))
+          (snow-share (swizzle powder :x))
+          (packed (* snow-share (smoothstep 0.0 0.13 (- 0.0 press))))
+          (albedo (* (srgb (max (dry-ground-path-ground ,dry)
+                                (vec3 0.0 0.0 0.0)))
+                     (mix (vec3 1.0 1.0 1.0) (vec3 0.55 0.74 0.94) packed)
+                     (- 1.0 (* wet (dry-ground-wet-darkening ,dry)))
+                     (- 1.0 (* 0.45 puddle))))
+          ;; Still water lies flat; fine micro grain evaluates at the camera
+          ;; pixel's true footprint using the cached aggregate/relief strength.
+          (slope (* (+ (dry-ground-dry-slope ,dry)
+                       (* (dry-ground-grain-strength ,dry)
+                          (detail-slope micro *detail-micro*)))
+                    (- 1.0 puddle)))
+          (near-slope
+            (snow-detail-slope xz ,footprint snow-share powder packed))
+          (normal (dry-ground-normal ,dry))
+          (tilt (vec3 (+ (swizzle slope :x) (swizzle near-slope :x)) 0.0
+                      (+ (swizzle slope :y) (swizzle near-slope :y))))
+          (shaded (normalize (- normal (- tilt (* normal (dot tilt normal))))))
+          (sun (swizzle sun-direction :xyz))
+          ;; The relief brightens and dims the sun the ground itself
+          ;; catches, more where that is little, and never puts it out:
+          ;; one tilted normal stands for a pixel's worth of facets.
+          (facing (clamp (/ (+ (dot normal sun) 0.08) 1.08) 0.0 1.0))
+          (lambert-base (* facing
+                           (+ 1.0 (clamp (/ (- (dot shaded sun)
+                                               (dot normal sun))
+                                            (+ facing 0.35))
+                                         -0.75 0.90))))
+          (sastrugi-lit (snow-self-shadow xz ,footprint snow-share sun packed))
+          ;; The sun's shadow: a slope-scaled bias against acne on raking
+          ;; ground, faded out into the haze.
+          (taps (sun-lit shadow-map shadow-compare world
+                         (+ 0.75 (* 3.1 (- 1.0 (max (dot normal sun) 0.0))))
+                         1.0))
+          (fog (relief-haze (distance-fog distance (swizzle fog-color :w))
+                            (swizzle world :y) (swizzle relief :x)
+                            (swizzle relief :y)))
+          (direct (* (mix 1.0 (expt taps 1.3)
+                          (clamp (* 2.5 (- 1.0 fog)) 0.0 1.0))
+                     sastrugi-lit))
+          ;; Shade is lit by the sky alone: bluer than the sun's light
+          ;; under a clear sky, but only grey under cloud.
+          (overcast (smoothstep 0.6 0.95 (swizzle sun-direction :w)))
+          (fill (shade-fill direct overcast))
+          (to-eye (/ (- eye world) (max distance 0.0001)))
+          (flash (snow-flash xz ,footprint snow-share packed direct
+                             overcast shaded sun to-eye))
+          (dry-rough (mix (dry-ground-base-rough ,dry) 0.28 packed))
+          (rough (mix (* dry-rough
+                         (- 1.0 (* 0.35 wet (smoothstep 0.95 0.70 dry-rough))))
+                      0.03 puddle))
+          (bend (+ (dot (derivative-x shaded) (derivative-x shaded))
+                   (dot (derivative-y shaded) (derivative-y shaded))))
+          (alpha (* rough rough))
+          (rough-seen (sqrt (sqrt (+ (* alpha alpha) (min (* 0.5 bend) 0.18)))))
+          ;; How far above the horizon the mirror direction rises.
+          (mirror-rise (- (* 2.0 (max (dot shaded to-eye) 0.0)
+                             (swizzle shaded :y))
+                          (swizzle to-eye :y)))
+          (response (snow-light snow-share packed press shaded sun to-eye
+                                lambert-base direct overcast))
+          (diffuse-light (+ (* (hemisphere-lobes (swizzle ambient :xyz) shaded
+                                                 overcast)
+                               fill (swizzle response :xyz))
+                            (* (swizzle sun-diffuse :xyz)
+                               (swizzle response :w))
+                            (lamp-light lamp lamp-color world shaded)))
+          (lit (swizzle (material-light albedo (vec4 0.0 rough-seen 0.0 0.0)
+                                        shaded to-eye sun diffuse-light
+                                        (* (swizzle sun-specular :xyz) direct)
+                                        (swizzle ambient :xyz)
+                                        (swizzle sky-sun :xyz)
+                                        (swizzle fog-color :xyz)
+                                        (swizzle sun-direction :w)
+                                        (swizzle relief :w)
+                                        (* (mix 0.4 1.0 direct)
+                                           (- 1.0 (* 0.75 (smoothstep
+                                                           0.35 0.9 rough)))
+                                           (mix 1.0 (smoothstep 0.0 0.3
+                                                                mirror-rise)
+                                                (smoothstep 0.15 0.5
+                                                            rough))) 1.0 0.0)
+                        :xyz)))
+     (set-output color (vec4 (hazed (+ lit (* (swizzle sun-specular :xyz)
+                                              (vec3 0.92 0.97 1.06) flash 3.2))
+                                    world eye fog-color
+                                    (swizzle sky-sun :xyz) relief)
+                             1.0))
+     (set-output motion (- (clip-uv then) (clip-uv here)))))
+
+;;; Sample one atlas texture across the active fine level and its coarse
+;;; neighbour inside the 0.40..0.495 transition band.
+(define-shader-abstraction sample-cache-atlas (atlas uv-fine uv-coarse blend)
+  `(let* ((fine (sample-level ,atlas linear-clamp ,uv-fine 0.0)))
+     (if (> ,blend 0.0)
+         (mix fine (sample-level ,atlas linear-clamp ,uv-coarse 0.0) ,blend)
+         fine)))
+
+;;; Shade ground or road ribbon from the four-attachment 1024x2048 world-space
+;;; material cache.
+(define-shader-abstraction shade-ground-cached ()
+  `(let* ((across (derivative-x world))
+          (along (derivative-y world))
+          (footprint (expt (* (dot across across) (dot along along)) 0.25))
+          (xz (swizzle world :xz))
+          (period (* (swizzle size :xy)
+                     (vec2 (swizzle scale :x) (swizzle scale :z))))
+          (r0 (cache-radius xz level0))
+          (r1 (cache-radius xz level1))
+          (r2 (cache-radius xz level2))
+          (r3 (cache-radius xz level3))
+          (in0 (< r0 0.495))
+          (in1 (and (not in0) (< r1 0.495)))
+          (in2 (and (not in0) (not in1) (< r2 0.495)))
+          (in3 (and (not in0) (not in1) (not in2) (< r3 0.495)))
+          (uv-fine
+            (if in0 (cache-ring-uv xz (vec2 0.0 0.0) (swizzle level0 :w))
+                (if in1 (cache-ring-uv xz (vec2 512.0 0.0) (swizzle level1 :w))
+                    (if in2 (cache-ring-uv xz (vec2 0.0 512.0)
+                                           (swizzle level2 :w))
+                        (if in3 (cache-ring-uv xz (vec2 512.0 512.0)
+                                               (swizzle level3 :w))
+                            (cache-world-uv xz period))))))
+          (blend
+            (if in0 (smoothstep 0.40 0.495 r0)
+                (if in1 (smoothstep 0.40 0.495 r1)
+                    (if in2 (smoothstep 0.40 0.495 r2)
+                        (if in3 (smoothstep 0.40 0.495 r3)
+                            0.0)))))
+          (uv-coarse
+            (if (> blend 0.0)
+                (if in0 (cache-ring-uv xz (vec2 512.0 0.0) (swizzle level1 :w))
+                    (if in1 (cache-ring-uv xz (vec2 0.0 512.0)
+                                           (swizzle level2 :w))
+                        (if in2 (cache-ring-uv xz (vec2 512.0 512.0)
+                                               (swizzle level3 :w))
+                            (cache-world-uv xz period))))
+                uv-fine))
+          (m0 (sample-cache-atlas cache-albedo uv-fine uv-coarse blend))
+          (m1 (sample-cache-atlas cache-slope uv-fine uv-coarse blend))
+          (m2 (sample-cache-atlas cache-normal uv-fine uv-coarse blend))
+          (m3 (sample-cache-atlas cache-grain uv-fine uv-coarse blend))
+          (nxz (vec2 (decode-signed-byte (swizzle m2 :x))
+                     (decode-signed-byte (swizzle m2 :y))))
+          (dry (make-dry-ground
+                :path-ground (swizzle m0 :xyz)
+                :base-rough (swizzle m0 :w)
+                :dry-slope (decode-slope (swizzle m1 :xy))
+                :powder (vec2 (swizzle m1 :z)
+                              (* (decode-signed-byte (swizzle m1 :w)) 0.045))
+                :normal (normalize
+                         (vec3 (swizzle nxz :x)
+                               (sqrt (max 0.0 (- 1.0 (dot nxz nxz))))
+                               (swizzle nxz :y)))
+                :wet-darkening (swizzle m2 :z)
+                :puddle-pot (swizzle m2 :w)
+                :grain-strength (* 0.25 (swizzle m3 :x)))))
+     (shade-ground-dynamic dry footprint)))
+
+;;; Live evaluation of the full ground and road material (for MOPPE_TERRAIN_CACHE=0).
+(define-shader-abstraction shade-ground-live ()
+  `(let* ((eye (swizzle camera-position :xyz))
+          (distance (sqrt (dot (- world eye) (- world eye))))
+          (across (derivative-x world))
+          (along (derivative-y world))
+          (footprint (expt (* (dot across across) (dot along along)) 0.25))
+          (dry (eval-dry-ground (swizzle world :xz) (swizzle world :y) field-uv
+                                footprint
+                                (- 1.0 (smoothstep 450.0 650.0 distance))
+                                nil)))
+     (shade-ground-dynamic dry footprint)))
+
+;;; Instanced strip quads into the 1024x2048 ground material cache atlas.
+;;; Each strip is three vec4s: rect (x0, y0, x1, y1 in atlas pixels), slot
+;;; (slot-x, slot-y, active-side, footprint), and window (origin-x, origin-z,
+;;; span or 0 for global, road-reach).
+(define-shader terrain-bake-vertex
+    (:stage :vertex
+     :inputs ((vertex-index :uint :built-in :vertex-index)
+              (instance-index :uint :built-in :instance-index))
+     :outputs ((clip-position :vec4 :built-in :position)
+               (slot :vec4 :location 0 :interpolation :flat)
+               (window :vec4 :location 1 :interpolation :flat))
+     :resources ((strips :storage-buffer :binding 5 :element :vec4)))
+  (let* ((base (* instance-index (uint 3)))
+         (rect (buffer-element strips base))
+         (s (buffer-element strips (+ base (uint 1))))
+         (w (buffer-element strips (+ base (uint 2))))
+         (right (or (= vertex-index (uint 1)) (= vertex-index (uint 3))
+                    (= vertex-index (uint 4))))
+         (bottom (or (= vertex-index (uint 2)) (= vertex-index (uint 4))
+                     (= vertex-index (uint 5))))
+         (px (if right (swizzle rect :z) (swizzle rect :x)))
+         (py (if bottom (swizzle rect :w) (swizzle rect :y)))
+         (nx (- (* (/ px 1024.0) 2.0) 1.0))
+         ;; Luv's clip space is y-down: -1 is pixel.y = 0, +1 is pixel.y = 2048.
+         (ny (- (* (/ py 2048.0) 2.0) 1.0)))
+    (set-output clip-position (vec4 nx ny 0.0 1.0))
+    (set-output slot s)
+    (set-output window w)))
+
+(define-shader terrain-bake-fragment
+    (:stage :fragment
+     :inputs ((slot :vec4 :location 0 :interpolation :flat)
+              (window :vec4 :location 1 :interpolation :flat)
+              (pixel :vec4 :built-in :frag-coord))
+     :outputs ((albedo-rough :vec4 :location 0)
+               (slope-powder :vec4 :location 1)
+               (normal-wet :vec4 :location 2)
+               (grain-strength :vec4 :location 3))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (heights :texture-2d :binding 0)
+                 (normals :texture-2d :binding 1)
+                 (detail :texture-2d :binding 3)
+                 (more-plants :texture-2d :binding 4)
+                 (plants :texture-2d :binding 5)
+                 (landscape :texture-2d :binding 6)
+                 (ground :texture-2d :binding 7)
+                 (closure :texture-2d :binding 9)
+                 (litter :texture-2d :binding 10)
+                 (scars :texture-2d :binding 11)
+                 (bedrock :texture-2d :binding 12)
+                 (road-segments :storage-buffer :binding 3 :element :vec4)
+                 (road-index :storage-buffer :binding 4 :element :uint)
+                 (linear-repeat :sampler :binding 1)))
+  (let* ((extent (swizzle size :xy))
+         (period (* extent (vec2 (swizzle scale :x) (swizzle scale :z))))
+         (ring-uv (fract (/ (- (- (swizzle pixel :xy) (swizzle slot :xy))
+                               (vec2 1.0 1.0))
+                            (swizzle slot :z))))
+         (span (swizzle window :z))
+         (baked-xz (if (> span 0.0)
+                       (+ (swizzle window :xy)
+                          (* (fract (- ring-uv (/ (swizzle window :xy) span)))
+                             span))
+                       (* ring-uv period)))
+         (baked-uv (/ baked-xz period))
+         (baked-y (* (height-between heights (* baked-uv extent) extent)
+                     (swizzle scale :y)))
+         (dry (eval-dry-ground baked-xz baked-y baked-uv (swizzle slot :w)
+                               (swizzle window :w) t))
+         (n (dry-ground-normal dry))
+         (p (dry-ground-powder dry)))
+    (set-output albedo-rough (vec4 (dry-ground-path-ground dry)
+                                   (dry-ground-base-rough dry)))
+    (set-output slope-powder (vec4 (encode-slope (dry-ground-dry-slope dry))
+                                   (swizzle p :x)
+                                   (encode-signed-byte (/ (swizzle p :y)
+                                                          0.045))))
+    (set-output normal-wet (vec4 (encode-signed-byte (swizzle n :x))
+                                 (encode-signed-byte (swizzle n :z))
+                                 (dry-ground-wet-darkening dry)
+                                 (dry-ground-puddle-pot dry)))
+    (set-output grain-strength (vec4 (clamp (* (dry-ground-grain-strength dry)
+                                               4.0)
+                                            0.0 1.0)
+                                     0.0 0.0 1.0))))
+
+(define-shader-program terrain-bake
+  :vertex terrain-bake-vertex
+  :fragment terrain-bake-fragment)
 
 (define-shader terrain-fragment
+    (:stage :fragment
+     :inputs ((world :vec3 :location 0)
+              (surface-normal :vec3 :location 1)
+              (field-uv :vec2 :location 2)
+              (here :vec4 :location 3)
+              (then :vec4 :location 4))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (cache :uniform-block :binding 5 :members #.*ground-cache*)
+                 (detail :texture-2d :binding 3)
+                 (cache-albedo :texture-2d :binding 4)
+                 (cache-slope :texture-2d :binding 5)
+                 (cache-normal :texture-2d :binding 6)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (cache-grain :texture-2d :binding 9)
+                 (snow-pack :texture-2d :binding 13)
+                 (water-levels :texture-2d :binding 14)
+                 (shore-surf :texture-2d :binding 15)
+                 (linear-clamp :sampler :binding 0)
+                 (linear-repeat :sampler :binding 1)
+                 (shadow-compare :sampler :binding 3)))
+  (shade-ground-cached))
+
+(define-shader-program terrain
+  :vertex terrain-vertex
+  :fragment terrain-fragment)
+
+(define-shader terrain-live-fragment
     (:stage :fragment
      :inputs ((world :vec3 :location 0)
               (surface-normal :vec3 :location 1)
@@ -2384,11 +2670,11 @@
                  (road-index :storage-buffer :binding 4 :element :uint)
                  (linear-repeat :sampler :binding 1)
                  (shadow-compare :sampler :binding 3)))
-  (shade-ground))
+  (shade-ground-live))
 
-(define-shader-program terrain
+(define-shader-program terrain-live
   :vertex terrain-vertex
-  :fragment terrain-fragment)
+  :fragment terrain-live-fragment)
 
 ;;; -- the road ribbon --------------------------------------------------------
 ;;;
@@ -2523,6 +2809,40 @@
                (motion :vec2 :location 1))
      :resources ((frame :uniform-block :binding 0 :members #.*frame*)
                  (terrain :uniform-block :binding 1 :members #.*terrain*)
+                 (cache :uniform-block :binding 5 :members #.*ground-cache*)
+                 (detail :texture-2d :binding 3)
+                 (cache-albedo :texture-2d :binding 4)
+                 (cache-slope :texture-2d :binding 5)
+                 (cache-normal :texture-2d :binding 6)
+                 (shadow-map :depth-texture-2d :binding 8)
+                 (cache-grain :texture-2d :binding 9)
+                 (snow-pack :texture-2d :binding 13)
+                 (water-levels :texture-2d :binding 14)
+                 (shore-surf :texture-2d :binding 15)
+                 (linear-clamp :sampler :binding 0)
+                 (linear-repeat :sampler :binding 1)
+                 (shadow-compare :sampler :binding 3)))
+  (let* ((above lift))
+    (when (< above 0.004)
+      (discard))
+    (shade-ground-cached)))
+
+(define-shader-program road-ribbon
+  :vertex road-ribbon-vertex
+  :fragment road-ribbon-fragment)
+
+(define-shader road-ribbon-live-fragment
+    (:stage :fragment
+     :inputs ((world :vec3 :location 0)
+              (surface-normal :vec3 :location 1)
+              (field-uv :vec2 :location 2)
+              (here :vec4 :location 3)
+              (then :vec4 :location 4)
+              (lift :float :location 5))
+     :outputs ((color :vec4 :location 0)
+               (motion :vec2 :location 1))
+     :resources ((frame :uniform-block :binding 0 :members #.*frame*)
+                 (terrain :uniform-block :binding 1 :members #.*terrain*)
                  (normals :texture-2d :binding 1)
                  (detail :texture-2d :binding 3)
                  (landscape :texture-2d :binding 6)
@@ -2544,11 +2864,11 @@
   (let* ((above lift))
     (when (< above 0.004)
       (discard))
-    (shade-ground)))
+    (shade-ground-live)))
 
-(define-shader-program road-ribbon
+(define-shader-program road-ribbon-live
   :vertex road-ribbon-vertex
-  :fragment road-ribbon-fragment)
+  :fragment road-ribbon-live-fragment)
 
 ;;; The boat's plywood: its dark phenolic film under glass cloth and epoxy,
 ;;; worn through where the boat is dragged, beached, and stood on. The wear

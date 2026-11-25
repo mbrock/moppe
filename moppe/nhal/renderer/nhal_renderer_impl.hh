@@ -223,10 +223,22 @@ namespace moppe::nhal {
     // and the chunks the game last placed, and the roads' segments, which
     // the ground reads and the road ribbon lays again near the camera.
     struct TerrainState {
-      Pipeline draw, ribbon;
+      struct CacheLevel {
+        std::int64_t ix = 0, iz = 0;
+        float origin_x = 0.0f, origin_z = 0.0f;
+        bool valid = false;
+      };
+      Pipeline draw, draw_live, ribbon, ribbon_live, cache_bake;
       render::TerrainParams params {};
       bool have = false;
       Texture heights, normals, detail;
+      // Four-attachment 1024x2048 world-space dry ground+road material cache:
+      // [0] RGBA8 albedo+rough, [1] RGBA8 dry slope+snow/flute,
+      // [2] RGBA8 macro normal+wet/puddle, [3] R8 fine-grain strength.
+      std::array<Texture, 4> cache_atlas {};
+      std::array<CacheLevel, 4> cache_levels {};
+      bool cache_global_valid = false;
+      bool cache_dirty = true;
       // Ring of snow-relief textures (frames_in_flight + 1) so CPU updates
       // never overwrite shared memory while the GPU still samples an earlier
       // frame's shifted snow window.
@@ -464,6 +476,11 @@ namespace moppe::nhal {
 
       // What the terrain's programs, and the road ribbon's, read.
       void bind_ground ();
+      void bind_ground_cached ();
+      bool use_terrain_cache () const;
+      void ensure_terrain_cache ();
+      void update_terrain_cache ();
+      shaders::terrain::Cache terrain_cache_block () const;
 
       // The ground's textures as every program over it reads them: the
       // heights and normals, the material sheets, the sun's shadow, and
