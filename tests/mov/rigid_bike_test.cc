@@ -590,3 +590,64 @@ MOPPE_TEST (rigid_bike_rides_rough_offroad_sideslope_without_bouncing_wildly) {
   MOPPE_CHECK (peak_impact < 3.0f * u::m / u::s);
   MOPPE_CHECK (forward_speed > 8.0f * u::m / u::s);
 }
+
+// Crashing head-on or glancingly into a tree trunk at speed produces a
+// grounded stop or glance-off instead of launching the bike into an
+// airborne somersault.
+MOPPE_TEST (rigid_bike_tree_crash_does_not_launch_or_somersault) {
+  const map::SurfaceGeometry surface = rigid_test_surface (flat);
+  for (const meters_t lateral_offset : { 0.0f * u::m, 0.20f * u::m }) {
+    mov::TrunkField trunks;
+    trunks.set_trunks (
+      { mov::Trunk {
+        position (Vec3 (60.0f + meters_value (lateral_offset), 10.0f, 95.0f)),
+        unit_direction (Vec3 (0, 1, 0)),
+        12.0f * u::m,
+        0.5f * u::m } },
+      plan_extent (300.0f * u::m, 300.0f * u::m));
+    mov::Vehicle bike = rigid_bike (surface, Vec3 (60, 0, 45));
+    bike.set_trunks (&trunks);
+    bike.set_thrust (sig (1.0f));
+    meters_t peak_y = 0.0f * u::m;
+    proportion_t min_up = 1.0f * proportion[one];
+    speed_t max_impact = 0.0f * u::m / u::s;
+    for (int i = 0; i < 6 * 120; ++i) {
+      bike.update (tick);
+      peak_y = std::max (
+        peak_y,
+        static_cast<float> (position_value (bike.position ())[1]) * u::m);
+      min_up = std::min (min_up,
+                         static_cast<float> (direction_value (bike.up ())[1]) *
+                           proportion[one]);
+      max_impact = std::max (max_impact, bike.pop_impact ());
+    }
+    MOPPE_CHECK (max_impact > 0.5f * u::m / u::s);
+    MOPPE_CHECK (peak_y <
+                 10.0f * u::m + mov::RigidBike::ride_height + 0.45f * u::m);
+    MOPPE_CHECK (min_up > 0.55f * proportion[one]);
+  }
+}
+
+// Steering into a fast corner responds promptly and carves along the
+// heading rather than skating sideways.
+MOPPE_TEST (rigid_bike_carves_corners_responsively) {
+  const map::SurfaceGeometry surface = rigid_test_surface (flat);
+  mov::Vehicle bike = rigid_bike (surface, Vec3 (150, 0, 20));
+  bike.set_thrust (sig (0.9f));
+  for (int i = 0; i < 3 * 120; ++i)
+    bike.update (tick);
+  const Vec3 before = direction_value (bike.forward ());
+  bike.set_yaw (75 * u::deg);
+  for (int i = 0; i < 60; ++i) // 0.5 s turn-in
+    bike.update (tick);
+  const Vec3 after = direction_value (bike.forward ());
+  const Vec3 vel = velocity_value (bike.velocity ());
+  const speed_t spd = length (vel) * u::m / u::s;
+  const proportion_t alignment =
+    (dot (vel, after) / std::max (speed_value (spd), 0.1f)) * proportion[one];
+  // Turned meaningfully within half a second while keeping velocity carved
+  // closely along the bike's heading.
+  MOPPE_CHECK (dot (before, after) < 0.88f);
+  MOPPE_CHECK (alignment > 0.90f * proportion[one]);
+  MOPPE_CHECK (direction_value (bike.up ())[1] > 0.70f);
+}

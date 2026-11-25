@@ -161,8 +161,8 @@ namespace moppe {
             patch (
               surface,
               { .ground_friction = bike_rig::ground_friction,
-                .obstacle_friction = 0.3f,
-                .obstacle_restitution = 0.3f,
+                .obstacle_friction = 0.12f,
+                .obstacle_restitution = 0.05f,
                 .ground_bit = bike_rig::ground_bit,
                 .ground_mask = bike_rig::wheel_bit | bike_rig::chassis_bit,
                 .obstacle_bit = bike_rig::trunk_bit,
@@ -304,7 +304,7 @@ namespace moppe {
         def.spinSpeed = 0.0f;
         if (steers) {
           def.enableSteering = true;
-          def.steeringHertz = 6.0f;
+          def.steeringHertz = 11.0f;
           def.steeringDampingRatio = 1.0f;
           def.maxSteeringTorque = 2000.0f;
           def.enableSteeringLimit = true;
@@ -589,9 +589,50 @@ namespace moppe {
                       wanted_yaw + (skid_yaw - wanted_yaw) *
                                      slide.numerical_value_in (one),
                       yaw_inertia,
-                      12.0f / u::s,
+                      18.0f / u::s,
                       dt,
                       &pivot);
+          // Directional tyre carving: sphere colliders have isotropic
+          // friction, so without a lateral bite assist fast turns wash
+          // sideways. While actively steering and rolling (not skidding),
+          // rotate ground-plane velocity smoothly toward the heading while
+          // strictly conserving its speed.
+          const proportion_t grip_share =
+            (1.0f - slide.numerical_value_in (one)) * proportion[one];
+          if (!controls.parked && abs (controls.steer) > 0.05f * u::rad &&
+              grip_share > 0.05f * proportion[one] && vf > 1.5f * u::m / u::s) {
+            const Vec3 projected =
+              forward - ground_normal * dot (forward, ground_normal);
+            if (length2 (projected) > 1e-6f) {
+              const direction_t plane_fwd =
+                unit_direction (normalized (projected));
+              const direction_t plane_right = unit_direction (
+                cross (direction_value (plane_fwd), ground_normal));
+              const speed_t v_lat =
+                dot (v, direction_value (plane_right)) * u::m / u::s;
+              const speed_t v_fwd =
+                dot (v, direction_value (plane_fwd)) * u::m / u::s;
+              const speed_t plane_speed =
+                std::hypot (speed_value (v_fwd), speed_value (v_lat)) * u::m /
+                u::s;
+              const blend_weight_t bite =
+                settle (4.5f * grip_share.numerical_value_in (one) / u::s, dt);
+              const speed_t new_lat =
+                v_lat * (1.0f - bite.numerical_value_in (one));
+              const speed_t new_fwd =
+                std::sqrt (std::max (
+                  0.0f,
+                  speed_value (plane_speed) * speed_value (plane_speed) -
+                    speed_value (new_lat) * speed_value (new_lat))) *
+                u::m / u::s;
+              const b3Vec3 delta = to_b3 (
+                direction_value (plane_right) * speed_value (new_lat - v_lat) +
+                direction_value (plane_fwd) * speed_value (new_fwd - v_fwd));
+              for (const b3BodyId body : { chassis, front, rear })
+                b3Body_SetLinearVelocity (
+                  body, b3Add (b3Body_GetLinearVelocity (body), delta));
+            }
+          }
         } else if (controls.hung) {
           // Under the wing the bike swings round to face the way it flies.
           steer_rate (world_up,
@@ -659,7 +700,7 @@ namespace moppe {
         }
         const radians_t held = std::clamp (goal, -rig.max_lean, rig.max_lean);
         approach (
-          lean, held, settle (grounded ? 8.0f / u::s : 3.0f / u::s, dt));
+          lean, held, settle (grounded ? 12.0f / u::s : 3.5f / u::s, dt));
         const Vec3 target_up =
           level * libm::cos (lean) + right * libm::sin (lean);
         // On the ground the bike leans over its tire contacts, or over the
@@ -677,9 +718,9 @@ namespace moppe {
              : 1.0f) *
           proportion[one];
         steer_rate (forward,
-                    angle_about (forward, up, target_up) * 8.0f / u::s,
+                    angle_about (forward, up, target_up) * 9.5f / u::s,
                     roll_inertia,
-                    20.0f * rolls.numerical_value_in (one) / u::s,
+                    22.0f * rolls.numerical_value_in (one) / u::s,
                     dt,
                     grounded ? &under : nullptr,
                     grounded ? &world_up : nullptr);
@@ -910,6 +951,7 @@ namespace moppe {
                    to_b3 (left * (-0.6f * speed_value (controls.hop)))));
         }
 
+        const speed_t pre_vy = v[1] * u::m / u::s;
         b3World_Step (world, seconds_value (dt), bike_rig::substeps);
 
         newtons_t front_load {};
@@ -931,6 +973,60 @@ namespace moppe {
             trunk_hit = std::max (trunk_hit, hit.approachSpeed * u::m / u::s);
           else if (is (patch.ground ()))
             body_hit = std::max (body_hit, hit.approachSpeed * u::m / u::s);
+        }
+        // An off-centre hit on a vertical trunk must produce a grounded
+        // thud or glance-off, never an airborne front-flip somersault.
+        if (trunk_hit > speed_t {}) {
+          const speed_t max_vy =
+            std::max (pre_vy, speed_t {}) + 0.30f * u::m / u::s;
+          for (const b3BodyId body : { chassis, front, rear }) {
+            velocity_t body_v =
+              moppe::velocity (from_b3 (b3Body_GetLinearVelocity (body)));
+            if (static_cast<float> (velocity_value (body_v)[1]) * u::m / u::s >
+                max_vy) {
+              velocity_value (body_v)[1] = speed_value (max_vy);
+              b3Body_SetLinearVelocity (body, to_b3 (velocity_value (body_v)));
+            }
+          }
+          const Vec3 raw_w = from_b3 (b3Body_GetAngularVelocity (chassis));
+          const radians_per_second_t yaw_w =
+            std::clamp (dot (raw_w, world_up) * u::rad / u::s,
+                        -3.0f * u::rad / u::s,
+                        3.0f * u::rad / u::s);
+          const Vec3 tilt_raw =
+            (raw_w - world_up * dot (raw_w, world_up)) * 0.15f;
+          const radians_per_second_t tilt_mag =
+            length (tilt_raw) * u::rad / u::s;
+          constexpr radians_per_second_t max_tilt = 1.2f * u::rad / u::s;
+          const scale_factor_t tilt_scale =
+            (tilt_mag > max_tilt
+               ? (max_tilt / tilt_mag).numerical_value_in (one)
+               : 1.0f) *
+            scale_factor[one];
+          b3Body_SetAngularVelocity (
+            chassis,
+            to_b3 (world_up * yaw_w.numerical_value_in (u::rad / u::s) +
+                   tilt_raw * tilt_scale.numerical_value_in (one)));
+        } else if (wheelie <= released) {
+          // Outside an intentional wheelie, cap chaotic pitch/roll spin so
+          // a stray rock edge cannot tumble the bike like a bowling pin.
+          const Vec3 raw_w = from_b3 (b3Body_GetAngularVelocity (chassis));
+          const radians_per_second_t yaw_w =
+            dot (raw_w, world_up) * u::rad / u::s;
+          const Vec3 tilt_raw =
+            raw_w - world_up * yaw_w.numerical_value_in (u::rad / u::s);
+          const radians_per_second_t tilt_mag =
+            length (tilt_raw) * u::rad / u::s;
+          constexpr radians_per_second_t max_tumble = 4.5f * u::rad / u::s;
+          if (tilt_mag > max_tumble) {
+            const scale_factor_t scale =
+              (max_tumble / tilt_mag).numerical_value_in (one) *
+              scale_factor[one];
+            b3Body_SetAngularVelocity (
+              chassis,
+              to_b3 (world_up * yaw_w.numerical_value_in (u::rad / u::s) +
+                     tilt_raw * scale.numerical_value_in (one)));
+          }
         }
       }
     };

@@ -28,7 +28,7 @@ namespace moppe {
         constexpr proportion_t boost_reserve_charge = 0.06f * proportion[one];
         constexpr proportion_t boost_emergency_level = 0.18f * proportion[one];
 
-        constexpr per_second_t steering_smoothing = 9.0f / u::s;
+        constexpr per_second_t steering_smoothing = 18.0f / u::s;
         constexpr radians_t full_turn = 2.0f * 3.14159265f * u::rad;
 
         // Keeps an angle in [0, 2pi).
