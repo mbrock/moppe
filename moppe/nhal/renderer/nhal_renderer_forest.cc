@@ -395,6 +395,7 @@ namespace moppe::nhal {
       m_device->set_buffer (4, m_forest.candidates);
       m_device->set_buffer (5, m_forest.vertices);
       m_device->set_texture (8, m_sun_shadow.map);
+      bind_world_gi (10, 11, 12, 9);
       for (std::uint32_t c = 0; c < forest_classes; ++c) {
         shaders::forest::Draw draw {};
         draw.class_ = { float (c), 0, 0, 0 };
@@ -432,6 +433,7 @@ namespace moppe::nhal {
       m_device->set_texture (0, m_terrain.heights);
       m_device->set_texture (8, m_sun_shadow.map);
       bind_stand ();
+      bind_world_gi (11, 12, 13);
       m_device->draw (6, side * side);
     }
   }

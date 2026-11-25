@@ -11,6 +11,7 @@ namespace moppe::nhal {
     namespace {
       constexpr std::uint32_t cache_atlas_width = 1024;
       constexpr std::uint32_t cache_atlas_height = 2048;
+      constexpr std::uint32_t terrain_gi_size = 1024;
       constexpr std::int64_t cache_ring_side = 510;
       constexpr std::int64_t cache_scroll_step = 8;
       constexpr float cache_world_side = 1022.0f;
@@ -78,11 +79,24 @@ namespace moppe::nhal {
       bake.color_formats[0] = Format::rgba8_unorm;
       bake.color_formats[1] = Format::rgba8_unorm;
       bake.color_formats[2] = Format::rgba8_unorm;
-      bake.color_formats[3] = Format::r8_unorm;
+      bake.color_formats[3] = Format::rgba8_unorm;
       bake.cull = Cull::none;
       bake.depth_write = false;
       bake.label = "terrain material bake";
       m_terrain.cache_bake = m_device->create_render_pipeline (bake);
+
+      RenderPipelineDesc gi;
+      gi.program = &shaders::terrain_gi_bake::program;
+      gi.vertex = m_shaders.terrain_gi_bake[0];
+      gi.fragment = m_shaders.terrain_gi_bake[1];
+      gi.color_count = 3;
+      gi.color_formats[0] = Format::rgba8_unorm;
+      gi.color_formats[1] = Format::rgba8_unorm;
+      gi.color_formats[2] = Format::rgba8_unorm;
+      gi.cull = Cull::none;
+      gi.depth_write = false;
+      gi.label = "terrain gi bake";
+      m_terrain.gi_bake = m_device->create_render_pipeline (gi);
 
       RenderPipelineDesc terrain_caster = caster;
       terrain_caster.program = &shaders::terrain_shadow::program;
@@ -148,6 +162,8 @@ namespace moppe::nhal {
         }
       }
       m_terrain.have = true;
+      m_terrain.gi_dirty = true;
+      ensure_terrain_gi ();
       m_terrain.cache_dirty = true;
       if (use_terrain_cache ())
         ensure_terrain_cache ();
@@ -268,7 +284,7 @@ namespace moppe::nhal {
         Format::rgba8_unorm,
         Format::rgba8_unorm,
         Format::rgba8_unorm,
-        Format::r8_unorm,
+        Format::rgba8_unorm,
       };
       const std::array<const char*, 4> labels {
         "terrain cache albedo",
@@ -284,6 +300,73 @@ namespace moppe::nhal {
                                       usage_render_target | usage_sampled,
                                       1,
                                       labels[i] });
+    }
+
+    void NhalRenderer::ensure_terrain_gi () {
+      if (m_terrain.sky_gi)
+        return;
+      const auto make = [&] (const char* label) {
+        return m_device->create_texture ({ terrain_gi_size,
+                                           terrain_gi_size,
+                                           Format::rgba8_unorm,
+                                           usage_render_target | usage_sampled,
+                                           1,
+                                           label });
+      };
+      m_terrain.sky_gi = make ("terrain sky gi");
+      m_terrain.horizon_a = make ("terrain horizon a");
+      m_terrain.horizon_b = make ("terrain horizon b");
+    }
+
+    void NhalRenderer::update_terrain_gi () {
+      if (!m_terrain.have || !m_terrain.gi_dirty)
+        return;
+      ensure_terrain_gi ();
+      m_dynamic.pause ();
+      const auto& p = m_terrain.params;
+      const float r_start = std::max (p.scale[0], p.scale[2]);
+      const float period_min =
+        std::min (float (p.width) * p.scale[0], float (p.height) * p.scale[2]);
+      const float r_end = std::max (r_start * 2.0f, 0.42f * period_min);
+      constexpr int steps = 48;
+      const float r_ratio =
+        std::pow (r_end / r_start, 1.0f / float (steps - 1));
+      shaders::terrain_gi_bake::GiBake bake {};
+      bake.dims = { float (p.width), float (p.height), p.scale[0], p.scale[2] };
+      bake.params = { p.scale[1], r_start, r_ratio, float (terrain_gi_size) };
+      RenderPassDesc pass;
+      pass.label = "terrain gi bake";
+      pass.color_count = 3;
+      pass.colors[0] = { m_terrain.sky_gi, Load::discard, Store::store };
+      pass.colors[1] = { m_terrain.horizon_a, Load::discard, Store::store };
+      pass.colors[2] = { m_terrain.horizon_b, Load::discard, Store::store };
+      m_device->begin_render_pass (pass);
+      m_device->set_viewport (
+        0.0f, 0.0f, float (terrain_gi_size), float (terrain_gi_size));
+      m_device->set_pipeline (m_terrain.gi_bake);
+      m_device->set_uniforms (0, bake);
+      m_device->set_texture (0, m_terrain.heights);
+      m_device->draw (3);
+      m_device->end_render_pass ();
+      m_terrain.gi_dirty = false;
+    }
+
+    void NhalRenderer::bind_world_gi (int sky_slot,
+                                      int ha_slot,
+                                      int hb_slot,
+                                      int closure_slot) {
+      const Texture sky = m_terrain.sky_gi ? m_terrain.sky_gi : m_gi_open;
+      const Texture ha = m_terrain.horizon_a ? m_terrain.horizon_a : m_clear;
+      const Texture hb = m_terrain.horizon_b ? m_terrain.horizon_b : m_clear;
+      if (sky_slot >= 0)
+        m_device->set_texture (std::uint32_t (sky_slot), sky);
+      if (ha_slot >= 0)
+        m_device->set_texture (std::uint32_t (ha_slot), ha);
+      if (hb_slot >= 0)
+        m_device->set_texture (std::uint32_t (hb_slot), hb);
+      if (closure_slot >= 0)
+        m_device->set_texture (std::uint32_t (closure_slot),
+                               m_forest.closure ? m_forest.closure : m_clear);
     }
 
     void NhalRenderer::update_terrain_cache () {
@@ -535,6 +618,7 @@ namespace moppe::nhal {
       m_device->set_texture (7, m_terrain.ground ? m_terrain.ground : m_white);
       m_device->set_texture (8, m_sun_shadow.map);
       m_device->set_texture (9, m_terrain.cache_atlas[3]);
+      bind_world_gi (10, 11, 12);
       m_device->set_texture (13,
                              m_terrain.snow.empty ()
                                ? m_clear
@@ -549,6 +633,7 @@ namespace moppe::nhal {
       m_device->set_buffer (0, m_frame_block);
       m_device->set_uniforms (1, terrain_block ());
       bind_ground_textures ();
+      bind_world_gi (2, -1, -1);
       m_device->set_texture (13,
                              m_terrain.snow.empty ()
                                ? m_clear

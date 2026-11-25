@@ -184,6 +184,7 @@ namespace moppe::nhal {
       m_device->set_uniforms (3, sea_block (seconds_value (params.time)));
       m_device->set_texture (0, m_terrain.heights);
       m_device->set_texture (8, m_sun_shadow.map);
+      bind_world_gi (10, 5, 6, 9);
       m_device->set_texture (11, m_water.levels);
       m_device->set_texture (12, m_water.flow ? m_water.flow : m_water.still);
       m_device->set_texture (13, m_water.beneath);

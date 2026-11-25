@@ -229,13 +229,18 @@ namespace moppe::nhal {
         float origin_x = 0.0f, origin_z = 0.0f;
         bool valid = false;
       };
-      Pipeline draw, draw_live, ribbon, ribbon_live, cache_bake;
+      Pipeline draw, draw_live, ribbon, ribbon_live, cache_bake, gi_bake;
       render::TerrainParams params {};
       bool have = false;
       Texture heights, normals, detail;
+      // Periodic 1024x1024 GPU-baked terrain GI:
+      // sky_gi: RG bent normal xz (signed byte), B sky visibility, A mean
+      // horizon sine; horizon_a/b: 8 azimuth horizon sines (0..315 deg).
+      Texture sky_gi, horizon_a, horizon_b;
+      bool gi_dirty = false;
       // Four-attachment 1024x2048 world-space dry ground+road material cache:
       // [0] RGBA8 albedo+rough, [1] RGBA8 dry slope+snow/flute,
-      // [2] RGBA8 macro normal+wet/puddle, [3] R8 fine-grain strength.
+      // [2] RGBA8 macro normal+wet/puddle, [3] RGBA8 fine-grain+closure.
       std::array<Texture, 4> cache_atlas {};
       std::array<CacheLevel, 4> cache_levels {};
       bool cache_global_valid = false;
@@ -482,6 +487,12 @@ namespace moppe::nhal {
       bool use_terrain_cache () const;
       void ensure_terrain_cache ();
       void update_terrain_cache ();
+      void ensure_terrain_gi ();
+      void update_terrain_gi ();
+      void bind_world_gi (int sky_slot,
+                          int ha_slot,
+                          int hb_slot,
+                          int closure_slot = -1);
       shaders::terrain::Cache terrain_cache_block () const;
 
       // The ground's textures as every program over it reads them: the
@@ -804,7 +815,8 @@ namespace moppe::nhal {
       Buffer m_exposure_value;
       render::TextList m_hud_text;
       // m_clear is zero in every lane: no plant of the field layer anywhere.
-      Texture m_white, m_black, m_clear;
+      // m_gi_open is an unoccluded open-sky GI texel: bent (0,1,0), vis 1.
+      Texture m_white, m_black, m_clear, m_gi_open;
 
       std::uint32_t m_width = 0, m_height = 0;
       std::uint32_t m_scene_cap_w = 0, m_scene_cap_h = 0;

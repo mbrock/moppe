@@ -86,6 +86,7 @@ namespace moppe::nhal {
       m_device->set_pipeline (m_world_text);
       m_device->set_buffer (0, m_frame_block);
       m_device->set_texture (8, m_sun_shadow.map);
+      bind_world_gi (10, 11, 12, 9);
       for (const NhalWorldText::Run& run : placed.runs) {
         const auto& glyphs = static_cast<const NhalGlyphSet&> (*run.glyphs);
         m_device->set_buffer (1, run.quads);
@@ -109,6 +110,7 @@ namespace moppe::nhal {
         m_device->set_pipeline (behind ? m_world_labels_behind : m_world_text);
         m_device->set_buffer (0, m_frame_block);
         m_device->set_texture (8, m_sun_shadow.map);
+        bind_world_gi (10, 11, 12, 9);
         for (const render::TextList::Run& run : text.runs ()) {
           const auto* glyphs =
             static_cast<const NhalGlyphSet*> (run.glyphs.get ());
@@ -296,6 +298,7 @@ namespace moppe::nhal {
         m_device->set_buffer (2, block);
         m_device->set_texture (0, texture_or_white (run.texture));
         m_device->set_texture (8, m_sun_shadow.map);
+        bind_world_gi (10, 11, 12, 9);
         if (mesh)
           m_device->draw_indexed (
             mesh->indices, mesh->index_type, run.count, 1, run.first);

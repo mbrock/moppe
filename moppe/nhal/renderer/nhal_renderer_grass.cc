@@ -250,6 +250,7 @@ namespace moppe::nhal {
       bind_roads (5);
       m_device->set_texture (2, texture_or_white (m_grass.grain));
       bind_ground_textures ();
+      bind_world_gi (13, 14, 15);
       m_device->draw_indexed_indirect (
         m_grass.sward_indices, IndexType::uint16, m_grass.sward_arguments);
     }
@@ -263,6 +264,7 @@ namespace moppe::nhal {
       m_device->set_uniforms (1, grass);
       m_device->set_buffer (2, m_grass.tiles);
       bind_ground_textures ();
+      bind_world_gi (13, 14, 15);
       const float tiles = grass.window[2] * grass.window[2];
       for (std::uint32_t c = 0; c < grass_classes; ++c) {
         shaders::grass::Draw draw {};

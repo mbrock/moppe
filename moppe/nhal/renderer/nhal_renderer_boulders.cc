@@ -190,6 +190,7 @@ namespace moppe::nhal {
       m_device->set_buffer (6, m_boulders.faces);
       m_device->set_texture (7, m_terrain.ground ? m_terrain.ground : m_white);
       m_device->set_texture (8, m_sun_shadow.map);
+      bind_world_gi (10, 11, 12, 9);
       for (std::uint32_t fine = 0; fine < 2; ++fine) {
         shaders::boulders::Draw draw {};
         draw.class_ = { float (fine * m_boulders.count), float (fine), 0, 0 };

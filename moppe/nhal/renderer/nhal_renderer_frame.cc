@@ -155,8 +155,20 @@ namespace moppe::nhal {
       frame.lamp = lanes (position_value (params.lamp_pos),
                           meters_value (params.lamp_reach));
       frame.lamp_color = linear (params.lamp_color);
+      const float period_x =
+        float (m_terrain.params.width) * m_terrain.params.scale[0];
+      const float period_z =
+        float (m_terrain.params.height) * m_terrain.params.scale[2];
+      frame.world_gi = {
+        m_terrain.have && period_x > 0.0f ? 1.0f / period_x : 0.0f,
+        m_terrain.have && period_z > 0.0f ? 1.0f / period_z : 0.0f,
+        m_terrain.have ? 1.0f : 0.0f,
+        m_forest.closure ? 1.0f : 0.0f,
+      };
       m_frame_values = frame;
       upload_frame ();
+      if (m_terrain.have && m_terrain.gi_dirty)
+        update_terrain_gi ();
       if (m_terrain.have && use_terrain_cache ())
         update_terrain_cache ();
       const ForestCullJob trees =
