@@ -16,6 +16,9 @@
 - `refactoring-seams.md` — characterization contracts for surface,
   replay, completed-world loading, and target ownership.
 - `terrain-expressions.md` — direct terrain generation and analysis design.
+- `large-world.md` — roadmap and experiment plan for growing the world from
+  10 km to ~40 km via coarse global geology, local tile refinement, and
+  streaming.
 - `sediment-transport.md` — conservative fluvial detachment, routing,
   deposition, and the remaining hillslope limitation.
 - `trails.md` — leisure-circuit planning, grading, materials, and consumers.
