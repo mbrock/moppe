@@ -419,7 +419,8 @@ build, test, and change the code; read this when working on a feature.
   re-exports both, the jeep, the helicopter, the tractor and its
   trailer, and the Caddy (`MODELS_REBUILD=1` regenerates the .blend
   files; on Linux, `make models BLENDER="nix shell nixpkgs#blender -c
-  blender"`). Each paint
+  blender"`). `tools/figure/beauty.py` renders one model's studio
+  portrait in Cycles for the README (`screenshots/vehicles/`). Each paint
   carries its material's whole Principled BSDF (`model_mesh::Paint`:
   metallic, roughness, clear coat, transmission, sheen, emission), set
   in each script's `FINISH` table (the Caddy's `MATERIALS`) through

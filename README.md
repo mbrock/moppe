@@ -2,7 +2,7 @@
 
 **A small open world to walk, ride, fly, fish, and camp in, grown from its geology.**
 
-![A meadow of wildflowers and golden autumn birches in morning light](screenshots/birch-meadow.png)
+![Golden autumn birches casting long shadows across a meadow toward the morning sun](screenshots/birch-meadow.png)
 
 Moppe is two things at once. First, it is a quiet outdoor sandbox that my kids
 and I like to wander around in — a place where it is fun to have coding agents
@@ -28,8 +28,8 @@ Deck, or Windows from
 ## A walk around the world
 
 <p align="center">
-  <img src="screenshots/fingerpost.png" width="49%"
-       alt="Standing beside the 1972 Honda CT90 Trail 90 at a Swedish fingerpost and road junction">
+  <img src="screenshots/trailhead.png" width="49%"
+       alt="The hiker beside the parked Trail 90 at the trailhead, with the yellow country bus and the red tractor among autumn birches">
   <img src="screenshots/relief-map.png" width="49%"
        alt="The unfolded 5x5 km topographic relief map with 10 m contours, rivers, roads, and markers">
 </p>
@@ -44,9 +44,9 @@ on the fells.
 
 <p align="center">
   <img src="screenshots/highland-vista.png" width="49%"
-       alt="High alpine fell with early snow, boulders, bedded rock strata, and a forested valley">
+       alt="Looking down from high above autumn forest and lakes toward the snowfields of the high country">
   <img src="screenshots/sanctuary.png" width="49%"
-       alt="A stone sanctuary enclosure and footpath on a high ridge overlooking autumn forests and lakes">
+       alt="A ring of stones and its footpath on a snow-dusted summit above the autumn forest, mountains on the horizon">
 </p>
 
 Scattered around the map are machines you can walk up to and take (`F`).
@@ -58,7 +58,7 @@ GX200 long-tail engine moored down at the jetty.
 
 <p align="center">
   <img src="screenshots/hang-glider.png" width="49%"
-       alt="Flying a hang glider with the Trail 90 tethered beneath the wing">
+       alt="Flying low over a flowering meadow under the hang glider, the Trail 90 tethered beneath the wing">
   <img src="screenshots/skiff.png" width="49%"
        alt="Planing across the bay in a birch-plywood skiff with a long-tail engine off the jetty">
 </p>
@@ -66,7 +66,7 @@ GX200 long-tail engine moored down at the jetty.
   <img src="screenshots/helicopter-sling.png" width="49%"
        alt="A helicopter airlifting the army jeep on a cable sling over a stream and autumn forest">
   <img src="screenshots/farmstead.png" width="49%"
-       alt="A Falu-red farmhouse and barn beside a stream, with the Long John cargo bike parked outside">
+       alt="A Falu-red farmhouse and barn among golden birches and falling leaves">
 </p>
 
 If you boost the Trail 90 into the air off a hill, you can deploy a hang
@@ -78,17 +78,63 @@ jeep with a spare seat if a second player joins on the local network
 (`MOPPE_MULTIPLAYER=1`), and a helicopter that can hook any vehicle on a sling line
 (`F`) and carry it across the valley.
 
+### The garage
+
+Every machine is built in Blender by a Python script in
+[`tools/figure/`](tools/figure/), down to the spokes, rivets, and decals, and
+exported into the game as typed meshes. Here they are in the studio, rendered
+in Cycles by [`tools/figure/beauty.py`](tools/figure/beauty.py) — with the
+Ripa 440 snowmobile on sprung skis for the high snowfields and the fifties
+country bus in post-coach yellow that stops at the trailhead.
+
+<p align="center">
+  <img src="screenshots/vehicles/bike.png" width="32%"
+       alt="The candy-orange 1972 Honda CT90 Trail 90">
+  <img src="screenshots/vehicles/long_john.png" width="32%"
+       alt="The welded red-and-steel Long John cargo bike">
+  <img src="screenshots/vehicles/mountain_bike.png" width="32%"
+       alt="The green mountain bike with studded tyres">
+</p>
+<p align="center">
+  <img src="screenshots/vehicles/boat.png" width="32%"
+       alt="The birch-plywood skiff with its Honda GX200 long-tail engine">
+  <img src="screenshots/vehicles/jet_ski.png" width="32%"
+       alt="The white-and-teal jet ski">
+  <img src="screenshots/vehicles/glider.png" width="32%"
+       alt="The striped hang glider">
+</p>
+<p align="center">
+  <img src="screenshots/vehicles/helicopter.png" width="32%"
+       alt="The red helicopter">
+  <img src="screenshots/vehicles/jeep.png" width="32%"
+       alt="The army jeep">
+  <img src="screenshots/vehicles/caddy.png" width="32%"
+       alt="The green VW Caddy pickup with its camper top">
+</p>
+<p align="center">
+  <img src="screenshots/vehicles/tractor.png" width="32%"
+       alt="The vintage red tractor">
+  <img src="screenshots/vehicles/trailer.png" width="32%"
+       alt="The rainbow-planked trailer">
+  <img src="screenshots/vehicles/snowmobile.png" width="32%"
+       alt="The orange Ripa 440 snowmobile">
+</p>
+<p align="center">
+  <img src="screenshots/vehicles/bus.png" width="49%"
+       alt="The fifties country bus in post-coach yellow">
+</p>
+
 <p align="center">
   <img src="screenshots/barn-interior.png" width="49%"
-       alt="Looking through the open doors of a Falu-red barn at cows and a horse in their stalls">
-  <img src="screenshots/waterfall.png" width="49%"
-       alt="A waterfall curtain tumbling over a bedrock step between white birch trunks">
+       alt="Inside a Falu-red barn: cows and horses in their stalls and hens on the floorboards">
+  <img src="screenshots/mill.png" width="49%"
+       alt="A timber bridge over the outlet stream below a lake-outlet mill and its farm">
 </p>
 <p align="center">
   <img src="screenshots/river-confluence.png" width="49%"
        alt="Two streams meeting in a graded channel with gravel bars and sunlit ripples">
   <img src="screenshots/camp-night.png" width="49%"
-       alt="A burning campfire and a hammock strung between two trees under a starry night sky">
+       alt="The hiker at a campfire by the water at dusk, a hammock strung between two birches behind">
 </p>
 
 When you slow down, there are quieter things to do. You can walk through the
