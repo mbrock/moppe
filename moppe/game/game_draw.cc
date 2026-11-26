@@ -465,6 +465,7 @@ namespace moppe {
         .forward = basis.forward,
         .right_span = basis.right_span,
         .up_span = basis.up_span,
+        .far_plane = frame.camera.far_plane,
       });
     }
 
@@ -594,6 +595,7 @@ namespace moppe {
         r.apply_underwater ({
           .water_level =
             terrain::surface_elevation_value (*frame.camera_water_level) * u::m,
+          .far_plane = frame.camera.far_plane,
         });
 
       // Reconstruction consumes the scene's colour, depth, and motion;

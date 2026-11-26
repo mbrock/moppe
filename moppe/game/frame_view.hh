@@ -298,6 +298,7 @@ namespace moppe::game {
     direction_t frame_forward = unit_direction (Vec3 (0, 0, 1));
     Mat4 view {};
     Mat4 projection {};
+    meters_t far_plane = render::camera_far_m * u::m;
     degrees_t field_of_view = 70.0f * u::deg;
     aspect_ratio_t aspect = 1.0f * aspect_ratio[one];
   };

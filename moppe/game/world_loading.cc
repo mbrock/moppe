@@ -299,10 +299,22 @@ namespace moppe::game {
       auto local_path = [&] (const std::string& name) {
         if (name.empty ())
           return std::string {};
-        const std::string suffix =
+        const auto flag = [] (const char* key) {
+          const char* value = moppe::environment (key);
+          return value && *value && std::string_view (value) != "0";
+        };
+        std::string suffix =
           backend == terrain::EvolutionBackend::Cpu
             ? ""
             : std::string (".") + terrain::backend_name (backend) + "-v1";
+        if (flag ("MOPPE_NO_SCULPT"))
+          suffix += ".nosculpt";
+        else {
+          if (flag ("MOPPE_NO_GLACIAL"))
+            suffix += ".noglacial";
+          if (flag ("MOPPE_NO_CHANNELS"))
+            suffix += ".nochannels";
+        }
         return platform::cache_path (name + suffix);
       };
       const auto world_cache_file =

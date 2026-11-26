@@ -278,7 +278,15 @@ namespace moppe::game {
     // count matches the earlier fine proposal density, but positions have no
     // cell boundaries or preferred row and column for the hard-core pass to
     // inherit.
-    const meters_t proposal_spacing = spacing / std::sqrt (2.0f);
+    // Until forest planting is streamed per tile (docs/large-world.md), widen
+    // the global planting pitch on worlds larger than 10 km so memory stays
+    // bounded on 16 GiB machines while 10 km and smaller worlds stay exact.
+    const meters_t largest_side = std::max (width, depth);
+    const meters_t effective_spacing =
+      largest_side > 10000.0f * u::m
+        ? spacing * std::pow (meters_value (largest_side) / 10000.0f, 0.78f)
+        : spacing;
+    const meters_t proposal_spacing = effective_spacing / std::sqrt (2.0f);
     const std::uint64_t proposal_count = std::max<std::uint64_t> (
       1,
       static_cast<std::uint64_t> (
@@ -411,7 +419,7 @@ namespace moppe::game {
                (a.priority == b.priority && a.identity < b.identity);
       });
     const meters_t exclusion =
-      spacing * forest_exclusion_ratio.numerical_value_in (one);
+      effective_spacing * forest_exclusion_ratio.numerical_value_in (one);
     // How many whole lengths of SPAN fit, rounded up.
     const auto lengths = [] (meters_t extent, meters_t span) {
       return std::ceil ((extent / span).numerical_value_in (one));
@@ -617,7 +625,7 @@ namespace moppe::game {
     if (!input || header.magic != forest_plan_magic ||
         header.version != forest_plan_version || header.seed != seed ||
         !same_extent (header.period, expected_period) ||
-        header.site_count > 10'000'000)
+        header.site_count > 25'000'000)
       return std::nullopt;
     const std::uintmax_t expected_bytes =
       sizeof (header) + header.site_count * sizeof (ForestSiteRecord);

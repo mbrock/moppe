@@ -1,4 +1,5 @@
 #include <moppe/correct_math.hh>
+#include <moppe/environment.hh>
 #include <moppe/gfx/signal.hh>
 #include <moppe/map/surface.hh>
 
@@ -280,13 +281,20 @@ namespace moppe::map {
                        meters_t water_datum,
                        const terrain::ChannelFormation& parameters) {
     MOPPE_PROFILE_ZONE ("terrain.form_channels");
+    const auto env_enabled = [] (const char* name) {
+      const char* value = moppe::environment (name);
+      return value && *value && std::string_view (value) != "0";
+    };
+    const bool skip_all = env_enabled ("MOPPE_NO_SCULPT");
+    const bool skip_glacial = skip_all || env_enabled ("MOPPE_NO_GLACIAL");
+    const bool skip_channels = skip_all || env_enabled ("MOPPE_NO_CHANNELS");
     // First analyze pre-glacial drainage and carve Scandinavian glacial
     // U-troughs (grading the main stem smoothly from highlands to sea while
     // leaving side tributaries perched as hanging-valley waterfalls), alpine
     // cirques, and cold-based vidda shelves.
     const terrain::SurfaceElevation sea_level =
       terrain::surface_elevation_point (water_datum);
-    {
+    if (!skip_glacial) {
       const terrain::FloodField pre_flood =
         terrain::analyze_standing_water (surface, sea_level);
       const terrain::LakeCensus pre_lakes = terrain::census_lakes (pre_flood);
@@ -341,6 +349,8 @@ namespace moppe::map {
 
     // Re-analyze hydrology on the glaciated relief and carve the post-glacial
     // navigable river beds, plunge pools, and submarine estuaries.
+    if (skip_channels)
+      return {};
     const terrain::FloodField flood =
       terrain::analyze_standing_water (surface, sea_level);
     const terrain::LakeCensus lakes = terrain::census_lakes (flood);

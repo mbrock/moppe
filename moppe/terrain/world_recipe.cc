@@ -59,9 +59,28 @@ namespace moppe::terrain {
     if (maximum_hillslope_multiplier)
       m_evolution.maximum_hillslope_diffusivity_multiplier =
         *maximum_hillslope_multiplier;
-    m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
-                              mp_units::si::metre /
-                              moppe::astronomy::Julian_year;
+    const meters_t largest_span =
+      std::max (extent_value (extent)[0], extent_value (extent)[2]) * u::m;
+    const scale_factor_t span_scale =
+      quantity_cast<scale_factor> (largest_span / (10000.0f * u::m));
+    const scale_factor_t diffusivity_scale =
+      span_scale > 1.0f * scale_factor[one]
+        ? std::min (span_scale.numerical_value_in (one) *
+                      span_scale.numerical_value_in (one) * 0.85f,
+                    24.0f) *
+            scale_factor[one]
+        : 1.0f * scale_factor[one];
+    m_evolution.diffusivity =
+      0.0001f * diffusivity_scale.numerical_value_in (one) *
+      mp_units::si::metre * mp_units::si::metre / moppe::astronomy::Julian_year;
+    if (!channel_initiation_area && span_scale > 1.0f * scale_factor[one]) {
+      // Modest hillslope headwater threshold on macro worlds (> 10 km):
+      // keeps alpine ridges sharp while avoiding dense single-cell rilling.
+      const scale_factor_t extra =
+        (span_scale.numerical_value_in (one) - 1.0f) * scale_factor[one];
+      m_evolution.channel_initiation_area =
+        8000.0f * extra.numerical_value_in (one) * u::m * u::m;
+    }
     m_evolution.sea_level = surface_elevation_point (water_datum);
     m_evolution.lithology = make_lithology (seed,
                                             extent_value (extent)[0] * u::m,

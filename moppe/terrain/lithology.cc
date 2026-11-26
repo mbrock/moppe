@@ -208,6 +208,19 @@ namespace moppe::terrain {
     result.granite_erodibility = 0.38f * erodibility_factor[one];
     result.cover_scale = 2.0f * u::m;
 
+    // On worlds wider than 10 km, scale structural fold and regional fault
+    // wavelengths with the torus so fracture corridors form sweeping fjord and
+    // mountain valleys rather than repeating as a tight grid. Worlds <= 10 km
+    // keep macro_scale = 1 exactly.
+    const meters_t largest_period = std::max (result.period_x, result.period_z);
+    const scale_factor_t macro_scale =
+      (largest_period > 10000.0f * u::m
+         ? cr::pow (meters_value (largest_period) / 10000.0f, 0.82f)
+         : 1.0f) *
+      scale_factor[one];
+    const proportion_t macro_soften =
+      (largest_period > 10000.0f * u::m ? 0.55f : 1.0f) * proportion[one];
+
     // Broad, coherent regional dip and gentle dome folding so limestone caps
     // read as continuous tablelands and cuestas rather than broken noise.
     constexpr std::array<meters_t, 6> fold_wavelengths {
@@ -224,13 +237,14 @@ namespace moppe::terrain {
       const radians_t azimuth =
         fold_base_angle + static_cast<float> (k) * 1.13f * u::rad +
         uniform_between (rng, -0.25f * u::rad, 0.25f * u::rad);
-      const WaveVector wave = periodic_wave (
-        azimuth, fold_wavelengths[k], result.period_x, result.period_z);
+      const meters_t target_wave =
+        fold_wavelengths[k] * macro_scale.numerical_value_in (one);
+      const WaveVector wave =
+        periodic_wave (azimuth, target_wave, result.period_x, result.period_z);
       // Preserve regional bedding dip angle on small domains where the
       // longest periodic wave snaps to one torus lap.
       const proportion_t dip_scale = std::min (
-        whole,
-        quantity_cast<proportion> (wave.wavelength / fold_wavelengths[k]));
+        whole, quantity_cast<proportion> (wave.wavelength / target_wave));
       result.fold_waves[k] = {
         .cycles_x = wave.nx,
         .cycles_z = wave.nz,
@@ -257,22 +271,31 @@ namespace moppe::terrain {
                                               conjugate_azimuth,
                                               cross_azimuth };
     const std::array<meters_t, 3> spacings {
-      uniform_between (rng, 2500.0f * u::m, 3100.0f * u::m),
-      uniform_between (rng, 2800.0f * u::m, 3500.0f * u::m),
-      uniform_between (rng, 1500.0f * u::m, 1900.0f * u::m),
+      uniform_between (rng, 2500.0f * u::m, 3100.0f * u::m) *
+        macro_scale.numerical_value_in (one),
+      uniform_between (rng, 2800.0f * u::m, 3500.0f * u::m) *
+        macro_scale.numerical_value_in (one),
+      uniform_between (rng, 1500.0f * u::m, 1900.0f * u::m) *
+        macro_scale.numerical_value_in (one),
     };
-    const std::array<meters_t, 3> half_widths { 80.0f * u::m,
-                                                70.0f * u::m,
-                                                48.0f * u::m };
+    const std::array<meters_t, 3> half_widths {
+      80.0f * u::m * macro_scale.numerical_value_in (one),
+      70.0f * u::m * macro_scale.numerical_value_in (one),
+      48.0f * u::m * macro_scale.numerical_value_in (one),
+    };
+    const auto scaled_boost = [macro_soften] (float raw) {
+      return (1.0f + (raw - 1.0f) * macro_soften.numerical_value_in (one)) *
+             scale_factor[one];
+    };
     const std::array<scale_factor_t, 3> boosts {
-      4.30f * scale_factor[one],
-      3.80f * scale_factor[one],
-      2.40f * scale_factor[one],
+      scaled_boost (4.30f),
+      scaled_boost (3.80f),
+      scaled_boost (2.40f),
     };
     const std::array<proportion_t, 3> suppressions {
-      0.21f * proportion[one],
-      0.17f * proportion[one],
-      0.08f * proportion[one],
+      0.21f * macro_soften,
+      0.17f * macro_soften,
+      0.08f * macro_soften,
     };
     const std::array<proportion_t, 3> mod_depths {
       0.65f * proportion[one],
@@ -286,17 +309,20 @@ namespace moppe::terrain {
       const radians_t perp = azimuths[f] + half_pi_rad;
       const WaveVector wa = periodic_wave (
         perp + uniform_between (rng, -0.35f * u::rad, 0.35f * u::rad),
-        uniform_between (rng, 3400.0f * u::m, 4800.0f * u::m),
+        uniform_between (rng, 3400.0f * u::m, 4800.0f * u::m) *
+          macro_scale.numerical_value_in (one),
         result.period_x,
         result.period_z);
       const WaveVector wb = periodic_wave (
         perp + uniform_between (rng, 0.45f * u::rad, 1.05f * u::rad),
-        uniform_between (rng, 1800.0f * u::m, 2600.0f * u::m),
+        uniform_between (rng, 1800.0f * u::m, 2600.0f * u::m) *
+          macro_scale.numerical_value_in (one),
         result.period_x,
         result.period_z);
       const WaveVector mod = periodic_wave (
         perp + uniform_between (rng, -0.25f * u::rad, 0.25f * u::rad),
-        uniform_between (rng, 2400.0f * u::m, 3800.0f * u::m),
+        uniform_between (rng, 2400.0f * u::m, 3800.0f * u::m) *
+          macro_scale.numerical_value_in (one),
         result.period_x,
         result.period_z);
 

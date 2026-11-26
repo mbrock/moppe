@@ -161,7 +161,7 @@ namespace moppe::game {
         1,
         "<KM>",
         "Make the world this many kilometres across (default 10, range 2.5 to "
-        "10).",
+        "80).",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -169,7 +169,7 @@ namespace moppe::game {
           if (!parse_quantity_option (values[0],
                                       "--world-size",
                                       2.5f * u::km,
-                                      10.0f * u::km,
+                                      80.0f * u::km,
                                       across,
                                       error))
             return false;
@@ -289,6 +289,20 @@ namespace moppe::game {
         const meters_t height = extent_value (options.world.map_size)[1] * u::m;
         options.world.map_size = spatial_extent_in_metres (Vec3 (
           meters_value (across), meters_value (height), meters_value (across)));
+        if (across > 10000.0f * u::m) {
+          const scale_factor_t ratio =
+            quantity_cast<scale_factor> ((10000.0f * u::m) / across);
+          options.world.fog_scale =
+            0.0004f * std::pow (ratio.numerical_value_in (one), 0.81f) / u::m;
+        }
+      }
+      if (const char* fog = moppe::environment ("MOPPE_FOG_SCALE");
+          fog && *fog) {
+        char* end = nullptr;
+        const attenuation_t parsed = std::strtof (fog, &end) / u::m;
+        if (end != fog && *end == '\0' &&
+            std::isfinite (attenuation_value (parsed)) && parsed >= 0.0f / u::m)
+          options.world.fog_scale = parsed;
       }
       if (options.terrain_resolution)
         options.world.resolution = *options.terrain_resolution;

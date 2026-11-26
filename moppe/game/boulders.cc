@@ -343,11 +343,16 @@ namespace moppe::game {
     const std::vector<std::uint8_t> running =
       running_water_reach (surface, water);
 
-    const auto cells = [] (meters_t extent) {
+    const meters_t largest_side = std::max (width, depth);
+    const meters_t effective_boulder_spacing =
+      largest_side > 10000.0f * u::m
+        ? boulder_cell_spacing * (meters_value (largest_side) / 10000.0f)
+        : boulder_cell_spacing;
+    const auto cells = [effective_boulder_spacing] (meters_t extent) {
       return std::max<std::uint32_t> (
         1,
         static_cast<std::uint32_t> (std::round (
-          (extent / boulder_cell_spacing).numerical_value_in (one))));
+          (extent / effective_boulder_spacing).numerical_value_in (one))));
     };
     const std::uint32_t cells_x = cells (width);
     const std::uint32_t cells_z = cells (depth);

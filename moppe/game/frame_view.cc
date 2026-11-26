@@ -281,11 +281,21 @@ namespace moppe::game {
     result.camera.frame_forward = unit_direction (
       Vec3 (-view.element (2), -view.element (6), -view.element (10)));
 
+    const float fog = attenuation_value (input.world.fog_scale);
+    result.terrain_distance =
+      (fog > 0.0f ? 3.0f / fog : std::numeric_limits<float>::infinity ()) *
+      u::m;
+    const meters_t default_far = render::camera_far_m * u::m;
+    result.camera.far_plane =
+      std::isfinite (meters_value (result.terrain_distance)) &&
+          result.terrain_distance > default_far
+        ? std::min (45000.0f * u::m, result.terrain_distance * 1.25f)
+        : default_far;
     result.camera.projection =
       Mat4::perspective_reversed (result.camera.field_of_view,
                                   result.camera.aspect.numerical_value_in (one),
                                   render::camera_near_m,
-                                  render::camera_far_m);
+                                  meters_value (result.camera.far_plane));
 
     const Weather& weather = logic.m_weather;
     // Lightning lights the cloud and the haze, and everything under it.
@@ -458,10 +468,6 @@ namespace moppe::game {
         proportion[one];
     }
 
-    const float fog = attenuation_value (input.world.fog_scale);
-    result.terrain_distance =
-      (fog > 0.0f ? 3.0f / fog : std::numeric_limits<float>::infinity ()) *
-      u::m;
     result.visibility = visibility_for (input, result);
     return result;
   }

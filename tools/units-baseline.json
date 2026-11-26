@@ -18,20 +18,20 @@
       "escapes": 102
     },
     "Developer tools & site": {
-      "share": 62.9,
+      "share": 64.6,
       "files": 53,
-      "typed": 452,
-      "raw_float": 229,
+      "typed": 489,
+      "raw_float": 230,
       "raw_vector": 38,
-      "escapes": 181
+      "escapes": 208
     },
     "Forest & flora": {
-      "share": 88.4,
+      "share": 88.5,
       "files": 11,
-      "typed": 517,
+      "typed": 521,
       "raw_float": 35,
       "raw_vector": 33,
-      "escapes": 191
+      "escapes": 193
     },
     "Foundations (math & units)": {
       "share": 60.4,
@@ -44,10 +44,10 @@
     "Game logic": {
       "share": 83.3,
       "files": 49,
-      "typed": 2054,
+      "typed": 2056,
       "raw_float": 220,
       "raw_vector": 192,
-      "escapes": 1061
+      "escapes": 1063
     },
     "HUD & map": {
       "share": 81.7,
@@ -76,10 +76,10 @@
     "Renderer & render glue": {
       "share": 76.9,
       "files": 64,
-      "typed": 1479,
+      "typed": 1481,
       "raw_float": 291,
       "raw_vector": 154,
-      "escapes": 844
+      "escapes": 846
     },
     "Rivers, water & sediment": {
       "share": 98.4,
@@ -98,12 +98,12 @@
       "escapes": 122
     },
     "Terrain & world generation": {
-      "share": 89.7,
+      "share": 89.9,
       "files": 46,
-      "typed": 1643,
-      "raw_float": 140,
+      "typed": 1683,
+      "raw_float": 142,
       "raw_vector": 48,
-      "escapes": 397
+      "escapes": 456
     },
     "Tests": {
       "share": 43.4,
@@ -111,7 +111,7 @@
       "typed": 781,
       "raw_float": 815,
       "raw_vector": 204,
-      "escapes": 1475
+      "escapes": 1476
     },
     "Vehicles & on-foot body": {
       "share": 78.2,
