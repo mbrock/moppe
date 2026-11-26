@@ -2,7 +2,7 @@
 
 **A small open world to walk, ride, fly, fish, and camp in, grown from its geology.**
 
-![Golden autumn birches casting long shadows across a meadow toward the morning sun](screenshots/birch-meadow.png)
+![Looking out from high over a lake in the autumn forest toward the snowfields of the high country](screenshots/lake-vista.png)
 
 Moppe is two things at once. First, it is a quiet outdoor sandbox that my kids
 and I like to wander around in — a place where it is fun to have coding agents
@@ -29,13 +29,13 @@ Deck, or Windows from
 
 <p align="center">
   <img src="screenshots/trailhead.png" width="49%"
-       alt="The hiker beside the parked Trail 90 at the trailhead, with the yellow country bus and the red tractor among autumn birches">
+       alt="The hiker beside the parked Trail 90 at the trailhead, the red tractor and its trailer under the autumn trees and the mountains beyond">
   <img src="screenshots/relief-map.png" width="49%"
-       alt="The unfolded 5x5 km topographic relief map with 10 m contours, rivers, roads, and markers">
+       alt="The unfolded 10x10 km topographic relief map with 10 m contours, lakes, rivers, roads, and markers">
 </p>
 
 You start on an autumn morning at 60°N, standing beside a parked **1972 Honda
-CT90 Trail 90**. Pressing `M` unfolds a paper relief map of the five-kilometre
+CT90 Trail 90**. Pressing `M` unfolds a paper relief map of the ten-kilometre
 world: shaded hills, ten-metre brown contours, rivers and lakes, and a small
 network of cart roads and footpaths linking named Swedish places. At the road
 junctions stand yellow and brown *vägvisare* fingerposts pointing the way to
@@ -44,9 +44,9 @@ on the fells.
 
 <p align="center">
   <img src="screenshots/highland-vista.png" width="49%"
-       alt="Looking down from high above autumn forest and lakes toward the snowfields of the high country">
+       alt="A glaciated range above the autumn forest, turquoise meltwater pooled in its snowfields">
   <img src="screenshots/sanctuary.png" width="49%"
-       alt="A ring of stones and its footpath on a snow-dusted summit above the autumn forest, mountains on the horizon">
+       alt="A footpath climbing to the ring of stones on the highest summit, 436 m above the sea, over lakes and autumn forest">
 </p>
 
 Scattered around the map are machines you can walk up to and take (`F`).
@@ -58,15 +58,15 @@ GX200 long-tail engine moored down at the jetty.
 
 <p align="center">
   <img src="screenshots/hang-glider.png" width="49%"
-       alt="Flying low over a flowering meadow under the hang glider, the Trail 90 tethered beneath the wing">
+       alt="Gliding low through a sunlit autumn wood, the Trail 90 tethered beneath the wing">
   <img src="screenshots/skiff.png" width="49%"
-       alt="Planing across the bay in a birch-plywood skiff with a long-tail engine off the jetty">
+       alt="Running the birch-plywood skiff with its long-tail engine along a wooded shore">
 </p>
 <p align="center">
   <img src="screenshots/helicopter-sling.png" width="49%"
-       alt="A helicopter airlifting the army jeep on a cable sling over a stream and autumn forest">
+       alt="The red helicopter carrying the army jeep on a cable sling across a lake">
   <img src="screenshots/farmstead.png" width="49%"
-       alt="A Falu-red farmhouse and barn among golden birches and falling leaves">
+       alt="A Falu-red farmhouse and barn on a hillside farm below the mountains">
 </p>
 
 If you boost the Trail 90 into the air off a hill, you can deploy a hang
@@ -77,6 +77,17 @@ rainbow-planked trailer, a VW Caddy pickup by the sea, a white-and-teal jet ski 
 jeep with a spare seat if a second player joins on the local network
 (`MOPPE_MULTIPLAYER=1`), and a helicopter that can hook any vehicle on a sling line
 (`F`) and carry it across the valley.
+
+<p align="center">
+  <img src="screenshots/caddy-heath.png" width="49%"
+       alt="The green VW Caddy pickup bounding through flowering heather toward a snowy summit">
+  <img src="screenshots/snowmobile.png" width="49%"
+       alt="The orange Ripa 440 snowmobile racing across the snowfield below the peaks">
+</p>
+<p align="center">
+  <img src="screenshots/jet-ski.png" width="49%"
+       alt="Riding the white-and-teal jet ski across a lake into the afternoon sun">
+</p>
 
 ### The garage
 
@@ -127,14 +138,14 @@ country bus in post-coach yellow that stops at the trailhead.
 <p align="center">
   <img src="screenshots/barn-interior.png" width="49%"
        alt="Inside a Falu-red barn: cows and horses in their stalls and hens on the floorboards">
-  <img src="screenshots/mill.png" width="49%"
-       alt="A timber bridge over the outlet stream below a lake-outlet mill and its farm">
+  <img src="screenshots/waterfall.png" width="49%"
+       alt="A twelve-metre waterfall dropping in two curtains over a bedrock step into a foaming plunge pool">
 </p>
 <p align="center">
-  <img src="screenshots/river-confluence.png" width="49%"
-       alt="Two streams meeting in a graded channel with gravel bars and sunlit ripples">
+  <img src="screenshots/snowmobile-tracks.png" width="49%"
+       alt="The Ripa snowmobile cutting twin tracks across a high snowfield">
   <img src="screenshots/camp-night.png" width="49%"
-       alt="The hiker at a campfire by the water at dusk, a hammock strung between two birches behind">
+       alt="The hiker at a campfire in the woods at dusk, a hammock strung between two trees">
 </p>
 
 When you slow down, there are quieter things to do. You can walk through the

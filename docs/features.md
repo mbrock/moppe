@@ -356,7 +356,8 @@ build, test, and change the code; read this when working on a feature.
   MOPPE_SCREENSHOT_FRAMES=12 ./build/moppe --windowed --window-size
   1280x720 --render-scale 1 --screenshot /tmp/close.png`. The log's
   `moppe: ... at` lines say where
-  things stand to aim at.
+  things stand to aim at, and `moppe: waterfalls:` lists the eight
+  tallest falls by their lips and feet.
 - Hang glider: boost the bike into the air and press `E` once the deploy
   prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
   the Trail 90 stays tethered beneath the wing. Press `E` again to drop it

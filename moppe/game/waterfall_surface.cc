@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
+#include <iostream>
+#include <ranges>
+#include <vector>
 
 namespace moppe::game {
   namespace {
@@ -169,6 +173,22 @@ namespace moppe::game {
                                   const terrain::RiverNetwork& rivers) {
     const render::DrawList draw = build_waterfall_curtains (surface, rivers);
     m_mesh = draw.empty () ? nullptr : renderer.create_mesh (draw);
+    // Where the tallest falls are, to aim a shot at (docs/features.md).
+    std::vector<const terrain::Waterfall*> tallest;
+    for (const terrain::Waterfall& waterfall : rivers.waterfalls)
+      tallest.push_back (&waterfall);
+    std::ranges::sort (tallest, std::greater {}, &terrain::Waterfall::drop);
+    std::cerr << "moppe: waterfalls: " << tallest.size () << std::endl;
+    for (const terrain::Waterfall* waterfall : tallest | std::views::take (8)) {
+      const position_t lip = cell_position (waterfall->lip_cell, surface);
+      const position_t foot = cell_position (waterfall->foot_cell, surface);
+      std::cerr << "moppe: waterfalls: " << meters_value (waterfall->drop)
+                << " m at " << position_value (lip)[0] << " "
+                << position_value (lip)[1] << " " << position_value (lip)[2]
+                << ", its foot at " << position_value (foot)[0] << " "
+                << position_value (foot)[1] << " " << position_value (foot)[2]
+                << std::endl;
+    }
     m_period = plan_extent (surface.domain ().period_x (),
                             surface.domain ().period_z ());
   }
