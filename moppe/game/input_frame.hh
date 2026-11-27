@@ -17,6 +17,7 @@ namespace moppe::game {
     bool use = false;
     bool use_held = false;
     bool toggle_mount = false;
+    bool toggle_pogo = false;
     bool cycle_camera = false;
     bool leave_cinematic = false;
     // Making camp, on foot (game/camp.hh): hang the hammock between the

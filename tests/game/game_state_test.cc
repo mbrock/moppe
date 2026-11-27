@@ -806,18 +806,18 @@ MOPPE_TEST (the_helicopter_is_boarded_flown_and_left_only_near_the_ground) {
   MOPPE_CHECK (logic.m_doing ==
                game::Doing::driving (game::Machine::helicopter));
 
-  // Spooled up, Space climbs it away; up there, F does nothing.
+  // Spooled up, Space climbs it away; up there, F jumps out into freefall,
+  // ready to open the parachute.
   run ({}, 4.0f);
   run ({ .boost = 1.0f * proportion[one] }, 3.0f);
   MOPPE_CHECK (session.helicopter ().altitude ().numerical_value_in (u::m) >
                10.0f);
-  run ({ .toggle_mount = true }, 0.1f);
-  MOPPE_CHECK (logic.m_doing ==
-               game::Doing::driving (game::Machine::helicopter));
+  MOPPE_CHECK (!session.can_step_out_of_helicopter ());
 
-  // Shift brings it down, and on the ground F steps out.
+  // Shift brings it down, and on the ground F steps out cleanly.
   run ({ .run = true }, 25.0f);
   MOPPE_CHECK (session.helicopter ().grounded ());
+  MOPPE_CHECK (session.can_step_out_of_helicopter ());
   run ({ .toggle_mount = true }, 0.1f);
   MOPPE_CHECK (logic.m_doing == game::Doing::on_foot ());
   MOPPE_CHECK (position_value (session.walker ().position ())[1] < 12.0f);

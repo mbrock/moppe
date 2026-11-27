@@ -18,23 +18,26 @@ namespace moppe::game {
   namespace {
     // "MOPC", then the version of everything after it.
     constexpr std::uint32_t wire_magic = 0x43504f4dU;
-    constexpr std::uint8_t wire_version = 20;
+    constexpr std::uint8_t wire_version = 21;
 
-    constexpr std::uint16_t has_glider = 1u << 0;
-    constexpr std::uint16_t has_walker = 1u << 1;
-    constexpr std::uint16_t is_hung = 1u << 2;
-    constexpr std::uint16_t has_hearth = 1u << 3;
-    constexpr std::uint16_t glider_carries_bike = 1u << 4;
-    constexpr std::uint16_t walker_grounded = 1u << 5;
-    constexpr std::uint16_t has_pan = 1u << 6;
-    constexpr std::uint16_t walker_swimming = 1u << 7;
-    constexpr std::uint16_t walker_has_rope = 1u << 8;
-    constexpr std::uint16_t walker_has_rod = 1u << 9;
-    constexpr std::uint16_t has_helm_rod = 1u << 10;
-    constexpr std::uint16_t has_sling = 1u << 11;
-    constexpr std::uint16_t sling_is_taut = 1u << 12;
-    constexpr std::uint16_t pan_has_fish_flag = 1u << 13;
-    constexpr std::uint16_t has_ride_target = 1u << 14;
+    constexpr std::uint32_t has_glider = 1u << 0;
+    constexpr std::uint32_t has_walker = 1u << 1;
+    constexpr std::uint32_t is_hung = 1u << 2;
+    constexpr std::uint32_t has_hearth = 1u << 3;
+    constexpr std::uint32_t glider_carries_bike = 1u << 4;
+    constexpr std::uint32_t walker_grounded = 1u << 5;
+    constexpr std::uint32_t has_pan = 1u << 6;
+    constexpr std::uint32_t walker_swimming = 1u << 7;
+    constexpr std::uint32_t walker_has_rope = 1u << 8;
+    constexpr std::uint32_t walker_has_rod = 1u << 9;
+    constexpr std::uint32_t has_helm_rod = 1u << 10;
+    constexpr std::uint32_t has_sling = 1u << 11;
+    constexpr std::uint32_t sling_is_taut = 1u << 12;
+    constexpr std::uint32_t pan_has_fish_flag = 1u << 13;
+    constexpr std::uint32_t has_ride_target = 1u << 14;
+    constexpr std::uint32_t has_pogo = 1u << 15;
+    constexpr std::uint32_t has_parachute = 1u << 16;
+    constexpr std::uint32_t parachute_flaring = 1u << 17;
 
     // What the player is doing, one byte on the wire.
     constexpr Doing doing_bytes[] = {
@@ -61,6 +64,8 @@ namespace moppe::game {
       Doing::riding_along (Machine::jet_ski),
       Doing::driving (Machine::snowmobile),
       Doing::riding_along (Machine::snowmobile),
+      Doing::pogoing (),
+      Doing::parachuting (),
     };
 
     std::uint8_t doing_byte (Doing doing) {
@@ -755,6 +760,12 @@ namespace moppe::game {
     if (snapshot.glider)
       snapshot.glider->position =
         terrain::nearest_image (snapshot.glider->position, near, period);
+    if (snapshot.pogo)
+      snapshot.pogo->position =
+        terrain::nearest_image (snapshot.pogo->position, near, period);
+    if (snapshot.parachute)
+      snapshot.parachute->position =
+        terrain::nearest_image (snapshot.parachute->position, near, period);
     if (snapshot.walker) {
       snapshot.walker->position =
         terrain::nearest_image (snapshot.walker->position, near, period);
@@ -799,11 +810,17 @@ namespace moppe::game {
     out.put (snapshot.bus_seat);
 
     const std::uint16_t mask = snapshot.fleet_mask & all_machines_mask;
-    std::uint16_t flags = 0;
+    std::uint32_t flags = 0;
     if (snapshot.glider)
       flags |= has_glider;
     if (snapshot.glider && snapshot.glider->bike_attached)
       flags |= glider_carries_bike;
+    if (snapshot.pogo)
+      flags |= has_pogo;
+    if (snapshot.parachute)
+      flags |= has_parachute;
+    if (snapshot.parachute && snapshot.parachute->flare)
+      flags |= parachute_flaring;
     if (snapshot.walker)
       flags |= has_walker;
     if (snapshot.walker && snapshot.walker->grounded)
@@ -850,6 +867,23 @@ namespace moppe::game {
       out.put (snapshot.glider->position);
       out.put (snapshot.glider->heading);
       out.put (snapshot.glider->bank);
+    }
+    if (snapshot.pogo) {
+      out.put (snapshot.pogo->position);
+      out.put (snapshot.pogo->heading);
+      out.put (snapshot.pogo->compression);
+      out.put (snapshot.pogo->charge);
+      out.put (snapshot.pogo->pitch);
+      out.put (snapshot.pogo->roll);
+      out.put (snapshot.pogo->look_pitch);
+    }
+    if (snapshot.parachute) {
+      out.put (snapshot.parachute->position);
+      out.put (snapshot.parachute->heading);
+      out.put (snapshot.parachute->opening);
+      out.put (snapshot.parachute->sway_roll);
+      out.put (snapshot.parachute->sway_pitch);
+      out.put (snapshot.parachute->turn);
     }
     if (snapshot.walker) {
       const WalkerPose& walker = *snapshot.walker;
@@ -935,7 +969,7 @@ namespace moppe::game {
     snapshot.bus_seat = in.get<std::uint8_t> ();
     if (snapshot.bus_seat >= bus_passenger_seats)
       return std::nullopt;
-    const std::uint16_t flags = in.get<std::uint16_t> ();
+    const std::uint32_t flags = in.get<std::uint32_t> ();
     snapshot.fleet_mask = in.get<std::uint16_t> ();
     if (snapshot.fleet_mask & ~all_machines_mask)
       return std::nullopt;
@@ -966,6 +1000,29 @@ namespace moppe::game {
       glider.bank = in.number () * u::rad;
       glider.bike_attached = (flags & glider_carries_bike) != 0;
       snapshot.glider = glider;
+    }
+    if (flags & has_pogo) {
+      PogoPose pogo;
+      pogo.position = in.place ();
+      pogo.heading = in.way (Vec3 (0, 0, 1));
+      pogo.compression =
+        std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
+      pogo.charge = std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
+      pogo.pitch = in.number () * u::rad;
+      pogo.roll = in.number () * u::rad;
+      pogo.look_pitch = in.number () * inclination[u::rad];
+      snapshot.pogo = pogo;
+    }
+    if (flags & has_parachute) {
+      ParachutePose chute;
+      chute.position = in.place ();
+      chute.heading = in.way (Vec3 (0, 0, 1));
+      chute.opening = std::clamp (in.number (), 0.0f, 1.0f) * proportion[one];
+      chute.sway_roll = in.number () * u::rad;
+      chute.sway_pitch = in.number () * u::rad;
+      chute.turn = std::clamp (in.number (), -1.0f, 1.0f) * control_signal[one];
+      chute.flare = (flags & parachute_flaring) != 0;
+      snapshot.parachute = chute;
     }
     if (flags & has_walker) {
       WalkerPose walker;
@@ -1100,6 +1157,39 @@ namespace moppe::game {
                 after && after->glider ? &after->glider->position : nullptr);
       glider.heading = mix_direction (a.glider->heading, b.glider->heading, t);
       glider.bank = mix (a.glider->bank, b.glider->bank, within);
+    }
+    if (a.pogo && b.pogo && !leapt (a.pogo->position, b.pogo->position)) {
+      PogoPose& pogo = *result.pogo;
+      pogo.position =
+        travel (w,
+                before && before->pogo ? &before->pogo->position : nullptr,
+                a.pogo->position,
+                b.pogo->position,
+                after && after->pogo ? &after->pogo->position : nullptr);
+      pogo.heading = mix_direction (a.pogo->heading, b.pogo->heading, t);
+      pogo.compression = mix (a.pogo->compression, b.pogo->compression, within);
+      pogo.charge = mix (a.pogo->charge, b.pogo->charge, within);
+      pogo.pitch = mix (a.pogo->pitch, b.pogo->pitch, within);
+      pogo.roll = mix (a.pogo->roll, b.pogo->roll, within);
+      pogo.look_pitch = mix (a.pogo->look_pitch, b.pogo->look_pitch, within);
+    }
+    if (a.parachute && b.parachute &&
+        !leapt (a.parachute->position, b.parachute->position)) {
+      ParachutePose& chute = *result.parachute;
+      chute.position = travel (
+        w,
+        before && before->parachute ? &before->parachute->position : nullptr,
+        a.parachute->position,
+        b.parachute->position,
+        after && after->parachute ? &after->parachute->position : nullptr);
+      chute.heading =
+        mix_direction (a.parachute->heading, b.parachute->heading, t);
+      chute.opening = mix (a.parachute->opening, b.parachute->opening, within);
+      chute.sway_roll =
+        mix (a.parachute->sway_roll, b.parachute->sway_roll, within);
+      chute.sway_pitch =
+        mix (a.parachute->sway_pitch, b.parachute->sway_pitch, within);
+      chute.turn = mix (a.parachute->turn, b.parachute->turn, within);
     }
     if (a.walker && b.walker &&
         !leapt (a.walker->position, b.walker->position)) {
@@ -1245,6 +1335,9 @@ namespace moppe::game {
       spots[machine_count + 0] = &each.fleet.tractor.trailer_position;
       spots[machine_count + 1] = each.walker ? &each.walker->position : nullptr;
       spots[machine_count + 2] = each.glider ? &each.glider->position : nullptr;
+      spots[machine_count + 3] = each.pogo ? &each.pogo->position : nullptr;
+      spots[machine_count + 4] =
+        each.parachute ? &each.parachute->position : nullptr;
       return spots;
     };
     if (m_fresh > 0 && m_fresh < m_snapshots.size ()) {

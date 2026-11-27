@@ -45,6 +45,7 @@ namespace moppe {
       Screenshot,
       Record,
       E,
+      B,
       G,
       H,
       J,

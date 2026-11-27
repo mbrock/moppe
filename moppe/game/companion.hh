@@ -106,6 +106,8 @@ namespace moppe::game {
     std::uint8_t bus = 0;
     std::uint8_t bus_seat = 0;
     std::optional<GliderPose> glider;
+    std::optional<PogoPose> pogo;
+    std::optional<ParachutePose> parachute;
     std::optional<WalkerPose> walker;
 
     // Their camp: the hammock and how much of the sleeper's weight is in
@@ -235,7 +237,7 @@ namespace moppe::game {
     void clear ();
 
   private:
-    static constexpr std::size_t slip_count = machine_count + 3;
+    static constexpr std::size_t slip_count = machine_count + 5;
 
     // How they looked at `at` on their clock, going by the first
     // `count` snapshots held.

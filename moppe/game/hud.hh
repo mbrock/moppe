@@ -126,6 +126,7 @@ namespace moppe {
       bool can_take_down = false;
       bool can_light_fire = false;
       bool can_douse_fire = false;
+      bool can_mount_pogo = false;
       // What was last eaten, said for a moment afterwards.
       const char* meal = nullptr;
       seconds_t meal_age = 100.0f * u::s;

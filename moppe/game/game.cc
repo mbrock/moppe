@@ -356,7 +356,8 @@ namespace moppe {
       // again closes it. Releases still count, so nothing stays held.
       const Doing::Way way = logic ().m_doing.way;
       if (k == Key::Cheat && down &&
-          (way == Doing::Way::foot || way == Doing::Way::driving)) {
+          (way == Doing::Way::foot || way == Doing::Way::driving ||
+           way == Doing::Way::pogo)) {
         m_heads_up.cheat_open = !m_heads_up.cheat_open;
         if (const std::optional<Machine> driven =
               driven_machine (logic ().m_doing))

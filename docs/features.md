@@ -370,6 +370,21 @@ build, test, and change the code; read this when working on a feature.
   Under it the rigid bike stays a live Box3D assemblage that the wing's
   pull flies (`Vehicle::hang`), so it lands on its wheels with the glide's
   speed and meets trunks on the way; a pilot alone lands running.
+- Pogo stick (`moppe/mov/pogo.*`, `moppe/game/pogo_render.*`): carried
+  equipment, always on you. On foot (outside water and camp), press `B` to
+  hop onto it, and `B` or `F` to put it away (`Doing::pogoing ()`).
+  Touching down compresses its exposed 3D coil spring before launching back
+  into the air; moving with `W`/`A`/`S`/`D` bounds faster than running, and
+  holding `Space` pumps consecutive bounces into comically high super-boings
+  (with spring rebound from big drops and a parachute deploy with `E` at
+  height).
+- Parachute (`moppe/mov/parachute.*`, `moppe/game/parachute_render.*`):
+  carried equipment, always on you. Jump off a cliff, launch high on the
+  pogo stick, or jump out mid-air with `F` from any vehicle or the
+  helicopter, then press `E` (or `Space` while falling on foot) to bloom
+  the 12-gore coral-and-cream dome canopy (`Doing::parachuting ()`).
+  `A`/`D` steer with pendulum sway, `W`/`S` adjust forward glide, `Space`
+  flares for a soft landing, and `F` or `E` cuts away into freefall again.
 - Command line: `--fullscreen` (the default, except for captures and the
   browser), `--windowed`, `--graphics-quality low|balanced|high`,
   `--render-scale <0.25..1>` (the 3D scene as a fraction of the drawable;

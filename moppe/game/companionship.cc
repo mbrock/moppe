@@ -11,6 +11,8 @@
 #include <moppe/game/glider_render.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame.hh>
+#include <moppe/game/parachute_render.hh>
+#include <moppe/game/pogo_render.hh>
 #include <moppe/game/sling.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker_render.hh>
@@ -186,6 +188,10 @@ namespace moppe::game {
         rod_pose (state.m_fishing.line, state.m_total_time, sim_time);
     if (state.m_doing == Doing::gliding ())
       mine.glider = glider_pose (session.glider ());
+    if (state.m_doing == Doing::pogoing ())
+      mine.pogo = pogo_pose (session.pogo (), state.m_look_pitch);
+    if (state.m_doing == Doing::parachuting ())
+      mine.parachute = parachute_pose (session.parachute ());
     if (state.m_doing == Doing::on_foot ()) {
       mine.walker = walker_pose (session.walker (), state.m_look_pitch);
       if (session.hauling ())
@@ -631,6 +637,23 @@ namespace moppe::game {
         const std::uint64_t glider_base =
           0x4000ULL + static_cast<std::uint64_t> (peer.slot - 1) * 0x100ULL;
         render_glider (r, dl, *theirs.glider, time, glider_base, peer.outfit);
+      }
+      if (theirs.pogo) {
+        blob.draw (dl,
+                   surface,
+                   theirs.pogo->position + quantity_cast<isq::position_vector> (
+                                             displacement (Vec3 (0, 0.5f, 0))),
+                   0.85f * u::m);
+        render_pogo (dl, *theirs.pogo, time, peer.outfit, true);
+      }
+      if (theirs.parachute) {
+        blob.draw (dl,
+                   surface,
+                   theirs.parachute->position +
+                     quantity_cast<isq::position_vector> (
+                       displacement (Vec3 (0, 1.5f, 0))),
+                   2.8f * u::m);
+        render_parachute (dl, *theirs.parachute, time, peer.outfit, true);
       }
     }
   }

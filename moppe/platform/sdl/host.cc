@@ -98,6 +98,8 @@ namespace {
       return Key::Screenshot;
     case SDLK_V:
       return Key::Record;
+    case SDLK_B:
+      return Key::B;
     case SDLK_G:
       return Key::G;
     case SDLK_H:

@@ -153,6 +153,20 @@ namespace moppe::game {
       return m_glider;
     }
 
+    mov::Pogo& pogo () noexcept {
+      return m_pogo;
+    }
+    const mov::Pogo& pogo () const noexcept {
+      return m_pogo;
+    }
+
+    mov::Parachute& parachute () noexcept {
+      return m_parachute;
+    }
+    const mov::Parachute& parachute () const noexcept {
+      return m_parachute;
+    }
+
     Walker& walker () noexcept {
       return m_walker;
     }
@@ -201,6 +215,8 @@ namespace moppe::game {
     kilometres_per_hour_t subject_speed_kmh () const;
     bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
+    bool can_deploy_parachute (const map::SurfaceGeometry& terrain) const;
+    bool can_mount_pogo () const;
     // What the mount key would take, on foot: of the machines, the
     // nearest within its reach (MachineKind::reach).
     std::optional<Machine> mount_within_reach () const;
@@ -266,6 +282,8 @@ namespace moppe::game {
     GameLogicState m_logic;
     Fleet m_fleet;
     mov::Glider m_glider;
+    mov::Pogo m_pogo;
+    mov::Parachute m_parachute;
     position_t m_boat_landing = position (Vec3 ());
     Walker m_walker;
     ChaseCamera m_camera;
@@ -283,6 +301,11 @@ namespace moppe::game {
   void deploy_glider (GameSession& session,
                       const map::SurfaceGeometry& terrain);
   void drop_bike (GameSession& session);
+  void mount_pogo (GameSession& session);
+  void dismount_pogo (GameSession& session);
+  void deploy_parachute (GameSession& session,
+                         const map::SurfaceGeometry& terrain);
+  void cut_parachute (GameSession& session);
   void take_rope (GameSession& session, Machine machine);
   void let_go_rope (GameSession& session);
   void get_in (GameSession& session, Machine machine);

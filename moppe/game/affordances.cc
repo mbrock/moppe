@@ -143,9 +143,22 @@ namespace moppe::game {
                             .button = Button::mount,
                             .prompted = false });
         }
+        // The parachute: open from freefall or a high pogo bounce, or cut
+        // away while under canopy to freefall again.
+        if (session.can_deploy_parachute (terrain))
+          list.push_back (
+            { .verb = Verb::deploy_parachute, .button = Button::use });
+        if (doing == Doing::parachuting ()) {
+          list.push_back ({ .verb = Verb::cut_parachute,
+                            .button = Button::mount,
+                            .prompted = false });
+          list.push_back ({ .verb = Verb::cut_parachute,
+                            .button = Button::use,
+                            .prompted = false });
+        }
         if (doing == Doing::driving (Machine::helicopter)) {
           // The mount key lets a load go first, else hooks one on, and
-          // only then lets the pilot out, down near the ground.
+          // otherwise lets the pilot step or jump out (even mid-air!).
           if (logic.m_sling.hooked)
             list.push_back ({ .verb = Verb::let_load_go,
                               .button = Button::mount,
@@ -163,9 +176,6 @@ namespace moppe::game {
         if (session.can_deploy_glider (terrain)) {
           list.push_back (
             { .verb = Verb::deploy_glider, .button = Button::use });
-          list.push_back ({ .verb = Verb::deploy_glider,
-                            .button = Button::mount,
-                            .prompted = false });
         }
         if (around && around->bus && around->places) {
           if (doing == Doing::on_foot ()) {
@@ -199,13 +209,24 @@ namespace moppe::game {
                               .button = Button::mount,
                               .machine = *reach });
         }
-        if (const std::optional<Machine> driven = driven_machine (doing);
-            driven && (*driven != Machine::helicopter ||
-                       session.can_step_out_of_helicopter ()))
+        if (const std::optional<Machine> driven = driven_machine (doing))
           list.push_back ({ .verb = Verb::step_out,
                             .button = Button::mount,
                             .prompted = false,
                             .machine = *driven });
+        // The pogo stick: always carried on foot; B gets on, B or F steps off.
+        if (doing == Doing::pogoing ()) {
+          list.push_back ({ .verb = Verb::dismount_pogo,
+                            .button = Button::pogo,
+                            .prompted = false });
+          list.push_back ({ .verb = Verb::dismount_pogo,
+                            .button = Button::mount,
+                            .prompted = false });
+        } else if (session.can_mount_pogo ()) {
+          list.push_back ({ .verb = Verb::mount_pogo,
+                            .button = Button::pogo,
+                            .prompted = false });
+        }
         if (session.stuck ())
           list.push_back ({ .verb = Verb::stuck });
       }
@@ -288,6 +309,18 @@ namespace moppe::game {
     case Verb::cast:
       cast (session, *around);
       return;
+    case Verb::mount_pogo:
+      mount_pogo (session);
+      return;
+    case Verb::dismount_pogo:
+      dismount_pogo (session);
+      return;
+    case Verb::deploy_parachute:
+      deploy_parachute (session, terrain);
+      return;
+    case Verb::cut_parachute:
+      cut_parachute (session);
+      return;
     case Verb::drop_bike:
       drop_bike (session);
       return;
@@ -349,6 +382,7 @@ namespace moppe::game {
       { Button::mount, &input.toggle_mount },
       { Button::hammock, &input.hang_hammock },
       { Button::fire, &input.light_fire },
+      { Button::pogo, &input.toggle_pogo },
     };
     bool any = false;
     for (const auto& [button, pressed] : presses)

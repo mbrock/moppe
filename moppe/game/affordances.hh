@@ -21,7 +21,7 @@ namespace moppe::game {
   struct Surroundings;
 
   // The game's few buttons, whatever the host calls them.
-  enum class Button : std::uint8_t { use, mount, hammock, fire };
+  enum class Button : std::uint8_t { use, mount, hammock, fire, pogo };
 
   // Something the player could do just now, and to what.
   struct Affordance {
@@ -40,6 +40,11 @@ namespace moppe::game {
       light_fire,
       douse_fire,
       cast,
+      // Carried equipment: the pogo stick and the parachute.
+      mount_pogo,
+      dismount_pogo,
+      deploy_parachute,
+      cut_parachute,
       // The machines.
       drop_bike,
       deploy_glider,

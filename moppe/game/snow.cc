@@ -22,6 +22,7 @@ namespace moppe::game {
       }
       const auto driven = driven_machine (mode);
       const bool foot = mode == Doing::on_foot ();
+      const bool pogo = mode == Doing::pogoing ();
       const auto distance =
         trail.last ? length (plan (at) - plan (*trail.last)) : meters_t {};
       if (!trail.last || trail.mode != mode || distance > 4.0f * u::m) {
@@ -30,7 +31,7 @@ namespace moppe::game {
         trail.heading = heading;
         return meters_t {};
       }
-      if (distance < (foot ? 0.65f : 0.06f) * u::m)
+      if (distance < (foot ? 0.65f : pogo ? 0.35f : 0.06f) * u::m)
         return meters_t {};
       const auto offset =
         [] (position_t p, direction_t way, meters_t side, meters_t front) {
@@ -60,6 +61,8 @@ namespace moppe::game {
                0.12f * u::m,
                0.085f * u::m,
                0.075f * u::m);
+      } else if (pogo) {
+        stamp (meters_t {}, meters_t {}, 0.09f * u::m, 0.11f * u::m);
       } else if (sled) {
         for (const int sign : { -1, 1 })
           stamp (
@@ -99,9 +102,11 @@ namespace moppe::game {
     const auto mode = state.m_doing;
     const auto driven = driven_machine (mode);
     const bool foot = mode == Doing::on_foot ();
+    const bool pogo = mode == Doing::pogoing ();
     const bool contact =
-      foot
-        ? session.walker ().grounded ()
+      foot ? session.walker ().grounded ()
+      : pogo
+        ? session.pogo ().grounded ()
         : driven && machine_kind (*driven).medium == Medium::land &&
             visit (session.fleet (), *driven, [] (Machine, const auto& body) {
               if constexpr (requires { body.grounded (); })

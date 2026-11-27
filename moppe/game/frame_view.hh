@@ -189,6 +189,28 @@ namespace moppe::game {
     bool bike_attached = false;
   };
 
+  struct PogoPose {
+    // Bottom of the rubber bounce tip.
+    position_t position {};
+    direction_t heading = unit_direction (Vec3 (0, 0, 1));
+    proportion_t compression = 0.0f * proportion[one];
+    proportion_t charge = 0.0f * proportion[one];
+    radians_t pitch = 0.0f * u::rad;
+    radians_t roll = 0.0f * u::rad;
+    inclination_t look_pitch = 0.0f * inclination[u::rad];
+  };
+
+  struct ParachutePose {
+    // The hiker's feet under the canopy.
+    position_t position {};
+    direction_t heading = unit_direction (Vec3 (0, 0, 1));
+    proportion_t opening = 1.0f * proportion[one];
+    radians_t sway_roll = 0.0f * u::rad;
+    radians_t sway_pitch = 0.0f * u::rad;
+    control_signal_t turn = 0.0f * control_signal[one];
+    bool flare = false;
+  };
+
   // Everything the avatar's procedural animation reads: where the feet
   // are and how the body is moving over the ground, not its controls.
   struct WalkerPose {
@@ -226,6 +248,8 @@ namespace moppe::game {
     // tailgate down, and the Caddy may hang on the helicopter's line.
     std::optional<SlingPose> sling;
     std::optional<GliderPose> glider;
+    std::optional<PogoPose> pogo;
+    std::optional<ParachutePose> parachute;
     std::optional<WalkerPose> walker;
     Doing active_mode = Doing::driving (Machine::bike);
     CamMode camera_mode = CAM_CHASE;
@@ -413,6 +437,9 @@ namespace moppe::game {
   FleetPoses poses (const Fleet& fleet);
   // The bike and the jeep as they ride in the Caddy (game/sling.hh).
   GliderPose glider_pose (const mov::Glider& glider);
+  PogoPose pogo_pose (const mov::Pogo& pogo,
+                      inclination_t look_pitch = 0.0f * inclination[u::rad]);
+  ParachutePose parachute_pose (const mov::Parachute& parachute);
   WalkerPose walker_pose (const Walker& walker,
                           inclination_t look_pitch = 0.0f *
                                                      inclination[u::rad]);

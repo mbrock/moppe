@@ -23,6 +23,8 @@
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/helicopter.hh>
 #include <moppe/mov/jet_ski.hh>
+#include <moppe/mov/parachute.hh>
+#include <moppe/mov/pogo.hh>
 #include <moppe/mov/tractor.hh>
 #include <moppe/mov/vehicle.hh>
 
@@ -164,6 +166,8 @@ namespace moppe::game {
     GameLogicState logic;
     FleetState fleet;
     mov::Glider::State glider;
+    mov::Pogo::State pogo;
+    mov::Parachute::State parachute;
     Walker::State walker;
     ChaseCamera::State camera;
     Stars::State stars;

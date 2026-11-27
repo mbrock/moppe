@@ -208,6 +208,8 @@ namespace moppe::game {
       return;
     }
     const bool gliding = session.logic ().m_doing == Doing::gliding ();
+    const bool pogo = session.logic ().m_doing == Doing::pogoing ();
+    const bool chute = session.logic ().m_doing == Doing::parachuting ();
     const bool tractor =
       session.logic ().m_doing == Doing::driving (Machine::tractor);
     const bool caddy =
@@ -220,7 +222,7 @@ namespace moppe::game {
       session.logic ().m_doing == Doing::driving (Machine::snowmobile);
     const bool driving =
       session.logic ().m_doing == Doing::driving (Machine::jeep) || tractor ||
-      caddy || boat || ski || sled;
+      caddy || boat || ski || sled || pogo || chute;
     const bool pedalled = game::pedalled (session.logic ().m_doing);
     const auto& bike = session.ridden_bike ();
     // The tractor with its trailer, from their middle.
@@ -237,11 +239,15 @@ namespace moppe::game {
     const position_t at = position (
       gliding
         ? position_value (session.glider ().position ()) - Vec3 (0, 0.9f, 0)
+      : chute   ? position_value (car) + Vec3 (0, 2.5f, 0)
+      : pogo    ? position_value (car) + Vec3 (0, 1.15f, 0)
       : driving ? position_value (car) + Vec3 (0, tractor ? 0.9f : 0.5f, 0)
       : pedalled
         ? position_value (bike.render_position ()) + Vec3 (0, 0.55f, 0)
         : position_value (bike.render_position ()) + Vec3 (0, 0.4f, 0));
     const meters_t away = (gliding    ? 7.0f
+                           : chute    ? 8.5f
+                           : pogo     ? 4.6f
                            : caddy    ? 7.5f
                            : boat     ? 7.0f
                            : ski      ? 5.5f

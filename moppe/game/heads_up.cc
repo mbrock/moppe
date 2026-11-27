@@ -22,6 +22,10 @@ namespace moppe::game {
     Vec3 whereabouts (const CompanionSnapshot& theirs, bool over_driver) {
       if (theirs.walker)
         return position_value (theirs.walker->position);
+      if (theirs.pogo)
+        return position_value (theirs.pogo->position);
+      if (theirs.parachute)
+        return position_value (theirs.parachute->position);
       if (theirs.glider)
         return position_value (theirs.glider->position);
       const Machine machine =
@@ -149,6 +153,14 @@ namespace moppe::game {
         return same ("Put out the fire");
       case Verb::cast:
         return { "Cast a line", "Water to fish" };
+      case Verb::mount_pogo:
+        return { "Bounce on pogo stick", "Pogo stick" };
+      case Verb::dismount_pogo:
+        return same ("Put away pogo stick");
+      case Verb::deploy_parachute:
+        return { "Open parachute", "Parachute ready" };
+      case Verb::cut_parachute:
+        return same ("Cut parachute");
       case Verb::drop_bike:
         return same ("Release the Trail 90");
       case Verb::deploy_glider:
@@ -171,6 +183,9 @@ namespace moppe::game {
         return { machine_kind (a.machine).take,
                  machine_kind (a.machine).at_hand };
       case Verb::step_out:
+        if (a.machine == Machine::helicopter &&
+            !w.session.can_step_out_of_helicopter ())
+          return same ("Jump out");
         return same (machine_kind (a.machine).leave);
       case Verb::board_bus:
         return { "Board the bus", "The bus" };
@@ -467,10 +482,22 @@ namespace moppe::game {
         state.submerged =
           w.session.walker ().state ().swim == Walker::Swim::submerged;
         state.thumb = state.swimming ? "Swim up" : "Jump";
+        state.can_mount_pogo = w.session.can_mount_pogo ();
       }
       break;
     case Doing::Way::glider:
       state.thumb = "Flare";
+      break;
+    case Doing::Way::pogo:
+      state.thumb = "Super bounce";
+      state.dismount = "Get off";
+      state.thumb_hint =
+        w.session.logic ().m_total_time - m_prompts.thumb_from <
+        10.0 * si::second;
+      break;
+    case Doing::Way::parachute:
+      state.thumb = "Flare";
+      state.dismount = "Cut away";
       break;
     case Doing::Way::passenger:
       state.dismount = "Step out";
@@ -494,7 +521,7 @@ namespace moppe::game {
       else if (w.session.hook_within_reach ())
         state.dismount = "Hook on";
       else if (!state.can_step_out)
-        state.dismount = nullptr;
+        state.dismount = "Jump out";
       break;
     }
     }

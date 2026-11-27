@@ -205,6 +205,30 @@ namespace moppe::game {
     };
   }
 
+  PogoPose pogo_pose (const mov::Pogo& pogo, inclination_t look_pitch) {
+    return {
+      .position = pogo.position (),
+      .heading = pogo.heading (),
+      .compression = pogo.compression (),
+      .charge = pogo.charge (),
+      .pitch = pogo.pitch (),
+      .roll = pogo.roll (),
+      .look_pitch = look_pitch,
+    };
+  }
+
+  ParachutePose parachute_pose (const mov::Parachute& parachute) {
+    return {
+      .position = parachute.position (),
+      .heading = parachute.heading (),
+      .opening = parachute.opening (),
+      .sway_roll = parachute.sway_roll (),
+      .sway_pitch = parachute.sway_pitch (),
+      .turn = parachute.turn (),
+      .flare = parachute.flare (),
+    };
+  }
+
   WalkerPose walker_pose (const Walker& walker, inclination_t look_pitch) {
     const Walker::State state = walker.state ();
     const mov::Character::State& body = state.body;
@@ -395,6 +419,11 @@ namespace moppe::game {
     }
     if (logic.m_doing == Doing::gliding ())
       result.actors.glider = glider_pose (input.session.glider ());
+    if (logic.m_doing == Doing::pogoing ())
+      result.actors.pogo =
+        pogo_pose (input.session.pogo (), logic.m_look_pitch);
+    if (logic.m_doing == Doing::parachuting ())
+      result.actors.parachute = parachute_pose (input.session.parachute ());
     if (logic.m_doing == Doing::on_foot ())
       result.actors.walker =
         walker_pose (input.session.walker (), logic.m_look_pitch);
@@ -420,6 +449,14 @@ namespace moppe::game {
                                                                      u::s);
       hud.boost_ready = std::clamp (lift / 4.0f, 0.0f, 1.0f) * proportion[one];
       hud.vertical_speed = input.session.glider ().vertical_speed ();
+    } else if (logic.m_doing == Doing::parachuting ()) {
+      const float lift =
+        input.session.parachute ().air_mass_lift ().numerical_value_in (u::m /
+                                                                        u::s);
+      hud.boost_ready = std::clamp (lift / 4.0f, 0.0f, 1.0f) * proportion[one];
+      hud.vertical_speed = input.session.parachute ().vertical_speed ();
+    } else if (logic.m_doing == Doing::pogoing ()) {
+      hud.boost_ready = input.session.pogo ().charge ();
     } else {
       hud.boost_ready = logic.m_doing == Doing::driving (Machine::bike)
                           ? input.session.bike ().boost_charge ()
@@ -446,7 +483,8 @@ namespace moppe::game {
     hud.best_wheelie = logic.m_best_wheelie_m;
     hud.wheelie_age = logic.m_wheelie_age;
     hud.on_foot = logic.m_doing == Doing::on_foot ();
-    hud.gliding = logic.m_doing == Doing::gliding ();
+    hud.gliding = logic.m_doing == Doing::gliding () ||
+                  logic.m_doing == Doing::parachuting ();
     hud.frame_time = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();
@@ -483,7 +521,11 @@ namespace moppe::game {
     switch (mode.way) {
     case Doing::Way::foot:
     case Doing::Way::glider:
+    case Doing::Way::parachute:
       return 0.0f * proportion[one];
+    case Doing::Way::pogo:
+      ramp = { 45.0f, 75.0f, 0.55f };
+      break;
     case Doing::Way::passenger:
     case Doing::Way::bus:
       ramp = { 80.0f, 140.0f, 0.6f };

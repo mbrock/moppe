@@ -47,6 +47,7 @@ namespace moppe {
       constexpr const char* dive_key = "LT";
       constexpr const char* hammock_key = "LB";
       constexpr const char* fire_key = "RB";
+      constexpr const char* pogo_key = "";
       constexpr const char* map_key = "";
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
       constexpr const char* deploy_key = "";
@@ -56,6 +57,7 @@ namespace moppe {
       constexpr const char* dive_key = "";
       constexpr const char* hammock_key = "";
       constexpr const char* fire_key = "";
+      constexpr const char* pogo_key = "";
       constexpr const char* map_key = "";
 #else
       constexpr const char* deploy_key = "E";
@@ -65,6 +67,7 @@ namespace moppe {
       constexpr const char* dive_key = "Shift";
       constexpr const char* hammock_key = "R";
       constexpr const char* fire_key = "T";
+      constexpr const char* pogo_key = "B";
       constexpr const char* map_key = "M";
 #endif
 
@@ -1907,6 +1910,9 @@ namespace moppe {
           case Button::fire:
             keyed = fire_key;
             break;
+          case Button::pogo:
+            keyed = pogo_key;
+            break;
           }
         key = keyed;
         action = *keyed ? st.prompt_keyed : st.prompt_unkeyed;
@@ -1940,6 +1946,8 @@ namespace moppe {
         offer (fire_key, "Put out the fire");
       else if (st.can_light_fire)
         offer (fire_key, "Light a fire");
+      if (st.can_mount_pogo)
+        offer (pogo_key, "Pogo stick");
 
       const bool wanted = !action.empty ();
       if (wanted) {

@@ -108,43 +108,25 @@ namespace moppe::platform {
 
   Key key_named (const std::string& name) {
     static const std::map<std::string, Key> keys {
-      { "Left", Key::Left },
-      { "Right", Key::Right },
-      { "Up", Key::Up },
-      { "Down", Key::Down },
-      { "W", Key::W },
-      { "A", Key::A },
-      { "S", Key::S },
-      { "D", Key::D },
-      { "Space", Key::Space },
-      { "Tab", Key::Tab },
-      { "Escape", Key::Escape },
-      { "Mount", Key::Mount },
-      { "F", Key::Mount },
-      { "Restart", Key::Restart },
-      { "E", Key::E },
-      { "G", Key::G },
-      { "H", Key::H },
-      { "J", Key::J },
-      { "L", Key::L },
-      { "M", Key::M },
-      { "N", Key::N },
-      { "R", Key::R },
-      { "T", Key::T },
-      { "Y", Key::Y },
-      { "Q", Key::Q },
-      { "1", Key::One },
-      { "2", Key::Two },
-      { "3", Key::Three },
-      { "4", Key::Four },
-      { "5", Key::Five },
-      { "6", Key::Six },
-      { "7", Key::Seven },
-      { "Shift", Key::Shift },
-      { "Enter", Key::Enter },
-      { "Backspace", Key::Backspace },
-      { "P", Key::Screenshot },
-      { "V", Key::Record },
+      { "Left", Key::Left },     { "Right", Key::Right },
+      { "Up", Key::Up },         { "Down", Key::Down },
+      { "W", Key::W },           { "A", Key::A },
+      { "S", Key::S },           { "D", Key::D },
+      { "Space", Key::Space },   { "Tab", Key::Tab },
+      { "Escape", Key::Escape }, { "Mount", Key::Mount },
+      { "F", Key::Mount },       { "Restart", Key::Restart },
+      { "E", Key::E },           { "B", Key::B },
+      { "G", Key::G },           { "H", Key::H },
+      { "J", Key::J },           { "L", Key::L },
+      { "M", Key::M },           { "N", Key::N },
+      { "R", Key::R },           { "T", Key::T },
+      { "Y", Key::Y },           { "Q", Key::Q },
+      { "1", Key::One },         { "2", Key::Two },
+      { "3", Key::Three },       { "4", Key::Four },
+      { "5", Key::Five },        { "6", Key::Six },
+      { "7", Key::Seven },       { "Shift", Key::Shift },
+      { "Enter", Key::Enter },   { "Backspace", Key::Backspace },
+      { "P", Key::Screenshot },  { "V", Key::Record },
       { "`", Key::Cheat },
     };
     const auto found = keys.find (name);
@@ -176,6 +158,8 @@ namespace moppe::platform {
       return 'F';
     case Key::E:
       return 'E';
+    case Key::B:
+      return 'B';
     case Key::R:
       return 'R';
     case Key::T:

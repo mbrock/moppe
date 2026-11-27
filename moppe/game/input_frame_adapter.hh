@@ -55,6 +55,11 @@ namespace moppe::game {
           m_toggle_mount = true;
         return;
       }
+      if (key == Key::B) {
+        if (down)
+          m_toggle_pogo = true;
+        return;
+      }
       if (key == Key::Tab) {
         if (down) {
           record_mount_combo (key);
@@ -153,6 +158,7 @@ namespace moppe::game {
       frame.use = m_use;
       frame.use_held = m_use_held;
       frame.toggle_mount = m_toggle_mount;
+      frame.toggle_pogo = m_toggle_pogo;
       frame.cycle_camera = m_cycle_camera;
       frame.leave_cinematic = m_leave_cinematic;
       frame.hang_hammock = m_hang_hammock;
@@ -165,6 +171,7 @@ namespace moppe::game {
       m_look_pitch = radians_t {};
       m_use = false;
       m_toggle_mount = false;
+      m_toggle_pogo = false;
       m_cycle_camera = false;
       m_leave_cinematic = false;
       m_hang_hammock = false;
@@ -178,6 +185,7 @@ namespace moppe::game {
       m_use = false;
       m_use_held = false;
       m_toggle_mount = false;
+      m_toggle_pogo = false;
       m_cycle_camera = false;
       m_leave_cinematic = false;
       m_hang_hammock = false;
@@ -210,6 +218,7 @@ namespace moppe::game {
     bool m_use = false;
     bool m_use_held = false;
     bool m_toggle_mount = false;
+    bool m_toggle_pogo = false;
     bool m_cycle_camera = false;
     bool m_leave_cinematic = false;
     bool m_hang_hammock = false;

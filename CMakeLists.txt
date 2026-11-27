@@ -393,6 +393,8 @@ set(MOPPE_WORLD_SOURCES
 
 set(MOPPE_SIMULATION_SOURCES
   moppe/mov/glider.cc
+  moppe/mov/parachute.cc
+  moppe/mov/pogo.cc
   moppe/mov/vehicle.cc
   moppe/mov/trunk_field.cc
   moppe/mov/rigid_bike.cc
@@ -444,6 +446,8 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/glider_render.cc
+  moppe/game/parachute_render.cc
+  moppe/game/pogo_render.cc
   moppe/game/car_render.cc
   moppe/game/jeep_render.cc
   moppe/game/helicopter_render.cc
@@ -897,6 +901,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/mov/tractor_test.cc
     tests/mov/caddy_test.cc
     tests/mov/glider_test.cc
+    tests/mov/pogo_parachute_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
     tests/game/simulation_clock_test.cc

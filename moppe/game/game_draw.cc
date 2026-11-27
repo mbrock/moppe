@@ -7,6 +7,8 @@
 #include <moppe/game/fleet_render.hh>
 #include <moppe/game/game.hh>
 #include <moppe/game/glider_render.hh>
+#include <moppe/game/parachute_render.hh>
+#include <moppe/game/pogo_render.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker_render.hh>
 
@@ -207,6 +209,20 @@ namespace moppe {
       if (actors.glider)
         m_blob.draw (
           m_world_dl, surface (), actors.glider->position, 3.4f * u::m);
+      if (actors.pogo)
+        m_blob.draw (m_world_dl,
+                     surface (),
+                     actors.pogo->position +
+                       quantity_cast<isq::position_vector> (
+                         displacement (Vec3 (0, 0.5f, 0))),
+                     0.85f * u::m);
+      if (actors.parachute)
+        m_blob.draw (m_world_dl,
+                     surface (),
+                     actors.parachute->position +
+                       quantity_cast<isq::position_vector> (
+                         displacement (Vec3 (0, 1.5f, 0))),
+                     2.8f * u::m);
 
       // In helmet cam you ARE the rider: don't draw yourself. The other
       // player rides along in the jeep, or on the boat's fore seat.
@@ -334,6 +350,18 @@ namespace moppe {
                        frame.lighting.time,
                        0x2000,
                        m_company.outfit);
+      if (actors.pogo)
+        render_pogo (m_world_dl,
+                     *actors.pogo,
+                     frame.lighting.time,
+                     m_company.outfit,
+                     !helmet);
+      if (actors.parachute)
+        render_parachute (m_world_dl,
+                          *actors.parachute,
+                          frame.lighting.time,
+                          m_company.outfit,
+                          !helmet);
       m_company.draw (r,
                       m_world_dl,
                       frame.lighting.time,
@@ -372,7 +400,11 @@ namespace moppe {
         case Doing::Way::foot:
           interaction_radius = 0.55f * u::m;
           break;
+        case Doing::Way::pogo:
+          interaction_radius = 0.65f * u::m;
+          break;
         case Doing::Way::glider:
+        case Doing::Way::parachute:
         case Doing::Way::passenger:
         case Doing::Way::bus:
           break;

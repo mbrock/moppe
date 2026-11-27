@@ -75,6 +75,16 @@ namespace moppe::game {
         session.glider ().set_speed_control (k.go);
         session.glider ().set_flare (k.boost > 0.1f * proportion[one]);
         break;
+      case Doing::Way::pogo:
+        session.pogo ().set_strafe (k.turn);
+        session.pogo ().set_drive (k.go);
+        session.pogo ().set_pump (k.boost > 0.1f * proportion[one]);
+        break;
+      case Doing::Way::parachute:
+        session.parachute ().set_turn (k.turn);
+        session.parachute ().set_speed_control (k.go);
+        session.parachute ().set_flare (k.boost > 0.1f * proportion[one]);
+        break;
       case Doing::Way::passenger:
       case Doing::Way::bus:
         break;
@@ -104,6 +114,17 @@ namespace moppe::game {
         Vec3 (0, meters_value (mov::Glider::pilot_clearance) - 0.1f, 0));
       session.walker ().spawn (
         feet, unit_direction (glider.heading ()), glider.velocity ());
+      session.set_mode (Doing::on_foot ());
+      Controls k = logic.m_controls;
+      k.boost = 0.0f * proportion[one];
+      steer (session, k);
+    }
+
+    void finish_parachute (GameSession& session) {
+      GameLogicState& logic = session.logic ();
+      const mov::Parachute& chute = session.parachute ();
+      session.walker ().spawn (
+        chute.position (), chute.heading (), chute.velocity ());
       session.set_mode (Doing::on_foot ());
       Controls k = logic.m_controls;
       k.boost = 0.0f * proportion[one];
@@ -190,7 +211,8 @@ namespace moppe::game {
     // is always ahead.
     void settle_look (GameLogicState& logic, speed_t speed, seconds_t elapsed) {
       logic.m_look_idle += elapsed;
-      if (logic.m_doing == Doing::on_foot ())
+      if (logic.m_doing == Doing::on_foot () ||
+          logic.m_doing == Doing::pogoing ())
         return;
       const radians_t aside =
         std::max (abs (logic.m_look_yaw), radians_t (abs (logic.m_look_pitch)));
@@ -390,6 +412,9 @@ namespace moppe::game {
       // what runs on foot (or the held deploy key, a controller's A).
       const proportion_t climb = input.boost;
       const bool descend = input.run || input.use_held;
+      const bool space_edge =
+        input.boost > 0.1f * proportion[one] &&
+        session.logic ().m_controls.boost <= 0.1f * proportion[one];
       steer (session,
              { .turn = help.turn,
                .go = help.drive,
@@ -416,6 +441,11 @@ namespace moppe::game {
         if (logic.m_cam_mode != CAM_HELMET)
           session.camera ().turn (input.look_yaw, 0.0f * u::rad);
         logic.m_look_yaw = 0.0f * u::rad;
+      } else if (logic.m_doing == Doing::pogoing ()) {
+        session.pogo ().turn_by (input.look_yaw);
+        if (logic.m_cam_mode != CAM_HELMET)
+          session.camera ().turn (input.look_yaw, 0.0f * u::rad);
+        logic.m_look_yaw = 0.0f * u::rad;
       } else {
         // Riding, the look swings about the way ahead, all the way round.
         logic.m_look_yaw =
@@ -426,10 +456,18 @@ namespace moppe::game {
 
       InputFrame presses = input;
       press_buttons (session, terrain, nullptr, presses);
+      // Pressing Space in freefall also pops the parachute.
+      if (space_edge && logic.m_doing == Doing::on_foot () &&
+          session.can_deploy_parachute (terrain))
+        deploy_parachute (session, terrain);
       // Held, the use key opens the wing as soon as the bike leaves the
-      // ground.
-      if (input.use_held && session.logic ().m_doing != Doing::gliding ())
+      // ground, or the parachute once airborne on foot.
+      if (input.use_held && session.logic ().m_doing != Doing::gliding () &&
+          session.logic ().m_doing != Doing::parachuting ()) {
         deploy_glider (session, terrain);
+        if (session.logic ().m_doing == Doing::on_foot ())
+          deploy_parachute (session, terrain);
+      }
       if (input.cycle_camera) {
         GameLogicState& logic = session.logic ();
         logic.m_cam_mode = (CamMode)((logic.m_cam_mode + 1) % 3);
@@ -625,6 +663,58 @@ namespace moppe::game {
     session.glider ().drop_bike ();
   }
 
+  void mount_pogo (GameSession& session) {
+    if (!session.can_mount_pogo ())
+      return;
+    const Walker& walker = session.walker ();
+    session.pogo ().spawn (
+      walker.position (), walker.heading (), walker.velocity ());
+    session.set_mode (Doing::pogoing ());
+    steer (session, session.logic ().m_controls);
+  }
+
+  void dismount_pogo (GameSession& session) {
+    if (session.logic ().m_doing != Doing::pogoing ())
+      return;
+    const mov::Pogo& pogo = session.pogo ();
+    session.walker ().spawn (
+      pogo.position (), pogo.heading (), pogo.velocity ());
+    session.set_mode (Doing::on_foot ());
+    Controls k = session.logic ().m_controls;
+    k.boost = 0.0f * proportion[one];
+    steer (session, k);
+  }
+
+  void deploy_parachute (GameSession& session,
+                         const map::SurfaceGeometry& terrain) {
+    if (!session.can_deploy_parachute (terrain))
+      return;
+    const Doing doing = session.logic ().m_doing;
+    position_t feet {};
+    velocity_t vel {};
+    direction_t heading = unit_direction (Vec3 (0, 0, 1));
+    if (doing == Doing::pogoing ()) {
+      feet = session.pogo ().position ();
+      vel = session.pogo ().velocity ();
+      heading = session.pogo ().heading ();
+    } else {
+      feet = session.walker ().position ();
+      vel = session.walker ().velocity ();
+      heading = session.walker ().heading ();
+    }
+    session.parachute ().deploy (feet, vel, heading);
+    session.set_mode (Doing::parachuting ());
+    Controls k = session.logic ().m_controls;
+    k.boost = 0.0f * proportion[one];
+    steer (session, k);
+  }
+
+  void cut_parachute (GameSession& session) {
+    if (session.logic ().m_doing != Doing::parachuting ())
+      return;
+    finish_parachute (session);
+  }
+
   // Takes up a rope tied to the nearer end of a stuck machine, as long
   // as it reaches from there to the walker's feet.
   void take_rope (GameSession& session, Machine machine) {
@@ -665,10 +755,13 @@ namespace moppe::game {
   }
 
   // Out of `machine` and onto the feet, where its kind says
-  // (MachineKind::step_out), letting go of everything.
+  // (MachineKind::step_out), letting go of everything. Bailing out mid-air
+  // from a helicopter or airborne machine gives a clean hop clear of it.
   void step_out (GameSession& session, Machine machine) {
     GameLogicState& logic = session.logic ();
     const MachineKind& kind = machine_kind (machine);
+    const bool heli_bail =
+      machine == Machine::helicopter && !session.can_step_out_of_helicopter ();
     drive (session.fleet (), machine, Controls {}, false);
     visit (session.fleet (), machine, [&] (Machine, const Drivable auto& b) {
       const position_t at =
@@ -676,10 +769,18 @@ namespace moppe::game {
       // Off the water's machines one steps with half their way on.
       const proportion_t keep =
         (kind.medium == Medium::water ? 0.5f : 1.0f) * proportion[one];
-      session.walker ().spawn (at,
-                               b.forward (),
-                               moppe::velocity (velocity_value (b.velocity ()) *
-                                                keep.numerical_value_in (one)));
+      velocity_t vel = moppe::velocity (velocity_value (b.velocity ()) *
+                                        keep.numerical_value_in (one));
+      if (heli_bail) {
+        const direction_t out = unit_direction (normalized (
+          cross (direction_value (b.forward ()), direction_value (b.up ()))));
+        vel += moppe::velocity (direction_value (out) * 2.5f +
+                                Vec3 (0.0f, 1.8f, 0.0f));
+      } else if constexpr (requires { b.grounded (); }) {
+        if (!b.grounded () && kind.medium == Medium::land)
+          vel += moppe::velocity (Vec3 (0.0f, 2.2f, 0.0f));
+      }
+      session.walker ().spawn (at, b.forward (), vel);
     });
     session.set_mode (Doing::on_foot ());
     steer (session, logic.m_controls);
@@ -806,7 +907,8 @@ namespace moppe::game {
           .jet_ski = mov::JetSki (surface),
           .snowmobile = mov::Car (surface, mov::snowmobile_rig),
         },
-        m_glider (surface), m_camera (18 * u::deg, 6.5f * u::m) {}
+        m_glider (surface), m_parachute (surface),
+        m_camera (18 * u::deg, 6.5f * u::m) {}
 
   position_t GameSession::subject_position () const {
     switch (m_logic.m_doing.way) {
@@ -814,6 +916,10 @@ namespace moppe::game {
       return m_walker.position ();
     case Doing::Way::glider:
       return m_glider.position ();
+    case Doing::Way::pogo:
+      return m_pogo.position ();
+    case Doing::Way::parachute:
+      return m_parachute.position ();
     case Doing::Way::passenger:
     case Doing::Way::bus:
       return m_logic.m_seat_position;
@@ -832,6 +938,10 @@ namespace moppe::game {
       return m_walker.heading ();
     case Doing::Way::glider:
       return unit_direction (m_glider.heading ());
+    case Doing::Way::pogo:
+      return m_pogo.heading ();
+    case Doing::Way::parachute:
+      return m_parachute.heading ();
     case Doing::Way::passenger:
     case Doing::Way::bus:
       return m_logic.m_seat_heading;
@@ -852,6 +962,13 @@ namespace moppe::game {
       return 0.0f * kmh;
     case Doing::Way::glider:
       return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f * kmh;
+    case Doing::Way::pogo: {
+      const Vec3& v = velocity_value (m_pogo.velocity ());
+      return std::hypot (v[0], v[2]) * 3.6f * kmh;
+    }
+    case Doing::Way::parachute:
+      return m_parachute.airspeed ().numerical_value_in (u::m / u::s) * 3.6f *
+             kmh;
     case Doing::Way::passenger:
     case Doing::Way::bus:
       return length (velocity_value (m_logic.m_seat_velocity)) * 3.6f * kmh;
@@ -937,6 +1054,36 @@ namespace moppe::game {
     return m_logic.m_doing == Doing::gliding () && m_glider.bike_attached ();
   }
 
+  bool GameSession::can_deploy_parachute (
+    const map::SurfaceGeometry& terrain) const {
+    if (m_logic.m_doing == Doing::on_foot ()) {
+      if (m_walker.grounded () || m_walker.swimming () ||
+          m_logic.m_camp.resting)
+        return false;
+      const position_t pos = m_walker.position ();
+      const meters_t agl =
+        position_value (pos)[1] * u::m - ground_at (terrain, pos);
+      const speed_t vy =
+        velocity_value (m_walker.velocity ())[1] * (u::m / u::s);
+      return agl >= 3.0f * u::m ||
+             (agl >= 2.0f * u::m && vy < -1.5f * (u::m / u::s));
+    }
+    if (m_logic.m_doing == Doing::pogoing ()) {
+      if (m_pogo.grounded ())
+        return false;
+      const position_t pos = m_pogo.position ();
+      const meters_t agl =
+        position_value (pos)[1] * u::m - ground_at (terrain, pos);
+      return agl >= 3.2f * u::m;
+    }
+    return false;
+  }
+
+  bool GameSession::can_mount_pogo () const {
+    return m_logic.m_doing == Doing::on_foot () && !m_walker.swimming () &&
+           !m_logic.m_camp.resting && !m_logic.m_haul.active;
+  }
+
   void GameSession::set_mode (Doing mode) {
     const bool was_on_foot = m_logic.m_doing == Doing::on_foot ();
     const bool on_foot = mode == Doing::on_foot ();
@@ -980,6 +1127,27 @@ namespace moppe::game {
       rig.ahead = unit_direction (m_glider.heading ());
       rig.pivot = m_glider.position ();
       rig.velocity = m_glider.velocity ();
+      break;
+    case Doing::Way::pogo:
+      rig.eye = m_pogo.eye_position ();
+      rig.ahead = m_pogo.heading ();
+      rig.pivot = moppe::position (position_value (m_pogo.position ()) +
+                                   Vec3 (0, 1.65f, 0));
+      rig.velocity = m_pogo.velocity ();
+      rig.distance = 4.9f * u::m;
+      rig.nearest = 1.6f * u::m;
+      rig.elevation = 14.0f * u::deg;
+      break;
+    case Doing::Way::parachute:
+      rig.eye = moppe::position (position_value (m_parachute.position ()) +
+                                 Vec3 (0, 1.55f, 0));
+      rig.ahead = m_parachute.heading ();
+      rig.pivot = moppe::position (position_value (m_parachute.position ()) +
+                                   Vec3 (0, 2.3f, 0));
+      rig.velocity = m_parachute.velocity ();
+      rig.distance = 8.2f * u::m;
+      rig.nearest = 3.2f * u::m;
+      rig.elevation = 14.0f * u::deg;
       break;
     case Doing::Way::passenger: {
       // From the seat, or from behind as the machine's driver is seen.
@@ -1145,6 +1313,8 @@ namespace moppe::game {
   GameSession::State GameSession::state () const {
     State state { .logic = m_logic,
                   .glider = m_glider.state (),
+                  .pogo = m_pogo.state (),
+                  .parachute = m_parachute.state (),
                   .walker = m_walker.state (),
                   .camera = m_camera.state (),
                   .stars = m_stars.state (),
@@ -1165,6 +1335,8 @@ namespace moppe::game {
       m_fleet,
       state.fleet);
     m_glider.restore (state.glider);
+    m_pogo.restore (state.pogo);
+    m_parachute.restore (state.parachute);
     m_walker.restore (state.walker);
     m_camera.restore (state.camera);
     m_stars.restore (state.stars);
@@ -1614,6 +1786,64 @@ namespace moppe::game {
                                 water,
                                 seconds_into_play (logic.m_total_time),
                                 logic.m_controls.lift);
+    if (logic.m_doing == Doing::pogoing ()) {
+      mov::Pogo& pogo = session.pogo ();
+      pogo.update (dt, surface, trunks);
+      const Vec3& pv = velocity_value (pogo.velocity ());
+      logic.m_odometer +=
+        std::hypot (pv[0], pv[2]) * seconds_value (elapsed) * u::m;
+      const meters_t tip_water = water_at (pogo.position ());
+      const meters_t tip_depth =
+        tip_water - position_value (pogo.position ())[1] * u::m;
+      if (tip_depth > 1.35f * u::m) {
+        // Deep water: stow the pogo stick and swim.
+        dismount_pogo (session);
+      } else if (pogo.just_bounced () || pogo.just_landed ()) {
+        const bool wet = tip_depth > 0.02f * u::m;
+        const speed_t energy =
+          pogo.just_bounced () ? pogo.last_launch () : pogo.impact_speed ();
+        const scale_factor_t vigour =
+          std::clamp (speed_value (energy) / 14.0f, 0.25f, 1.5f) *
+          scale_factor[one];
+        Dust::Style burst;
+        burst.size = (0.24f + 0.16f * vigour.numerical_value_in (one)) * u::m;
+        burst.lifetime = 0.75f * u::s;
+        burst.downward_acceleration =
+          5.0f * isq::acceleration[u::m / pow<2> (u::s)];
+        burst.spread = (1.1f + 0.5f * vigour.numerical_value_in (one)) * one;
+        burst.flake = wet;
+        const int count = std::max (
+          2,
+          static_cast<int> (std::round (
+            (wet ? 8.0f : 6.0f * ground.dust.numerical_value_in (one)) *
+            vigour.numerical_value_in (one))));
+        session.dust ().emit (
+          moppe::position (position_value (pogo.position ()) +
+                           Vec3 (0, 0.08f, 0)),
+          velocity (velocity_value (pogo.velocity ()) * 0.15f +
+                    Vec3 (0, 1.4f + 1.8f * vigour.numerical_value_in (one), 0)),
+          count,
+          wet ? DisplayColor (0.85f, 0.92f, 1.0f) : ground.dust_color,
+          burst);
+        if (pogo.just_landed () &&
+            pogo.impact_speed () > 11.0f * (u::m / u::s)) {
+          logic.m_shake = std::max (
+            logic.m_shake,
+            std::min (0.20f, 0.012f * speed_value (pogo.impact_speed ())) *
+              u::deg);
+          logic.m_shake_time = 0.0f * u::s;
+        }
+      }
+    }
+    if (logic.m_doing == Doing::parachuting ()) {
+      mov::Parachute& chute = session.parachute ();
+      const meters_t wlevel = water_at (chute.position ());
+      if (chute.update (dt, wlevel))
+        finish_parachute (session);
+      else
+        logic.m_odometer += length (velocity_value (chute.velocity ())) *
+                            seconds_value (elapsed) * u::m;
+    }
     // The jeep stands braked wherever its driver left it.
     mov::Car& jeep = session.jeep ();
     jeep.set_trunks (trunks);
